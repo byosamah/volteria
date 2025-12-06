@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,34 +52,20 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="h-10 w-10 rounded-lg bg-[#6baf4f] flex items-center justify-center">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-6 w-6 text-white"
-              >
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2" />
-                <path d="M12 20v2" />
-                <path d="m4.93 4.93 1.41 1.41" />
-                <path d="m17.66 17.66 1.41 1.41" />
-                <path d="M2 12h2" />
-                <path d="M20 12h2" />
-                <path d="m6.34 17.66-1.41 1.41" />
-                <path d="m19.07 4.93-1.41 1.41" />
-              </svg>
-            </div>
-            <div>
-              <CardTitle className="text-xl">Solar Diesel Controller</CardTitle>
-              <CardDescription>Sign in to your account</CardDescription>
-            </div>
+          {/* Logo and branding - matches sidebar style */}
+          <div className="flex flex-col items-center mb-6">
+            <Image
+              src="/logo.svg"
+              alt="Volteria Logo"
+              width={200}
+              height={50}
+              className="h-auto w-auto max-h-14 mb-2"
+            />
+            <span className="text-[13px] text-muted-foreground tracking-wide">
+              Energy Management
+            </span>
           </div>
+          <CardDescription className="text-center">Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
