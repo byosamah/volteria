@@ -1,12 +1,17 @@
 # Backend API - CLAUDE.md
 
 ## Purpose
-FastAPI backend providing REST API for:
+FastAPI backend for Volteria - Energy Management platform providing:
 1. User authentication and authorization
 2. Project/site management
 3. Device configuration
 4. Data retrieval (logs, alarms)
 5. Remote control commands
+
+## 🟢 Live Deployment
+- **Production**: https://volteria.org/api (via Nginx reverse proxy)
+- **Server**: DigitalOcean Droplet (159.223.224.203:8000)
+- **Docker**: Containerized with docker-compose
 
 ## Technology Stack
 | Component | Technology |
@@ -15,6 +20,7 @@ FastAPI backend providing REST API for:
 | Database | Supabase (PostgreSQL) |
 | Auth | Supabase Auth |
 | Hosting | DigitalOcean Droplet |
+| Container | Docker |
 
 ## Key Files
 - `app/main.py` - FastAPI application entry
@@ -25,44 +31,112 @@ FastAPI backend providing REST API for:
 - `app/routers/alarms.py` - Alarm management
 - `app/models/` - Pydantic models
 - `app/services/` - Business logic
+- `Dockerfile` - Container definition
+- `requirements.txt` - Python dependencies
 
 ## API Endpoints
 
 ### Authentication
-- `POST /auth/login` - Login
-- `POST /auth/logout` - Logout
-- `GET /auth/me` - Current user
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/auth/login` | POST | User login |
+| `/auth/logout` | POST | User logout |
+| `/auth/me` | GET | Current user info |
 
 ### Projects
-- `GET /projects` - List projects
-- `POST /projects` - Create project
-- `GET /projects/{id}` - Get project details
-- `PUT /projects/{id}` - Update project
-- `DELETE /projects/{id}` - Delete project
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/projects` | GET | List all projects |
+| `/projects` | POST | Create project |
+| `/projects/{id}` | GET | Get project details |
+| `/projects/{id}` | PUT | Update project |
+| `/projects/{id}` | DELETE | Delete project |
 
 ### Devices
-- `GET /projects/{id}/devices` - List devices
-- `POST /projects/{id}/devices` - Add device
-- `PUT /devices/{id}` - Update device
-- `DELETE /devices/{id}` - Remove device
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/projects/{id}/devices` | GET | List devices |
+| `/projects/{id}/devices` | POST | Add device |
+| `/devices/{id}` | PUT | Update device |
+| `/devices/{id}` | DELETE | Remove device |
 
 ### Logs & Alarms
-- `GET /projects/{id}/logs` - Get control logs
-- `GET /projects/{id}/alarms` - Get alarms
-- `POST /alarms/{id}/acknowledge` - Acknowledge alarm
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/projects/{id}/logs` | GET | Get control logs |
+| `/projects/{id}/alarms` | GET | Get alarms |
+| `/alarms/{id}/acknowledge` | POST | Acknowledge alarm |
 
-## User Roles
-| Role | Permissions |
-|------|-------------|
-| Super Admin | All |
-| Admin | Create users (except super), manage projects |
-| Configurator | Edit assigned projects, remote control |
-| Viewer | View logs, download data |
+### Health
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check (for Docker) |
 
-## Database Tables
-- `users` - User accounts
+## User Roles & Permissions
+| Role | Create Users | Projects | Remote Control | View Logs |
+|------|--------------|----------|----------------|-----------|
+| Super Admin | All | All | Yes | Yes |
+| Admin | Except super | All | Yes | Yes |
+| Configurator | No | Assigned | Yes | Yes |
+| Viewer | No | Assigned (read) | No | Yes |
+
+## Database Tables (Supabase)
+- `users` - User accounts with roles
+- `user_projects` - User-project assignments
 - `projects` - Site configurations
 - `project_devices` - Device connections
 - `device_templates` - Reusable device definitions
-- `control_logs` - Time-series data
+- `control_logs` - Time-series data from controllers
 - `alarms` - System alarms
+
+## Environment Variables
+```env
+# Required
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+ENVIRONMENT=production
+```
+
+## Docker Deployment
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY app ./app
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+## CORS Configuration
+Production domains are allowed in `app/main.py`:
+```python
+origins = [
+    "https://volteria.org",
+    "http://localhost:3000",  # Local development
+]
+```
+
+## Health Check
+Docker health check uses Python to verify API is responding:
+```bash
+python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+```
+
+## Development
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run development server
+uvicorn app.main:app --reload --port 8000
+
+# Run with Docker
+docker build -t sdc-backend .
+docker run -p 8000:8000 sdc-backend
+```
+
+## Row Level Security (RLS)
+All Supabase tables have RLS enabled with policies:
+- Users can only access their own data
+- Project access based on `user_projects` assignments
+- Super admins bypass all restrictions
