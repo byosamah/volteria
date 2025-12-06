@@ -22,11 +22,12 @@ export default async function NewProjectPage() {
 
   return (
     <DashboardLayout user={{ email: user?.email }}>
-      <div className="p-6 max-w-2xl mx-auto space-y-6">
-        {/* Header */}
+      {/* MOBILE-FRIENDLY: Responsive padding with max-width on larger screens */}
+      <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-4 md:space-y-6">
+        {/* Header - responsive text sizes */}
         <div>
-          <h1 className="text-3xl font-bold">Create New Project</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold">Create New Project</h1>
+          <p className="text-muted-foreground text-sm md:text-base">
             Set up a new hybrid energy site
           </p>
         </div>

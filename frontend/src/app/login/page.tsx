@@ -68,6 +68,7 @@ export default function LoginPage() {
           <CardDescription className="text-center">Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>
+          {/* MOBILE-FRIENDLY: 44px touch targets for inputs and button */}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -79,6 +80,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 disabled={loading}
+                className="min-h-[44px]"
               />
             </div>
             <div className="space-y-2">
@@ -91,9 +93,10 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={loading}
+                className="min-h-[44px]"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full min-h-[44px]" disabled={loading}>
               {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>

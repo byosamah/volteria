@@ -117,11 +117,12 @@ export default async function DashboardPage() {
 
   return (
     <DashboardLayout user={{ email: user?.email }}>
-      <div className="p-6 space-y-6">
-        {/* Header */}
+      {/* MOBILE-FRIENDLY: Responsive padding - smaller on mobile, larger on desktop */}
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+        {/* Header - responsive text sizes */}
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground text-sm md:text-base">
             Overview of your hybrid energy systems
           </p>
         </div>

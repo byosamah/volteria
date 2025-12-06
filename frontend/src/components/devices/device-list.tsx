@@ -177,30 +177,37 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
     unknown: { title: "Other Devices", description: "Uncategorized devices" },
   };
 
-  // Device card component
+  // Device card component - MOBILE-FRIENDLY with 44px touch targets
   const DeviceCard = ({ device }: { device: Device }) => (
-    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+    <div className="flex flex-col gap-3 p-3 rounded-lg bg-muted/50 sm:flex-row sm:items-center sm:justify-between">
+      {/* Device info */}
       <div className="flex items-center gap-3">
         <div
-          className={`h-2 w-2 rounded-full ${
+          className={`h-3 w-3 rounded-full flex-shrink-0 ${
             device.is_online ? "bg-[#6baf4f]" : "bg-gray-400"
           }`}
         />
-        <div>
-          <p className="font-medium">{device.name}</p>
-          <p className="text-sm text-muted-foreground">
+        <div className="min-w-0">
+          <p className="font-medium truncate">{device.name}</p>
+          <p className="text-sm text-muted-foreground truncate">
             {device.device_templates?.brand} {device.device_templates?.model}
+          </p>
+          {/* Slave ID shown on mobile */}
+          <p className="text-xs text-muted-foreground sm:hidden">
+            Slave ID: {device.slave_id}
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-muted-foreground mr-2">
+      {/* Actions - 44px touch targets */}
+      <div className="flex items-center gap-2 justify-end">
+        <span className="text-sm text-muted-foreground mr-2 hidden sm:inline">
           Slave ID: {device.slave_id}
         </span>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => openEditDialog(device)}
+          className="min-w-[44px] min-h-[44px]"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
             <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
@@ -211,6 +218,7 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
           variant="ghost"
           size="sm"
           onClick={() => setDeleteDevice(device)}
+          className="min-w-[44px] min-h-[44px]"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
             <path d="M3 6h18" />
@@ -302,9 +310,9 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
         </div>
       )}
 
-      {/* Edit Dialog */}
+      {/* Edit Dialog - MOBILE-FRIENDLY */}
       <Dialog open={!!editDevice} onOpenChange={() => setEditDevice(null)}>
-        <DialogContent>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Device</DialogTitle>
             <DialogDescription>
@@ -319,6 +327,7 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
                 id="edit-name"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
+                className="min-h-[44px]"
               />
             </div>
 
@@ -331,6 +340,7 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
                 max={247}
                 value={editSlaveId}
                 onChange={(e) => setEditSlaveId(parseInt(e.target.value))}
+                className="min-h-[44px]"
               />
             </div>
 
@@ -343,6 +353,7 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
                     value={editIpAddress}
                     onChange={(e) => setEditIpAddress(e.target.value)}
                     placeholder="192.168.1.30"
+                    className="min-h-[44px]"
                   />
                 </div>
                 <div className="space-y-2">
@@ -352,6 +363,7 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
                     type="number"
                     value={editPort}
                     onChange={(e) => setEditPort(parseInt(e.target.value))}
+                    className="min-h-[44px]"
                   />
                 </div>
               </>
@@ -366,6 +378,7 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
                     value={editGatewayIp}
                     onChange={(e) => setEditGatewayIp(e.target.value)}
                     placeholder="192.168.1.1"
+                    className="min-h-[44px]"
                   />
                 </div>
                 <div className="space-y-2">
@@ -375,37 +388,38 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
                     type="number"
                     value={editGatewayPort}
                     onChange={(e) => setEditGatewayPort(parseInt(e.target.value))}
+                    className="min-h-[44px]"
                   />
                 </div>
               </>
             )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDevice(null)}>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setEditDevice(null)} className="min-h-[44px] w-full sm:w-auto">
               Cancel
             </Button>
-            <Button onClick={handleEditSubmit} disabled={loading}>
+            <Button onClick={handleEditSubmit} disabled={loading} className="min-h-[44px] w-full sm:w-auto">
               {loading ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation Dialog - MOBILE-FRIENDLY */}
       <AlertDialog open={!!deleteDevice} onOpenChange={() => setDeleteDevice(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="mx-4 max-w-[calc(100%-2rem)]">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Device?</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to remove &ldquo;{deleteDevice?.name}&rdquo;? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
+            <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-red-600 hover:bg-red-700 min-h-[44px]"
             >
               {loading ? "Deleting..." : "Delete"}
             </AlertDialogAction>

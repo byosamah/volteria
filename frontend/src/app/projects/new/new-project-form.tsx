@@ -123,7 +123,7 @@ export function NewProjectForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Basic Information */}
+      {/* Basic Information - MOBILE-FRIENDLY with 44px touch targets */}
       <div className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="name">
@@ -136,6 +136,7 @@ export function NewProjectForm() {
             value={formData.name}
             onChange={handleChange}
             required
+            className="min-h-[44px]"
           />
         </div>
 
@@ -147,6 +148,7 @@ export function NewProjectForm() {
             placeholder="e.g., Dubai, UAE"
             value={formData.location}
             onChange={handleChange}
+            className="min-h-[44px]"
           />
         </div>
 
@@ -158,6 +160,7 @@ export function NewProjectForm() {
             placeholder="Brief description of the site"
             value={formData.description}
             onChange={handleChange}
+            className="min-h-[44px]"
           />
         </div>
       </div>
@@ -179,6 +182,7 @@ export function NewProjectForm() {
             placeholder="e.g., RPI5-2024-001"
             value={formData.controller_serial_number}
             onChange={handleChange}
+            className="min-h-[44px]"
           />
           <p className="text-xs text-muted-foreground">
             Enter the serial number of your Raspberry Pi 5 controller
@@ -192,7 +196,8 @@ export function NewProjectForm() {
       <div className="space-y-4">
         <h3 className="text-lg font-medium">Control Settings</h3>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* Grid switches to single column on mobile */}
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="dg_reserve_kw">DG Reserve (kW)</Label>
             <Input
@@ -203,6 +208,7 @@ export function NewProjectForm() {
               step={1}
               value={formData.dg_reserve_kw}
               onChange={handleChange}
+              className="min-h-[44px]"
             />
             <p className="text-xs text-muted-foreground">
               Minimum power reserve on diesel generators
@@ -219,6 +225,7 @@ export function NewProjectForm() {
               step={100}
               value={formData.control_interval_ms}
               onChange={handleChange}
+              className="min-h-[44px]"
             />
             <p className="text-xs text-muted-foreground">
               How often the control loop runs
@@ -231,20 +238,21 @@ export function NewProjectForm() {
 
       {/* Safe Mode Settings */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-medium">Safe Mode</h3>
             <p className="text-sm text-muted-foreground">
               Protection when communication is lost
             </p>
           </div>
-          <label className="flex items-center gap-2">
+          {/* Larger touch target for checkbox */}
+          <label className="flex items-center gap-2 min-h-[44px] cursor-pointer">
             <input
               type="checkbox"
               name="safe_mode_enabled"
               checked={formData.safe_mode_enabled}
               onChange={handleChange}
-              className="h-4 w-4 rounded border-gray-300"
+              className="h-5 w-5 rounded border-gray-300"
             />
             <span className="text-sm">Enabled</span>
           </label>
@@ -259,7 +267,7 @@ export function NewProjectForm() {
                 name="safe_mode_type"
                 value={formData.safe_mode_type}
                 onChange={handleChange}
-                className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
               >
                 <option value="time_based">Time Based</option>
                 <option value="rolling_average">Rolling Average</option>
@@ -277,10 +285,11 @@ export function NewProjectForm() {
                   step={1}
                   value={formData.safe_mode_timeout_s}
                   onChange={handleChange}
+                  className="min-h-[44px]"
                 />
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="safe_mode_rolling_window_min">
                     Rolling Window (minutes)
@@ -293,6 +302,7 @@ export function NewProjectForm() {
                     step={1}
                     value={formData.safe_mode_rolling_window_min}
                     onChange={handleChange}
+                    className="min-h-[44px]"
                   />
                 </div>
                 <div className="space-y-2">
@@ -306,6 +316,7 @@ export function NewProjectForm() {
                     step={1}
                     value={formData.safe_mode_threshold_pct}
                     onChange={handleChange}
+                    className="min-h-[44px]"
                   />
                 </div>
               </div>
@@ -316,12 +327,12 @@ export function NewProjectForm() {
 
       <Separator />
 
-      {/* Form Actions */}
-      <div className="flex gap-4">
-        <Button type="submit" disabled={loading}>
+      {/* Form Actions - stack on mobile, row on desktop */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
+        <Button type="submit" disabled={loading} className="min-h-[44px] w-full sm:w-auto">
           {loading ? "Creating..." : "Create Project"}
         </Button>
-        <Button type="button" variant="outline" asChild>
+        <Button type="button" variant="outline" asChild className="min-h-[44px] w-full sm:w-auto">
           <Link href="/projects">Cancel</Link>
         </Button>
       </div>

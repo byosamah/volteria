@@ -184,7 +184,8 @@ export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        {/* MOBILE-FRIENDLY: Header stacks on mobile */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
               Alarms
@@ -194,10 +195,11 @@ export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
             </CardTitle>
             <CardDescription>System alerts for this project</CardDescription>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Filter Selector */}
+          {/* Controls - wrap on mobile */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filter Selector - 44px touch target */}
             <Select value={filter} onValueChange={setFilter}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[160px] min-h-[44px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -209,24 +211,24 @@ export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
               </SelectContent>
             </Select>
 
-            {/* Acknowledge All Button */}
+            {/* Acknowledge All Button - hidden on very small screens */}
             {unacknowledgedCount > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="hidden xs:inline-flex min-h-[44px]">
                     Acknowledge All
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent>
+                <AlertDialogContent className="mx-4 max-w-[calc(100%-2rem)]">
                   <AlertDialogHeader>
                     <AlertDialogTitle>Acknowledge All Alarms?</AlertDialogTitle>
                     <AlertDialogDescription>
                       This will mark all {unacknowledgedCount} unacknowledged alarms as acknowledged.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={acknowledgeAll}>
+                  <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                    <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={acknowledgeAll} className="min-h-[44px]">
                       Acknowledge All
                     </AlertDialogAction>
                   </AlertDialogFooter>
@@ -234,8 +236,8 @@ export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
               </AlertDialog>
             )}
 
-            {/* Refresh Button */}
-            <Button variant="outline" size="sm" onClick={fetchAlarms}>
+            {/* Refresh Button - 44px touch target */}
+            <Button variant="outline" size="sm" onClick={fetchAlarms} className="min-w-[44px] min-h-[44px]">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
                 <path d="M21 3v5h-5" />
@@ -260,64 +262,123 @@ export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
             <p className="text-muted-foreground">No alarms found</p>
           </div>
         ) : (
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Device</TableHead>
-                  <TableHead>Message</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {alarms.map((alarm) => (
-                  <TableRow
-                    key={alarm.id}
-                    className={!alarm.acknowledged ? "bg-red-50 dark:bg-red-950/20" : ""}
-                  >
-                    <TableCell className="font-mono text-sm whitespace-nowrap">
-                      {formatTime(alarm.created_at)}
-                    </TableCell>
-                    <TableCell>{getSeverityBadge(alarm.severity)}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {getAlarmTypeName(alarm.alarm_type)}
-                    </TableCell>
-                    <TableCell>{alarm.device_name || "-"}</TableCell>
-                    <TableCell className="max-w-[300px] truncate">
-                      {alarm.message}
-                    </TableCell>
-                    <TableCell>
+          <>
+            {/* MOBILE: Card view for small screens */}
+            <div className="sm:hidden space-y-3">
+              {alarms.map((alarm) => (
+                <div
+                  key={alarm.id}
+                  className={`rounded-lg border p-3 space-y-2 ${
+                    !alarm.acknowledged ? "bg-red-50 dark:bg-red-950/20 border-red-200" : ""
+                  }`}
+                >
+                  {/* Top row: Severity, Status, Time */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {getSeverityBadge(alarm.severity)}
                       {alarm.acknowledged ? (
-                        <Badge variant="outline">Acknowledged</Badge>
+                        <Badge variant="outline" className="text-xs">Ack&apos;d</Badge>
                       ) : (
-                        <Badge variant="destructive">New</Badge>
+                        <Badge variant="destructive" className="text-xs">New</Badge>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      {!alarm.acknowledged && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => acknowledgeAlarm(alarm.id)}
-                          disabled={acknowledging === alarm.id}
-                        >
-                          {acknowledging === alarm.id ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                          ) : (
-                            "Acknowledge"
-                          )}
-                        </Button>
+                    </div>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {formatTime(alarm.created_at)}
+                    </span>
+                  </div>
+
+                  {/* Type and Device */}
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">{getAlarmTypeName(alarm.alarm_type)}</p>
+                    {alarm.device_name && (
+                      <p className="text-xs text-muted-foreground">Device: {alarm.device_name}</p>
+                    )}
+                  </div>
+
+                  {/* Message */}
+                  <p className="text-sm text-muted-foreground">{alarm.message}</p>
+
+                  {/* Acknowledge button - 44px touch target */}
+                  {!alarm.acknowledged && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => acknowledgeAlarm(alarm.id)}
+                      disabled={acknowledging === alarm.id}
+                      className="w-full min-h-[44px]"
+                    >
+                      {acknowledging === alarm.id ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                      ) : (
+                        "Acknowledge"
                       )}
-                    </TableCell>
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* DESKTOP: Table view for larger screens */}
+            <div className="hidden sm:block rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Device</TableHead>
+                    <TableHead>Message</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {alarms.map((alarm) => (
+                    <TableRow
+                      key={alarm.id}
+                      className={!alarm.acknowledged ? "bg-red-50 dark:bg-red-950/20" : ""}
+                    >
+                      <TableCell className="font-mono text-sm whitespace-nowrap">
+                        {formatTime(alarm.created_at)}
+                      </TableCell>
+                      <TableCell>{getSeverityBadge(alarm.severity)}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {getAlarmTypeName(alarm.alarm_type)}
+                      </TableCell>
+                      <TableCell>{alarm.device_name || "-"}</TableCell>
+                      <TableCell className="max-w-[300px] truncate">
+                        {alarm.message}
+                      </TableCell>
+                      <TableCell>
+                        {alarm.acknowledged ? (
+                          <Badge variant="outline">Acknowledged</Badge>
+                        ) : (
+                          <Badge variant="destructive">New</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {!alarm.acknowledged && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => acknowledgeAlarm(alarm.id)}
+                            disabled={acknowledging === alarm.id}
+                            className="min-h-[44px]"
+                          >
+                            {acknowledging === alarm.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                            ) : (
+                              "Acknowledge"
+                            )}
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

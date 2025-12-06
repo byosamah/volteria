@@ -102,16 +102,18 @@ export default async function ProjectsPage() {
 
   return (
     <DashboardLayout user={{ email: user?.email }}>
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      {/* MOBILE-FRIENDLY: Responsive padding */}
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+        {/* Header - stacks on mobile, row on desktop */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Projects</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-2xl md:text-3xl font-bold">Projects</h1>
+            <p className="text-muted-foreground text-sm md:text-base">
               Manage your hybrid energy sites
             </p>
           </div>
-          <Button asChild>
+          {/* Button - full width on mobile, auto width on desktop */}
+          <Button asChild className="w-full sm:w-auto min-h-[44px]">
             <Link href="/projects/new">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2">
                 <line x1="12" y1="5" x2="12" y2="19" />

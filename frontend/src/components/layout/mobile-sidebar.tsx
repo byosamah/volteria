@@ -1,35 +1,36 @@
 "use client";
 
 /**
- * Sidebar Navigation
+ * Mobile Sidebar
  *
- * Main navigation for the dashboard with links to:
- * - Dashboard (overview)
- * - Projects
- * - Devices
- * - Alarms
- * - Settings
+ * Slide-in navigation drawer for mobile devices.
+ * Uses shadcn Sheet component with "left" side positioning.
+ *
+ * Features:
+ * - 44px minimum tap targets for all navigation items (WCAG 2.2)
+ * - Same navigation items as desktop sidebar
+ * - Closes when clicking a link
+ * - User menu at bottom
  */
 
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useMobileNav } from "./mobile-nav-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { toast } from "sonner";
 
-// Navigation items
+// Navigation items (same as desktop sidebar)
 const navItems = [
   {
     title: "Dashboard",
@@ -86,104 +87,118 @@ const navItems = [
   },
 ];
 
-interface SidebarProps {
+interface MobileSidebarProps {
   user?: {
     email?: string;
     full_name?: string;
   };
 }
 
-export function Sidebar({ user }: SidebarProps) {
+export function MobileSidebar({ user }: MobileSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
 
+  // Get mobile nav state from context
+  const { isOpen, setIsOpen } = useMobileNav();
+
+  // Handle logout
   const handleLogout = async () => {
     await supabase.auth.signOut();
     toast.success("Logged out successfully");
+    setIsOpen(false); // Close sidebar
     router.push("/login");
     router.refresh();
   };
 
+  // Get user initials for avatar
   const userInitials = user?.full_name
     ? user.full_name.split(" ").map((n) => n[0]).join("").toUpperCase()
     : user?.email?.charAt(0).toUpperCase() || "U";
 
+  // Close sidebar when clicking a link
+  const handleLinkClick = () => {
+    setIsOpen(false);
+  };
+
   return (
-    <div className="flex h-screen w-64 flex-col border-r bg-card">
-      {/* Logo */}
-      <div className="flex h-24 items-center pl-5 pr-4 border-b">
-        <div className="flex flex-col">
-          <Image
-            src="/logo.svg"
-            alt="Logo"
-            width={200}
-            height={50}
-            className="h-auto w-auto max-h-14"
-          />
-          <span className="text-[13px] text-muted-foreground tracking-wide">
-            Energy Management
-          </span>
-        </div>
-      </div>
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      <SheetContent side="left" className="w-[280px] p-0 flex flex-col">
+        {/* Header with logo */}
+        <SheetHeader className="p-4 pb-0">
+          <SheetTitle className="flex items-center gap-2">
+            <Image
+              src="/logo.svg"
+              alt="Volteria"
+              width={140}
+              height={35}
+              className="h-9 w-auto"
+            />
+          </SheetTitle>
+          <p className="text-sm text-muted-foreground">Energy Management</p>
+        </SheetHeader>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-4">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href));
+        <Separator className="my-4" />
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                // Added min-h-[44px] for touch-friendly tap targets (WCAG 2.2)
-                "flex items-center gap-3 rounded-lg px-3 py-2 min-h-[44px] text-sm transition-colors",
-                isActive
-                  ? "bg-[#6baf4f] text-white"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              {item.icon}
-              {item.title}
-            </Link>
-          );
-        })}
-      </nav>
+        {/* Navigation - 44px minimum tap targets */}
+        <nav className="flex-1 px-3 space-y-1">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href ||
+              (item.href !== "/" && pathname.startsWith(item.href));
 
-      <Separator />
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={handleLinkClick}
+                className={cn(
+                  // Base styles with 44px min-height for touch targets
+                  "flex items-center gap-3 rounded-lg px-4 min-h-[44px] text-base transition-colors",
+                  // Active state styling
+                  isActive
+                    ? "bg-[#6baf4f] text-white"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                {item.icon}
+                {item.title}
+              </Link>
+            );
+          })}
+        </nav>
 
-      {/* User menu */}
-      <div className="p-4">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="w-full justify-start gap-2">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  {userInitials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col items-start text-sm">
-                <span className="font-medium truncate max-w-[140px]">
-                  {user?.full_name || user?.email || "User"}
+        <Separator />
+
+        {/* User section at bottom */}
+        <div className="p-4 mt-auto">
+          <div className="flex items-center gap-3 mb-3">
+            <Avatar className="h-10 w-10">
+              <AvatarFallback className="bg-primary text-primary-foreground">
+                {userInitials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col min-w-0">
+              <span className="font-medium text-sm truncate">
+                {user?.full_name || user?.email || "User"}
+              </span>
+              {user?.full_name && user?.email && (
+                <span className="text-xs text-muted-foreground truncate">
+                  {user.email}
                 </span>
-              </div>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/settings">Settings</Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-              Log out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+              )}
+            </div>
+          </div>
+
+          {/* Logout button - 44px height */}
+          <Button
+            variant="outline"
+            onClick={handleLogout}
+            className="w-full min-h-[44px] text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            Log out
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -195,15 +195,17 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        {/* MOBILE-FRIENDLY: Header stacks on mobile */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Control Logs</CardTitle>
             <CardDescription>Recent control loop data</CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          {/* Controls - wrap on mobile */}
+          <div className="flex flex-wrap items-center gap-2">
             {/* Time Range Selector */}
             <Select value={timeRange} onValueChange={(value) => { setTimeRange(value); setPage(0); }}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[120px] min-h-[44px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -214,8 +216,8 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
               </SelectContent>
             </Select>
 
-            {/* Export Buttons */}
-            <Button variant="outline" size="sm" onClick={exportCSV}>
+            {/* Export Buttons - hidden on mobile to save space */}
+            <Button variant="outline" size="sm" onClick={exportCSV} className="hidden sm:inline-flex min-h-[44px]">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="7 10 12 15 17 10" />
@@ -223,7 +225,7 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
               </svg>
               CSV
             </Button>
-            <Button variant="outline" size="sm" onClick={exportJSON}>
+            <Button variant="outline" size="sm" onClick={exportJSON} className="hidden sm:inline-flex min-h-[44px]">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="7 10 12 15 17 10" />
@@ -232,8 +234,8 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
               JSON
             </Button>
 
-            {/* Refresh Button */}
-            <Button variant="outline" size="sm" onClick={fetchLogs}>
+            {/* Refresh Button - 44px touch target */}
+            <Button variant="outline" size="sm" onClick={fetchLogs} className="min-w-[44px] min-h-[44px]">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
                 <path d="M21 3v5h-5" />
@@ -255,7 +257,46 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
           </p>
         ) : (
           <>
-            <div className="rounded-md border overflow-x-auto">
+            {/* MOBILE: Card view for small screens */}
+            <div className="sm:hidden space-y-3">
+              {logs.map((log) => (
+                <div key={log.id} className="rounded-lg border p-3 space-y-2">
+                  {/* Time and Status row */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {formatTime(log.timestamp)}
+                    </span>
+                    {log.safe_mode_active ? (
+                      <Badge variant="destructive" className="text-xs">Safe Mode</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs">Normal</Badge>
+                    )}
+                  </div>
+                  {/* Power values in 2x2 grid */}
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Load</span>
+                      <span className="font-medium">{log.total_load_kw?.toFixed(1) ?? "-"} kW</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">DG</span>
+                      <span className="font-medium">{log.dg_power_kw?.toFixed(1) ?? "-"} kW</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Solar</span>
+                      <span className="font-medium text-[#6baf4f]">{log.solar_output_kw?.toFixed(1) ?? "-"} kW</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Limit</span>
+                      <span className="font-medium">{log.solar_limit_pct?.toFixed(0) ?? "-"}%</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* DESKTOP: Table view for larger screens */}
+            <div className="hidden sm:block rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -302,17 +343,18 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
               </Table>
             </div>
 
-            {/* Pagination */}
-            <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-muted-foreground">
+            {/* Pagination - responsive with 44px touch targets */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mt-4">
+              <p className="text-sm text-muted-foreground text-center sm:text-left">
                 Showing {logs.length} records
               </p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 justify-center sm:justify-end">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                   disabled={page === 0}
+                  className="min-h-[44px] min-w-[100px]"
                 >
                   Previous
                 </Button>
@@ -321,6 +363,7 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
                   size="sm"
                   onClick={() => setPage((p) => p + 1)}
                   disabled={!hasMore}
+                  className="min-h-[44px] min-w-[100px]"
                 >
                   Next
                 </Button>

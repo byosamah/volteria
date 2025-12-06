@@ -72,11 +72,12 @@ export default async function DevicesPage() {
 
   return (
     <DashboardLayout user={{ email: user?.email }}>
-      <div className="p-6 space-y-6">
-        {/* Header */}
+      {/* MOBILE-FRIENDLY: Responsive padding */}
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+        {/* Header - responsive text sizes */}
         <div>
-          <h1 className="text-3xl font-bold">Device Templates</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold">Device Templates</h1>
+          <p className="text-muted-foreground text-sm md:text-base">
             Supported devices and their Modbus configurations
           </p>
         </div>
