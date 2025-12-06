@@ -27,7 +27,7 @@ export default async function NewProjectPage() {
         <div>
           <h1 className="text-3xl font-bold">Create New Project</h1>
           <p className="text-muted-foreground">
-            Set up a new solar-diesel hybrid site
+            Set up a new hybrid energy site
           </p>
         </div>
 

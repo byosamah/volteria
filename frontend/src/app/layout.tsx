@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Solar Diesel Controller",
-  description: "Industrial solar-diesel hybrid power management system",
+  title: "Volteria - Energy Management",
+  description: "Industrial hybrid power management system",
 };
 
 export default function RootLayout({

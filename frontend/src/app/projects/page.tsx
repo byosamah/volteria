@@ -108,7 +108,7 @@ export default async function ProjectsPage() {
           <div>
             <h1 className="text-3xl font-bold">Projects</h1>
             <p className="text-muted-foreground">
-              Manage your solar-diesel hybrid sites
+              Manage your hybrid energy sites
             </p>
           </div>
           <Button asChild>
@@ -134,7 +134,7 @@ export default async function ProjectsPage() {
               </div>
               <h3 className="text-lg font-semibold mb-2">No projects yet</h3>
               <p className="text-muted-foreground text-center max-w-sm mb-4">
-                Create your first project to start monitoring your solar-diesel hybrid system.
+                Create your first project to start monitoring your hybrid energy system.
               </p>
               <Button asChild>
                 <Link href="/projects/new">Create Project</Link>
