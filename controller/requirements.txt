@@ -1,0 +1,25 @@
+# Solar Diesel Hybrid Controller - Dependencies
+
+# Modbus communication
+pymodbus>=3.6.0
+
+# Async support
+asyncio-mqtt>=0.16.0  # Optional: for future MQTT support
+
+# Database
+supabase>=2.0.0
+
+# Configuration
+pyyaml>=6.0.0
+
+# Scheduling
+apscheduler>=3.10.0
+
+# HTTP client for cloud sync
+httpx>=0.27.0
+
+# Logging
+python-json-logger>=2.0.0
+
+# Environment variables
+python-dotenv>=1.0.0

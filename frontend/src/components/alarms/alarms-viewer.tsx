@@ -1,0 +1,325 @@
+"use client";
+
+/**
+ * Alarms Viewer Component
+ *
+ * Displays alarms with:
+ * - Filtering by severity and status
+ * - Acknowledge functionality
+ * - Bulk acknowledge
+ */
+
+import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
+// Alarm type
+interface Alarm {
+  id: string;
+  alarm_type: string;
+  device_name: string | null;
+  message: string;
+  severity: string;
+  acknowledged: boolean;
+  acknowledged_by: string | null;
+  acknowledged_at: string | null;
+  resolved: boolean;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+interface AlarmsViewerProps {
+  projectId: string;
+}
+
+export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
+  const [alarms, setAlarms] = useState<Alarm[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all"); // all, unacknowledged, critical, warning, info
+  const [acknowledging, setAcknowledging] = useState<string | null>(null);
+
+  // Fetch alarms
+  const fetchAlarms = async () => {
+    setLoading(true);
+    const supabase = createClient();
+
+    let query = supabase
+      .from("alarms")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    // Apply filters
+    if (filter === "unacknowledged") {
+      query = query.eq("acknowledged", false);
+    } else if (filter === "critical" || filter === "warning" || filter === "info") {
+      query = query.eq("severity", filter);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error fetching alarms:", error);
+    } else {
+      setAlarms(data || []);
+    }
+    setLoading(false);
+  };
+
+  // Fetch alarms when filter changes
+  useEffect(() => {
+    fetchAlarms();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, projectId]);
+
+  // Acknowledge single alarm
+  const acknowledgeAlarm = async (alarmId: string) => {
+    setAcknowledging(alarmId);
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from("alarms")
+      .update({
+        acknowledged: true,
+        acknowledged_at: new Date().toISOString(),
+      })
+      .eq("id", alarmId);
+
+    if (error) {
+      console.error("Error acknowledging alarm:", error);
+    } else {
+      // Refresh the list
+      fetchAlarms();
+    }
+    setAcknowledging(null);
+  };
+
+  // Acknowledge all unacknowledged alarms
+  const acknowledgeAll = async () => {
+    setLoading(true);
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from("alarms")
+      .update({
+        acknowledged: true,
+        acknowledged_at: new Date().toISOString(),
+      })
+      .eq("project_id", projectId)
+      .eq("acknowledged", false);
+
+    if (error) {
+      console.error("Error acknowledging all alarms:", error);
+    } else {
+      fetchAlarms();
+    }
+  };
+
+  // Format timestamp for display
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+  };
+
+  // Get severity badge variant
+  const getSeverityBadge = (severity: string) => {
+    switch (severity) {
+      case "critical":
+        return <Badge variant="destructive">Critical</Badge>;
+      case "warning":
+        return <Badge className="bg-amber-500 hover:bg-amber-600">Warning</Badge>;
+      case "info":
+        return <Badge variant="secondary">Info</Badge>;
+      default:
+        return <Badge variant="outline">{severity}</Badge>;
+    }
+  };
+
+  // Get alarm type display name
+  const getAlarmTypeName = (type: string) => {
+    const names: Record<string, string> = {
+      communication_lost: "Communication Lost",
+      control_error: "Control Error",
+      safe_mode_triggered: "Safe Mode Triggered",
+      not_reporting: "Not Reporting",
+      controller_offline: "Controller Offline",
+      write_failed: "Write Failed",
+      command_not_taken: "Command Not Taken",
+    };
+    return names[type] || type;
+  };
+
+  // Count unacknowledged alarms
+  const unacknowledgedCount = alarms.filter((a) => !a.acknowledged).length;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              Alarms
+              {unacknowledgedCount > 0 && (
+                <Badge variant="destructive">{unacknowledgedCount} new</Badge>
+              )}
+            </CardTitle>
+            <CardDescription>System alerts for this project</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Filter Selector */}
+            <Select value={filter} onValueChange={setFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Alarms</SelectItem>
+                <SelectItem value="unacknowledged">Unacknowledged</SelectItem>
+                <SelectItem value="critical">Critical Only</SelectItem>
+                <SelectItem value="warning">Warnings Only</SelectItem>
+                <SelectItem value="info">Info Only</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Acknowledge All Button */}
+            {unacknowledgedCount > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    Acknowledge All
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Acknowledge All Alarms?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will mark all {unacknowledgedCount} unacknowledged alarms as acknowledged.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={acknowledgeAll}>
+                      Acknowledge All
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+
+            {/* Refresh Button */}
+            <Button variant="outline" size="sm" onClick={fetchAlarms}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                <path d="M8 16H3v5" />
+              </svg>
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          </div>
+        ) : alarms.length === 0 ? (
+          <div className="text-center py-8">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-12 w-12 mx-auto text-muted-foreground mb-4">
+              <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+            <p className="text-muted-foreground">No alarms found</p>
+          </div>
+        ) : (
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Severity</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Device</TableHead>
+                  <TableHead>Message</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {alarms.map((alarm) => (
+                  <TableRow
+                    key={alarm.id}
+                    className={!alarm.acknowledged ? "bg-red-50 dark:bg-red-950/20" : ""}
+                  >
+                    <TableCell className="font-mono text-sm whitespace-nowrap">
+                      {formatTime(alarm.created_at)}
+                    </TableCell>
+                    <TableCell>{getSeverityBadge(alarm.severity)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {getAlarmTypeName(alarm.alarm_type)}
+                    </TableCell>
+                    <TableCell>{alarm.device_name || "-"}</TableCell>
+                    <TableCell className="max-w-[300px] truncate">
+                      {alarm.message}
+                    </TableCell>
+                    <TableCell>
+                      {alarm.acknowledged ? (
+                        <Badge variant="outline">Acknowledged</Badge>
+                      ) : (
+                        <Badge variant="destructive">New</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {!alarm.acknowledged && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => acknowledgeAlarm(alarm.id)}
+                          disabled={acknowledging === alarm.id}
+                        >
+                          {acknowledging === alarm.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                          ) : (
+                            "Acknowledge"
+                          )}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

@@ -1,0 +1,13 @@
+# Solar Diesel Hybrid Controller - Simulator Dependencies
+
+# Modbus server simulation
+pymodbus>=3.6.0
+
+# Configuration
+pyyaml>=6.0.0
+
+# CLI interface
+click>=8.1.0
+
+# Logging
+python-json-logger>=2.0.0

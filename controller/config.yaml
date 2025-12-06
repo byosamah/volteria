@@ -1,0 +1,95 @@
+# Solar Diesel Hybrid Controller - Site Configuration
+# This is an example configuration for simulation/testing
+
+# ============================================
+# SITE IDENTIFICATION
+# ============================================
+site:
+  id: "sim-site-001"
+  name: "Stone Crushing Site 1 (Simulation)"
+  location: "UAE"
+
+# ============================================
+# SITE CONTROLLER
+# ============================================
+site_controller:
+  serial_number: "RPI5-SIM-001"
+  hardware_type: "raspberry_pi_5"
+  name: "Simulation Controller"
+  firmware_version: "1.0.0"
+
+# ============================================
+# CONTROL SETTINGS
+# ============================================
+control:
+  interval_ms: 1000              # Control loop frequency (1 second)
+  dg_reserve_kw: 50              # Minimum DG reserve (cannot be negative)
+  operation_mode: "zero_dg_reverse"  # Current active mode
+
+# ============================================
+# LOGGING SETTINGS
+# ============================================
+logging:
+  local_interval_ms: 1000        # Log locally every 1 second
+  cloud_sync_interval_ms: 5000   # Push batch to cloud every 5 seconds
+  local_retention_days: 7        # Keep local data for 7 days
+
+# ============================================
+# SAFE MODE SETTINGS
+# ============================================
+safe_mode:
+  enabled: true
+  type: "rolling_average"        # "time_based" or "rolling_average"
+  timeout_s: 30                  # For time_based
+  rolling_window_minutes: 3      # For rolling_average
+  threshold_pct: 80              # Solar avg > 80% of load = risk
+
+# ============================================
+# DEVICES
+# ============================================
+devices:
+
+  # LOAD METERS (RTU via Netbiter Gateway)
+  load_meters:
+    - name: "Load Meter A"
+      template: "meatrol_me431"
+      protocol: "rtu_gateway"
+      gateway_ip: "127.0.0.1"  # Localhost for simulation
+      gateway_port: 5020
+      slave_id: 2
+
+    - name: "Load Meter B"
+      template: "meatrol_me431"
+      protocol: "rtu_gateway"
+      gateway_ip: "127.0.0.1"
+      gateway_port: 5020
+      slave_id: 3
+
+  # SOLAR INVERTERS (RTU via Netbiter Gateway)
+  inverters:
+    - name: "Solar Inverter 1"
+      template: "sungrow_150kw"
+      protocol: "rtu_gateway"
+      gateway_ip: "127.0.0.1"
+      gateway_port: 5020
+      slave_id: 1
+      rated_power_kw: 150
+
+  # DIESEL GENERATORS (Direct Modbus TCP)
+  # For simulation, we'll use the simulator server
+  generators:
+    - name: "DG-1"
+      template: "comap_ig500"
+      protocol: "tcp"
+      ip: "127.0.0.1"
+      port: 5020
+      slave_id: 1
+      rated_power_kva: 800
+
+# ============================================
+# CLOUD CONNECTION
+# ============================================
+cloud:
+  supabase_url: "https://usgxhzdctzthcqxyxfxl.supabase.co"
+  supabase_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I"
+  sync_enabled: true
