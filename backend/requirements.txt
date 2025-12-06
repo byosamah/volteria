@@ -18,8 +18,8 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 email-validator==2.1.0
 
-# HTTP Client (for Supabase)
-httpx==0.26.0
+# HTTP Client (for Supabase) - must be <0.25.0 for supabase compatibility
+httpx==0.24.1
 
 # Utilities
 python-multipart==0.0.6
@@ -28,7 +28,6 @@ python-dotenv==1.0.0
 # Development
 pytest==7.4.4
 pytest-asyncio==0.23.3
-httpx==0.26.0
 
 # CORS
 # (included in FastAPI)
