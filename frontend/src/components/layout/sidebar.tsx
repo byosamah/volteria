@@ -6,11 +6,13 @@
  * Main navigation for the dashboard with links to:
  * - Dashboard (overview)
  * - Projects
- * - Devices
+ * - Device Templates
  * - Alarms
  * - Settings
+ * - Admin section (for super_admin and backend_admin)
  */
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
@@ -53,7 +55,7 @@ const navItems = [
     ),
   },
   {
-    title: "Devices",
+    title: "Device Templates",
     href: "/devices",
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
@@ -75,7 +77,7 @@ const navItems = [
     ),
   },
   {
-    title: "Settings",
+    title: "System Settings",
     href: "/settings",
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
@@ -86,10 +88,64 @@ const navItems = [
   },
 ];
 
+// Admin navigation items - visible to super_admin and backend_admin only
+const adminNavItems = [
+  {
+    title: "Enterprises",
+    href: "/admin/enterprises",
+    // Only super_admin can manage enterprises
+    roles: ["super_admin"],
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M3 21h18" />
+        <path d="M9 8h1" />
+        <path d="M9 12h1" />
+        <path d="M9 16h1" />
+        <path d="M14 8h1" />
+        <path d="M14 12h1" />
+        <path d="M14 16h1" />
+        <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
+      </svg>
+    ),
+  },
+  {
+    title: "Controllers",
+    href: "/admin/controllers",
+    roles: ["super_admin", "backend_admin"],
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <rect width="20" height="14" x="2" y="3" rx="2" />
+        <line x1="8" x2="16" y1="21" y2="21" />
+        <line x1="12" x2="12" y1="17" y2="21" />
+      </svg>
+    ),
+  },
+  {
+    title: "Hardware",
+    href: "/admin/hardware",
+    roles: ["super_admin", "backend_admin"],
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <rect x="9" y="9" width="6" height="6" />
+        <path d="M9 1v3" />
+        <path d="M15 1v3" />
+        <path d="M9 20v3" />
+        <path d="M15 20v3" />
+        <path d="M20 9h3" />
+        <path d="M20 14h3" />
+        <path d="M1 9h3" />
+        <path d="M1 14h3" />
+      </svg>
+    ),
+  },
+];
+
 interface SidebarProps {
   user?: {
     email?: string;
     full_name?: string;
+    role?: string;
   };
 }
 
@@ -98,6 +154,33 @@ export function Sidebar({ user }: SidebarProps) {
   const router = useRouter();
   const supabase = createClient();
 
+  // Track user role (fetched on mount if not provided)
+  const [userRole, setUserRole] = useState<string | undefined>(user?.role);
+
+  // Fetch user role on mount if not provided via props
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      if (user?.role) {
+        setUserRole(user.role);
+        return;
+      }
+
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser?.id) {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", authUser.id)
+          .single();
+        if (userData?.role) {
+          setUserRole(userData.role);
+        }
+      }
+    };
+
+    fetchUserRole();
+  }, [user?.role, supabase]);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     toast.success("Logged out successfully");
@@ -105,9 +188,25 @@ export function Sidebar({ user }: SidebarProps) {
     router.refresh();
   };
 
+  // Get user initials for avatar
   const userInitials = user?.full_name
     ? user.full_name.split(" ").map((n) => n[0]).join("").toUpperCase()
     : user?.email?.charAt(0).toUpperCase() || "U";
+
+  // Format display name as "J. Smith" (first initial + last name)
+  // Falls back to email if no full_name available
+  const formatDisplayName = () => {
+    if (user?.full_name) {
+      const parts = user.full_name.trim().split(" ");
+      if (parts.length >= 2) {
+        const firstInitial = parts[0].charAt(0).toUpperCase();
+        const lastName = parts[parts.length - 1];
+        return `${firstInitial}. ${lastName}`;
+      }
+      return user.full_name; // Single name, just return it
+    }
+    return user?.email || "User";
+  };
 
   return (
     <div className="flex h-screen w-64 flex-col border-r bg-card">
@@ -128,7 +227,7 @@ export function Sidebar({ user }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = pathname === item.href ||
             (item.href !== "/" && pathname.startsWith(item.href));
@@ -150,6 +249,39 @@ export function Sidebar({ user }: SidebarProps) {
             </Link>
           );
         })}
+
+        {/* Admin section - only shown to super_admin and backend_admin */}
+        {userRole && (userRole === "super_admin" || userRole === "backend_admin") && (
+          <>
+            <div className="pt-4 pb-2">
+              <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Admin
+              </span>
+            </div>
+            {adminNavItems
+              .filter((item) => item.roles.includes(userRole))
+              .map((item) => {
+                const isActive = pathname === item.href ||
+                  pathname.startsWith(item.href);
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 min-h-[44px] text-sm transition-colors",
+                      isActive
+                        ? "bg-[#6baf4f] text-white"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {item.icon}
+                    {item.title}
+                  </Link>
+                );
+              })}
+          </>
+        )}
       </nav>
 
       <Separator />
@@ -166,7 +298,7 @@ export function Sidebar({ user }: SidebarProps) {
               </Avatar>
               <div className="flex flex-col items-start text-sm">
                 <span className="font-medium truncate max-w-[140px]">
-                  {user?.full_name || user?.email || "User"}
+                  {formatDisplayName()}
                 </span>
               </div>
             </Button>
@@ -175,7 +307,7 @@ export function Sidebar({ user }: SidebarProps) {
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/settings">Settings</Link>
+              <Link href="/account">Account Settings</Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-red-600">

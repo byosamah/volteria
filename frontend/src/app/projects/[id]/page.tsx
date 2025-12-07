@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { ControlLogsViewer } from "@/components/logs/control-logs-viewer";
 import { AlarmsViewer } from "@/components/alarms/alarms-viewer";
 import { DeviceList } from "@/components/devices/device-list";
+import { SyncStatus } from "@/components/projects/sync-status";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -198,6 +199,13 @@ export default async function ProjectDetailPage({
               </Link>
               <h1 className="text-2xl md:text-3xl font-bold">{project.name}</h1>
               <StatusBadge status={project.controller_status} />
+              {/* Sync Status - shows whether config matches controller */}
+              <SyncStatus
+                projectId={project.id}
+                controllerStatus={project.controller_status}
+                updatedAt={project.updated_at}
+                configSyncedAt={project.config_synced_at}
+              />
             </div>
             <p className="text-muted-foreground text-sm md:text-base">
               {project.location || "No location set"}
@@ -211,7 +219,7 @@ export default async function ProjectDetailPage({
                   <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
-                Settings
+                Site Settings
               </Link>
             </Button>
           </div>
@@ -250,12 +258,27 @@ export default async function ProjectDetailPage({
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>DG Power</CardDescription>
-              <CardTitle className="text-3xl">
+              {/* DG Power color coding:
+                  - Red if negative (reverse feeding to DG - critical!)
+                  - Orange if below DG reserve (warning)
+                  - Default otherwise */}
+              <CardTitle className={`text-3xl ${
+                dgKw < 0
+                  ? "text-red-600"
+                  : dgKw < project.dg_reserve_kw
+                    ? "text-orange-500"
+                    : ""
+              }`}>
                 {dgKw.toFixed(1)} <span className="text-lg font-normal">kW</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <PowerGauge label="" value={dgKw} max={totalCapacity} color="bg-slate-500" />
+              <PowerGauge
+                label=""
+                value={Math.abs(dgKw)}
+                max={totalCapacity}
+                color={dgKw < 0 ? "bg-red-500" : dgKw < project.dg_reserve_kw ? "bg-orange-500" : "bg-slate-500"}
+              />
             </CardContent>
           </Card>
 

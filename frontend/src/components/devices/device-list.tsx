@@ -4,7 +4,7 @@
  * Device List Component
  *
  * Displays devices with edit and delete functionality.
- * Groups devices by type (load meters, inverters, generators).
+ * Groups devices by type (energy meters, inverters, generators).
  */
 
 import { useState } from "react";
@@ -87,10 +87,51 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
     setEditGatewayPort(device.gateway_port || 502);
   };
 
+  // Check for Modbus address conflicts when editing
+  const checkEditConflicts = async (): Promise<string | null> => {
+    if (!editDevice) return null;
+
+    // Check other devices in the same project for conflicts
+    for (const device of devices) {
+      // Skip the device being edited
+      if (device.id === editDevice.id) continue;
+
+      if (editDevice.protocol === "tcp" && device.protocol === "tcp") {
+        // TCP: Check IP + Port + Slave ID
+        if (
+          device.ip_address === editIpAddress.trim() &&
+          device.port === editPort &&
+          device.slave_id === editSlaveId
+        ) {
+          return `Conflict: Device "${device.name}" already uses IP ${device.ip_address}:${device.port} with Slave ID ${device.slave_id}`;
+        }
+      } else if (editDevice.protocol === "rtu_gateway" && device.protocol === "rtu_gateway") {
+        // RTU Gateway: Check Gateway IP + Port + Slave ID
+        if (
+          device.gateway_ip === editGatewayIp.trim() &&
+          device.gateway_port === editGatewayPort &&
+          device.slave_id === editSlaveId
+        ) {
+          return `Conflict: Device "${device.name}" already uses Gateway ${device.gateway_ip}:${device.gateway_port} with Slave ID ${device.slave_id}`;
+        }
+      }
+    }
+
+    return null; // No conflicts
+  };
+
   // Handle edit submit
   const handleEditSubmit = async () => {
     if (!editDevice) return;
     setLoading(true);
+
+    // Check for Modbus address conflicts
+    const conflictError = await checkEditConflicts();
+    if (conflictError) {
+      toast.error(conflictError);
+      setLoading(false);
+      return;
+    }
 
     const supabase = createClient();
 
@@ -171,7 +212,7 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
 
   // Type configurations
   const typeConfigs: Record<string, { title: string; description: string }> = {
-    load_meter: { title: "Load Meters", description: "Power measurement devices" },
+    load_meter: { title: "Energy Meters", description: "Power measurement devices" },
     inverter: { title: "Solar Inverters", description: "PV power conversion" },
     dg: { title: "Diesel Generators", description: "Generator controllers" },
     unknown: { title: "Other Devices", description: "Uncategorized devices" },
@@ -192,9 +233,11 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
           <p className="text-sm text-muted-foreground truncate">
             {device.device_templates?.brand} {device.device_templates?.model}
           </p>
-          {/* Slave ID shown on mobile */}
+          {/* Slave ID and IP shown on mobile */}
           <p className="text-xs text-muted-foreground sm:hidden">
             Slave ID: {device.slave_id}
+            {device.ip_address && ` | ${device.ip_address}`}
+            {device.gateway_ip && ` | ${device.gateway_ip}`}
           </p>
         </div>
       </div>
@@ -202,6 +245,9 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
       <div className="flex items-center gap-2 justify-end">
         <span className="text-sm text-muted-foreground mr-2 hidden sm:inline">
           Slave ID: {device.slave_id}
+          {/* Show IP address based on protocol */}
+          {device.ip_address && ` | IP: ${device.ip_address}`}
+          {device.gateway_ip && ` | Gateway: ${device.gateway_ip}`}
         </span>
         <Button
           variant="ghost"
@@ -232,7 +278,7 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
 
   return (
     <>
-      {/* Load Meters */}
+      {/* Energy Meters */}
       {devicesByType["load_meter"] && devicesByType["load_meter"].length > 0 && (
         <Card>
           <CardHeader>
@@ -406,16 +452,23 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog - MOBILE-FRIENDLY */}
+      {/* Delete Confirmation Dialog - MOBILE-FRIENDLY & COMPACT */}
       <AlertDialog open={!!deleteDevice} onOpenChange={() => setDeleteDevice(null)}>
-        <AlertDialogContent className="mx-4 max-w-[calc(100%-2rem)]">
-          <AlertDialogHeader>
+        <AlertDialogContent className="mx-4 max-w-sm sm:max-w-md">
+          <AlertDialogHeader className="text-center sm:text-left">
+            <div className="mx-auto sm:mx-0 mb-4 h-12 w-12 rounded-full bg-red-100 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-red-600">
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              </svg>
+            </div>
             <AlertDialogTitle>Delete Device?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to remove &ldquo;{deleteDevice?.name}&rdquo;? This action cannot be undone.
+            <AlertDialogDescription className="text-center sm:text-left">
+              Remove <span className="font-medium text-foreground">&ldquo;{deleteDevice?.name}&rdquo;</span> from this project? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
+          <AlertDialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}

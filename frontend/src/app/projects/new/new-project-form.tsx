@@ -236,6 +236,70 @@ export function NewProjectForm() {
 
       <Separator />
 
+      {/* Logging Settings */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium">Logging Settings</h3>
+        <p className="text-sm text-muted-foreground">
+          Configure data logging intervals
+        </p>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="logging_local_interval_ms">Local Logging Interval (ms)</Label>
+            <Input
+              id="logging_local_interval_ms"
+              name="logging_local_interval_ms"
+              type="number"
+              min={100}
+              step={100}
+              value={formData.logging_local_interval_ms}
+              onChange={handleChange}
+              className="min-h-[44px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              How often data is saved locally on controller
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="logging_cloud_interval_ms">Cloud Sync Interval (ms)</Label>
+            <Input
+              id="logging_cloud_interval_ms"
+              name="logging_cloud_interval_ms"
+              type="number"
+              min={1000}
+              step={1000}
+              value={formData.logging_cloud_interval_ms}
+              onChange={handleChange}
+              className="min-h-[44px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              How often data is synced to cloud
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="logging_local_retention_days">Local Retention (days)</Label>
+          <Input
+            id="logging_local_retention_days"
+            name="logging_local_retention_days"
+            type="number"
+            min={1}
+            max={365}
+            step={1}
+            value={formData.logging_local_retention_days}
+            onChange={handleChange}
+            className="min-h-[44px] max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground">
+            How long data is kept on local controller
+          </p>
+        </div>
+      </div>
+
+      <Separator />
+
       {/* Safe Mode Settings */}
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

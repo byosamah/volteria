@@ -101,6 +101,54 @@ export function AddDeviceForm({ projectId, templates }: AddDeviceFormProps) {
     }
   };
 
+  // Check for Modbus address conflicts
+  // Prevents duplicate Slave ID + IP/Port combinations
+  const checkForConflicts = async (): Promise<string | null> => {
+    // Query existing devices in this project
+    const { data: existingDevices, error } = await supabase
+      .from("project_devices")
+      .select("name, protocol, ip_address, port, gateway_ip, gateway_port, serial_port, slave_id")
+      .eq("project_id", projectId)
+      .eq("enabled", true);
+
+    if (error || !existingDevices) {
+      return null; // Can't check, allow submission
+    }
+
+    // Check for conflicts based on protocol
+    for (const device of existingDevices) {
+      if (formData.protocol === "tcp" && device.protocol === "tcp") {
+        // TCP: Check IP + Port + Slave ID
+        if (
+          device.ip_address === formData.ip_address.trim() &&
+          device.port === formData.port &&
+          device.slave_id === formData.slave_id
+        ) {
+          return `Conflict: Device "${device.name}" already uses IP ${device.ip_address}:${device.port} with Slave ID ${device.slave_id}`;
+        }
+      } else if (formData.protocol === "rtu_gateway" && device.protocol === "rtu_gateway") {
+        // RTU Gateway: Check Gateway IP + Port + Slave ID
+        if (
+          device.gateway_ip === formData.gateway_ip.trim() &&
+          device.gateway_port === formData.gateway_port &&
+          device.slave_id === formData.slave_id
+        ) {
+          return `Conflict: Device "${device.name}" already uses Gateway ${device.gateway_ip}:${device.gateway_port} with Slave ID ${device.slave_id}`;
+        }
+      } else if (formData.protocol === "rtu_direct" && device.protocol === "rtu_direct") {
+        // RTU Direct: Check Serial Port + Slave ID
+        if (
+          device.serial_port === formData.serial_port.trim() &&
+          device.slave_id === formData.slave_id
+        ) {
+          return `Conflict: Device "${device.name}" already uses ${device.serial_port} with Slave ID ${device.slave_id}`;
+        }
+      }
+    }
+
+    return null; // No conflicts
+  };
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,6 +187,14 @@ export function AddDeviceForm({ projectId, templates }: AddDeviceFormProps) {
           setLoading(false);
           return;
         }
+      }
+
+      // Check for Modbus address conflicts
+      const conflictError = await checkForConflicts();
+      if (conflictError) {
+        toast.error(conflictError);
+        setLoading(false);
+        return;
       }
 
       // Create device in Supabase
@@ -190,7 +246,7 @@ export function AddDeviceForm({ projectId, templates }: AddDeviceFormProps) {
   // Type labels for optgroup
   const typeLabels: Record<string, string> = {
     inverter: "Solar Inverters",
-    load_meter: "Load Meters",
+    load_meter: "Energy Meters",
     dg: "Generator Controllers",
   };
 

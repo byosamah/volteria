@@ -178,7 +178,8 @@ export default async function ProjectsPage() {
                         </div>
                       </div>
 
-                      {project.controller_last_seen && (
+                      {/* Only show "Last seen" when controller is offline */}
+                      {project.controller_status === "offline" && project.controller_last_seen && (
                         <p className="text-xs text-muted-foreground pt-2 border-t">
                           Last seen: {new Date(project.controller_last_seen).toLocaleString()}
                         </p>

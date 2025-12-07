@@ -68,6 +68,7 @@ export default async function DashboardPage() {
     name: string;
     location: string | null;
     controller_status: string;
+    controller_last_seen: string | null;
   }> = [];
   let projectCount = 0;
   let onlineCount = 0;
@@ -75,7 +76,7 @@ export default async function DashboardPage() {
   try {
     const { data, error } = await supabase
       .from("projects")
-      .select("id, name, location, controller_status")
+      .select("id, name, location, controller_status, controller_last_seen")
       .eq("is_active", true)
       .order("name")
       .limit(6);
@@ -123,7 +124,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground text-sm md:text-base">
-            Overview of your hybrid energy systems
+            Overview of your Energy management systems
           </p>
         </div>
 
@@ -214,6 +215,12 @@ export default async function DashboardPage() {
                         <p className="text-sm text-muted-foreground">
                           {project.location || "No location"}
                         </p>
+                        {/* Show last seen timestamp if offline */}
+                        {project.controller_status === "offline" && project.controller_last_seen && (
+                          <p className="text-xs text-muted-foreground">
+                            Last seen: {new Date(project.controller_last_seen).toLocaleString()}
+                          </p>
+                        )}
                       </div>
                       <StatusBadge status={project.controller_status} />
                     </Link>
