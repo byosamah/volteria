@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, projects, devices, logs, alarms
+from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware
 
 
 # ============================================
@@ -157,6 +157,25 @@ app.include_router(
     alarms.router,
     prefix="/api/alarms",
     tags=["Alarms"]
+)
+
+# Admin routers for enterprise management
+app.include_router(
+    enterprises.router,
+    prefix="/api/enterprises",
+    tags=["Enterprises"]
+)
+
+app.include_router(
+    controllers.router,
+    prefix="/api/controllers",
+    tags=["Controllers"]
+)
+
+app.include_router(
+    hardware.router,
+    prefix="/api/hardware",
+    tags=["Hardware"]
 )
 
 

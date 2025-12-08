@@ -1,0 +1,505 @@
+"use client";
+
+/**
+ * Enterprise Detail Tabs Component
+ *
+ * Client component for displaying enterprise data in tabs:
+ * - Controllers Tab: List of controllers claimed by this enterprise
+ * - Projects Tab: List of projects belonging to this enterprise
+ * - Users Tab: List of users assigned to this enterprise
+ * - Settings Tab: Edit enterprise info, toggle active status
+ */
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import Link from "next/link";
+
+// Types for the component props
+interface Enterprise {
+  id: string;
+  name: string;
+  enterprise_id: string;
+  contact_email: string | null;
+  contact_phone: string | null;
+  address: string | null;
+  city: string | null;
+  country: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface Controller {
+  id: string;
+  serial_number: string;
+  status: string;
+  firmware_version: string | null;
+  passcode: string | null;
+  created_at: string;
+  claimed_at: string | null;
+  approved_hardware: {
+    name: string;
+    hardware_type: string;
+  } | null;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  location: string | null;
+  controller_status: string;
+  created_at: string;
+}
+
+interface User {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface EnterpriseDetailTabsProps {
+  enterprise: Enterprise;
+  controllers: Controller[];
+  projects: Project[];
+  users: User[];
+}
+
+export function EnterpriseDetailTabs({
+  enterprise,
+  controllers,
+  projects,
+  users,
+}: EnterpriseDetailTabsProps) {
+  const router = useRouter();
+  const supabase = createClient();
+  const [saving, setSaving] = useState(false);
+
+  // Settings form state
+  const [formData, setFormData] = useState({
+    contact_email: enterprise.contact_email || "",
+    contact_phone: enterprise.contact_phone || "",
+    address: enterprise.address || "",
+    city: enterprise.city || "",
+    country: enterprise.country || "",
+    is_active: enterprise.is_active,
+  });
+
+  // Handle input changes
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  };
+
+  // Handle settings save
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+
+    try {
+      const { error } = await supabase
+        .from("enterprises")
+        .update({
+          contact_email: formData.contact_email.trim() || null,
+          contact_phone: formData.contact_phone.trim() || null,
+          address: formData.address.trim() || null,
+          city: formData.city.trim() || null,
+          country: formData.country.trim() || null,
+          is_active: formData.is_active,
+        })
+        .eq("id", enterprise.id);
+
+      if (error) {
+        console.error("Error updating enterprise:", error);
+        toast.error(error.message || "Failed to update enterprise");
+        return;
+      }
+
+      toast.success("Enterprise updated successfully");
+      router.refresh();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Get status badge variant for controllers
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "deployed":
+        return <Badge className="bg-green-500">Deployed</Badge>;
+      case "ready":
+        return <Badge className="bg-yellow-500">Ready</Badge>;
+      default:
+        return <Badge variant="secondary">Draft</Badge>;
+    }
+  };
+
+  // Get status badge for controller_status (projects)
+  const getProjectStatusBadge = (status: string) => {
+    switch (status) {
+      case "online":
+        return <Badge className="bg-green-500">Online</Badge>;
+      case "offline":
+        return <Badge variant="destructive">Offline</Badge>;
+      default:
+        return <Badge variant="secondary">Unknown</Badge>;
+    }
+  };
+
+  return (
+    <Tabs defaultValue="controllers" className="w-full">
+      {/* Tab navigation - scrollable on mobile */}
+      <TabsList className="w-full justify-start overflow-x-auto">
+        <TabsTrigger value="controllers" className="flex-shrink-0">
+          Controllers ({controllers.length})
+        </TabsTrigger>
+        <TabsTrigger value="projects" className="flex-shrink-0">
+          Projects ({projects.length})
+        </TabsTrigger>
+        <TabsTrigger value="users" className="flex-shrink-0">
+          Users ({users.length})
+        </TabsTrigger>
+        <TabsTrigger value="settings" className="flex-shrink-0">
+          Settings
+        </TabsTrigger>
+      </TabsList>
+
+      {/* Controllers Tab */}
+      <TabsContent value="controllers" className="mt-4">
+        {controllers.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-muted-foreground">
+                  <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+                  <path d="M12 18h.01" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">No Controllers</h3>
+              <p className="text-muted-foreground text-center max-w-sm">
+                No controllers have been claimed by this enterprise yet.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {controllers.map((controller) => (
+              <Card key={controller.id}>
+                <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-muted-foreground">
+                        <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+                        <path d="M12 18h.01" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-medium">{controller.serial_number}</span>
+                        {getStatusBadge(controller.status)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {controller.approved_hardware?.name || "Unknown Hardware"}
+                        {controller.firmware_version && ` • v${controller.firmware_version}`}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground sm:text-right">
+                    {controller.claimed_at && (
+                      <div>Claimed {new Date(controller.claimed_at).toLocaleDateString()}</div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </TabsContent>
+
+      {/* Projects Tab */}
+      <TabsContent value="projects" className="mt-4">
+        {projects.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-muted-foreground">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">No Projects</h3>
+              <p className="text-muted-foreground text-center max-w-sm">
+                No projects have been created for this enterprise yet.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {projects.map((project) => (
+              <Card key={project.id}>
+                <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-muted-foreground">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                        <polyline points="9 22 9 12 15 12 15 22" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/projects/${project.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {project.name}
+                        </Link>
+                        {getProjectStatusBadge(project.controller_status)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {project.location || "No location"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground sm:text-right">
+                    Created {new Date(project.created_at).toLocaleDateString()}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </TabsContent>
+
+      {/* Users Tab */}
+      <TabsContent value="users" className="mt-4">
+        {users.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-muted-foreground">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">No Users</h3>
+              <p className="text-muted-foreground text-center max-w-sm">
+                No users have been assigned to this enterprise yet.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {users.map((user) => (
+              <Card key={user.id}>
+                <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-sm font-medium text-primary">
+                        {user.full_name
+                          ? user.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+                          : user.email[0].toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{user.full_name || user.email}</span>
+                        <Badge variant={user.is_active ? "default" : "secondary"}>
+                          {user.role?.replace("_", " ") || "user"}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground">{user.email}</div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground sm:text-right">
+                    <div className="flex items-center gap-2 justify-end">
+                      <span className={`h-2 w-2 rounded-full ${user.is_active ? "bg-green-500" : "bg-gray-400"}`} />
+                      {user.is_active ? "Active" : "Inactive"}
+                    </div>
+                    <div>Joined {new Date(user.created_at).toLocaleDateString()}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </TabsContent>
+
+      {/* Settings Tab */}
+      <TabsContent value="settings" className="mt-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Enterprise Settings</CardTitle>
+            <CardDescription>
+              Update enterprise contact information and status.
+              <br />
+              <span className="text-yellow-600 text-xs">
+                Note: Enterprise name cannot be changed after creation.
+              </span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSave} className="space-y-4">
+              {/* Read-only fields */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Enterprise Name</Label>
+                  <Input
+                    value={enterprise.name}
+                    disabled
+                    className="min-h-[44px] bg-muted"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Enterprise ID</Label>
+                  <Input
+                    value={enterprise.enterprise_id}
+                    disabled
+                    className="min-h-[44px] bg-muted font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Editable fields */}
+              <div className="space-y-2">
+                <Label htmlFor="contact_email">Contact Email</Label>
+                <Input
+                  id="contact_email"
+                  name="contact_email"
+                  type="email"
+                  placeholder="e.g., contact@enterprise.com"
+                  value={formData.contact_email}
+                  onChange={handleChange}
+                  className="min-h-[44px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="contact_phone">Contact Phone</Label>
+                <Input
+                  id="contact_phone"
+                  name="contact_phone"
+                  placeholder="e.g., +971 50 123 4567"
+                  value={formData.contact_phone}
+                  onChange={handleChange}
+                  className="min-h-[44px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Input
+                  id="address"
+                  name="address"
+                  placeholder="e.g., 123 Main Street"
+                  value={formData.address}
+                  onChange={handleChange}
+                  className="min-h-[44px]"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="city">City</Label>
+                  <Input
+                    id="city"
+                    name="city"
+                    placeholder="e.g., Dubai"
+                    value={formData.city}
+                    onChange={handleChange}
+                    className="min-h-[44px]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="country">Country</Label>
+                  <Input
+                    id="country"
+                    name="country"
+                    placeholder="e.g., UAE"
+                    value={formData.country}
+                    onChange={handleChange}
+                    className="min-h-[44px]"
+                  />
+                </div>
+              </div>
+
+              {/* Active status toggle */}
+              <div className="flex items-center gap-3 p-4 border rounded-lg">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  name="is_active"
+                  checked={formData.is_active}
+                  onChange={handleChange}
+                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <div>
+                  <Label htmlFor="is_active" className="cursor-pointer">
+                    Enterprise Active
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Inactive enterprises cannot create new projects or claim controllers.
+                  </p>
+                </div>
+              </div>
+
+              {/* Save button */}
+              <div className="flex justify-end pt-4">
+                <Button type="submit" disabled={saving} className="min-h-[44px]">
+                  {saving ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* Danger Zone */}
+        <Card className="mt-4 border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+            <CardDescription>
+              These actions are irreversible. Please be careful.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 border border-destructive/30 rounded-lg">
+              <div>
+                <p className="font-medium">Deactivate Enterprise</p>
+                <p className="text-sm text-muted-foreground">
+                  This will prevent any activity from this enterprise.
+                </p>
+              </div>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setFormData((prev) => ({ ...prev, is_active: false }));
+                  toast.info("Toggle saved. Click 'Save Changes' to apply.");
+                }}
+                disabled={!formData.is_active}
+                className="min-h-[44px]"
+              >
+                Deactivate
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
+  );
+}

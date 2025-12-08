@@ -60,8 +60,10 @@ class CurrentUser(BaseModel):
 ROLE_HIERARCHY = {
     "viewer": 1,
     "configurator": 2,
-    "admin": 3,
-    "super_admin": 4
+    "enterprise_admin": 3,  # Enterprise-scoped admin
+    "admin": 4,             # Legacy admin role
+    "backend_admin": 5,     # Backend operations, no enterprise restrictions
+    "super_admin": 6        # Full system access
 }
 
 
