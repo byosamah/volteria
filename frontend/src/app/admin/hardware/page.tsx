@@ -28,17 +28,23 @@ export default async function HardwarePage() {
   // Check user role - only super_admin and backend_admin can access
   let userProfile: { role: string | null; full_name: string | null; avatar_url: string | null } | null = null;
   if (user?.id) {
-    const { data: userData } = await supabase
+    const { data: userData, error } = await supabase
       .from("users")
       .select("role, full_name, avatar_url")
       .eq("id", user.id)
       .single();
+
+    // Error handling: Log and redirect if query fails
+    if (error) {
+      console.error("Failed to fetch user role:", error);
+      redirect("/");
+    }
     userProfile = userData;
   }
-  const userRole = userProfile?.role || null;
+  const userRole = userProfile?.role;
 
-  // Redirect if not authorized
-  if (userRole !== "super_admin" && userRole !== "backend_admin") {
+  // Redirect if not authorized (requires super_admin or backend_admin)
+  if (!userRole || (userRole !== "super_admin" && userRole !== "backend_admin")) {
     redirect("/");
   }
 

@@ -33,17 +33,23 @@ export default async function EnterpriseDetailPage({
   // Check user role - only super_admin can access
   let userProfile: { role: string | null; full_name: string | null; avatar_url: string | null } | null = null;
   if (user?.id) {
-    const { data: userData } = await supabase
+    const { data: userData, error } = await supabase
       .from("users")
       .select("role, full_name, avatar_url")
       .eq("id", user.id)
       .single();
+
+    // Error handling: Log and redirect if query fails
+    if (error) {
+      console.error("Failed to fetch user role:", error);
+      redirect("/");
+    }
     userProfile = userData;
   }
-  const userRole = userProfile?.role || null;
+  const userRole = userProfile?.role;
 
-  // Redirect if not super_admin
-  if (userRole !== "super_admin") {
+  // Redirect if not super_admin (this page requires super_admin only)
+  if (!userRole || userRole !== "super_admin") {
     redirect("/");
   }
 

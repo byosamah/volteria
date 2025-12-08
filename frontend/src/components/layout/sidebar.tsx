@@ -155,17 +155,21 @@ export function Sidebar({ user }: SidebarProps) {
   const router = useRouter();
   const supabase = createClient();
 
-  // Track user role (fetched on mount if not provided)
-  const [userRole, setUserRole] = useState<string | undefined>(user?.role);
+  // Track fetched role (only used if prop not provided)
+  const [fetchedRole, setFetchedRole] = useState<string | undefined>(undefined);
 
-  // Fetch user role on mount if not provided via props
+  // Derive role from props OR fetched role
+  // Using prop directly avoids flash - prop is available immediately on server render
+  const userRole = user?.role || fetchedRole;
+
+  // Fetch user role only if not provided via props
   useEffect(() => {
-    const fetchUserRole = async () => {
-      if (user?.role) {
-        setUserRole(user.role);
-        return;
-      }
+    // If role is already provided via props, no need to fetch
+    if (user?.role) {
+      return;
+    }
 
+    const fetchUserRole = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (authUser?.id) {
         const { data: userData } = await supabase
@@ -174,7 +178,7 @@ export function Sidebar({ user }: SidebarProps) {
           .eq("id", authUser.id)
           .single();
         if (userData?.role) {
-          setUserRole(userData.role);
+          setFetchedRole(userData.role);
         }
       }
     };
