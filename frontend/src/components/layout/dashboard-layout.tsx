@@ -26,6 +26,7 @@ interface DashboardLayoutProps {
     email?: string;
     full_name?: string;
     role?: string;
+    avatar_url?: string;  // Profile picture URL from Supabase Storage
   };
 }
 

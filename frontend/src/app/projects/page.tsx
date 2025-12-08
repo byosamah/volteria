@@ -46,6 +46,17 @@ export default async function ProjectsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Fetch user profile including avatar
+  let userProfile: { full_name: string | null; avatar_url: string | null } | null = null;
+  if (user?.id) {
+    const { data } = await supabase
+      .from("users")
+      .select("full_name, avatar_url")
+      .eq("id", user.id)
+      .single();
+    userProfile = data;
+  }
+
   // Fetch all projects
   let projects: Array<{
     id: string;
@@ -101,7 +112,11 @@ export default async function ProjectsPage() {
   );
 
   return (
-    <DashboardLayout user={{ email: user?.email }}>
+    <DashboardLayout user={{
+        email: user?.email,
+        full_name: userProfile?.full_name || undefined,
+        avatar_url: userProfile?.avatar_url || undefined,
+      }}>
       {/* MOBILE-FRIENDLY: Responsive padding */}
       <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         {/* Header - stacks on mobile, row on desktop */}

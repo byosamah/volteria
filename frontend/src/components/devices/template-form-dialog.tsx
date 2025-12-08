@@ -37,6 +37,7 @@ interface DeviceTemplate {
   brand: string;
   model: string;
   rated_power_kw: number | null;
+  template_type?: string | null;  // 'public' or 'custom'
 }
 
 interface TemplateFormDialogProps {
@@ -70,6 +71,7 @@ export function TemplateFormDialog({
     brand: "",
     model: "",
     rated_power_kw: "",
+    template_type: "public",  // 'public' or 'custom'
   });
 
   // Reset form when dialog opens with template data
@@ -84,6 +86,7 @@ export function TemplateFormDialog({
           brand: template.brand,
           model: template.model,
           rated_power_kw: template.rated_power_kw?.toString() || "",
+          template_type: template.template_type || "public",
         });
       } else {
         // Creating: reset to empty form
@@ -94,6 +97,7 @@ export function TemplateFormDialog({
           brand: "",
           model: "",
           rated_power_kw: "",
+          template_type: "public",
         });
       }
     }
@@ -145,6 +149,7 @@ export function TemplateFormDialog({
         rated_power_kw: formData.rated_power_kw
           ? parseFloat(formData.rated_power_kw)
           : null,
+        template_type: formData.template_type,  // 'public' or 'custom'
       };
 
       if (mode === "edit" && template) {
@@ -244,23 +249,46 @@ export function TemplateFormDialog({
             />
           </div>
 
-          {/* Device Type */}
-          <div className="space-y-2">
-            <Label htmlFor="device_type">
-              Device Type <span className="text-red-500">*</span>
-            </Label>
-            <select
-              id="device_type"
-              name="device_type"
-              value={formData.device_type}
-              onChange={handleChange}
-              className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
-              required
-            >
-              <option value="inverter">Solar Inverter</option>
-              <option value="load_meter">Energy Meter</option>
-              <option value="dg">Generator Controller</option>
-            </select>
+          {/* Device Type and Template Type - side by side */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="device_type">
+                Device Type <span className="text-red-500">*</span>
+              </Label>
+              <select
+                id="device_type"
+                name="device_type"
+                value={formData.device_type}
+                onChange={handleChange}
+                className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+                required
+              >
+                <option value="inverter">Solar Inverter</option>
+                <option value="load_meter">Energy Meter</option>
+                <option value="dg">Generator Controller</option>
+              </select>
+            </div>
+
+            {/* Template Type - Public or Custom */}
+            <div className="space-y-2">
+              <Label htmlFor="template_type">
+                Template Type <span className="text-red-500">*</span>
+              </Label>
+              <select
+                id="template_type"
+                name="template_type"
+                value={formData.template_type}
+                onChange={handleChange}
+                className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+                required
+              >
+                <option value="public">Public (visible to all)</option>
+                <option value="custom">Custom (enterprise-specific)</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Public templates are available to all users
+              </p>
+            </div>
           </div>
 
           {/* Brand and Model - side by side on larger screens */}

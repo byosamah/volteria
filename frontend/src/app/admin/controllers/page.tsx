@@ -27,15 +27,16 @@ export default async function ControllersPage() {
   } = await supabase.auth.getUser();
 
   // Check user role - only super_admin and backend_admin can access
-  let userRole: string | null = null;
+  let userProfile: { role: string | null; full_name: string | null; avatar_url: string | null } | null = null;
   if (user?.id) {
     const { data: userData } = await supabase
       .from("users")
-      .select("role")
+      .select("role, full_name, avatar_url")
       .eq("id", user.id)
       .single();
-    userRole = userData?.role || null;
+    userProfile = userData;
   }
+  const userRole = userProfile?.role || null;
 
   // Redirect if not authorized
   if (userRole !== "super_admin" && userRole !== "backend_admin") {
@@ -124,7 +125,11 @@ export default async function ControllersPage() {
   const deployedCount = controllers.filter((c) => c.status === "deployed").length;
 
   return (
-    <DashboardLayout user={{ email: user?.email }}>
+    <DashboardLayout user={{
+        email: user?.email,
+        full_name: userProfile?.full_name || undefined,
+        avatar_url: userProfile?.avatar_url || undefined,
+      }}>
       <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

@@ -29,7 +29,7 @@ export default async function ClaimPage() {
   // Get user data including role and enterprise
   const { data: userData } = await supabase
     .from("users")
-    .select("role, enterprise_id, full_name")
+    .select("role, enterprise_id, full_name, avatar_url")
     .eq("id", user.id)
     .single();
 
@@ -51,7 +51,11 @@ export default async function ClaimPage() {
     .single();
 
   return (
-    <DashboardLayout user={{ email: user.email, full_name: userData?.full_name }}>
+    <DashboardLayout user={{
+        email: user.email,
+        full_name: userData?.full_name || undefined,
+        avatar_url: userData?.avatar_url || undefined,
+      }}>
       <div className="p-4 md:p-6 space-y-6 max-w-2xl mx-auto">
         {/* Header */}
         <div>

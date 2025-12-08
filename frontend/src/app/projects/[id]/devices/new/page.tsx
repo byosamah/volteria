@@ -27,6 +27,17 @@ export default async function AddDevicePage({
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Fetch user profile including avatar
+  let userProfile: { full_name: string | null; avatar_url: string | null } | null = null;
+  if (user?.id) {
+    const { data } = await supabase
+      .from("users")
+      .select("full_name, avatar_url")
+      .eq("id", user.id)
+      .single();
+    userProfile = data;
+  }
+
   // Fetch project
   const { data: project, error: projectError } = await supabase
     .from("projects")
@@ -64,7 +75,11 @@ export default async function AddDevicePage({
   }
 
   return (
-    <DashboardLayout user={{ email: user?.email }}>
+    <DashboardLayout user={{
+        email: user?.email,
+        full_name: userProfile?.full_name || undefined,
+        avatar_url: userProfile?.avatar_url || undefined,
+      }}>
       <div className="p-6 max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">

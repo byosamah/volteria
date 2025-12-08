@@ -32,7 +32,11 @@ export default async function AccountPage() {
   }
 
   return (
-    <DashboardLayout user={{ email: user?.email, full_name: userProfile?.full_name || undefined }}>
+    <DashboardLayout user={{
+        email: user?.email,
+        full_name: userProfile?.full_name || undefined,
+        avatar_url: userProfile?.avatar_url || undefined,
+      }}>
       {/* MOBILE-FRIENDLY: Responsive padding with max-width on larger screens */}
       <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-4 md:space-y-6">
         {/* Header - responsive text sizes */}

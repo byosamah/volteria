@@ -28,7 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 
 // Navigation items
@@ -146,6 +146,7 @@ interface SidebarProps {
     email?: string;
     full_name?: string;
     role?: string;
+    avatar_url?: string;  // Profile picture URL from Supabase Storage
   };
 }
 
@@ -292,6 +293,8 @@ export function Sidebar({ user }: SidebarProps) {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="w-full justify-start gap-2">
               <Avatar className="h-8 w-8">
+                {/* Show profile picture if available, otherwise show initials */}
+                <AvatarImage src={user?.avatar_url} alt="Profile picture" />
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                   {userInitials}
                 </AvatarFallback>

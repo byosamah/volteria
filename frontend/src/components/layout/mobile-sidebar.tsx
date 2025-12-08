@@ -23,7 +23,7 @@ import { useMobileNav } from "./mobile-nav-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Sheet,
   SheetContent,
@@ -146,6 +146,7 @@ interface MobileSidebarProps {
     email?: string;
     full_name?: string;
     role?: string;
+    avatar_url?: string;  // Profile picture URL from Supabase Storage
   };
 }
 
@@ -304,6 +305,8 @@ export function MobileSidebar({ user }: MobileSidebarProps) {
         <div className="p-4 mt-auto">
           <div className="flex items-center gap-3 mb-3">
             <Avatar className="h-10 w-10">
+              {/* Show profile picture if available, otherwise show initials */}
+              <AvatarImage src={user?.avatar_url} alt="Profile picture" />
               <AvatarFallback className="bg-primary text-primary-foreground">
                 {userInitials}
               </AvatarFallback>

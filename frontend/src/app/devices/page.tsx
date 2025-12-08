@@ -20,16 +20,17 @@ export default async function DevicesPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Fetch user's role from the users table
-  let userRole: string | undefined;
+  // Fetch user's profile (role, full_name, avatar_url) from users table
+  let userProfile: { role: string | null; full_name: string | null; avatar_url: string | null } | null = null;
   if (user?.id) {
     const { data: userData } = await supabase
       .from("users")
-      .select("role")
+      .select("role, full_name, avatar_url")
       .eq("id", user.id)
       .single();
-    userRole = userData?.role;
+    userProfile = userData;
   }
+  const userRole = userProfile?.role || undefined;
 
   // Fetch device templates
   let templates: Array<{
@@ -58,7 +59,11 @@ export default async function DevicesPage() {
   }
 
   return (
-    <DashboardLayout user={{ email: user?.email }}>
+    <DashboardLayout user={{
+        email: user?.email,
+        full_name: userProfile?.full_name || undefined,
+        avatar_url: userProfile?.avatar_url || undefined,
+      }}>
       {/* MOBILE-FRIENDLY: Responsive padding */}
       <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         {/* Header - responsive text sizes */}
