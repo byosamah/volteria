@@ -40,12 +40,13 @@ export default async function DevicesPage() {
     brand: string;
     model: string;
     rated_power_kw: number | null;
+    template_type: string | null;
   }> = [];
 
   try {
     const { data, error } = await supabase
       .from("device_templates")
-      .select("id, template_id, name, device_type, brand, model, rated_power_kw")
+      .select("id, template_id, name, device_type, brand, model, rated_power_kw, template_type")
       .order("device_type")
       .order("brand");
 

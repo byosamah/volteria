@@ -27,6 +27,7 @@ interface DeviceTemplate {
   brand: string;
   model: string;
   rated_power_kw: number | null;
+  template_type?: string | null; // 'public' or 'custom'
 }
 
 interface DeviceTemplatesListProps {
@@ -99,6 +100,7 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [brandFilter, setBrandFilter] = useState<string>("all");
+  const [templateTypeFilter, setTemplateTypeFilter] = useState<string>("all");
 
   // State for template dialog
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -152,9 +154,15 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
       // Brand filter
       const matchesBrand = brandFilter === "all" || template.brand === brandFilter;
 
-      return matchesSearch && matchesType && matchesBrand;
+      // Template type filter (public/custom)
+      const matchesTemplateType =
+        templateTypeFilter === "all" ||
+        (templateTypeFilter === "public" && (!template.template_type || template.template_type === "public")) ||
+        (templateTypeFilter === "custom" && template.template_type === "custom");
+
+      return matchesSearch && matchesType && matchesBrand && matchesTemplateType;
     });
-  }, [templates, searchQuery, typeFilter, brandFilter]);
+  }, [templates, searchQuery, typeFilter, brandFilter, templateTypeFilter]);
 
   // Group filtered templates by device type
   const templatesByType = useMemo(() => {
@@ -174,9 +182,10 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
     setSearchQuery("");
     setTypeFilter("all");
     setBrandFilter("all");
+    setTemplateTypeFilter("all");
   };
 
-  const hasActiveFilters = searchQuery !== "" || typeFilter !== "all" || brandFilter !== "all";
+  const hasActiveFilters = searchQuery !== "" || typeFilter !== "all" || brandFilter !== "all" || templateTypeFilter !== "all";
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -230,6 +239,17 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
               {brand}
             </option>
           ))}
+        </select>
+
+        {/* Template Type Filter (Public/Custom) */}
+        <select
+          value={templateTypeFilter}
+          onChange={(e) => setTemplateTypeFilter(e.target.value)}
+          className="min-h-[44px] px-3 rounded-md border border-input bg-background sm:w-32"
+        >
+          <option value="all">All</option>
+          <option value="public">Public</option>
+          <option value="custom">Custom</option>
         </select>
 
         {/* Clear Filters Button */}
@@ -328,13 +348,26 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
                               {template.brand} {template.model}
                             </CardDescription>
                           </div>
-                          <Badge className={deviceTypeColors[template.device_type]}>
-                            {template.device_type === "inverter"
-                              ? "Inverter"
-                              : template.device_type === "load_meter"
-                              ? "Meter"
-                              : "Generator"}
-                          </Badge>
+                          <div className="flex flex-col items-end gap-1">
+                            <Badge className={deviceTypeColors[template.device_type]}>
+                              {template.device_type === "inverter"
+                                ? "Inverter"
+                                : template.device_type === "load_meter"
+                                ? "Meter"
+                                : "Generator"}
+                            </Badge>
+                            {/* Template type badge - Public (green) or Custom (blue) */}
+                            <Badge
+                              variant="outline"
+                              className={
+                                template.template_type === "custom"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : "bg-green-50 text-green-700 border-green-200"
+                              }
+                            >
+                              {template.template_type === "custom" ? "Custom" : "Public"}
+                            </Badge>
+                          </div>
                         </div>
                       </CardHeader>
                       <CardContent>

@@ -49,6 +49,18 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
   const [createOpen, setCreateOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Invite dialog state
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEnterprise, setInviteEnterprise] = useState<Enterprise | null>(null);
+  const [inviteMethod, setInviteMethod] = useState<"email" | "direct">("email");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteData, setInviteData] = useState({
+    email: "",
+    password: "",
+    first_name: "",
+    last_name: "",
+  });
+
   // Create form state
   const [formData, setFormData] = useState({
     name: "",
@@ -144,6 +156,101 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
       toast.error("An unexpected error occurred");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Open invite dialog for an enterprise
+  const openInviteDialog = (enterprise: Enterprise) => {
+    setInviteEnterprise(enterprise);
+    setInviteMethod("email");
+    setInviteData({ email: "", password: "", first_name: "", last_name: "" });
+    setInviteOpen(true);
+  };
+
+  // Handle invite form changes
+  const handleInviteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setInviteData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Handle invite submission
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEnterprise) return;
+
+    setInviteLoading(true);
+
+    try {
+      // Validate email
+      if (!inviteData.email.trim()) {
+        toast.error("Email is required");
+        setInviteLoading(false);
+        return;
+      }
+
+      if (inviteMethod === "direct") {
+        // Validate password for direct creation
+        if (!inviteData.password || inviteData.password.length < 6) {
+          toast.error("Password must be at least 6 characters");
+          setInviteLoading(false);
+          return;
+        }
+
+        // Create user directly using Supabase Admin API
+        // Note: This requires a backend endpoint since we can't use admin.createUser from client
+        const response = await fetch("/api/admin/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: inviteData.email.trim(),
+            password: inviteData.password,
+            first_name: inviteData.first_name.trim(),
+            last_name: inviteData.last_name.trim(),
+            role: "enterprise_admin",
+            enterprise_id: inviteEnterprise.id,
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          toast.error(error.message || "Failed to create user");
+          setInviteLoading(false);
+          return;
+        }
+
+        toast.success(`Enterprise admin created for ${inviteEnterprise.name}`);
+      } else {
+        // Send magic link invitation
+        const { error } = await supabase.auth.signInWithOtp({
+          email: inviteData.email.trim(),
+          options: {
+            data: {
+              role: "enterprise_admin",
+              enterprise_id: inviteEnterprise.id,
+              first_name: inviteData.first_name.trim(),
+              last_name: inviteData.last_name.trim(),
+            },
+            emailRedirectTo: `${window.location.origin}/account`,
+          },
+        });
+
+        if (error) {
+          toast.error(error.message || "Failed to send invitation");
+          setInviteLoading(false);
+          return;
+        }
+
+        toast.success(`Invitation sent to ${inviteData.email}`);
+      }
+
+      setInviteOpen(false);
+      setInviteData({ email: "", password: "", first_name: "", last_name: "" });
+      router.refresh();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setInviteLoading(false);
     }
   };
 
@@ -302,6 +409,31 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
                     <span>Created {new Date(enterprise.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
+
+                {/* Invite Admin Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openInviteDialog(enterprise)}
+                  className="mt-4 w-full min-h-[40px]"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4 mr-2"
+                  >
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <line x1="19" x2="19" y1="8" y2="14" />
+                    <line x1="22" x2="16" y1="11" y2="11" />
+                  </svg>
+                  Invite Admin
+                </Button>
               </CardContent>
             </Card>
           ))}
@@ -401,6 +533,160 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
               </Button>
               <Button type="submit" disabled={loading} className="min-h-[44px] w-full sm:w-auto">
                 {loading ? "Creating..." : "Create Enterprise"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Admin Dialog */}
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Invite Enterprise Admin</DialogTitle>
+            <DialogDescription>
+              {inviteEnterprise && (
+                <>Add an admin for <strong>{inviteEnterprise.name}</strong></>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleInvite} className="space-y-4 py-4">
+            {/* Invite Method Selection */}
+            <div className="space-y-2">
+              <Label>Invitation Method</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={inviteMethod === "email" ? "default" : "outline"}
+                  onClick={() => setInviteMethod("email")}
+                  className="flex-1 min-h-[44px]"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4 mr-2"
+                  >
+                    <rect width="20" height="16" x="2" y="4" rx="2" />
+                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                  </svg>
+                  Email Invite
+                </Button>
+                <Button
+                  type="button"
+                  variant={inviteMethod === "direct" ? "default" : "outline"}
+                  onClick={() => setInviteMethod("direct")}
+                  className="flex-1 min-h-[44px]"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4 mr-2"
+                  >
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <line x1="19" x2="19" y1="8" y2="14" />
+                    <line x1="22" x2="16" y1="11" y2="11" />
+                  </svg>
+                  Direct Create
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {inviteMethod === "email"
+                  ? "Send a magic link to the user's email. They'll set their own password."
+                  : "Create account immediately with a temporary password."}
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="invite_first_name">First Name</Label>
+                <Input
+                  id="invite_first_name"
+                  name="first_name"
+                  placeholder="e.g., John"
+                  value={inviteData.first_name}
+                  onChange={handleInviteChange}
+                  className="min-h-[44px]"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite_last_name">Last Name</Label>
+                <Input
+                  id="invite_last_name"
+                  name="last_name"
+                  placeholder="e.g., Smith"
+                  value={inviteData.last_name}
+                  onChange={handleInviteChange}
+                  className="min-h-[44px]"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="invite_email">
+                Email <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="invite_email"
+                name="email"
+                type="email"
+                placeholder="e.g., admin@enterprise.com"
+                value={inviteData.email}
+                onChange={handleInviteChange}
+                className="min-h-[44px]"
+                required
+              />
+            </div>
+
+            {/* Password field only for direct creation */}
+            {inviteMethod === "direct" && (
+              <div className="space-y-2">
+                <Label htmlFor="invite_password">
+                  Temporary Password <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="invite_password"
+                  name="password"
+                  type="password"
+                  placeholder="Min 6 characters"
+                  value={inviteData.password}
+                  onChange={handleInviteChange}
+                  className="min-h-[44px]"
+                  required={inviteMethod === "direct"}
+                  minLength={6}
+                />
+                <p className="text-xs text-muted-foreground">
+                  User should change this password after first login.
+                </p>
+              </div>
+            )}
+
+            <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setInviteOpen(false)}
+                className="min-h-[44px] w-full sm:w-auto"
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={inviteLoading} className="min-h-[44px] w-full sm:w-auto">
+                {inviteLoading
+                  ? "Processing..."
+                  : inviteMethod === "email"
+                    ? "Send Invitation"
+                    : "Create Admin"}
               </Button>
             </DialogFooter>
           </form>

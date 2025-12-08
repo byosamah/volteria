@@ -384,6 +384,43 @@ async def add_project_device(
             )
 
     try:
+        # ============================================
+        # MODBUS CONFLICT VALIDATION
+        # Prevent duplicate Slave ID + connection combinations
+        # ============================================
+
+        # Build query to check for existing devices with same connection
+        conflict_query = db.table("project_devices").select("id, name").eq(
+            "project_id", str(project_id)
+        ).eq("enabled", True).eq("slave_id", device.slave_id)
+
+        # Add protocol-specific conflict check
+        if device.protocol == "tcp":
+            conflict_query = conflict_query.eq("ip_address", device.ip_address).eq("port", device.port)
+        elif device.protocol == "rtu_gateway":
+            conflict_query = conflict_query.eq("gateway_ip", device.gateway_ip).eq("gateway_port", device.gateway_port)
+        elif device.protocol == "rtu_direct":
+            conflict_query = conflict_query.eq("serial_port", device.serial_port)
+
+        conflict_result = conflict_query.execute()
+
+        if conflict_result.data:
+            existing_device = conflict_result.data[0]
+            if device.protocol == "tcp":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Modbus conflict: Device '{existing_device['name']}' already uses Slave ID {device.slave_id} at {device.ip_address}:{device.port}"
+                )
+            elif device.protocol == "rtu_gateway":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Modbus conflict: Device '{existing_device['name']}' already uses Slave ID {device.slave_id} at gateway {device.gateway_ip}:{device.gateway_port}"
+                )
+            else:  # rtu_direct
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Modbus conflict: Device '{existing_device['name']}' already uses Slave ID {device.slave_id} on {device.serial_port}"
+                )
         # Verify project exists
         project = db.table("projects").select("id").eq("id", str(project_id)).execute()
         if not project.data:
@@ -523,6 +560,62 @@ async def update_project_device(
                 "*, device_templates(*)"
             ).eq("id", str(device_id)).execute()
             return db_row_to_device_response(result.data[0])
+
+        # ============================================
+        # MODBUS CONFLICT VALIDATION FOR UPDATES
+        # Check if updated connection settings conflict with other devices
+        # ============================================
+
+        # Only check if connection-related fields are being updated
+        connection_fields_updated = any([
+            update.slave_id is not None,
+            update.ip_address is not None,
+            update.port is not None,
+            update.gateway_ip is not None,
+            update.gateway_port is not None,
+        ])
+
+        if connection_fields_updated:
+            # Get current device data to merge with updates
+            current_device = db.table("project_devices").select(
+                "protocol, ip_address, port, gateway_ip, gateway_port, slave_id"
+            ).eq("id", str(device_id)).execute()
+
+            if current_device.data:
+                current = current_device.data[0]
+                # Merge current values with updates
+                final_slave_id = update.slave_id if update.slave_id is not None else current["slave_id"]
+                final_ip = update.ip_address if update.ip_address is not None else current.get("ip_address")
+                final_port = update.port if update.port is not None else current.get("port")
+                final_gateway_ip = update.gateway_ip if update.gateway_ip is not None else current.get("gateway_ip")
+                final_gateway_port = update.gateway_port if update.gateway_port is not None else current.get("gateway_port")
+                protocol = current["protocol"]
+
+                # Build conflict query excluding current device
+                conflict_query = db.table("project_devices").select("id, name").eq(
+                    "project_id", str(project_id)
+                ).eq("enabled", True).eq("slave_id", final_slave_id).neq("id", str(device_id))
+
+                # Add protocol-specific conflict check
+                if protocol == "tcp" and final_ip:
+                    conflict_query = conflict_query.eq("ip_address", final_ip).eq("port", final_port)
+                elif protocol == "rtu_gateway" and final_gateway_ip:
+                    conflict_query = conflict_query.eq("gateway_ip", final_gateway_ip).eq("gateway_port", final_gateway_port)
+
+                conflict_result = conflict_query.execute()
+
+                if conflict_result.data:
+                    existing_device = conflict_result.data[0]
+                    if protocol == "tcp":
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Modbus conflict: Device '{existing_device['name']}' already uses Slave ID {final_slave_id} at {final_ip}:{final_port}"
+                        )
+                    elif protocol == "rtu_gateway":
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Modbus conflict: Device '{existing_device['name']}' already uses Slave ID {final_slave_id} at gateway {final_gateway_ip}:{final_gateway_port}"
+                        )
 
         db.table("project_devices").update(update_data).eq("id", str(device_id)).execute()
 

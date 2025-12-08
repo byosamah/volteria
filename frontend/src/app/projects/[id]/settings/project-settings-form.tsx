@@ -13,7 +13,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
+
+// Info icon component for tooltips
+function InfoIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4 text-muted-foreground cursor-help"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </svg>
+  );
+}
 
 // Project type (matches database schema)
 interface Project {
@@ -130,6 +156,7 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
   };
 
   return (
+    <TooltipProvider>
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Basic Information */}
       <div className="space-y-4">
@@ -194,7 +221,17 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="dg_reserve_kw">DG Reserve (kW)</Label>
+            <Label htmlFor="dg_reserve_kw" className="flex items-center gap-1.5">
+              DG Reserve (kW)
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Minimum power reserve to maintain on diesel generators to prevent reverse feeding. Set to 0 for zero-export mode.</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
             <Input
               id="dg_reserve_kw"
               name="dg_reserve_kw"
@@ -207,7 +244,17 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="control_interval_ms">Control Interval (ms)</Label>
+            <Label htmlFor="control_interval_ms" className="flex items-center gap-1.5">
+              Control Interval (ms)
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>How often the control loop runs to read meters and adjust inverter power limits. Lower = faster response, higher CPU usage.</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
             <Input
               id="control_interval_ms"
               name="control_interval_ms"
@@ -229,7 +276,17 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="logging_local_interval_ms">Local Log Interval (ms)</Label>
+            <Label htmlFor="logging_local_interval_ms" className="flex items-center gap-1.5">
+              Local Log Interval (ms)
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>How often data is logged to local storage on the controller. Used for offline buffering and historical analysis.</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
             <Input
               id="logging_local_interval_ms"
               name="logging_local_interval_ms"
@@ -242,7 +299,17 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="logging_cloud_interval_ms">Cloud Sync Interval (ms)</Label>
+            <Label htmlFor="logging_cloud_interval_ms" className="flex items-center gap-1.5">
+              Cloud Sync Interval (ms)
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>How often data is synced to the cloud platform. Higher values reduce bandwidth usage but delay dashboard updates.</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
             <Input
               id="logging_cloud_interval_ms"
               name="logging_cloud_interval_ms"
@@ -255,7 +322,17 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="logging_local_retention_days">Local Retention (days)</Label>
+            <Label htmlFor="logging_local_retention_days" className="flex items-center gap-1.5">
+              Local Retention (days)
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>How long to keep logs on the local controller. Older logs are automatically deleted to save storage space.</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
             <Input
               id="logging_local_retention_days"
               name="logging_local_retention_days"
@@ -274,7 +351,17 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
       {/* Safe Mode Settings */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-medium">Safe Mode</h3>
+          <h3 className="text-lg font-medium flex items-center gap-1.5">
+            Safe Mode
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span><InfoIcon /></span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                <p>Protective mode that limits inverter power when communication with devices is lost. Prevents uncontrolled operation.</p>
+              </TooltipContent>
+            </Tooltip>
+          </h3>
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -360,5 +447,6 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
         </Button>
       </div>
     </form>
+    </TooltipProvider>
   );
 }

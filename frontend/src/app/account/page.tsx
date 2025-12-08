@@ -21,11 +21,11 @@ export default async function AccountPage() {
   } = await supabase.auth.getUser();
 
   // Get user profile from users table
-  let userProfile: { full_name: string | null; role: string | null } | null = null;
+  let userProfile: { full_name: string | null; role: string | null; avatar_url: string | null } | null = null;
   if (user?.id) {
     const { data } = await supabase
       .from("users")
-      .select("full_name, role")
+      .select("full_name, role, avatar_url")
       .eq("id", user.id)
       .single();
     userProfile = data;
@@ -55,6 +55,7 @@ export default async function AccountPage() {
             <AccountSettingsForm
               user={user}
               fullName={userProfile?.full_name || ""}
+              avatarUrl={userProfile?.avatar_url}
             />
           </CardContent>
         </Card>
