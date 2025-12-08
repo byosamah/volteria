@@ -56,15 +56,46 @@ interface Device {
   } | null;
 }
 
+// Latest power readings from control logs (aggregate values)
+interface LatestReadings {
+  total_load_kw: number;
+  solar_output_kw: number;
+  solar_limit_pct: number;
+  dg_power_kw: number;
+  timestamp: string;
+}
+
 interface DeviceListProps {
   projectId: string;
   siteId?: string;  // Optional: for sites architecture
   devices: Device[];
+  latestReadings?: LatestReadings | null; // Optional: latest power readings
 }
 
-export function DeviceList({ projectId, siteId, devices: initialDevices }: DeviceListProps) {
+export function DeviceList({ projectId, siteId, devices: initialDevices, latestReadings }: DeviceListProps) {
   const router = useRouter();
   const [devices, setDevices] = useState(initialDevices);
+
+  // Get the display reading for a device based on its type
+  // Note: These are aggregate readings (sum of all devices of each type)
+  const getDeviceReading = (deviceType: string | undefined) => {
+    if (!latestReadings) return null;
+
+    switch (deviceType) {
+      case "load_meter":
+        return { value: latestReadings.total_load_kw, unit: "kW", label: "Load" };
+      case "inverter":
+        return {
+          value: latestReadings.solar_output_kw,
+          unit: "kW",
+          label: `Solar (${latestReadings.solar_limit_pct}%)`,
+        };
+      case "dg":
+        return { value: latestReadings.dg_power_kw, unit: "kW", label: "DG Power" };
+      default:
+        return null;
+    }
+  };
   const [editDevice, setEditDevice] = useState<Device | null>(null);
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(false);
@@ -220,62 +251,74 @@ export function DeviceList({ projectId, siteId, devices: initialDevices }: Devic
   };
 
   // Device card component - MOBILE-FRIENDLY with 44px touch targets
-  const DeviceCard = ({ device }: { device: Device }) => (
-    <div className="flex flex-col gap-3 p-3 rounded-lg bg-muted/50 sm:flex-row sm:items-center sm:justify-between">
-      {/* Device info */}
-      <div className="flex items-center gap-3">
-        <div
-          className={`h-3 w-3 rounded-full flex-shrink-0 ${
-            device.is_online ? "bg-[#6baf4f]" : "bg-gray-400"
-          }`}
-        />
-        <div className="min-w-0">
-          <p className="font-medium truncate">{device.name}</p>
-          <p className="text-sm text-muted-foreground truncate">
-            {device.device_templates?.brand} {device.device_templates?.model}
-          </p>
-          {/* Slave ID and IP shown on mobile */}
-          <p className="text-xs text-muted-foreground sm:hidden">
+  const DeviceCard = ({ device }: { device: Device }) => {
+    const reading = getDeviceReading(device.device_templates?.device_type);
+
+    return (
+      <div className="flex flex-col gap-3 p-3 rounded-lg bg-muted/50 sm:flex-row sm:items-center sm:justify-between">
+        {/* Device info */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div
+            className={`h-3 w-3 rounded-full flex-shrink-0 ${
+              device.is_online ? "bg-[#6baf4f]" : "bg-gray-400"
+            }`}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium truncate">{device.name}</p>
+              {/* Show reading badge if available and device is online */}
+              {reading && device.is_online && (
+                <Badge variant="outline" className="flex-shrink-0 text-xs font-mono">
+                  {reading.value.toFixed(1)} {reading.unit}
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground truncate">
+              {device.device_templates?.brand} {device.device_templates?.model}
+            </p>
+            {/* Slave ID and IP shown on mobile */}
+            <p className="text-xs text-muted-foreground sm:hidden">
+              Slave ID: {device.slave_id}
+              {device.ip_address && ` | ${device.ip_address}`}
+              {device.gateway_ip && ` | ${device.gateway_ip}`}
+            </p>
+          </div>
+        </div>
+        {/* Actions - 44px touch targets */}
+        <div className="flex items-center gap-2 justify-end">
+          <span className="text-sm text-muted-foreground mr-2 hidden sm:inline">
             Slave ID: {device.slave_id}
-            {device.ip_address && ` | ${device.ip_address}`}
-            {device.gateway_ip && ` | ${device.gateway_ip}`}
-          </p>
+            {/* Show IP address based on protocol */}
+            {device.ip_address && ` | IP: ${device.ip_address}`}
+            {device.gateway_ip && ` | Gateway: ${device.gateway_ip}`}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => openEditDialog(device)}
+            className="min-w-[44px] min-h-[44px]"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              <path d="m15 5 4 4" />
+            </svg>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDeleteDevice(device)}
+            className="min-w-[44px] min-h-[44px]"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+              <path d="M3 6h18" />
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            </svg>
+          </Button>
         </div>
       </div>
-      {/* Actions - 44px touch targets */}
-      <div className="flex items-center gap-2 justify-end">
-        <span className="text-sm text-muted-foreground mr-2 hidden sm:inline">
-          Slave ID: {device.slave_id}
-          {/* Show IP address based on protocol */}
-          {device.ip_address && ` | IP: ${device.ip_address}`}
-          {device.gateway_ip && ` | Gateway: ${device.gateway_ip}`}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => openEditDialog(device)}
-          className="min-w-[44px] min-h-[44px]"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-            <path d="m15 5 4 4" />
-          </svg>
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setDeleteDevice(device)}
-          className="min-w-[44px] min-h-[44px]"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-            <path d="M3 6h18" />
-            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-          </svg>
-        </Button>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <>

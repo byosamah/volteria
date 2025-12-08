@@ -24,6 +24,25 @@ import { SyncStatus } from "@/components/projects/sync-status";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+// Minimum firmware version required for full functionality
+const MINIMUM_FIRMWARE_VERSION = "1.0.0";
+
+// Helper to compare semantic versions (e.g., "1.2.3" vs "1.0.0")
+function isVersionOutdated(current: string | null, minimum: string): boolean {
+  if (!current) return false; // Don't warn if no version set yet
+
+  const currentParts = current.split(".").map(Number);
+  const minimumParts = minimum.split(".").map(Number);
+
+  for (let i = 0; i < Math.max(currentParts.length, minimumParts.length); i++) {
+    const curr = currentParts[i] || 0;
+    const min = minimumParts[i] || 0;
+    if (curr < min) return true;
+    if (curr > min) return false;
+  }
+  return false; // Equal versions
+}
+
 // Status badge component
 function StatusBadge({ status }: { status: string }) {
   const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -259,6 +278,39 @@ export default async function SiteDetailPage({
           </div>
         </div>
 
+        {/* Firmware Warning Banner - shows if controller firmware is outdated */}
+        {isVersionOutdated(site.controller_firmware_version, MINIMUM_FIRMWARE_VERSION) && (
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-900 dark:bg-orange-950">
+            <div className="flex items-start gap-3">
+              {/* Warning icon */}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0"
+              >
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+              </svg>
+              <div className="flex-1">
+                <h4 className="font-semibold text-orange-800 dark:text-orange-200">
+                  Outdated Controller Firmware
+                </h4>
+                <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                  This controller is running firmware v{site.controller_firmware_version},
+                  which is below the recommended version {MINIMUM_FIRMWARE_VERSION}.
+                  Some features may not work correctly. Please update the controller firmware.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Live Data Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
@@ -341,8 +393,19 @@ export default async function SiteDetailPage({
           </TabsList>
 
           <TabsContent value="devices" className="space-y-4">
-            {/* Pass siteId to DeviceList for the new architecture */}
-            <DeviceList projectId={projectId} siteId={siteId} devices={devices} />
+            {/* Pass siteId and latestReadings to DeviceList for the new architecture */}
+            <DeviceList
+              projectId={projectId}
+              siteId={siteId}
+              devices={devices}
+              latestReadings={latestLog ? {
+                total_load_kw: latestLog.total_load_kw,
+                solar_output_kw: latestLog.solar_output_kw,
+                solar_limit_pct: latestLog.solar_limit_pct,
+                dg_power_kw: latestLog.dg_power_kw,
+                timestamp: latestLog.timestamp,
+              } : null}
+            />
           </TabsContent>
 
           <TabsContent value="logs">
