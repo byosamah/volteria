@@ -56,22 +56,34 @@ function StatCard({
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  console.log("=== DASHBOARD DEBUG START ===");
 
   // Get current user
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+
+  console.log("DASHBOARD - Auth user ID:", user?.id);
+  console.log("DASHBOARD - Auth error:", authError);
 
   // Fetch user profile including avatar and role
   let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null } | null = null;
   if (user?.id) {
-    const { data } = await supabase
+    const { data, error: queryError } = await supabase
       .from("users")
       .select("full_name, avatar_url, role")
       .eq("id", user.id)
       .single();
+
+    console.log("DASHBOARD - User profile query result:", JSON.stringify(data));
+    console.log("DASHBOARD - User profile query error:", JSON.stringify(queryError));
+
     userProfile = data;
   }
+
+  console.log("DASHBOARD - Final userProfile.role:", userProfile?.role);
+  console.log("=== DASHBOARD DEBUG END ===")
 
   // Fetch projects (with error handling for missing table)
   let projects: Array<{
