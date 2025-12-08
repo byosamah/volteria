@@ -73,8 +73,10 @@ export function ClaimForm({ enterpriseId, userId }: ClaimFormProps) {
         return;
       }
 
-      // Validate passcode
-      if (controller.passcode !== passcode.trim().toUpperCase()) {
+      // Validate passcode (case-insensitive to support both old 8-char and new UUID formats)
+      const inputPasscode = passcode.trim().toLowerCase();
+      const storedPasscode = (controller.passcode || "").toLowerCase();
+      if (storedPasscode !== inputPasscode) {
         toast.error("Invalid passcode. Please check and try again.");
         setLoading(false);
         return;
@@ -158,15 +160,14 @@ export function ClaimForm({ enterpriseId, userId }: ClaimFormProps) {
             </Label>
             <Input
               id="passcode"
-              placeholder="e.g., ABC12345"
+              placeholder="e.g., c159d3d6-a778-4812-a688-0d7c5d0042ea"
               value={passcode}
-              onChange={(e) => setPasscode(e.target.value.toUpperCase())}
-              className="min-h-[44px] font-mono uppercase tracking-widest"
-              maxLength={8}
+              onChange={(e) => setPasscode(e.target.value)}
+              className="min-h-[44px] font-mono text-sm"
               required
             />
             <p className="text-xs text-muted-foreground">
-              8-character code provided with the controller
+              UUID passcode provided with the controller
             </p>
           </div>
 

@@ -13,6 +13,7 @@ Accessible by super_admin, backend_admin, and enterprise_admin (for claiming).
 
 import secrets
 import string
+import uuid
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -53,7 +54,7 @@ class ControllerUpdate(BaseModel):
 class ControllerClaim(BaseModel):
     """Claim controller request (for enterprise admins)."""
     serial_number: str = Field(..., description="Controller serial number")
-    passcode: str = Field(..., description="8-character passcode")
+    passcode: str = Field(..., description="UUID passcode")
 
 
 class ControllerResponse(BaseModel):
@@ -81,11 +82,10 @@ class ControllerResponse(BaseModel):
 
 def generate_passcode() -> str:
     """
-    Generate a secure 8-character alphanumeric passcode.
-    Excludes confusing characters (0, O, 1, I, l).
+    Generate a secure UUID passcode.
+    Format: c159d3d6-a778-4812-a688-0d7c5d0042ea (36 characters)
     """
-    chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-    return ''.join(secrets.choice(chars) for _ in range(8))
+    return str(uuid.uuid4())
 
 
 def db_row_to_controller_response(row: dict) -> ControllerResponse:

@@ -230,7 +230,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
               first_name: inviteData.first_name.trim(),
               last_name: inviteData.last_name.trim(),
             },
-            emailRedirectTo: `${window.location.origin}/account`,
+            emailRedirectTo: "https://volteria.org/auth/callback?next=/account",
           },
         });
 
