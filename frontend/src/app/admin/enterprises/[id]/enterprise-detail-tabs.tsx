@@ -140,6 +140,12 @@ export function EnterpriseDetailTabs({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  // Delete enterprise state
+  const [showDeleteEnterprise, setShowDeleteEnterprise] = useState(false);
+  const [confirmEnterpriseName, setConfirmEnterpriseName] = useState("");
+  const [enterpriseDeletePassword, setEnterpriseDeletePassword] = useState("");
+  const [enterpriseDeleteLoading, setEnterpriseDeleteLoading] = useState(false);
+
   // Check if current user is super_admin
   const isSuperAdmin = currentUser.role === "super_admin";
 
@@ -277,6 +283,76 @@ export function EnterpriseDetailTabs({
       toast.error("An unexpected error occurred");
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  // Handle enterprise deletion with password verification (HARD DELETE)
+  const handleDeleteEnterprise = async () => {
+    // Validate inputs
+    if (confirmEnterpriseName !== enterprise.name) {
+      toast.error("Enterprise name does not match");
+      return;
+    }
+    if (!enterpriseDeletePassword) {
+      toast.error("Please enter your password");
+      return;
+    }
+
+    setEnterpriseDeleteLoading(true);
+
+    try {
+      // Step 1: Verify super admin's password by re-authenticating
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: currentUser.email,
+        password: enterpriseDeletePassword,
+      });
+
+      if (authError) {
+        toast.error("Incorrect password. Please try again.");
+        setEnterpriseDeleteLoading(false);
+        return;
+      }
+
+      // Step 2: Unassign all related records before deleting enterprise
+      // Unassign users
+      await supabase
+        .from("users")
+        .update({ enterprise_id: null })
+        .eq("enterprise_id", enterprise.id);
+
+      // Unassign projects
+      await supabase
+        .from("projects")
+        .update({ enterprise_id: null })
+        .eq("enterprise_id", enterprise.id);
+
+      // Release controllers (set back to 'ready' status)
+      await supabase
+        .from("controllers")
+        .update({ enterprise_id: null, status: "ready", claimed_at: null, claimed_by: null })
+        .eq("enterprise_id", enterprise.id);
+
+      // Step 3: Delete the enterprise record
+      const { error: deleteError } = await supabase
+        .from("enterprises")
+        .delete()
+        .eq("id", enterprise.id);
+
+      if (deleteError) {
+        console.error("Error deleting enterprise:", deleteError);
+        toast.error(deleteError.message || "Failed to delete enterprise");
+        setEnterpriseDeleteLoading(false);
+        return;
+      }
+
+      // Step 4: Success - redirect to enterprises list
+      toast.success(`Enterprise "${enterprise.name}" deleted successfully`);
+      router.push("/admin/enterprises");
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setEnterpriseDeleteLoading(false);
     }
   };
 
@@ -855,7 +931,8 @@ export function EnterpriseDetailTabs({
               These actions are irreversible. Please be careful.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* Deactivate Enterprise */}
             <div className="flex items-center justify-between p-4 border border-destructive/30 rounded-lg">
               <div>
                 <p className="font-medium">Deactivate Enterprise</p>
@@ -875,6 +952,25 @@ export function EnterpriseDetailTabs({
                 Deactivate
               </Button>
             </div>
+
+            {/* Delete Enterprise - only for super_admin */}
+            {isSuperAdmin && (
+              <div className="flex items-center justify-between p-4 border border-red-500 rounded-lg bg-red-50/50">
+                <div>
+                  <p className="font-medium text-red-700">Delete Enterprise</p>
+                  <p className="text-sm text-red-600/80">
+                    Permanently delete this enterprise and unassign all users, projects, and controllers.
+                  </p>
+                </div>
+                <Button
+                  variant="destructive"
+                  onClick={() => setShowDeleteEnterprise(true)}
+                  className="min-h-[44px] bg-red-600 hover:bg-red-700"
+                >
+                  Delete
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -959,6 +1055,121 @@ export function EnterpriseDetailTabs({
               className="min-h-[44px] w-full sm:w-auto"
             >
               {deleteLoading ? "Deleting..." : "Delete User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Enterprise Confirmation Dialog with Password */}
+      <Dialog
+        open={showDeleteEnterprise}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowDeleteEnterprise(false);
+            setConfirmEnterpriseName("");
+            setEnterpriseDeletePassword("");
+          }
+        }}
+      >
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-5 w-5 text-red-600"
+                >
+                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                  <path d="M12 9v4" />
+                  <path d="M12 17h.01" />
+                </svg>
+              </div>
+              Delete Enterprise
+            </DialogTitle>
+            <DialogDescription className="pt-2 space-y-2">
+              <span>
+                Are you sure you want to <strong className="text-red-600">PERMANENTLY</strong> delete{" "}
+                <strong>&quot;{enterprise.name}&quot;</strong>?
+              </span>
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
+                <p className="font-medium text-red-700 mb-2">This action will:</p>
+                <ul className="list-disc list-inside text-red-600 space-y-1">
+                  <li>Remove all enterprise settings</li>
+                  <li>Unassign all users from this enterprise</li>
+                  <li>Unassign all projects from this enterprise</li>
+                  <li>Release all claimed controllers</li>
+                </ul>
+                <p className="mt-2 font-bold text-red-700">This action cannot be undone!</p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Type enterprise name to confirm */}
+            <div className="space-y-2">
+              <Label htmlFor="confirm-enterprise-name">
+                Type <span className="font-mono font-bold">{enterprise.name}</span> to confirm
+              </Label>
+              <Input
+                id="confirm-enterprise-name"
+                type="text"
+                placeholder="Enterprise name"
+                value={confirmEnterpriseName}
+                onChange={(e) => setConfirmEnterpriseName(e.target.value)}
+                className="min-h-[44px]"
+              />
+            </div>
+
+            {/* Password field */}
+            <div className="space-y-2">
+              <Label htmlFor="enterprise-delete-password">
+                Enter your password
+              </Label>
+              <Input
+                id="enterprise-delete-password"
+                type="password"
+                placeholder="Your password"
+                value={enterpriseDeletePassword}
+                onChange={(e) => setEnterpriseDeletePassword(e.target.value)}
+                className="min-h-[44px]"
+                autoComplete="current-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                For security, please enter your password to confirm this action.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteEnterprise(false);
+                setConfirmEnterpriseName("");
+                setEnterpriseDeletePassword("");
+              }}
+              disabled={enterpriseDeleteLoading}
+              className="min-h-[44px] w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteEnterprise}
+              disabled={
+                enterpriseDeleteLoading ||
+                confirmEnterpriseName !== enterprise.name ||
+                !enterpriseDeletePassword
+              }
+              className="min-h-[44px] w-full sm:w-auto bg-red-600 hover:bg-red-700"
+            >
+              {enterpriseDeleteLoading ? "Deleting..." : "Delete Enterprise"}
             </Button>
           </DialogFooter>
         </DialogContent>
