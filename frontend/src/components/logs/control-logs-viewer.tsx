@@ -45,9 +45,10 @@ interface ControlLog {
 
 interface ControlLogsViewerProps {
   projectId: string;
+  siteId?: string;  // Optional: for sites architecture
 }
 
-export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
+export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps) {
   const [logs, setLogs] = useState<ControlLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("1h"); // 1h, 6h, 24h, 7d
@@ -78,12 +79,21 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
     const supabase = createClient();
     const startTime = getStartTime();
 
-    const { data, error } = await supabase
+    // Build query - use site_id if provided, otherwise project_id
+    let query = supabase
       .from("control_logs")
       .select(
         "id, timestamp, total_load_kw, dg_power_kw, solar_output_kw, solar_limit_pct, available_headroom_kw, safe_mode_active, config_mode"
-      )
-      .eq("project_id", projectId)
+      );
+
+    // Filter by site_id or project_id
+    if (siteId) {
+      query = query.eq("site_id", siteId);
+    } else {
+      query = query.eq("project_id", projectId);
+    }
+
+    const { data, error } = await query
       .gte("timestamp", startTime.toISOString())
       .order("timestamp", { ascending: false })
       .range(page * pageSize, (page + 1) * pageSize - 1);
@@ -101,19 +111,27 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
   useEffect(() => {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange, page, projectId]);
+  }, [timeRange, page, projectId, siteId]);
 
   // Export logs as CSV
   const exportCSV = async () => {
     const supabase = createClient();
     const startTime = getStartTime();
 
-    const { data } = await supabase
+    // Build query - use site_id if provided, otherwise project_id
+    let query = supabase
       .from("control_logs")
       .select(
         "timestamp, total_load_kw, dg_power_kw, solar_output_kw, solar_limit_pct, available_headroom_kw, safe_mode_active, config_mode"
-      )
-      .eq("project_id", projectId)
+      );
+
+    if (siteId) {
+      query = query.eq("site_id", siteId);
+    } else {
+      query = query.eq("project_id", projectId);
+    }
+
+    const { data } = await query
       .gte("timestamp", startTime.toISOString())
       .order("timestamp", { ascending: false });
 
@@ -152,7 +170,7 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `control_logs_${projectId}_${timeRange}.csv`;
+    a.download = `control_logs_${siteId || projectId}_${timeRange}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -162,12 +180,20 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
     const supabase = createClient();
     const startTime = getStartTime();
 
-    const { data } = await supabase
+    // Build query - use site_id if provided, otherwise project_id
+    let query = supabase
       .from("control_logs")
       .select(
         "timestamp, total_load_kw, dg_power_kw, solar_output_kw, solar_limit_pct, available_headroom_kw, safe_mode_active, config_mode"
-      )
-      .eq("project_id", projectId)
+      );
+
+    if (siteId) {
+      query = query.eq("site_id", siteId);
+    } else {
+      query = query.eq("project_id", projectId);
+    }
+
+    const { data } = await query
       .gte("timestamp", startTime.toISOString())
       .order("timestamp", { ascending: false });
 
@@ -181,7 +207,7 @@ export function ControlLogsViewer({ projectId }: ControlLogsViewerProps) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `control_logs_${projectId}_${timeRange}.json`;
+    a.download = `control_logs_${siteId || projectId}_${timeRange}.json`;
     a.click();
     window.URL.revokeObjectURL(url);
   };

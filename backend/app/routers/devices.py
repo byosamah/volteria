@@ -122,6 +122,7 @@ class ProjectDeviceResponse(BaseModel):
     """Project device response."""
     id: str
     project_id: str
+    site_id: Optional[str] = None  # Added for sites architecture
     template: Optional[DeviceTemplateResponse]
     name: str
     protocol: str
@@ -171,6 +172,7 @@ def db_row_to_device_response(row: dict, template: Optional[dict] = None) -> Pro
     return ProjectDeviceResponse(
         id=str(row["id"]),
         project_id=str(row["project_id"]),
+        site_id=str(row["site_id"]) if row.get("site_id") else None,  # Added for sites architecture
         template=template_response,
         name=row["name"],
         protocol=row.get("protocol", "tcp"),
@@ -695,6 +697,198 @@ async def update_device_status(
             update_data["last_error"] = last_error
 
         db.table("project_devices").update(update_data).eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
+
+        return {
+            "status": "updated",
+            "device_id": str(device_id),
+            "is_online": is_online
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update device status: {str(e)}"
+        )
+
+
+# ============================================
+# SITE DEVICE ENDPOINTS (New Sites Architecture)
+# ============================================
+
+@router.get("/site/{site_id}", response_model=list[ProjectDeviceResponse])
+async def list_site_devices(
+    site_id: UUID,
+    device_type: Optional[str] = Query(None, description="Filter by device type"),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Client = Depends(get_supabase)
+):
+    """
+    List all devices configured for a site.
+
+    Includes connection details and current status.
+    Filter by device_type if needed.
+    """
+    try:
+        query = db.table("project_devices").select(
+            "*, device_templates(*)"
+        ).eq("site_id", str(site_id)).eq("enabled", True)
+
+        result = query.order("name").execute()
+
+        devices = []
+        for row in result.data:
+            # Filter by device_type if specified
+            if device_type:
+                template = row.get("device_templates", {})
+                if template.get("device_type") != device_type:
+                    continue
+            devices.append(db_row_to_device_response(row))
+
+        return devices
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch devices: {str(e)}"
+        )
+
+
+@router.post("/site/{site_id}", response_model=ProjectDeviceResponse, status_code=status.HTTP_201_CREATED)
+async def add_site_device(
+    site_id: UUID,
+    device: ProjectDeviceCreate,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Add a device to a site.
+
+    Validates that connection fields match the selected protocol.
+    Checks for Modbus address conflicts.
+    """
+    # Validate protocol-specific fields
+    if device.protocol == "tcp":
+        if not device.ip_address:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ip_address is required for TCP protocol"
+            )
+    elif device.protocol == "rtu_gateway":
+        if not device.gateway_ip:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="gateway_ip is required for RTU gateway protocol"
+            )
+    elif device.protocol == "rtu_direct":
+        if not device.serial_port:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="serial_port is required for direct RTU protocol"
+            )
+
+    try:
+        # Verify site exists and get project_id
+        site = db.table("sites").select("id, project_id").eq("id", str(site_id)).execute()
+        if not site.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Site {site_id} not found"
+            )
+        project_id = site.data[0]["project_id"]
+
+        # ============================================
+        # MODBUS CONFLICT VALIDATION
+        # ============================================
+
+        conflict_query = db.table("project_devices").select("id, name").eq(
+            "site_id", str(site_id)
+        ).eq("enabled", True).eq("slave_id", device.slave_id)
+
+        if device.protocol == "tcp":
+            conflict_query = conflict_query.eq("ip_address", device.ip_address).eq("port", device.port)
+        elif device.protocol == "rtu_gateway":
+            conflict_query = conflict_query.eq("gateway_ip", device.gateway_ip).eq("gateway_port", device.gateway_port)
+        elif device.protocol == "rtu_direct":
+            conflict_query = conflict_query.eq("serial_port", device.serial_port)
+
+        conflict_result = conflict_query.execute()
+
+        if conflict_result.data:
+            existing_device = conflict_result.data[0]
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Modbus conflict: Device '{existing_device['name']}' already uses Slave ID {device.slave_id}"
+            )
+
+        # Get template ID from template_id string
+        template = db.table("device_templates").select("id").eq("template_id", device.template_id).execute()
+        if not template.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template {device.template_id} not found"
+            )
+
+        insert_data = {
+            "project_id": project_id,
+            "site_id": str(site_id),
+            "template_id": template.data[0]["id"],
+            "name": device.name,
+            "protocol": device.protocol,
+            "ip_address": device.ip_address,
+            "port": device.port,
+            "gateway_ip": device.gateway_ip,
+            "gateway_port": device.gateway_port,
+            "slave_id": device.slave_id,
+            "rated_power_kw": device.rated_power_kw,
+            "rated_power_kva": device.rated_power_kva,
+            "is_online": False,
+            "enabled": True
+        }
+
+        result = db.table("project_devices").insert(insert_data).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to add device"
+            )
+
+        # Fetch with template info
+        device_result = db.table("project_devices").select(
+            "*, device_templates(*)"
+        ).eq("id", result.data[0]["id"]).execute()
+
+        return db_row_to_device_response(device_result.data[0])
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add device: {str(e)}"
+        )
+
+
+@router.post("/site/{site_id}/{device_id}/status")
+async def update_site_device_status(
+    site_id: UUID,
+    device_id: UUID,
+    is_online: bool,
+    last_error: Optional[str] = None,
+    db: Client = Depends(get_supabase)
+):
+    """
+    Update device online status (site-based).
+
+    Called by the on-site controller to report device status.
+    """
+    try:
+        update_data = {
+            "is_online": is_online,
+            "last_seen": datetime.utcnow().isoformat() if is_online else None
+        }
+
+        if last_error is not None:
+            update_data["last_error"] = last_error
+
+        db.table("project_devices").update(update_data).eq("id", str(device_id)).eq("site_id", str(site_id)).execute()
 
         return {
             "status": "updated",

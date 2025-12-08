@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware
+from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware, sites
 
 
 # ============================================
@@ -176,6 +176,13 @@ app.include_router(
     hardware.router,
     prefix="/api/hardware",
     tags=["Hardware"]
+)
+
+# Sites router - physical locations with controllers
+app.include_router(
+    sites.router,
+    prefix="/api/sites",
+    tags=["Sites"]
 )
 
 

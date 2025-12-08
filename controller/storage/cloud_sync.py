@@ -36,27 +36,30 @@ class CloudSync:
 
     def __init__(
         self,
-        project_id: str,
+        site_id: str,
         supabase_url: str,
         supabase_key: str,
         local_db: LocalDatabase,
         sync_interval_ms: int = 5000,
         max_retries: int = 3,
-        batch_size: int = 100
+        batch_size: int = 100,
+        project_id: str = None  # Optional: for backward compatibility
     ):
         """
         Initialize cloud sync service.
 
         Args:
-            project_id: UUID of the project in Supabase
+            site_id: UUID of the site in Supabase (physical location with controller)
             supabase_url: Supabase project URL
             supabase_key: Supabase service role key
             local_db: Local database instance
             sync_interval_ms: How often to sync (milliseconds)
             max_retries: Maximum retry attempts for failed syncs
             batch_size: Maximum records per batch upload
+            project_id: Optional UUID of the project (for backward compatibility)
         """
-        self.project_id = project_id
+        self.site_id = site_id
+        self.project_id = project_id  # Optional: kept for backward compatibility
         self.supabase_url = supabase_url.rstrip("/")
         self.supabase_key = supabase_key
         self.local_db = local_db
@@ -175,8 +178,8 @@ class CloudSync:
 
     def _log_to_payload(self, log: ControlLogRecord) -> dict:
         """Convert log record to API payload."""
-        return {
-            "project_id": self.project_id,
+        payload = {
+            "site_id": self.site_id,  # Primary: site is the physical location
             "timestamp": log.timestamp.isoformat(),
             "total_load_kw": log.total_load_kw,
             "dg_power_kw": log.dg_power_kw,
@@ -189,6 +192,10 @@ class CloudSync:
             "inverters_online": log.inverters_online,
             "generators_online": log.generators_online
         }
+        # Include project_id if available (for backward compatibility)
+        if self.project_id:
+            payload["project_id"] = self.project_id
+        return payload
 
     # ============================================
     # ALARM SYNC
@@ -225,14 +232,18 @@ class CloudSync:
 
     def _alarm_to_payload(self, alarm: AlarmRecord) -> dict:
         """Convert alarm record to API payload."""
-        return {
-            "project_id": self.project_id,
+        payload = {
+            "site_id": self.site_id,  # Primary: site is the physical location
             "alarm_type": alarm.alarm_type,
             "device_name": alarm.device_name,
             "message": alarm.message,
             "severity": alarm.severity,
             "created_at": alarm.timestamp.isoformat()
         }
+        # Include project_id if available (for backward compatibility)
+        if self.project_id:
+            payload["project_id"] = self.project_id
+        return payload
 
     # ============================================
     # UPLOAD WITH RETRY
@@ -322,12 +333,15 @@ class CloudSync:
         client = await self._get_client()
 
         payload = {
-            "project_id": self.project_id,
+            "site_id": self.site_id,  # Primary: site is the physical location
             "firmware_version": firmware_version,
             "uptime_seconds": uptime_seconds,
             "cpu_usage_pct": cpu_usage_pct,
             "memory_usage_pct": memory_usage_pct
         }
+        # Include project_id if available (for backward compatibility)
+        if self.project_id:
+            payload["project_id"] = self.project_id
 
         try:
             response = await client.post(

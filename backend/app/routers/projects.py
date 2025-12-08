@@ -422,10 +422,12 @@ async def delete_project(
 
 
 # ============================================
-# CONTROLLER ENDPOINTS
+# CONTROLLER ENDPOINTS (DEPRECATED - Use /api/sites instead)
+# These endpoints are kept for backward compatibility.
+# New code should use the /api/sites router.
 # ============================================
 
-@router.post("/{project_id}/register-controller", response_model=ControllerInfo)
+@router.post("/{project_id}/register-controller", response_model=ControllerInfo, deprecated=True)
 async def register_controller(
     project_id: UUID,
     controller: ControllerInfo,
@@ -433,6 +435,8 @@ async def register_controller(
     db: Client = Depends(get_supabase)
 ):
     """
+    DEPRECATED: Use /api/sites/{site_id}/heartbeat instead.
+
     Register a site controller with this project.
 
     Called when a new Raspberry Pi controller is set up.
@@ -469,7 +473,7 @@ async def register_controller(
         )
 
 
-@router.post("/{project_id}/heartbeat")
+@router.post("/{project_id}/heartbeat", deprecated=True)
 async def controller_heartbeat(
     project_id: UUID,
     firmware_version: Optional[str] = None,
@@ -479,6 +483,8 @@ async def controller_heartbeat(
     db: Client = Depends(get_supabase)
 ):
     """
+    DEPRECATED: Use /api/sites/{site_id}/heartbeat instead.
+
     Receive heartbeat from site controller.
 
     Called every 5 minutes by the on-site controller.
@@ -508,12 +514,14 @@ async def controller_heartbeat(
         )
 
 
-@router.get("/{project_id}/config")
+@router.get("/{project_id}/config", deprecated=True)
 async def get_project_config(
     project_id: UUID,
     db: Client = Depends(get_supabase)
 ):
     """
+    DEPRECATED: Use /api/sites/{site_id}/config instead.
+
     Get full project configuration for controller.
 
     Returns all settings and device configurations

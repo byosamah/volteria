@@ -58,10 +58,11 @@ interface Device {
 
 interface DeviceListProps {
   projectId: string;
+  siteId?: string;  // Optional: for sites architecture
   devices: Device[];
 }
 
-export function DeviceList({ projectId, devices: initialDevices }: DeviceListProps) {
+export function DeviceList({ projectId, siteId, devices: initialDevices }: DeviceListProps) {
   const router = useRouter();
   const [devices, setDevices] = useState(initialDevices);
   const [editDevice, setEditDevice] = useState<Device | null>(null);
@@ -335,7 +336,10 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
           <CardContent className="flex flex-col items-center justify-center py-12">
             <p className="text-muted-foreground mb-4">No devices configured</p>
             <Button variant="outline" asChild>
-              <Link href={`/projects/${projectId}/devices/new`}>Add Device</Link>
+              <Link href={siteId
+                ? `/projects/${projectId}/sites/${siteId}/devices/new`
+                : `/projects/${projectId}/devices/new`
+              }>Add Device</Link>
             </Button>
           </CardContent>
         </Card>
@@ -345,7 +349,10 @@ export function DeviceList({ projectId, devices: initialDevices }: DeviceListPro
       {devices.length > 0 && (
         <div className="flex justify-end">
           <Button asChild>
-            <Link href={`/projects/${projectId}/devices/new`}>
+            <Link href={siteId
+              ? `/projects/${projectId}/sites/${siteId}/devices/new`
+              : `/projects/${projectId}/devices/new`
+            }>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2">
                 <path d="M5 12h14" />
                 <path d="M12 5v14" />

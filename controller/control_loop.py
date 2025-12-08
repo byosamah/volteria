@@ -279,9 +279,10 @@ class ControlLoop:
         self.config = config
         self.state = ControlState()
 
-        # Site info
+        # Site info - sites are physical locations with controllers
         site_cfg = config.get("site", {})
-        self.project_id = site_cfg.get("id", "")
+        self.site_id = site_cfg.get("id", "")
+        # Note: project_id is no longer used - sites architecture replaces projects with controllers
 
         # Control settings
         control_cfg = config.get("control", {})
@@ -370,7 +371,7 @@ class ControlLoop:
         self.cloud_sync: Optional[CloudSync] = None
         if cloud_cfg.get("sync_enabled", False) and cloud_cfg.get("supabase_url"):
             self.cloud_sync = CloudSync(
-                project_id=self.project_id,
+                site_id=self.site_id,  # Primary: site is the physical location with controller
                 supabase_url=cloud_cfg["supabase_url"],
                 supabase_key=cloud_cfg.get("supabase_key", ""),
                 local_db=self.local_db,

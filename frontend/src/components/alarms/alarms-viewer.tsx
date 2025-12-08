@@ -58,9 +58,10 @@ interface Alarm {
 
 interface AlarmsViewerProps {
   projectId: string;
+  siteId?: string;  // Optional: for sites architecture
 }
 
-export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
+export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
   const [alarms, setAlarms] = useState<Alarm[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all"); // all, unacknowledged, critical, warning, info
@@ -73,8 +74,16 @@ export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
 
     let query = supabase
       .from("alarms")
-      .select("*")
-      .eq("project_id", projectId)
+      .select("*");
+
+    // Filter by site_id or project_id
+    if (siteId) {
+      query = query.eq("site_id", siteId);
+    } else {
+      query = query.eq("project_id", projectId);
+    }
+
+    query = query
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -99,7 +108,7 @@ export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
   useEffect(() => {
     fetchAlarms();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, projectId]);
+  }, [filter, projectId, siteId]);
 
   // Acknowledge single alarm
   const acknowledgeAlarm = async (alarmId: string) => {
@@ -128,14 +137,21 @@ export function AlarmsViewer({ projectId }: AlarmsViewerProps) {
     setLoading(true);
     const supabase = createClient();
 
-    const { error } = await supabase
+    // Build query - use site_id if provided, otherwise project_id
+    let query = supabase
       .from("alarms")
       .update({
         acknowledged: true,
         acknowledged_at: new Date().toISOString(),
-      })
-      .eq("project_id", projectId)
-      .eq("acknowledged", false);
+      });
+
+    if (siteId) {
+      query = query.eq("site_id", siteId);
+    } else {
+      query = query.eq("project_id", projectId);
+    }
+
+    const { error } = await query.eq("acknowledged", false);
 
     if (error) {
       console.error("Error acknowledging all alarms:", error);
