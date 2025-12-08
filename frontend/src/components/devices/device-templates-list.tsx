@@ -351,10 +351,10 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
                           <div className="flex flex-col items-end gap-1">
                             <Badge className={deviceTypeColors[template.device_type]}>
                               {template.device_type === "inverter"
-                                ? "Inverter"
+                                ? "Solar Inverter"
                                 : template.device_type === "load_meter"
-                                ? "Meter"
-                                : "Generator"}
+                                ? "Energy Meter"
+                                : "Generator Controller"}
                             </Badge>
                             {/* Template type badge - Public (green) or Custom (blue) */}
                             <Badge

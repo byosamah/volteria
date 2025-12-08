@@ -414,6 +414,18 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
             <DialogDescription>
               Update device settings. Changes will be applied immediately.
             </DialogDescription>
+            {/* Protocol badge - shows connection type */}
+            {editDevice && (
+              <div className="pt-2">
+                <Badge variant="outline" className="bg-slate-100 text-slate-700">
+                  {editDevice.protocol === "tcp"
+                    ? "Modbus TCP"
+                    : editDevice.protocol === "rtu_gateway"
+                    ? "RTU Gateway"
+                    : "RTU Direct"}
+                </Badge>
+              </div>
+            )}
           </DialogHeader>
 
           <div className="space-y-4 py-4">
