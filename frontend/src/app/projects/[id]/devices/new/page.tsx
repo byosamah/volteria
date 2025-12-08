@@ -27,12 +27,12 @@ export default async function AddDevicePage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Fetch user profile including avatar
-  let userProfile: { full_name: string | null; avatar_url: string | null } | null = null;
+  // Fetch user profile including avatar and role
+  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null } | null = null;
   if (user?.id) {
     const { data } = await supabase
       .from("users")
-      .select("full_name, avatar_url")
+      .select("full_name, avatar_url, role")
       .eq("id", user.id)
       .single();
     userProfile = data;
@@ -79,6 +79,7 @@ export default async function AddDevicePage({
         email: user?.email,
         full_name: userProfile?.full_name || undefined,
         avatar_url: userProfile?.avatar_url || undefined,
+        role: userProfile?.role || undefined,
       }}>
       <div className="p-6 max-w-2xl mx-auto space-y-6">
         {/* Header */}

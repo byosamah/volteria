@@ -62,12 +62,12 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Fetch user profile including avatar
-  let userProfile: { full_name: string | null; avatar_url: string | null } | null = null;
+  // Fetch user profile including avatar and role
+  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null } | null = null;
   if (user?.id) {
     const { data } = await supabase
       .from("users")
-      .select("full_name, avatar_url")
+      .select("full_name, avatar_url, role")
       .eq("id", user.id)
       .single();
     userProfile = data;
@@ -132,6 +132,7 @@ export default async function DashboardPage() {
         email: user?.email,
         full_name: userProfile?.full_name || undefined,
         avatar_url: userProfile?.avatar_url || undefined,
+        role: userProfile?.role || undefined,
       }}>
       {/* MOBILE-FRIENDLY: Responsive padding - smaller on mobile, larger on desktop */}
       <div className="p-4 md:p-6 space-y-4 md:space-y-6">

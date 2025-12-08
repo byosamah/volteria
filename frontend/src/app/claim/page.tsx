@@ -55,6 +55,7 @@ export default async function ClaimPage() {
         email: user.email,
         full_name: userData?.full_name || undefined,
         avatar_url: userData?.avatar_url || undefined,
+        role: userData?.role || undefined,
       }}>
       <div className="p-4 md:p-6 space-y-6 max-w-2xl mx-auto">
         {/* Header */}

@@ -73,6 +73,7 @@ export default async function HardwarePage() {
         email: user?.email,
         full_name: userProfile?.full_name || undefined,
         avatar_url: userProfile?.avatar_url || undefined,
+        role: userProfile?.role || undefined,
       }}>
       <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         {/* Header */}
