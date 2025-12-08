@@ -20,34 +20,56 @@ import { EnterprisesList } from "./enterprises-list";
 
 export default async function EnterprisesPage() {
   const supabase = await createClient();
+  console.log("=== ADMIN PAGE DEBUG START ===");
 
   // Get current user
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+
+  console.log("DEBUG - Auth user ID:", user?.id);
+  console.log("DEBUG - Auth user email:", user?.email);
+  console.log("DEBUG - Auth error:", authError);
+
+  if (!user) {
+    console.log("DEBUG - No auth user, redirecting to login");
+    redirect("/login");
+  }
 
   // Check user role - only super_admin can access
   let userProfile: { role: string | null; full_name: string | null; avatar_url: string | null } | null = null;
-  if (user?.id) {
-    const { data: userData, error } = await supabase
-      .from("users")
-      .select("role, full_name, avatar_url")
-      .eq("id", user.id)
-      .single();
 
-    // Error handling: Log and redirect if query fails
-    if (error) {
-      console.error("Failed to fetch user role:", error);
-      redirect("/");
-    }
-    userProfile = userData;
+  console.log("DEBUG - Querying users table for ID:", user.id);
+
+  const { data: userData, error } = await supabase
+    .from("users")
+    .select("role, full_name, avatar_url")
+    .eq("id", user.id)
+    .single();
+
+  console.log("DEBUG - Query result userData:", JSON.stringify(userData));
+  console.log("DEBUG - Query error:", JSON.stringify(error));
+
+  // Error handling: Log and redirect if query fails
+  if (error) {
+    console.error("DEBUG - FAILED to fetch user role:", error);
+    console.log("DEBUG - REDIRECTING due to query error");
+    redirect("/");
   }
+  userProfile = userData;
+
   const userRole = userProfile?.role;
+  console.log("DEBUG - User role from query:", userRole);
+  console.log("DEBUG - Is super_admin?:", userRole === "super_admin");
 
   // Redirect if not super_admin (this page requires super_admin only)
   if (!userRole || userRole !== "super_admin") {
+    console.log("DEBUG - REDIRECTING - role check failed. userRole:", userRole);
     redirect("/");
   }
+
+  console.log("=== ADMIN PAGE DEBUG - PASSED ALL CHECKS ===");
 
   // Fetch enterprises
   let enterprises: Array<{
