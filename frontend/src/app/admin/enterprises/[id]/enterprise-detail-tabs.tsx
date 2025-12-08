@@ -19,6 +19,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -102,11 +110,18 @@ interface User {
   created_at: string;
 }
 
+interface CurrentUser {
+  id: string;
+  email: string;
+  role: string;
+}
+
 interface EnterpriseDetailTabsProps {
   enterprise: Enterprise;
   controllers: Controller[];
   projects: Project[];
   users: User[];
+  currentUser: CurrentUser;
 }
 
 export function EnterpriseDetailTabs({
@@ -114,10 +129,19 @@ export function EnterpriseDetailTabs({
   controllers,
   projects,
   users,
+  currentUser,
 }: EnterpriseDetailTabsProps) {
   const router = useRouter();
   const supabase = createClient();
   const [saving, setSaving] = useState(false);
+
+  // Delete user state
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Check if current user is super_admin
+  const isSuperAdmin = currentUser.role === "super_admin";
 
   // Settings form state
   const [formData, setFormData] = useState({
@@ -208,6 +232,51 @@ export function EnterpriseDetailTabs({
       toast.error("An unexpected error occurred");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Handle user deletion with password verification
+  const handleDeleteUser = async () => {
+    if (!userToDelete || !confirmPassword) return;
+
+    setDeleteLoading(true);
+
+    try {
+      // Step 1: Verify super admin's password by re-authenticating
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: currentUser.email,
+        password: confirmPassword,
+      });
+
+      if (authError) {
+        toast.error("Incorrect password. Please try again.");
+        setDeleteLoading(false);
+        return;
+      }
+
+      // Step 2: Delete user from database
+      const { error: deleteError } = await supabase
+        .from("users")
+        .delete()
+        .eq("id", userToDelete.id);
+
+      if (deleteError) {
+        console.error("Error deleting user:", deleteError);
+        toast.error(deleteError.message || "Failed to delete user");
+        setDeleteLoading(false);
+        return;
+      }
+
+      // Step 3: Success - close dialog and refresh
+      toast.success(`User ${userToDelete.full_name || userToDelete.email} deleted successfully`);
+      setUserToDelete(null);
+      setConfirmPassword("");
+      router.refresh();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -401,12 +470,41 @@ export function EnterpriseDetailTabs({
                       <div className="text-sm text-muted-foreground">{user.email}</div>
                     </div>
                   </div>
-                  <div className="text-sm text-muted-foreground sm:text-right">
-                    <div className="flex items-center gap-2 justify-end">
-                      <span className={`h-2 w-2 rounded-full ${user.is_active ? "bg-green-500" : "bg-gray-400"}`} />
-                      {user.is_active ? "Active" : "Inactive"}
+                  <div className="flex items-center gap-4">
+                    <div className="text-sm text-muted-foreground sm:text-right">
+                      <div className="flex items-center gap-2 justify-end">
+                        <span className={`h-2 w-2 rounded-full ${user.is_active ? "bg-green-500" : "bg-gray-400"}`} />
+                        {user.is_active ? "Active" : "Inactive"}
+                      </div>
+                      <div>Joined {new Date(user.created_at).toLocaleDateString()}</div>
                     </div>
-                    <div>Joined {new Date(user.created_at).toLocaleDateString()}</div>
+                    {/* Delete button - only for super_admin, not for self */}
+                    {isSuperAdmin && user.id !== currentUser.id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 w-9 p-0 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                        onClick={() => setUserToDelete(user)}
+                        title="Delete user"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          <line x1="10" x2="10" y1="11" y2="17" />
+                          <line x1="14" x2="14" y1="11" y2="17" />
+                        </svg>
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -780,6 +878,91 @@ export function EnterpriseDetailTabs({
           </CardContent>
         </Card>
       </TabsContent>
+
+      {/* Delete User Confirmation Dialog with Password */}
+      <Dialog
+        open={!!userToDelete}
+        onOpenChange={(open) => {
+          if (!open) {
+            setUserToDelete(null);
+            setConfirmPassword("");
+          }
+        }}
+      >
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-5 w-5 text-red-600"
+                >
+                  <path d="M3 6h18" />
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                </svg>
+              </div>
+              Delete User
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              Are you sure you want to delete{" "}
+              <strong>{userToDelete?.full_name || userToDelete?.email}</strong>?
+              <br />
+              <span className="text-red-600">
+                This will permanently remove this user from the system. This action cannot be undone.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">
+                Enter your password to confirm
+              </Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                placeholder="Your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="min-h-[44px]"
+                autoComplete="current-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                For security, please enter your password to confirm this action.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUserToDelete(null);
+                setConfirmPassword("");
+              }}
+              disabled={deleteLoading}
+              className="min-h-[44px] w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteUser}
+              disabled={deleteLoading || !confirmPassword}
+              className="min-h-[44px] w-full sm:w-auto"
+            >
+              {deleteLoading ? "Deleting..." : "Delete User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Tabs>
   );
 }

@@ -244,6 +244,11 @@ export default async function EnterpriseDetailPage({
           controllers={controllers}
           projects={projects}
           users={users}
+          currentUser={{
+            id: user?.id || "",
+            email: user?.email || "",
+            role: userProfile?.role || "",
+          }}
         />
       </div>
     </DashboardLayout>
