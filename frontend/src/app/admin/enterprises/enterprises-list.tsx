@@ -198,6 +198,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
 
         // Create user directly using Supabase Admin API
         // Note: This requires a backend endpoint since we can't use admin.createUser from client
+        console.log("[Invite] Direct create request for:", inviteData.email.trim());
         const response = await fetch("/api/admin/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -212,12 +213,16 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          toast.error(error.message || "Failed to create user");
+          const errorData = await response.json();
+          console.error("[Invite] Direct create failed:", response.status, errorData);
+          // Show the specific error message from the API
+          toast.error(errorData.message || errorData.error || `Failed to create user (${response.status})`);
           setInviteLoading(false);
           return;
         }
 
+        const result = await response.json();
+        console.log("[Invite] Direct create success:", result);
         toast.success(`Enterprise admin created for ${inviteEnterprise.name}`);
       } else {
         // Send magic link invitation
