@@ -10,6 +10,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { FormattedDate } from "@/components/ui/formatted-date";
 
 // Project type definition
 export interface Project {
@@ -106,7 +107,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             {/* Only show "Last seen" when controller is offline */}
             {project.controller_status === "offline" && project.controller_last_seen && (
               <p className="text-xs text-muted-foreground pt-2 border-t">
-                Last seen: {new Date(project.controller_last_seen).toLocaleString()}
+                Last seen: <FormattedDate date={project.controller_last_seen} />
               </p>
             )}
           </div>

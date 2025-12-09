@@ -11,6 +11,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FormattedDate } from "@/components/ui/formatted-date";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -211,7 +212,7 @@ export default async function ProjectDetailPage({
                         <span>{siteDeviceCounts[site.id] || 0} devices</span>
                         <span>DG Reserve: {site.dg_reserve_kw} kW</span>
                         {site.controller_status === "offline" && site.controller_last_seen && (
-                          <span>Last seen: {new Date(site.controller_last_seen).toLocaleString()}</span>
+                          <span>Last seen: <FormattedDate date={site.controller_last_seen} /></span>
                         )}
                       </div>
                     </div>

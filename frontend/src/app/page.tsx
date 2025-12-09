@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { FormattedDate } from "@/components/ui/formatted-date";
 import Link from "next/link";
 
 // Status badge component
@@ -273,7 +274,7 @@ export default async function DashboardPage() {
                         {/* Show last seen timestamp if offline */}
                         {project.controller_status === "offline" && project.controller_last_seen && (
                           <p className="text-xs text-muted-foreground">
-                            Last seen: {new Date(project.controller_last_seen).toLocaleString()}
+                            Last seen: <FormattedDate date={project.controller_last_seen} />
                           </p>
                         )}
                       </div>
@@ -328,7 +329,7 @@ export default async function DashboardPage() {
                           {alarm.message}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {new Date(alarm.created_at).toLocaleString()}
+                          <FormattedDate date={alarm.created_at} />
                         </p>
                       </div>
                     </div>
