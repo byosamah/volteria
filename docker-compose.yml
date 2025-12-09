@@ -46,6 +46,8 @@ services:
       - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - NEXT_PUBLIC_API_URL=http://backend:8000
+      # Service key needed for admin API routes (invite, etc.)
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
     depends_on:
       backend:
         condition: service_healthy
