@@ -225,27 +225,32 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
         console.log("[Invite] Direct create success:", result);
         toast.success(`Enterprise admin created for ${inviteEnterprise.name}`);
       } else {
-        // Send magic link invitation
-        const { error } = await supabase.auth.signInWithOtp({
-          email: inviteData.email.trim(),
-          options: {
-            data: {
-              role: "enterprise_admin",
-              enterprise_id: inviteEnterprise.id,
-              first_name: inviteData.first_name.trim(),
-              last_name: inviteData.last_name.trim(),
-            },
-            emailRedirectTo: "https://volteria.org/auth/callback?next=/account",
-          },
+        // Send email invitation via backend API
+        // This uses Supabase Admin API to invite the user
+        console.log("[Invite] Email invite request for:", inviteData.email.trim());
+        const response = await fetch("/api/admin/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: inviteData.email.trim(),
+            first_name: inviteData.first_name.trim(),
+            last_name: inviteData.last_name.trim(),
+            role: "enterprise_admin",
+            enterprise_id: inviteEnterprise.id,
+          }),
         });
 
-        if (error) {
-          toast.error(error.message || "Failed to send invitation");
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("[Invite] Email invite failed:", response.status, errorData);
+          toast.error(errorData.message || errorData.error || `Failed to send invitation (${response.status})`);
           setInviteLoading(false);
           return;
         }
 
-        toast.success(`Invitation sent to ${inviteData.email}`);
+        const result = await response.json();
+        console.log("[Invite] Email invite success:", result);
+        toast.success(`Invitation email sent to ${inviteData.email}`);
       }
 
       setInviteOpen(false);
