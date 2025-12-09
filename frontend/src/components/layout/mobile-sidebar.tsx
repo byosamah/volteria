@@ -147,6 +147,7 @@ interface MobileSidebarProps {
     full_name?: string;
     role?: string;
     avatar_url?: string;  // Profile picture URL from Supabase Storage
+    enterprise_id?: string;  // Enterprise ID for showing My Controllers nav
   };
 }
 
@@ -158,36 +159,41 @@ export function MobileSidebar({ user }: MobileSidebarProps) {
   // Get mobile nav state from context
   const { isOpen, setIsOpen } = useMobileNav();
 
-  // Track fetched role (only used if prop not provided)
+  // Track fetched role and enterprise_id (only used if props not provided)
   const [fetchedRole, setFetchedRole] = useState<string | undefined>(undefined);
+  const [fetchedEnterpriseId, setFetchedEnterpriseId] = useState<string | undefined>(undefined);
 
-  // Derive role from props OR fetched role
-  // Using prop directly avoids flash - prop is available immediately on server render
+  // Derive role and enterprise_id from props OR fetched values
+  // Using props directly avoids flash - props are available immediately on server render
   const userRole = user?.role || fetchedRole;
+  const userEnterpriseId = user?.enterprise_id || fetchedEnterpriseId;
 
-  // Fetch user role only if not provided via props
+  // Fetch user role and enterprise_id only if not provided via props
   useEffect(() => {
-    // If role is already provided via props, no need to fetch
-    if (user?.role) {
+    // If both are already provided via props, no need to fetch
+    if (user?.role && user?.enterprise_id !== undefined) {
       return;
     }
 
-    const fetchUserRole = async () => {
+    const fetchUserData = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (authUser?.id) {
         const { data: userData } = await supabase
           .from("users")
-          .select("role")
+          .select("role, enterprise_id")
           .eq("id", authUser.id)
           .single();
-        if (userData?.role) {
+        if (userData?.role && !user?.role) {
           setFetchedRole(userData.role);
+        }
+        if (userData?.enterprise_id && !user?.enterprise_id) {
+          setFetchedEnterpriseId(userData.enterprise_id);
         }
       }
     };
 
-    fetchUserRole();
-  }, [user?.role, supabase]);
+    fetchUserData();
+  }, [user?.role, user?.enterprise_id, supabase]);
 
   // Handle logout
   const handleLogout = async () => {
@@ -267,6 +273,27 @@ export function MobileSidebar({ user }: MobileSidebarProps) {
               </Link>
             );
           })}
+
+          {/* My Controllers - visible to enterprise users and super_admin */}
+          {(userEnterpriseId || userRole === "super_admin") && (
+            <Link
+              href="/controllers"
+              onClick={handleLinkClick}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-4 min-h-[44px] text-base transition-colors",
+                pathname === "/controllers" || pathname.startsWith("/controllers/")
+                  ? "bg-[#6baf4f] text-white"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <rect width="20" height="14" x="2" y="3" rx="2" />
+                <line x1="8" x2="16" y1="21" y2="21" />
+                <line x1="12" x2="12" y1="17" y2="21" />
+              </svg>
+              My Controllers
+            </Link>
+          )}
 
           {/* Admin section - only shown to super_admin and backend_admin */}
           {userRole && (userRole === "super_admin" || userRole === "backend_admin") && (

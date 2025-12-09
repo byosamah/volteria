@@ -27,6 +27,7 @@ interface DashboardLayoutProps {
     full_name?: string;
     role?: string;
     avatar_url?: string;  // Profile picture URL from Supabase Storage
+    enterprise_id?: string;  // Enterprise ID for showing My Controllers nav
   };
 }
 
