@@ -220,7 +220,7 @@ export function Sidebar({ user }: SidebarProps) {
   };
 
   return (
-    <div className="flex h-screen w-64 flex-col border-r bg-card">
+    <div className="sticky top-0 flex h-screen w-64 flex-col border-r bg-card">
       {/* Logo */}
       <div className="flex h-24 items-center pl-5 pr-4 border-b">
         <div className="flex flex-col">

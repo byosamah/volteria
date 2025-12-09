@@ -20,15 +20,43 @@ export default async function NewProjectPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Fetch user profile including avatar and role
-  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null } | null = null;
+  // Fetch user profile including avatar, role, and enterprise
+  let userProfile: {
+    full_name: string | null;
+    avatar_url: string | null;
+    role: string | null;
+    enterprise_id: string | null;
+  } | null = null;
+  let userEnterpriseName: string | null = null;
+
   if (user?.id) {
     const { data } = await supabase
       .from("users")
-      .select("full_name, avatar_url, role")
+      .select("full_name, avatar_url, role, enterprise_id")
       .eq("id", user.id)
       .single();
     userProfile = data;
+
+    // Fetch user's enterprise name if they have one
+    if (data?.enterprise_id) {
+      const { data: enterprise } = await supabase
+        .from("enterprises")
+        .select("name")
+        .eq("id", data.enterprise_id)
+        .single();
+      userEnterpriseName = enterprise?.name || null;
+    }
+  }
+
+  // For super_admin/backend_admin, fetch all enterprises
+  let enterprises: Array<{ id: string; name: string }> = [];
+  if (userProfile?.role === "super_admin" || userProfile?.role === "backend_admin") {
+    const { data } = await supabase
+      .from("enterprises")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name");
+    enterprises = data || [];
   }
 
   return (
@@ -44,7 +72,7 @@ export default async function NewProjectPage() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Create New Project</h1>
           <p className="text-muted-foreground text-sm md:text-base">
-            Set up a new hybrid energy site
+            A project can have many sites
           </p>
         </div>
 
@@ -57,7 +85,12 @@ export default async function NewProjectPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <NewProjectForm />
+            <NewProjectForm
+              userRole={userProfile?.role || "viewer"}
+              userEnterpriseId={userProfile?.enterprise_id || null}
+              userEnterpriseName={userEnterpriseName}
+              enterprises={enterprises}
+            />
           </CardContent>
         </Card>
       </div>

@@ -48,7 +48,7 @@ export default async function HardwarePage() {
     redirect("/");
   }
 
-  // Fetch hardware types
+  // Fetch hardware types - includes all specification fields
   let hardwareTypes: Array<{
     id: string;
     hardware_type: string;
@@ -59,6 +59,54 @@ export default async function HardwarePage() {
     min_firmware_version: string | null;
     is_active: boolean;
     created_at: string;
+    // Section 1: General / Identification
+    model: string | null;
+    brand: string | null;
+    base_hardware: string | null;
+    country_of_origin: string | null;
+    conformity: string | null;
+    // Section 2: Physical / Housing
+    housing_material: string | null;
+    housing_dimensions: string | null;
+    weight: string | null;
+    ip_rating: string | null;
+    // Section 3: Environmental / Power
+    operating_temp_range: string | null;
+    storage_temp: string | null;
+    max_humidity: string | null;
+    power_input: string | null;
+    power_supply: string | null;
+    max_power_consumption: string | null;
+    battery: string | null;
+    // Section 4: Processor / Computing
+    processor: string | null;
+    cooling: string | null;
+    gpu: string | null;
+    memory_ram: string | null;
+    storage_spec: string | null;
+    // Section 5: Connectivity / Interfaces
+    wifi_spec: string | null;
+    bluetooth_spec: string | null;
+    cellular: string | null;
+    antenna: string | null;
+    interfaces: string | null;
+    usb_ports_spec: string | null;
+    ethernet_spec: string | null;
+    rs485_spec: string | null;
+    can_bus: string | null;
+    // Section 6: Expansion / Modules
+    pcie: string | null;
+    compatible_modules: string | null;
+    // Section 7: Display / Camera
+    display_output: string | null;
+    video_decode: string | null;
+    optical_display: string | null;
+    camera_interfaces: string | null;
+    // Section 8: Control / Miscellaneous
+    rtc: string | null;
+    power_button: string | null;
+    mtbf: string | null;
+    emc_spec: string | null;
   }> = [];
 
   try {

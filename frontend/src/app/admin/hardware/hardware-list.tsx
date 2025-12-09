@@ -4,7 +4,15 @@
  * Hardware List Component
  *
  * Client component for displaying and managing approved hardware types.
- * Includes create/edit dialog.
+ * Includes create/edit dialog with comprehensive specifications in 8 sections:
+ * 1. General / Identification
+ * 2. Physical / Housing
+ * 3. Environmental / Power
+ * 4. Processor / Computing
+ * 5. Connectivity / Interfaces
+ * 6. Expansion / Modules
+ * 7. Display / Camera
+ * 8. Control / Miscellaneous
  */
 
 import { useState } from "react";
@@ -23,8 +31,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { toast } from "sonner";
 
+// Hardware type interface with all specification fields
 interface HardwareType {
   id: string;
   hardware_type: string;
@@ -35,10 +49,188 @@ interface HardwareType {
   min_firmware_version: string | null;
   is_active: boolean;
   created_at: string;
+  // Section 1: General / Identification
+  model: string | null;
+  brand: string | null;
+  base_hardware: string | null;
+  country_of_origin: string | null;
+  conformity: string | null;
+  // Section 2: Physical / Housing
+  housing_material: string | null;
+  housing_dimensions: string | null;
+  weight: string | null;
+  ip_rating: string | null;
+  // Section 3: Environmental / Power
+  operating_temp_range: string | null;
+  storage_temp: string | null;
+  max_humidity: string | null;
+  power_input: string | null;
+  power_supply: string | null;
+  max_power_consumption: string | null;
+  battery: string | null;
+  // Section 4: Processor / Computing
+  processor: string | null;
+  cooling: string | null;
+  gpu: string | null;
+  memory_ram: string | null;
+  storage_spec: string | null;
+  // Section 5: Connectivity / Interfaces
+  wifi_spec: string | null;
+  bluetooth_spec: string | null;
+  cellular: string | null;
+  antenna: string | null;
+  interfaces: string | null;
+  usb_ports_spec: string | null;
+  ethernet_spec: string | null;
+  rs485_spec: string | null;
+  can_bus: string | null;
+  // Section 6: Expansion / Modules
+  pcie: string | null;
+  compatible_modules: string | null;
+  // Section 7: Display / Camera
+  display_output: string | null;
+  video_decode: string | null;
+  optical_display: string | null;
+  camera_interfaces: string | null;
+  // Section 8: Control / Miscellaneous
+  rtc: string | null;
+  power_button: string | null;
+  mtbf: string | null;
+  emc_spec: string | null;
 }
 
 interface HardwareListProps {
   hardwareTypes: HardwareType[];
+}
+
+// Initial empty form data
+const emptyFormData = {
+  hardware_type: "",
+  name: "",
+  manufacturer: "",
+  description: "",
+  min_firmware_version: "",
+  // Section 1: General
+  model: "",
+  brand: "",
+  base_hardware: "",
+  country_of_origin: "",
+  conformity: "",
+  // Section 2: Physical
+  housing_material: "",
+  housing_dimensions: "",
+  weight: "",
+  ip_rating: "",
+  // Section 3: Environmental
+  operating_temp_range: "",
+  storage_temp: "",
+  max_humidity: "",
+  power_input: "",
+  power_supply: "",
+  max_power_consumption: "",
+  battery: "",
+  // Section 4: Processor
+  processor: "",
+  cooling: "",
+  gpu: "",
+  memory_ram: "",
+  storage_spec: "",
+  // Section 5: Connectivity
+  wifi_spec: "",
+  bluetooth_spec: "",
+  cellular: "",
+  antenna: "",
+  interfaces: "",
+  usb_ports_spec: "",
+  ethernet_spec: "",
+  rs485_spec: "",
+  can_bus: "",
+  // Section 6: Expansion
+  pcie: "",
+  compatible_modules: "",
+  // Section 7: Display
+  display_output: "",
+  video_decode: "",
+  optical_display: "",
+  camera_interfaces: "",
+  // Section 8: Control
+  rtc: "",
+  power_button: "",
+  mtbf: "",
+  emc_spec: "",
+};
+
+// Section header component with collapsible trigger
+function SectionHeader({
+  title,
+  isOpen,
+  onToggle
+}: {
+  title: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <CollapsibleTrigger asChild onClick={onToggle}>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between rounded-lg bg-muted/50 px-4 py-3 text-left text-sm font-medium hover:bg-muted transition-colors"
+      >
+        {title}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+    </CollapsibleTrigger>
+  );
+}
+
+// Text input field component for forms
+function FormField({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  required = false,
+  disabled = false,
+  monospace = false,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  required?: boolean;
+  disabled?: boolean;
+  monospace?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-xs">
+        {label} {required && <span className="text-red-500">*</span>}
+      </Label>
+      <Input
+        id={id}
+        name={id}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        className={`min-h-[44px] ${monospace ? "font-mono" : ""}`}
+        disabled={disabled}
+        required={required}
+      />
+    </div>
+  );
 }
 
 export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareListProps) {
@@ -51,29 +243,37 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
   const [loading, setLoading] = useState(false);
 
   // Form state
-  const [formData, setFormData] = useState({
-    hardware_type: "",
-    name: "",
-    manufacturer: "",
-    description: "",
-    min_firmware_version: "",
-    // Features
-    wifi: true,
-    ethernet: true,
-    rs485_support: true,
+  const [formData, setFormData] = useState(emptyFormData);
+
+  // Section open/close state
+  const [openSections, setOpenSections] = useState({
+    general: true,
+    physical: false,
+    environmental: false,
+    processor: false,
+    connectivity: false,
+    expansion: false,
+    display: false,
+    control: false,
   });
+
+  // Toggle section
+  const toggleSection = (section: keyof typeof openSections) => {
+    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
 
   // Reset form
   const resetForm = () => {
-    setFormData({
-      hardware_type: "",
-      name: "",
-      manufacturer: "",
-      description: "",
-      min_firmware_version: "",
-      wifi: true,
-      ethernet: true,
-      rs485_support: true,
+    setFormData(emptyFormData);
+    setOpenSections({
+      general: true,
+      physical: false,
+      environmental: false,
+      processor: false,
+      connectivity: false,
+      expansion: false,
+      display: false,
+      control: false,
     });
   };
 
@@ -86,21 +286,72 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
       manufacturer: hardware.manufacturer || "",
       description: hardware.description || "",
       min_firmware_version: hardware.min_firmware_version || "",
-      wifi: (hardware.features?.wifi as boolean) ?? true,
-      ethernet: (hardware.features?.ethernet as boolean) ?? true,
-      rs485_support: (hardware.features?.rs485_support as boolean) ?? true,
+      // Section 1
+      model: hardware.model || "",
+      brand: hardware.brand || "",
+      base_hardware: hardware.base_hardware || "",
+      country_of_origin: hardware.country_of_origin || "",
+      conformity: hardware.conformity || "",
+      // Section 2
+      housing_material: hardware.housing_material || "",
+      housing_dimensions: hardware.housing_dimensions || "",
+      weight: hardware.weight || "",
+      ip_rating: hardware.ip_rating || "",
+      // Section 3
+      operating_temp_range: hardware.operating_temp_range || "",
+      storage_temp: hardware.storage_temp || "",
+      max_humidity: hardware.max_humidity || "",
+      power_input: hardware.power_input || "",
+      power_supply: hardware.power_supply || "",
+      max_power_consumption: hardware.max_power_consumption || "",
+      battery: hardware.battery || "",
+      // Section 4
+      processor: hardware.processor || "",
+      cooling: hardware.cooling || "",
+      gpu: hardware.gpu || "",
+      memory_ram: hardware.memory_ram || "",
+      storage_spec: hardware.storage_spec || "",
+      // Section 5
+      wifi_spec: hardware.wifi_spec || "",
+      bluetooth_spec: hardware.bluetooth_spec || "",
+      cellular: hardware.cellular || "",
+      antenna: hardware.antenna || "",
+      interfaces: hardware.interfaces || "",
+      usb_ports_spec: hardware.usb_ports_spec || "",
+      ethernet_spec: hardware.ethernet_spec || "",
+      rs485_spec: hardware.rs485_spec || "",
+      can_bus: hardware.can_bus || "",
+      // Section 6
+      pcie: hardware.pcie || "",
+      compatible_modules: hardware.compatible_modules || "",
+      // Section 7
+      display_output: hardware.display_output || "",
+      video_decode: hardware.video_decode || "",
+      optical_display: hardware.optical_display || "",
+      camera_interfaces: hardware.camera_interfaces || "",
+      // Section 8
+      rtc: hardware.rtc || "",
+      power_button: hardware.power_button || "",
+      mtbf: hardware.mtbf || "",
+      emc_spec: hardware.emc_spec || "",
+    });
+    // Open all sections that have data
+    setOpenSections({
+      general: true,
+      physical: !!(hardware.housing_material || hardware.housing_dimensions || hardware.weight || hardware.ip_rating),
+      environmental: !!(hardware.operating_temp_range || hardware.storage_temp || hardware.max_humidity || hardware.power_input || hardware.power_supply || hardware.max_power_consumption || hardware.battery),
+      processor: !!(hardware.processor || hardware.cooling || hardware.gpu || hardware.memory_ram || hardware.storage_spec),
+      connectivity: !!(hardware.wifi_spec || hardware.bluetooth_spec || hardware.cellular || hardware.antenna || hardware.interfaces || hardware.usb_ports_spec || hardware.ethernet_spec || hardware.rs485_spec || hardware.can_bus),
+      expansion: !!(hardware.pcie || hardware.compatible_modules),
+      display: !!(hardware.display_output || hardware.video_decode || hardware.optical_display || hardware.camera_interfaces),
+      control: !!(hardware.rtc || hardware.power_button || hardware.mtbf || hardware.emc_spec),
     });
   };
 
   // Handle input changes
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
-    if (type === "checkbox") {
-      const checked = (e.target as HTMLInputElement).checked;
-      setFormData((prev) => ({ ...prev, [name]: checked }));
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   // Handle create/edit
@@ -116,22 +367,66 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
       }
 
       if (!formData.name.trim()) {
-        toast.error("Name is required");
+        toast.error("Display name is required");
         setLoading(false);
         return;
       }
 
+      // Build hardware data object with all fields
       const hardwareData = {
         hardware_type: formData.hardware_type.trim(),
         name: formData.name.trim(),
         manufacturer: formData.manufacturer.trim() || null,
         description: formData.description.trim() || null,
         min_firmware_version: formData.min_firmware_version.trim() || null,
-        features: {
-          wifi: formData.wifi,
-          ethernet: formData.ethernet,
-          rs485_support: formData.rs485_support,
-        },
+        // Section 1
+        model: formData.model.trim() || null,
+        brand: formData.brand.trim() || null,
+        base_hardware: formData.base_hardware.trim() || null,
+        country_of_origin: formData.country_of_origin.trim() || null,
+        conformity: formData.conformity.trim() || null,
+        // Section 2
+        housing_material: formData.housing_material.trim() || null,
+        housing_dimensions: formData.housing_dimensions.trim() || null,
+        weight: formData.weight.trim() || null,
+        ip_rating: formData.ip_rating.trim() || null,
+        // Section 3
+        operating_temp_range: formData.operating_temp_range.trim() || null,
+        storage_temp: formData.storage_temp.trim() || null,
+        max_humidity: formData.max_humidity.trim() || null,
+        power_input: formData.power_input.trim() || null,
+        power_supply: formData.power_supply.trim() || null,
+        max_power_consumption: formData.max_power_consumption.trim() || null,
+        battery: formData.battery.trim() || null,
+        // Section 4
+        processor: formData.processor.trim() || null,
+        cooling: formData.cooling.trim() || null,
+        gpu: formData.gpu.trim() || null,
+        memory_ram: formData.memory_ram.trim() || null,
+        storage_spec: formData.storage_spec.trim() || null,
+        // Section 5
+        wifi_spec: formData.wifi_spec.trim() || null,
+        bluetooth_spec: formData.bluetooth_spec.trim() || null,
+        cellular: formData.cellular.trim() || null,
+        antenna: formData.antenna.trim() || null,
+        interfaces: formData.interfaces.trim() || null,
+        usb_ports_spec: formData.usb_ports_spec.trim() || null,
+        ethernet_spec: formData.ethernet_spec.trim() || null,
+        rs485_spec: formData.rs485_spec.trim() || null,
+        can_bus: formData.can_bus.trim() || null,
+        // Section 6
+        pcie: formData.pcie.trim() || null,
+        compatible_modules: formData.compatible_modules.trim() || null,
+        // Section 7
+        display_output: formData.display_output.trim() || null,
+        video_decode: formData.video_decode.trim() || null,
+        optical_display: formData.optical_display.trim() || null,
+        camera_interfaces: formData.camera_interfaces.trim() || null,
+        // Section 8
+        rtc: formData.rtc.trim() || null,
+        power_button: formData.power_button.trim() || null,
+        mtbf: formData.mtbf.trim() || null,
+        emc_spec: formData.emc_spec.trim() || null,
         is_active: true,
       };
 
@@ -289,20 +584,30 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
                   </p>
                 )}
 
-                {hardware.description && (
-                  <p className="text-sm">{hardware.description}</p>
+                {hardware.model && (
+                  <p className="text-sm">Model: {hardware.model}</p>
                 )}
 
-                {/* Features */}
+                {hardware.description && (
+                  <p className="text-sm text-muted-foreground">{hardware.description}</p>
+                )}
+
+                {/* Key specs badges */}
                 <div className="flex flex-wrap gap-2">
-                  {(hardware.features?.wifi as boolean) && (
-                    <Badge variant="outline">WiFi</Badge>
+                  {hardware.processor && (
+                    <Badge variant="outline" className="text-xs">CPU</Badge>
                   )}
-                  {(hardware.features?.ethernet as boolean) && (
-                    <Badge variant="outline">Ethernet</Badge>
+                  {hardware.wifi_spec && (
+                    <Badge variant="outline" className="text-xs">WiFi</Badge>
                   )}
-                  {(hardware.features?.rs485_support as boolean) && (
-                    <Badge variant="outline">RS485</Badge>
+                  {hardware.ethernet_spec && (
+                    <Badge variant="outline" className="text-xs">Ethernet</Badge>
+                  )}
+                  {hardware.rs485_spec && (
+                    <Badge variant="outline" className="text-xs">RS485</Badge>
+                  )}
+                  {hardware.can_bus && (
+                    <Badge variant="outline" className="text-xs">CAN</Badge>
                   )}
                 </div>
 
@@ -347,21 +652,22 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
           }
         }}
       >
-        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-lg">
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editHardware ? "Edit Hardware Type" : "Add Hardware Type"}
             </DialogTitle>
             <DialogDescription>
               {editHardware
-                ? "Update the hardware type configuration."
-                : "Add a new approved hardware type for controllers."}
+                ? "Update the hardware type specifications."
+                : "Add a new approved hardware type with detailed specifications."}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="hardware_type">
+            {/* Hardware Type ID - Always visible */}
+            <div className="space-y-1.5">
+              <Label htmlFor="hardware_type" className="text-xs">
                 Hardware Type ID <span className="text-red-500">*</span>
               </Label>
               <Input
@@ -376,93 +682,418 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="name">
-                Display Name <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="e.g., Raspberry Pi 5"
-                value={formData.name}
-                onChange={handleChange}
-                className="min-h-[44px]"
-                required
+            {/* Section 1: General / Identification */}
+            <Collapsible open={openSections.general}>
+              <SectionHeader
+                title="General / Identification"
+                isOpen={openSections.general}
+                onToggle={() => toggleSection("general")}
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="manufacturer">Manufacturer</Label>
-              <Input
-                id="manufacturer"
-                name="manufacturer"
-                placeholder="e.g., Raspberry Pi Foundation"
-                value={formData.manufacturer}
-                onChange={handleChange}
-                className="min-h-[44px]"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Input
-                id="description"
-                name="description"
-                placeholder="Brief description..."
-                value={formData.description}
-                onChange={handleChange}
-                className="min-h-[44px]"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="min_firmware_version">Minimum Firmware Version</Label>
-              <Input
-                id="min_firmware_version"
-                name="min_firmware_version"
-                placeholder="e.g., 1.0.0"
-                value={formData.min_firmware_version}
-                onChange={handleChange}
-                className="min-h-[44px]"
-              />
-            </div>
-
-            {/* Features checkboxes */}
-            <div className="space-y-2">
-              <Label>Features</Label>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="wifi"
-                    checked={formData.wifi}
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="name"
+                    label="Display Name"
+                    value={formData.name}
                     onChange={handleChange}
-                    className="h-4 w-4"
+                    placeholder="e.g., Raspberry Pi 5"
+                    required
                   />
-                  <span className="text-sm">WiFi</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="ethernet"
-                    checked={formData.ethernet}
+                  <FormField
+                    id="model"
+                    label="Model"
+                    value={formData.model}
                     onChange={handleChange}
-                    className="h-4 w-4"
+                    placeholder="e.g., Model B"
                   />
-                  <span className="text-sm">Ethernet</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="rs485_support"
-                    checked={formData.rs485_support}
+                  <FormField
+                    id="brand"
+                    label="Brand"
+                    value={formData.brand}
                     onChange={handleChange}
-                    className="h-4 w-4"
+                    placeholder="e.g., Raspberry Pi"
                   />
-                  <span className="text-sm">RS485 Support</span>
-                </label>
-              </div>
-            </div>
+                  <FormField
+                    id="base_hardware"
+                    label="Base Hardware"
+                    value={formData.base_hardware}
+                    onChange={handleChange}
+                    placeholder="e.g., BCM2712"
+                  />
+                  <FormField
+                    id="manufacturer"
+                    label="Manufacturer"
+                    value={formData.manufacturer}
+                    onChange={handleChange}
+                    placeholder="e.g., Raspberry Pi Foundation"
+                  />
+                  <FormField
+                    id="country_of_origin"
+                    label="Country of Origin"
+                    value={formData.country_of_origin}
+                    onChange={handleChange}
+                    placeholder="e.g., United Kingdom"
+                  />
+                  <FormField
+                    id="description"
+                    label="Description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    placeholder="Brief description..."
+                  />
+                  <FormField
+                    id="conformity"
+                    label="Conformity"
+                    value={formData.conformity}
+                    onChange={handleChange}
+                    placeholder="e.g., CE, FCC, RoHS"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Section 2: Physical / Housing */}
+            <Collapsible open={openSections.physical}>
+              <SectionHeader
+                title="Physical / Housing"
+                isOpen={openSections.physical}
+                onToggle={() => toggleSection("physical")}
+              />
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="housing_material"
+                    label="Case (Housing Material)"
+                    value={formData.housing_material}
+                    onChange={handleChange}
+                    placeholder="e.g., Aluminum, Plastic"
+                  />
+                  <FormField
+                    id="housing_dimensions"
+                    label="Housing Dimensions"
+                    value={formData.housing_dimensions}
+                    onChange={handleChange}
+                    placeholder="e.g., 85 x 56 x 17 mm"
+                  />
+                  <FormField
+                    id="weight"
+                    label="Weight"
+                    value={formData.weight}
+                    onChange={handleChange}
+                    placeholder="e.g., 46g"
+                  />
+                  <FormField
+                    id="ip_rating"
+                    label="IP Rating / Protection Class"
+                    value={formData.ip_rating}
+                    onChange={handleChange}
+                    placeholder="e.g., IP65"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Section 3: Environmental / Power */}
+            <Collapsible open={openSections.environmental}>
+              <SectionHeader
+                title="Environmental / Power"
+                isOpen={openSections.environmental}
+                onToggle={() => toggleSection("environmental")}
+              />
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="operating_temp_range"
+                    label="Operating Temperature Range"
+                    value={formData.operating_temp_range}
+                    onChange={handleChange}
+                    placeholder="e.g., 0°C to 60°C"
+                  />
+                  <FormField
+                    id="storage_temp"
+                    label="Storage Temperature"
+                    value={formData.storage_temp}
+                    onChange={handleChange}
+                    placeholder="e.g., -20°C to 70°C"
+                  />
+                  <FormField
+                    id="max_humidity"
+                    label="Maximum Relative Humidity"
+                    value={formData.max_humidity}
+                    onChange={handleChange}
+                    placeholder="e.g., 85% non-condensing"
+                  />
+                  <FormField
+                    id="power_input"
+                    label="Power Input"
+                    value={formData.power_input}
+                    onChange={handleChange}
+                    placeholder="e.g., 5V/5A USB-C"
+                  />
+                  <FormField
+                    id="power_supply"
+                    label="Power Supply"
+                    value={formData.power_supply}
+                    onChange={handleChange}
+                    placeholder="e.g., USB-C PD"
+                  />
+                  <FormField
+                    id="max_power_consumption"
+                    label="Maximum Power Consumption"
+                    value={formData.max_power_consumption}
+                    onChange={handleChange}
+                    placeholder="e.g., 25W"
+                  />
+                  <FormField
+                    id="battery"
+                    label="Battery"
+                    value={formData.battery}
+                    onChange={handleChange}
+                    placeholder="e.g., External RTC battery"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Section 4: Processor / Computing */}
+            <Collapsible open={openSections.processor}>
+              <SectionHeader
+                title="Processor / Computing"
+                isOpen={openSections.processor}
+                onToggle={() => toggleSection("processor")}
+              />
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="processor"
+                    label="Processor"
+                    value={formData.processor}
+                    onChange={handleChange}
+                    placeholder="e.g., BCM2712 2.4GHz quad-core"
+                  />
+                  <FormField
+                    id="cooling"
+                    label="Cooling"
+                    value={formData.cooling}
+                    onChange={handleChange}
+                    placeholder="e.g., Active fan, Passive heatsink"
+                  />
+                  <FormField
+                    id="gpu"
+                    label="GPU"
+                    value={formData.gpu}
+                    onChange={handleChange}
+                    placeholder="e.g., VideoCore VII"
+                  />
+                  <FormField
+                    id="memory_ram"
+                    label="Memory/RAM"
+                    value={formData.memory_ram}
+                    onChange={handleChange}
+                    placeholder="e.g., 1/2/4/8GB LPDDR4X"
+                  />
+                  <FormField
+                    id="storage_spec"
+                    label="Storage (size/compatibility)"
+                    value={formData.storage_spec}
+                    onChange={handleChange}
+                    placeholder="e.g., microSD, NVMe via HAT"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Section 5: Connectivity / Interfaces */}
+            <Collapsible open={openSections.connectivity}>
+              <SectionHeader
+                title="Connectivity / Interfaces"
+                isOpen={openSections.connectivity}
+                onToggle={() => toggleSection("connectivity")}
+              />
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="wifi_spec"
+                    label="Wi-Fi"
+                    value={formData.wifi_spec}
+                    onChange={handleChange}
+                    placeholder="e.g., 802.11ac dual-band"
+                  />
+                  <FormField
+                    id="bluetooth_spec"
+                    label="Bluetooth"
+                    value={formData.bluetooth_spec}
+                    onChange={handleChange}
+                    placeholder="e.g., Bluetooth 5.0 / BLE"
+                  />
+                  <FormField
+                    id="cellular"
+                    label="Cellular Connectivity"
+                    value={formData.cellular}
+                    onChange={handleChange}
+                    placeholder="e.g., 4G LTE via HAT"
+                  />
+                  <FormField
+                    id="antenna"
+                    label="Antenna"
+                    value={formData.antenna}
+                    onChange={handleChange}
+                    placeholder="e.g., Onboard, External SMA"
+                  />
+                  <FormField
+                    id="interfaces"
+                    label="Interfaces / Connectors"
+                    value={formData.interfaces}
+                    onChange={handleChange}
+                    placeholder="e.g., 40-pin GPIO header"
+                  />
+                  <FormField
+                    id="usb_ports_spec"
+                    label="USB Ports"
+                    value={formData.usb_ports_spec}
+                    onChange={handleChange}
+                    placeholder="e.g., 2x USB 3.0, 2x USB 2.0"
+                  />
+                  <FormField
+                    id="ethernet_spec"
+                    label="Ethernet"
+                    value={formData.ethernet_spec}
+                    onChange={handleChange}
+                    placeholder="e.g., Gigabit Ethernet, PoE+"
+                  />
+                  <FormField
+                    id="rs485_spec"
+                    label="RS485"
+                    value={formData.rs485_spec}
+                    onChange={handleChange}
+                    placeholder="e.g., Via GPIO / HAT"
+                  />
+                  <FormField
+                    id="can_bus"
+                    label="CAN"
+                    value={formData.can_bus}
+                    onChange={handleChange}
+                    placeholder="e.g., Via MCP2515 HAT"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Section 6: Expansion / Modules */}
+            <Collapsible open={openSections.expansion}>
+              <SectionHeader
+                title="Expansion / Modules"
+                isOpen={openSections.expansion}
+                onToggle={() => toggleSection("expansion")}
+              />
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="pcie"
+                    label="PCIe"
+                    value={formData.pcie}
+                    onChange={handleChange}
+                    placeholder="e.g., PCIe 2.0 x1"
+                  />
+                  <FormField
+                    id="compatible_modules"
+                    label="Compatible Modules"
+                    value={formData.compatible_modules}
+                    onChange={handleChange}
+                    placeholder="e.g., HATs, NVMe adapters"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Section 7: Display / Camera */}
+            <Collapsible open={openSections.display}>
+              <SectionHeader
+                title="Display / Camera"
+                isOpen={openSections.display}
+                onToggle={() => toggleSection("display")}
+              />
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="display_output"
+                    label="Display Output"
+                    value={formData.display_output}
+                    onChange={handleChange}
+                    placeholder="e.g., Dual 4Kp60 HDMI"
+                  />
+                  <FormField
+                    id="video_decode"
+                    label="Video Decode"
+                    value={formData.video_decode}
+                    onChange={handleChange}
+                    placeholder="e.g., 4Kp60 HEVC"
+                  />
+                  <FormField
+                    id="optical_display"
+                    label="Optical Display"
+                    value={formData.optical_display}
+                    onChange={handleChange}
+                    placeholder="e.g., DSI connector"
+                  />
+                  <FormField
+                    id="camera_interfaces"
+                    label="Camera Interfaces"
+                    value={formData.camera_interfaces}
+                    onChange={handleChange}
+                    placeholder="e.g., 2x 4-lane MIPI CSI"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Section 8: Control / Miscellaneous */}
+            <Collapsible open={openSections.control}>
+              <SectionHeader
+                title="Control / Miscellaneous"
+                isOpen={openSections.control}
+                onToggle={() => toggleSection("control")}
+              />
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="rtc"
+                    label="RTC"
+                    value={formData.rtc}
+                    onChange={handleChange}
+                    placeholder="e.g., External battery backed"
+                  />
+                  <FormField
+                    id="power_button"
+                    label="Power Button"
+                    value={formData.power_button}
+                    onChange={handleChange}
+                    placeholder="e.g., Yes, onboard"
+                  />
+                  <FormField
+                    id="mtbf"
+                    label="MTBF"
+                    value={formData.mtbf}
+                    onChange={handleChange}
+                    placeholder="e.g., 93,800 hours"
+                  />
+                  <FormField
+                    id="emc_spec"
+                    label="EMC Interference/Immunity"
+                    value={formData.emc_spec}
+                    onChange={handleChange}
+                    placeholder="e.g., EN 55032, EN 55035"
+                  />
+                  <FormField
+                    id="min_firmware_version"
+                    label="Minimum Firmware Version"
+                    value={formData.min_firmware_version}
+                    onChange={handleChange}
+                    placeholder="e.g., 1.0.0"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
 
             <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">
               <Button

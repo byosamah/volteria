@@ -20,7 +20,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ControlLogsViewer } from "@/components/logs/control-logs-viewer";
 import { AlarmsViewer } from "@/components/alarms/alarms-viewer";
 import { DeviceList } from "@/components/devices/device-list";
+import { MasterDeviceList } from "@/components/devices/master-device-list";
 import { SyncStatus } from "@/components/projects/sync-status";
+import type { ModbusRegister } from "@/components/devices/register-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -135,9 +137,11 @@ export default async function SiteDetailPage({
     .single();
 
   // Fetch site devices (using site_id)
+  // Include registers and logging_interval_ms for device-level editing
   let devices: Array<{
     id: string;
     name: string;
+    measurement_type: string | null;  // What the device measures for control logic
     protocol: string;
     slave_id: number;
     ip_address: string | null;
@@ -146,6 +150,8 @@ export default async function SiteDetailPage({
     gateway_port: number | null;
     is_online: boolean;
     last_seen: string | null;
+    registers: ModbusRegister[] | null;
+    logging_interval_ms: number | null;
     device_templates: {
       name: string;
       device_type: string;
@@ -160,6 +166,7 @@ export default async function SiteDetailPage({
       .select(`
         id,
         name,
+        measurement_type,
         protocol,
         slave_id,
         ip_address,
@@ -168,6 +175,8 @@ export default async function SiteDetailPage({
         gateway_port,
         is_online,
         last_seen,
+        registers,
+        logging_interval_ms,
         device_templates (
           name,
           device_type,
@@ -210,6 +219,73 @@ export default async function SiteDetailPage({
     }
   } catch {
     // No logs yet
+  }
+
+  // Fetch master devices (controllers and gateways)
+  let masterDevices: {
+    id: string;
+    site_id: string;
+    device_type: "controller" | "gateway";
+    name: string;
+    ip_address: string | null;
+    port: number | null;
+    controller_id: string | null;
+    controllers: {
+      serial_number: string;
+      firmware_version: string | null;
+      approved_hardware: {
+        name: string;
+        manufacturer: string;
+      } | null;
+    } | null;
+    gateway_type: "netbiter" | "other" | null;
+    netbiter_account_id: string | null;
+    netbiter_username: string | null;
+    netbiter_system_id: string | null;
+    gateway_api_url: string | null;
+    is_online: boolean;
+    last_seen: string | null;
+    last_error: string | null;
+  }[] = [];
+
+  try {
+    const { data } = await supabase
+      .from("site_master_devices")
+      .select(`
+        id,
+        site_id,
+        device_type,
+        name,
+        ip_address,
+        port,
+        controller_id,
+        controllers (
+          serial_number,
+          firmware_version,
+          approved_hardware (
+            name,
+            manufacturer
+          )
+        ),
+        gateway_type,
+        netbiter_account_id,
+        netbiter_username,
+        netbiter_system_id,
+        gateway_api_url,
+        is_online,
+        last_seen,
+        last_error
+      `)
+      .eq("site_id", siteId)
+      .eq("is_active", true)
+      .order("device_type")
+      .order("name");
+
+    if (data) {
+      masterDevices = data as unknown as typeof masterDevices;
+    }
+  } catch {
+    // Table may not exist yet
   }
 
   // Calculate totals
@@ -393,7 +469,14 @@ export default async function SiteDetailPage({
           </TabsList>
 
           <TabsContent value="devices" className="space-y-4">
-            {/* Pass siteId and latestReadings to DeviceList for the new architecture */}
+            {/* Master Devices (Controllers and Gateways) */}
+            <MasterDeviceList
+              projectId={projectId}
+              siteId={siteId}
+              masterDevices={masterDevices}
+            />
+
+            {/* Regular Devices (Load Meters, Inverters, DG Controllers) */}
             <DeviceList
               projectId={projectId}
               siteId={siteId}

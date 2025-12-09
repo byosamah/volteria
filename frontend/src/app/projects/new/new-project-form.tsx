@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * New Project Form Component
+ * New Project Form Component (Simplified)
  *
- * Client component that handles form submission.
- * Creates a new project in Supabase.
+ * Creates a new project with basic info only.
+ * Technical settings (controller, logging, safe mode) are at site level.
  */
 
 import { useState } from "react";
@@ -17,53 +17,44 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import Link from "next/link";
 
-export function NewProjectForm() {
+// Props interface for enterprise handling
+interface NewProjectFormProps {
+  userRole: string;
+  userEnterpriseId: string | null;
+  userEnterpriseName: string | null;
+  enterprises: Array<{ id: string; name: string }>;
+}
+
+export function NewProjectForm({
+  userRole,
+  userEnterpriseId,
+  userEnterpriseName,
+  enterprises,
+}: NewProjectFormProps) {
   const router = useRouter();
   const supabase = createClient();
 
+  // Determine if user can select enterprise (super_admin or backend_admin only)
+  const canSelectEnterprise = userRole === "super_admin" || userRole === "backend_admin";
+
   // Form state
   const [loading, setLoading] = useState(false);
+  // Selected enterprise - defaults to user's enterprise for non-admins
+  const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string | null>(
+    canSelectEnterprise ? (enterprises[0]?.id || null) : userEnterpriseId
+  );
   const [formData, setFormData] = useState({
-    // Basic info
     name: "",
     location: "",
     description: "",
-
-    // Controller info
-    controller_serial_number: "",
-
-    // Control settings (defaults from plan)
-    dg_reserve_kw: 50,
-    control_interval_ms: 1000,
-
-    // Logging settings
-    logging_local_interval_ms: 1000,
-    logging_cloud_interval_ms: 5000,
-    logging_local_retention_days: 7,
-
-    // Safe mode settings
-    safe_mode_enabled: true,
-    safe_mode_type: "rolling_average",
-    safe_mode_timeout_s: 30,
-    safe_mode_rolling_window_min: 3,
-    safe_mode_threshold_pct: 80,
   });
 
   // Handle input changes
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
-    const { name, value, type } = e.target;
-
-    // Handle different input types
-    if (type === "checkbox") {
-      const checked = (e.target as HTMLInputElement).checked;
-      setFormData((prev) => ({ ...prev, [name]: checked }));
-    } else if (type === "number") {
-      setFormData((prev) => ({ ...prev, [name]: parseFloat(value) || 0 }));
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    }
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   // Handle form submission
@@ -79,26 +70,14 @@ export function NewProjectForm() {
         return;
       }
 
-      // Create project in Supabase
+      // Create project in Supabase - simplified fields only
       const { data, error } = await supabase
         .from("projects")
         .insert({
+          enterprise_id: selectedEnterpriseId,
           name: formData.name.trim(),
           location: formData.location.trim() || null,
           description: formData.description.trim() || null,
-          controller_serial_number: formData.controller_serial_number.trim() || null,
-          controller_status: "offline", // New projects start offline
-          dg_reserve_kw: formData.dg_reserve_kw,
-          control_interval_ms: formData.control_interval_ms,
-          logging_local_interval_ms: formData.logging_local_interval_ms,
-          logging_cloud_interval_ms: formData.logging_cloud_interval_ms,
-          logging_local_retention_days: formData.logging_local_retention_days,
-          safe_mode_enabled: formData.safe_mode_enabled,
-          safe_mode_type: formData.safe_mode_type,
-          safe_mode_timeout_s: formData.safe_mode_timeout_s,
-          safe_mode_rolling_window_min: formData.safe_mode_rolling_window_min,
-          safe_mode_threshold_pct: formData.safe_mode_threshold_pct,
-          operation_mode: "zero_dg_reverse", // Default mode
           is_active: true,
         })
         .select()
@@ -123,7 +102,40 @@ export function NewProjectForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Basic Information - MOBILE-FRIENDLY with 44px touch targets */}
+      {/* Enterprise Selection - only editable by super/backend admin */}
+      <div className="space-y-2">
+        <Label htmlFor="enterprise">Enterprise</Label>
+        {canSelectEnterprise ? (
+          // Super Admin / Backend Admin can select any enterprise
+          <select
+            id="enterprise"
+            value={selectedEnterpriseId || ""}
+            onChange={(e) => setSelectedEnterpriseId(e.target.value || null)}
+            className="w-full h-10 px-3 rounded-md border border-input bg-background min-h-[44px]"
+          >
+            <option value="">No enterprise</option>
+            {enterprises.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          // Other users see their enterprise as read-only
+          <div className="p-3 bg-muted rounded-md text-sm">
+            {userEnterpriseName || "No enterprise assigned"}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {canSelectEnterprise
+            ? "Select which enterprise this project belongs to"
+            : "Projects are created under your enterprise"}
+        </p>
+      </div>
+
+      <Separator />
+
+      {/* Project Details */}
       <div className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="name">
@@ -157,241 +169,24 @@ export function NewProjectForm() {
           <Input
             id="description"
             name="description"
-            placeholder="Brief description of the site"
+            placeholder="Brief description of the project"
             value={formData.description}
             onChange={handleChange}
             className="min-h-[44px]"
           />
         </div>
-      </div>
-
-      <Separator />
-
-      {/* Controller Registration */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium">Controller Registration</h3>
-        <p className="text-sm text-muted-foreground">
-          Optional: Register the hardware controller for this site
-        </p>
 
         <div className="space-y-2">
-          <Label htmlFor="controller_serial_number">Controller Serial Number</Label>
-          <Input
-            id="controller_serial_number"
-            name="controller_serial_number"
-            placeholder="e.g., RPI5-2024-001"
-            value={formData.controller_serial_number}
-            onChange={handleChange}
-            className="min-h-[44px]"
-          />
-          <p className="text-xs text-muted-foreground">
-            Enter the serial number of your Raspberry Pi 5 controller
+          <Label>Project ID</Label>
+          <p className="text-sm text-muted-foreground p-3 bg-muted rounded-md">
+            Auto-generated after creation
           </p>
         </div>
       </div>
 
       <Separator />
 
-      {/* Control Settings */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium">Control Settings</h3>
-
-        {/* Grid switches to single column on mobile */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="dg_reserve_kw">DG Reserve (kW)</Label>
-            <Input
-              id="dg_reserve_kw"
-              name="dg_reserve_kw"
-              type="number"
-              min={0}
-              step={1}
-              value={formData.dg_reserve_kw}
-              onChange={handleChange}
-              className="min-h-[44px]"
-            />
-            <p className="text-xs text-muted-foreground">
-              Minimum power reserve on diesel generators
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="control_interval_ms">Control Interval (ms)</Label>
-            <Input
-              id="control_interval_ms"
-              name="control_interval_ms"
-              type="number"
-              min={100}
-              step={100}
-              value={formData.control_interval_ms}
-              onChange={handleChange}
-              className="min-h-[44px]"
-            />
-            <p className="text-xs text-muted-foreground">
-              How often the control loop runs
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Logging Settings */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium">Logging Settings</h3>
-        <p className="text-sm text-muted-foreground">
-          Configure data logging intervals
-        </p>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="logging_local_interval_ms">Local Logging Interval (ms)</Label>
-            <Input
-              id="logging_local_interval_ms"
-              name="logging_local_interval_ms"
-              type="number"
-              min={100}
-              step={100}
-              value={formData.logging_local_interval_ms}
-              onChange={handleChange}
-              className="min-h-[44px]"
-            />
-            <p className="text-xs text-muted-foreground">
-              How often data is saved locally on controller
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="logging_cloud_interval_ms">Cloud Sync Interval (ms)</Label>
-            <Input
-              id="logging_cloud_interval_ms"
-              name="logging_cloud_interval_ms"
-              type="number"
-              min={1000}
-              step={1000}
-              value={formData.logging_cloud_interval_ms}
-              onChange={handleChange}
-              className="min-h-[44px]"
-            />
-            <p className="text-xs text-muted-foreground">
-              How often data is synced to cloud
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="logging_local_retention_days">Local Retention (days)</Label>
-          <Input
-            id="logging_local_retention_days"
-            name="logging_local_retention_days"
-            type="number"
-            min={1}
-            max={365}
-            step={1}
-            value={formData.logging_local_retention_days}
-            onChange={handleChange}
-            className="min-h-[44px] max-w-xs"
-          />
-          <p className="text-xs text-muted-foreground">
-            How long data is kept on local controller
-          </p>
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Safe Mode Settings */}
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-lg font-medium">Safe Mode</h3>
-            <p className="text-sm text-muted-foreground">
-              Protection when communication is lost
-            </p>
-          </div>
-          {/* Larger touch target for checkbox */}
-          <label className="flex items-center gap-2 min-h-[44px] cursor-pointer">
-            <input
-              type="checkbox"
-              name="safe_mode_enabled"
-              checked={formData.safe_mode_enabled}
-              onChange={handleChange}
-              className="h-5 w-5 rounded border-gray-300"
-            />
-            <span className="text-sm">Enabled</span>
-          </label>
-        </div>
-
-        {formData.safe_mode_enabled && (
-          <div className="space-y-4 pl-4 border-l-2 border-muted">
-            <div className="space-y-2">
-              <Label htmlFor="safe_mode_type">Mode Type</Label>
-              <select
-                id="safe_mode_type"
-                name="safe_mode_type"
-                value={formData.safe_mode_type}
-                onChange={handleChange}
-                className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
-              >
-                <option value="time_based">Time Based</option>
-                <option value="rolling_average">Rolling Average</option>
-              </select>
-            </div>
-
-            {formData.safe_mode_type === "time_based" ? (
-              <div className="space-y-2">
-                <Label htmlFor="safe_mode_timeout_s">Timeout (seconds)</Label>
-                <Input
-                  id="safe_mode_timeout_s"
-                  name="safe_mode_timeout_s"
-                  type="number"
-                  min={5}
-                  step={1}
-                  value={formData.safe_mode_timeout_s}
-                  onChange={handleChange}
-                  className="min-h-[44px]"
-                />
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="safe_mode_rolling_window_min">
-                    Rolling Window (minutes)
-                  </Label>
-                  <Input
-                    id="safe_mode_rolling_window_min"
-                    name="safe_mode_rolling_window_min"
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={formData.safe_mode_rolling_window_min}
-                    onChange={handleChange}
-                    className="min-h-[44px]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="safe_mode_threshold_pct">Threshold (%)</Label>
-                  <Input
-                    id="safe_mode_threshold_pct"
-                    name="safe_mode_threshold_pct"
-                    type="number"
-                    min={50}
-                    max={100}
-                    step={1}
-                    value={formData.safe_mode_threshold_pct}
-                    onChange={handleChange}
-                    className="min-h-[44px]"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <Separator />
-
-      {/* Form Actions - stack on mobile, row on desktop */}
+      {/* Form Actions */}
       <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
         <Button type="submit" disabled={loading} className="min-h-[44px] w-full sm:w-auto">
           {loading ? "Creating..." : "Create Project"}

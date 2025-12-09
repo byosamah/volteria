@@ -51,6 +51,20 @@ export default async function ProjectSettingsPage({
     notFound();
   }
 
+  // Fetch site count for validation (can't delete project with sites)
+  const { count: siteCount } = await supabase
+    .from("sites")
+    .select("*", { count: "exact", head: true })
+    .eq("project_id", id)
+    .eq("is_active", true);
+
+  // Fetch device count for validation (can't delete project with devices)
+  const { count: deviceCount } = await supabase
+    .from("project_devices")
+    .select("*", { count: "exact", head: true })
+    .eq("project_id", id)
+    .eq("is_active", true);
+
   return (
     <DashboardLayout user={{
         email: user?.email,
@@ -105,7 +119,12 @@ export default async function ProjectSettingsPage({
                   Once deleted, all data will be permanently removed
                 </p>
               </div>
-              <DeleteProjectButton projectId={id} projectName={project.name} />
+              <DeleteProjectButton
+                projectId={id}
+                projectName={project.name}
+                siteCount={siteCount ?? 0}
+                deviceCount={deviceCount ?? 0}
+              />
             </div>
           </CardContent>
         </Card>

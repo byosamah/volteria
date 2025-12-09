@@ -575,13 +575,17 @@ async def get_site_config(
         site = site_result.data[0]
         project = site.get("projects", {})
 
-        # Get devices for this site
+        # Get devices for this site with measurement_type
         devices_result = db.table("project_devices").select(
             "*, device_templates(*)"
         ).eq("site_id", str(site_id)).eq("enabled", True).execute()
 
+        # Get config version for sync tracking (use site updated_at)
+        config_version = site.get("updated_at") or site.get("created_at")
+
         # Build config
         config = {
+            "config_version": config_version,  # For sync tracking
             "site": {
                 "id": str(site["id"]),
                 "name": site["name"],
@@ -620,7 +624,9 @@ async def get_site_config(
             device_type = template.get("device_type", "unknown")
 
             device_config = {
+                "id": str(device["id"]),  # Device ID for reference
                 "name": device["name"],
+                "measurement_type": device.get("measurement_type", "unknown"),  # What device measures
                 "template": template.get("template_id", "unknown"),
                 "protocol": device.get("protocol", "tcp"),
                 "slave_id": device.get("slave_id", 1)
@@ -638,6 +644,10 @@ async def get_site_config(
                 device_config["rated_power_kw"] = float(device["rated_power_kw"])
             if device.get("rated_power_kva"):
                 device_config["rated_power_kva"] = float(device["rated_power_kva"])
+            if device.get("registers"):
+                device_config["registers"] = device["registers"]
+            if device.get("logging_interval_ms"):
+                device_config["logging_interval_ms"] = device["logging_interval_ms"]
 
             if device_type in ["meter", "load_meter"]:
                 config["devices"]["load_meters"].append(device_config)

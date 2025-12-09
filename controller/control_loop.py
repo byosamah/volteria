@@ -84,6 +84,9 @@ class DeviceConfig:
     template: str
     protocol: str
     slave_id: int
+    # What this device measures for control logic
+    # Values: load, sub_load, solar, generator, fuel, unknown
+    measurement_type: str = "unknown"
     # TCP/Gateway settings
     ip: Optional[str] = None
     port: int = 502
@@ -92,6 +95,12 @@ class DeviceConfig:
     # Optional overrides
     rated_power_kw: Optional[float] = None
     rated_power_kva: Optional[float] = None
+    # Device ID from cloud (for reference)
+    id: Optional[str] = None
+    # Modbus registers configuration
+    registers: Optional[list] = None
+    # Polling interval in milliseconds
+    logging_interval_ms: Optional[int] = None
 
 
 class ModbusConnection:
@@ -403,6 +412,43 @@ class ControlLoop:
         logger.info(f"  - Total Inverter Capacity: {self.total_inverter_capacity_kw} kW")
         logger.info(f"  - Safe Mode: {'Enabled' if self.safe_mode_enabled else 'Disabled'}")
         logger.info(f"  - Cloud Sync: {'Enabled' if self.cloud_sync else 'Disabled'}")
+
+    # ============================================
+    # DEVICE FILTERING BY MEASUREMENT TYPE
+    # ============================================
+
+    def get_devices_by_measurement_type(self, measurement_type: str) -> list[DeviceConfig]:
+        """
+        Get all devices that measure a specific type.
+
+        Args:
+            measurement_type: One of 'load', 'sub_load', 'solar', 'generator', 'fuel'
+
+        Returns:
+            List of DeviceConfig objects matching the measurement type
+        """
+        all_devices = self.load_meters + self.inverters + self.generators
+        return [d for d in all_devices if d.measurement_type == measurement_type]
+
+    def get_load_measurement_devices(self) -> list[DeviceConfig]:
+        """Get devices that measure main site load."""
+        return self.get_devices_by_measurement_type("load")
+
+    def get_sub_load_measurement_devices(self) -> list[DeviceConfig]:
+        """Get devices that measure sub-loads (partial loads)."""
+        return self.get_devices_by_measurement_type("sub_load")
+
+    def get_solar_measurement_devices(self) -> list[DeviceConfig]:
+        """Get devices that measure solar output."""
+        return self.get_devices_by_measurement_type("solar")
+
+    def get_generator_measurement_devices(self) -> list[DeviceConfig]:
+        """Get devices that measure generator output."""
+        return self.get_devices_by_measurement_type("generator")
+
+    def get_fuel_measurement_devices(self) -> list[DeviceConfig]:
+        """Get devices that measure fuel levels."""
+        return self.get_devices_by_measurement_type("fuel")
 
     def _on_safe_mode_triggered(self, reason: str, device: str):
         """Callback when safe mode is triggered."""

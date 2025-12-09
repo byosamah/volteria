@@ -66,7 +66,6 @@ export default async function ProjectsPage() {
     controller_serial_number: string | null;
     controller_status: string;
     controller_last_seen: string | null;
-    dg_reserve_kw: number;
     created_at: string;
   }> = [];
 
@@ -81,7 +80,6 @@ export default async function ProjectsPage() {
         controller_serial_number,
         controller_status,
         controller_last_seen,
-        dg_reserve_kw,
         created_at
       `)
       .eq("is_active", true)
@@ -94,20 +92,30 @@ export default async function ProjectsPage() {
     // Table might not exist yet
   }
 
-  // Get device counts for each project
+  // Get site and device counts for each project
   const projectsWithCounts = await Promise.all(
     projects.map(async (project) => {
       let deviceCount = 0;
+      let siteCount = 0;
       try {
-        const { count } = await supabase
+        // Count devices
+        const { count: devices } = await supabase
           .from("project_devices")
           .select("*", { count: "exact", head: true })
           .eq("project_id", project.id);
-        deviceCount = count || 0;
+        deviceCount = devices || 0;
+
+        // Count sites
+        const { count: sites } = await supabase
+          .from("sites")
+          .select("*", { count: "exact", head: true })
+          .eq("project_id", project.id)
+          .eq("is_active", true);
+        siteCount = sites || 0;
       } catch {
         // Ignore errors
       }
-      return { ...project, deviceCount };
+      return { ...project, deviceCount, siteCount };
     })
   );
 
@@ -172,7 +180,24 @@ export default async function ProjectsPage() {
                           {project.location || "No location set"}
                         </CardDescription>
                       </div>
-                      <StatusBadge status={project.controller_status} />
+                      {/* Status badge and edit button */}
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={project.controller_status} />
+                        {/* Edit button - links directly to project settings */}
+                        <Link
+                          href={`/projects/${project.id}/settings`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                          title="Edit project"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                            className="h-4 w-4 text-muted-foreground">
+                            <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                            <path d="m15 5 4 4"/>
+                          </svg>
+                        </Link>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -185,12 +210,12 @@ export default async function ProjectsPage() {
 
                       <div className="grid grid-cols-2 gap-4 pt-2">
                         <div>
-                          <p className="text-xs text-muted-foreground">Devices</p>
-                          <p className="text-lg font-semibold">{project.deviceCount}</p>
+                          <p className="text-xs text-muted-foreground">Sites</p>
+                          <p className="text-lg font-semibold">{project.siteCount}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground">DG Reserve</p>
-                          <p className="text-lg font-semibold">{project.dg_reserve_kw} kW</p>
+                          <p className="text-xs text-muted-foreground">Devices</p>
+                          <p className="text-lg font-semibold">{project.deviceCount}</p>
                         </div>
                       </div>
 
