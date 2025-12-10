@@ -106,7 +106,9 @@ export async function POST(request: NextRequest) {
           last_name: last_name || "",
         },
         // Redirect URL after they click the email link
-        redirectTo: "https://volteria.org/auth/set-password",
+        // IMPORTANT: Must go to /auth/callback (route handler) NOT /auth/set-password (page)
+        // The callback exchanges the auth code for a session, then redirects to set-password
+        redirectTo: "https://volteria.org/auth/callback",
       }
     );
 
