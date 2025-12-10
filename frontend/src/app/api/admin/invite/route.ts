@@ -106,9 +106,11 @@ export async function POST(request: NextRequest) {
           last_name: last_name || "",
         },
         // Redirect URL after they click the email link
-        // IMPORTANT: Must go to /auth/callback (route handler) NOT /auth/set-password (page)
-        // The callback exchanges the auth code for a session, then redirects to set-password
-        redirectTo: "https://volteria.org/auth/callback",
+        // IMPORTANT: Must go to /auth/set-password (client page) NOT /auth/callback (server route)
+        // Supabase invites use implicit flow - tokens come in URL fragments (#access_token=...)
+        // URL fragments are NOT sent to servers, so server routes can't see them
+        // Client pages CAN see URL fragments and process the tokens
+        redirectTo: "https://volteria.org/auth/set-password",
       }
     );
 

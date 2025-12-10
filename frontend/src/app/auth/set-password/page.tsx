@@ -32,10 +32,54 @@ export default function SetPasswordPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  // Check if user has a valid session from the magic link
+  // Check if user has a valid session from the invite link
+  // IMPORTANT: Supabase invites use implicit flow - tokens come in URL fragments (#access_token=...)
+  // URL fragments are only visible client-side, so we must handle them here
   useEffect(() => {
     const checkSession = async () => {
       try {
+        // Check if we have tokens in the URL fragment (hash)
+        // Supabase uses implicit flow for invites - tokens come in #fragment
+        const hash = window.location.hash;
+
+        if (hash && hash.includes('access_token')) {
+          console.log("[SetPassword] Found tokens in URL fragment, processing...");
+
+          // Parse the hash fragment to extract tokens
+          // Format: #access_token=xxx&refresh_token=xxx&...
+          const hashParams = new URLSearchParams(hash.substring(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+
+          if (accessToken && refreshToken) {
+            console.log("[SetPassword] Setting session from URL fragment tokens");
+
+            // Set the session using the tokens from the fragment
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+
+            if (error) {
+              console.error("[SetPassword] Error setting session from fragment:", error);
+              toast.error("Failed to process invitation link");
+              router.push("/login");
+              return;
+            }
+
+            if (data.user) {
+              console.log("[SetPassword] Session established from fragment tokens");
+              setUserEmail(data.user.email || null);
+
+              // Clean up the URL (remove the hash with tokens)
+              window.history.replaceState(null, '', window.location.pathname);
+              setCheckingSession(false);
+              return;
+            }
+          }
+        }
+
+        // Fallback: check for existing session (for users who already have one)
         const { data: { user } } = await supabase.auth.getUser();
 
         if (!user) {
