@@ -382,21 +382,23 @@ export function EnterpriseDetailTabs({
 
   return (
     <Tabs defaultValue="controllers" className="w-full">
-      {/* Tab navigation - scrollable on mobile */}
-      <TabsList className="w-full justify-start overflow-x-auto">
-        <TabsTrigger value="controllers" className="flex-shrink-0">
-          Controllers ({controllers.length})
-        </TabsTrigger>
-        <TabsTrigger value="projects" className="flex-shrink-0">
-          Projects ({projects.length})
-        </TabsTrigger>
-        <TabsTrigger value="users" className="flex-shrink-0">
-          Users ({users.length})
-        </TabsTrigger>
-        <TabsTrigger value="settings" className="flex-shrink-0">
-          Settings
-        </TabsTrigger>
-      </TabsList>
+      {/* Tab navigation - scrollable on mobile with scroll indicator */}
+      <div className="scroll-fade-right">
+        <TabsList className="w-full justify-start overflow-x-auto scrollbar-hide">
+          <TabsTrigger value="controllers" className="flex-shrink-0 min-h-[44px]">
+            Controllers ({controllers.length})
+          </TabsTrigger>
+          <TabsTrigger value="projects" className="flex-shrink-0 min-h-[44px]">
+            Projects ({projects.length})
+          </TabsTrigger>
+          <TabsTrigger value="users" className="flex-shrink-0 min-h-[44px]">
+            Users ({users.length})
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex-shrink-0 min-h-[44px]">
+            Settings
+          </TabsTrigger>
+        </TabsList>
+      </div>
 
       {/* Controllers Tab */}
       <TabsContent value="controllers" className="mt-4">

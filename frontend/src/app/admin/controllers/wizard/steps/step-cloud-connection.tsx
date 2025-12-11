@@ -111,9 +111,11 @@ logging:
           </div>
         </div>
 
-        <pre className="bg-muted p-4 rounded-lg text-xs overflow-x-auto font-mono">
-          {configContent}
-        </pre>
+        <div className="scroll-fade-right">
+          <pre className="bg-muted p-4 rounded-lg text-sm sm:text-xs overflow-x-auto font-mono max-w-full">
+            {configContent}
+          </pre>
+        </div>
       </div>
 
       {/* Instructions */}

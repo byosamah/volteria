@@ -173,7 +173,8 @@ export function StepNetworkSetup({ onConfirm, confirmed }: StepNetworkSetupProps
                   Create a file named <code className="bg-muted px-1 rounded">wpa_supplicant.conf</code> in
                   the bootfs drive with this content:
                 </p>
-                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+                <div className="scroll-fade-right">
+                  <pre className="bg-muted p-3 rounded text-sm sm:text-xs overflow-x-auto max-w-full">
 {`country=SA
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
@@ -183,7 +184,8 @@ network={
     psk="YOUR_WIFI_PASSWORD"
     key_mgmt=WPA-PSK
 }`}
-                </pre>
+                  </pre>
+                </div>
                 <p className="text-xs text-muted-foreground mt-2">
                   Replace YOUR_WIFI_NAME and YOUR_WIFI_PASSWORD with your actual credentials.
                 </p>

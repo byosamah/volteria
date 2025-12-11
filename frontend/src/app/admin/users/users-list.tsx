@@ -558,13 +558,89 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
         </CardContent>
       </Card>
 
-      {/* Users Table */}
-      <Card>
+      {/* MOBILE: Card view for small screens */}
+      <div className="sm:hidden space-y-3">
+        {filteredUsers.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center text-muted-foreground">
+              No users found
+            </CardContent>
+          </Card>
+        ) : (
+          filteredUsers.map((user) => (
+            <Card key={user.id}>
+              <CardContent className="p-4">
+                {/* Header: Avatar + Name + Actions */}
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <Avatar className="h-10 w-10 flex-shrink-0">
+                      <AvatarImage src={user.avatar_url || undefined} />
+                      <AvatarFallback className="text-sm">
+                        {getInitials(user.full_name, user.email)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">
+                        {user.full_name || "No name"}
+                      </p>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {user.email}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Action Buttons - 44px touch targets */}
+                  <div className="flex gap-1 flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEditDialog(user)}
+                      className="min-w-[44px] min-h-[44px]"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    {canDelete && user.id !== currentUser.id && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openDeleteDialog(user)}
+                        className="min-w-[44px] min-h-[44px]"
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Badges: Role, Enterprise, Status */}
+                <div className="flex flex-wrap gap-2">
+                  <Badge
+                    variant="outline"
+                    className={roleColors[user.role] || roleColors.viewer}
+                  >
+                    {roleNames[user.role] || user.role}
+                  </Badge>
+                  {canChangeEnterprise && user.enterprises?.name && (
+                    <Badge variant="outline">
+                      {user.enterprises.name}
+                    </Badge>
+                  )}
+                  <Badge variant={user.is_active ? "default" : "secondary"}>
+                    {user.is_active ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* DESKTOP: Table view for larger screens */}
+      <Card className="hidden sm:block">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[300px]">User</TableHead>
+                <TableHead>User</TableHead>
                 <TableHead>Role</TableHead>
                 {canChangeEnterprise && <TableHead>Enterprise</TableHead>}
                 <TableHead>Status</TableHead>
@@ -589,11 +665,11 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                             {getInitials(user.full_name, user.email)}
                           </AvatarFallback>
                         </Avatar>
-                        <div>
-                          <div className="font-medium">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate max-w-[200px]">
                             {user.full_name || "No name"}
                           </div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="text-sm text-muted-foreground truncate max-w-[200px]">
                             {user.email}
                           </div>
                         </div>
@@ -625,6 +701,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                           variant="ghost"
                           size="icon"
                           onClick={() => openEditDialog(user)}
+                          className="min-w-[44px] min-h-[44px]"
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -633,6 +710,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                             variant="ghost"
                             size="icon"
                             onClick={() => openDeleteDialog(user)}
+                            className="min-w-[44px] min-h-[44px]"
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -649,7 +727,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
 
       {/* Create User Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New User</DialogTitle>
             <DialogDescription>
@@ -810,7 +888,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
 
       {/* Edit User Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
@@ -1015,7 +1093,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
 
       {/* Delete User Dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Delete User</DialogTitle>
             <DialogDescription>
