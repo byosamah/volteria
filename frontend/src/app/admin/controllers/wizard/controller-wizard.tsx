@@ -121,6 +121,30 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
         return false;
       }
 
+      // First check if a controller with this serial number already exists
+      const { data: existingCheck } = await supabase
+        .from("controllers")
+        .select("id, wizard_step, status")
+        .eq("serial_number", data.serial_number.trim())
+        .maybeSingle();
+
+      if (existingCheck) {
+        // Controller already exists - offer to resume or show error
+        if (existingCheck.wizard_step !== null) {
+          // Has incomplete wizard - redirect to resume it
+          toast.info("Controller already exists. Resuming setup wizard...");
+          router.push(`/admin/controllers/wizard?id=${existingCheck.id}`);
+          return false;
+        } else {
+          // Wizard already completed
+          toast.error(
+            `Serial number already registered (status: ${existingCheck.status}). ` +
+            "Use a different serial number or edit the existing controller."
+          );
+          return false;
+        }
+      }
+
       // Create controller in database
       const { data: newController, error } = await supabase
         .from("controllers")
@@ -137,8 +161,9 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
         .single();
 
       if (error) {
+        // This should rarely happen now since we check first
         if (error.code === "23505") {
-          toast.error("Serial number already exists");
+          toast.error("Serial number already exists. Please refresh and try again.");
         } else {
           toast.error(error.message || "Failed to create controller");
         }
@@ -160,6 +185,9 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
 
   // Handle moving to next step
   const handleNextStep = async () => {
+    // Prevent double-clicks
+    if (loading) return;
+
     if (currentStep === 1 && !controllerId) {
       // Step 1 requires creating the controller first
       const success = await handleCreateController(controllerData);
