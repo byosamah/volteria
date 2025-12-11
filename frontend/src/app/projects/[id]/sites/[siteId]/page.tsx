@@ -166,6 +166,8 @@ export default async function SiteDetailPage({
     port: number | null;
     gateway_ip: string | null;
     gateway_port: number | null;
+    serial_port: string | null;  // RTU Direct fields
+    baudrate: number | null;
     is_online: boolean;
     last_seen: string | null;
     registers: ModbusRegister[] | null;
@@ -191,6 +193,8 @@ export default async function SiteDetailPage({
         port,
         gateway_ip,
         gateway_port,
+        serial_port,
+        baudrate,
         is_online,
         last_seen,
         registers,
