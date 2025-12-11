@@ -83,16 +83,21 @@ src/app/
 ├── admin/                             # Admin-only pages
 │   ├── enterprises/
 │   │   ├── page.tsx                   # Enterprise list
-│   │   └── [id]/page.tsx              # Enterprise details
+│   │   ├── loading.tsx                # Loading skeleton
+│   │   └── [id]/page.tsx              # Enterprise details (cascade deletes users)
 │   ├── controllers/
 │   │   ├── page.tsx                   # Controller registry
+│   │   ├── loading.tsx                # Loading skeleton
 │   │   └── wizard/                    # Controller setup wizard (7 steps)
 │   │       ├── page.tsx               # Wizard page route
 │   │       ├── controller-wizard.tsx  # Main wizard component
 │   │       └── steps/                 # Step components (1-7)
 │   ├── users/                         # User management (super_admin, backend_admin, enterprise_admin)
-│   │   └── page.tsx                   # User list with CRUD, project assignments
-│   ├── hardware/page.tsx              # Approved hardware list
+│   │   ├── page.tsx                   # User list with CRUD, project assignments
+│   │   └── loading.tsx                # Loading skeleton
+│   ├── hardware/
+│   │   ├── page.tsx                   # Approved hardware list with delete (super_admin)
+│   │   └── loading.tsx                # Loading skeleton
 │   └── audit-logs/page.tsx            # Audit logs dashboard (admin only)
 │
 ├── debug/
@@ -126,7 +131,7 @@ Located at `/admin/controllers/wizard/` - guides admins through physical setup o
 | Step | Component | Description |
 |------|-----------|-------------|
 | 1 | `step-hardware-info.tsx` | Serial number, hardware type, firmware version |
-| 2 | `step-download-image.tsx` | Download pre-built Raspberry Pi image |
+| 2 | `step-download-image.tsx` | Setup script + NVMe boot instructions (hardware-specific) |
 | 3 | `step-flash-instructions.tsx` | Balena Etcher guide with visual steps |
 | 4 | `step-network-setup.tsx` | Ethernet (recommended) or WiFi configuration |
 | 5 | `step-cloud-connection.tsx` | Generate & download config.yaml |
@@ -139,6 +144,7 @@ Located at `/admin/controllers/wizard/` - guides admins through physical setup o
 - **Heartbeat Polling**: Step 6 polls for controller heartbeats every 5 seconds
 - **Simulated Tests**: Tests run with simulated devices (no real hardware needed)
 - **Status Outcomes**: "ready" if all tests pass, "failed" if any test fails
+- **NVMe Boot Support**: Step 2 detects NVMe hardware types and shows 4-step NVMe boot configuration guide
 
 **Database Columns** (added by `021_controller_wizard.sql`):
 - `wizard_step` - Current step (1-7), NULL if complete
@@ -430,6 +436,16 @@ interface Alarm {
 - **Export**: CSV export of filtered results
 - **Pagination**: 20 items per page with navigation
 - **Admin Only**: Accessible to super_admin, backend_admin, admin
+
+### Admin Panel Features
+- **Loading Skeletons**: All admin pages have `loading.tsx` files preventing UI flicker during navigation
+- **Enterprise Deletion**: Cascade deletes all attached users (with warning showing user count)
+- **User Deletion**: Optimistic UI update (instant removal from list)
+- **Hardware Deletion**: Super admin only, requires:
+  - Typing exact hardware name to confirm
+  - Password verification
+  - Checks if hardware is in use by controllers (blocks if in use)
+  - Red warning banner explaining consequences
 
 ### Site Dashboard Enhancements
 - **Power Flow Chart**: Live visualization (1h, 6h, 24h, 7d ranges)

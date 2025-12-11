@@ -17,10 +17,16 @@
 ## Quick Context
 - **Purpose**: Prevent reverse feeding to diesel generators
 - **Algorithm**: Zero-feeding with adjustable DG reserve (min: 0 kW)
-- **Hardware**: Raspberry Pi 5 (current supported hardware)
+- **Hardware**: Raspberry Pi 5 with NVMe SSD (SOL564-NVME16-128)
 - **Cloud Database**: Supabase (PostgreSQL)
 - **Cloud Hosting**: DigitalOcean Droplet
 - **Heartbeat**: Controller sends status every 5 minutes
+
+## Approved Hardware Types
+| Hardware ID | Description | Storage |
+|-------------|-------------|---------|
+| `SOL564-NVME16-128` | Raspberry Pi 5 - 16GB RAM + 128GB NVMe | NVMe SSD (boot from NVMe) |
+| `raspberry_pi_5` | Raspberry Pi 5 (legacy, inactive) | microSD |
 
 ## Technology Stack
 
@@ -99,7 +105,7 @@ Projects can contain multiple **Sites**, each with:
 | Step | Name | Description |
 |------|------|-------------|
 | 1 | Hardware Info | Enter serial number, select hardware type |
-| 2 | Download Image | Download pre-built Raspberry Pi image |
+| 2 | Setup Instructions | Run setup script (NVMe boot instructions for NVMe hardware) |
 | 3 | Flash Instructions | Guide through Balena Etcher flashing |
 | 4 | Network Setup | Configure WiFi/Ethernet connection |
 | 5 | Cloud Connection | Generate & download config.yaml |
@@ -110,6 +116,7 @@ Projects can contain multiple **Sites**, each with:
 - Save & Exit between steps (resume later)
 - Status outcomes: "ready" if tests pass, "failed" if tests fail
 - Simulated testing (no real hardware needed for verification)
+- **NVMe Boot Support**: Step 2 shows NVMe-specific boot configuration when NVMe hardware is selected
 
 ### Project vs Site Settings
 - **Project level**: Basic info only (name, location, description)
@@ -186,6 +193,7 @@ cd simulator && python run_simulation.py
 | 22 | `022_notification_preferences.sql` | Notification preferences + notifications tables |
 | 23 | `023_control_commands.sql` | Remote control command audit trail |
 | 24 | `024_audit_logs.sql` | Comprehensive user action audit logs |
+| 25 | `025_add_sol564_nvme_hardware.sql` | NVMe hardware type (SOL564-NVME16-128) |
 
 ### Core Tables
 | Table | Purpose | RLS |
@@ -274,7 +282,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 3. **Offline Operation**: Controller works fully independently without internet. Data buffers locally and syncs on reconnect.
 
-4. **Database Migrations**: Always run migrations in order (001 through 024). See `database/migrations/` folder.
+4. **Database Migrations**: Always run migrations in order (001 through 025). See `database/migrations/` folder.
 
 5. **httpx Version**: Backend requires `httpx==0.24.1` (newer versions break Supabase compatibility).
 
