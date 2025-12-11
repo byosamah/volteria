@@ -9,6 +9,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +39,7 @@ interface Controller {
   serial_number: string;
   status: string;
   firmware_version: string | null;
+  notes: string | null;
   passcode: string | null;
   enterprise_id: string | null;
   created_at: string;
@@ -48,7 +50,29 @@ interface Controller {
   enterprises: {
     name: string;
   } | null;
+  last_heartbeat: string | null;
 }
+
+// Helper to determine if controller is online (heartbeat within last 10 minutes)
+const isControllerOnline = (lastHeartbeat: string | null): boolean => {
+  if (!lastHeartbeat) return false;
+  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+  return new Date(lastHeartbeat).getTime() > tenMinutesAgo;
+};
+
+// Helper to format time since last heartbeat
+const formatTimeSince = (timestamp: string | null): string => {
+  if (!timestamp) return "Never";
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return "Just now";
+};
 
 interface HardwareType {
   id: string;
@@ -62,10 +86,15 @@ interface ControllersListProps {
 }
 
 // Status badge colors
+// draft = gray, ready = yellow (can be claimed), claimed = blue (owned but no site)
+// deployed = green (on a site), deactivated = amber (disabled), eol = red (decommissioned)
 const statusColors: Record<string, string> = {
   draft: "bg-gray-100 text-gray-800",
   ready: "bg-yellow-100 text-yellow-800",
+  claimed: "bg-blue-100 text-blue-800",
   deployed: "bg-green-100 text-green-800",
+  deactivated: "bg-amber-100 text-amber-800",
+  eol: "bg-red-100 text-red-800",
 };
 
 export function ControllersList({ controllers: initialControllers, hardwareTypes }: ControllersListProps) {
@@ -78,6 +107,27 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
   const [createOpen, setCreateOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Edit dialog state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editController, setEditController] = useState<Controller | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    firmware_version: "",
+    notes: "",
+    status: "",
+  });
+
+  // Delete dialog state
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteController, setDeleteController] = useState<Controller | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
+
+  // Deactivate dialog state
+  const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [deactivateController, setDeactivateController] = useState<Controller | null>(null);
+  const [deactivatePassword, setDeactivatePassword] = useState("");
+  const [deactivateUsage, setDeactivateUsage] = useState<{ project_name: string; site_name: string }[]>([]);
+  const [loadingUsage, setLoadingUsage] = useState(false);
+
   // Create form state
   const [formData, setFormData] = useState({
     serial_number: "",
@@ -86,12 +136,14 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
     notes: "",
   });
 
-  // Filter controllers
+  // Filter controllers - search by serial number, hardware name, or enterprise name
   const filteredControllers = controllers.filter((c) => {
+    const query = searchQuery.toLowerCase();
     const matchesSearch =
       searchQuery === "" ||
-      c.serial_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.approved_hardware?.name.toLowerCase().includes(searchQuery.toLowerCase());
+      c.serial_number.toLowerCase().includes(query) ||
+      c.approved_hardware?.name.toLowerCase().includes(query) ||
+      c.enterprises?.name.toLowerCase().includes(query);
 
     const matchesStatus = statusFilter === "all" || c.status === statusFilter;
 
@@ -168,11 +220,13 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
         serial_number: data.serial_number,
         status: data.status,
         firmware_version: data.firmware_version,
+        notes: null,
         passcode: data.passcode,
         enterprise_id: data.enterprise_id,
         created_at: data.created_at,
         approved_hardware: hwData || null,
         enterprises: null,
+        last_heartbeat: null, // New controllers haven't sent heartbeats yet
       };
       setControllers([newController, ...controllers]);
       setCreateOpen(false);
@@ -223,6 +277,269 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
     toast.success("Passcode copied to clipboard");
   };
 
+  // Open edit dialog
+  const openEditDialog = (controller: Controller) => {
+    setEditController(controller);
+    setEditFormData({
+      firmware_version: controller.firmware_version || "",
+      notes: controller.notes || "",
+      status: controller.status,
+    });
+    setEditOpen(true);
+  };
+
+  // Handle edit form changes
+  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setEditFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Handle edit submit
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editController) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("controllers")
+        .update({
+          firmware_version: editFormData.firmware_version.trim() || null,
+          notes: editFormData.notes.trim() || null,
+          status: editFormData.status,
+        })
+        .eq("id", editController.id)
+        .select("passcode")
+        .single();
+
+      if (error) {
+        console.error("Error updating controller:", error);
+        toast.error(error.message || "Failed to update controller");
+        return;
+      }
+
+      // Update local state
+      setControllers(
+        controllers.map((c) =>
+          c.id === editController.id
+            ? {
+                ...c,
+                firmware_version: editFormData.firmware_version.trim() || null,
+                notes: editFormData.notes.trim() || null,
+                status: editFormData.status,
+                passcode: data.passcode,
+              }
+            : c
+        )
+      );
+
+      toast.success("Controller updated successfully");
+      setEditOpen(false);
+      setEditController(null);
+      router.refresh();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Open delete dialog
+  const openDeleteDialog = (controller: Controller) => {
+    setDeleteController(controller);
+    setDeletePassword("");
+    setDeleteOpen(true);
+  };
+
+  // Handle delete submit
+  const handleDeleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deleteController) return;
+
+    if (!deletePassword) {
+      toast.error("Password is required to delete a controller");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Verify password by attempting to re-authenticate
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) {
+        toast.error("Could not verify user");
+        return;
+      }
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: deletePassword,
+      });
+
+      if (authError) {
+        toast.error("Incorrect password");
+        return;
+      }
+
+      // First, delete related site_master_devices entries
+      const { error: masterDevicesError } = await supabase
+        .from("site_master_devices")
+        .delete()
+        .eq("controller_id", deleteController.id);
+
+      if (masterDevicesError) {
+        console.error("Error removing site assignments:", masterDevicesError);
+        // Continue anyway - the controller might not have site assignments
+      }
+
+      // Then, delete controller heartbeats
+      const { error: heartbeatsError } = await supabase
+        .from("controller_heartbeats")
+        .delete()
+        .eq("controller_id", deleteController.id);
+
+      if (heartbeatsError) {
+        console.error("Error removing heartbeats:", heartbeatsError);
+        // Continue anyway - the controller might not have heartbeats
+      }
+
+      // Finally, HARD DELETE the controller record
+      const { error } = await supabase
+        .from("controllers")
+        .delete()
+        .eq("id", deleteController.id);
+
+      if (error) {
+        console.error("Error deleting controller:", error);
+        toast.error(error.message || "Failed to delete controller");
+        return;
+      }
+
+      // Remove from local state
+      setControllers(controllers.filter((c) => c.id !== deleteController.id));
+
+      toast.success("Controller permanently deleted");
+      setDeleteOpen(false);
+      setDeleteController(null);
+      setDeletePassword("");
+      router.refresh();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Open deactivate dialog - also fetches usage info
+  const openDeactivateDialog = async (controller: Controller) => {
+    setDeactivateController(controller);
+    setDeactivatePassword("");
+    setDeactivateUsage([]);
+    setDeactivateOpen(true);
+
+    // Fetch usage info - where is this controller used?
+    setLoadingUsage(true);
+    try {
+      // Check site_master_devices for where this controller is assigned
+      const { data, error } = await supabase
+        .from("site_master_devices")
+        .select(`
+          sites (
+            name,
+            projects (
+              name
+            )
+          )
+        `)
+        .eq("controller_id", controller.id);
+
+      if (!error && data) {
+        const usage = data
+          .filter((d) => d.sites)
+          .map((d) => {
+            // Supabase returns relations as arrays or objects depending on the query
+            const site = Array.isArray(d.sites) ? d.sites[0] : d.sites;
+            const project = site?.projects;
+            const projectData = Array.isArray(project) ? project[0] : project;
+            return {
+              project_name: projectData?.name || "Unknown Project",
+              site_name: site?.name || "Unknown Site",
+            };
+          });
+        setDeactivateUsage(usage);
+      }
+    } catch (err) {
+      console.error("Error fetching usage:", err);
+    } finally {
+      setLoadingUsage(false);
+    }
+  };
+
+  // Handle deactivate submit
+  const handleDeactivateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deactivateController) return;
+
+    if (!deactivatePassword) {
+      toast.error("Password is required to deactivate a controller");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Verify password by attempting to re-authenticate
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) {
+        toast.error("Could not verify user");
+        return;
+      }
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: deactivatePassword,
+      });
+
+      if (authError) {
+        toast.error("Incorrect password");
+        return;
+      }
+
+      // Set status to deactivated
+      const { error } = await supabase
+        .from("controllers")
+        .update({ status: "deactivated" })
+        .eq("id", deactivateController.id);
+
+      if (error) {
+        console.error("Error deactivating controller:", error);
+        toast.error(error.message || "Failed to deactivate controller");
+        return;
+      }
+
+      // Update local state
+      setControllers(
+        controllers.map((c) =>
+          c.id === deactivateController.id
+            ? { ...c, status: "deactivated" }
+            : c
+        )
+      );
+
+      toast.success("Controller deactivated successfully");
+      setDeactivateOpen(false);
+      setDeactivateController(null);
+      setDeactivatePassword("");
+      setDeactivateUsage([]);
+      router.refresh();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       {/* Search and Actions */}
@@ -242,7 +559,7 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
             <path d="m21 21-4.3-4.3" />
           </svg>
           <Input
-            placeholder="Search by serial number..."
+            placeholder="Search by serial, hardware, or enterprise..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 min-h-[44px]"
@@ -257,24 +574,29 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
           <option value="all">All Status</option>
           <option value="draft">Draft</option>
           <option value="ready">Ready</option>
+          <option value="claimed">Claimed</option>
           <option value="deployed">Deployed</option>
+          <option value="deactivated">Deactivated</option>
+          <option value="eol">End of Life</option>
         </select>
 
-        <Button onClick={() => setCreateOpen(true)} className="min-h-[44px]">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4 mr-2"
-          >
-            <path d="M5 12h14" />
-            <path d="M12 5v14" />
-          </svg>
-          Register Controller
+        <Button asChild className="min-h-[44px]">
+          <Link href="/admin/controllers/wizard">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4 mr-2"
+            >
+              <path d="M5 12h14" />
+              <path d="M12 5v14" />
+            </svg>
+            Register Controller
+          </Link>
         </Button>
       </div>
 
@@ -307,42 +629,252 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Serial Number</TableHead>
-                <TableHead>Hardware</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Passcode</TableHead>
-                <TableHead>Enterprise</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredControllers.map((controller) => (
-                <TableRow key={controller.id}>
-                  <TableCell className="font-mono font-medium">
-                    {controller.serial_number}
-                  </TableCell>
-                  <TableCell>
-                    {controller.approved_hardware?.name || "Unknown"}
-                  </TableCell>
-                  <TableCell>
+        <>
+          {/* MOBILE-FRIENDLY: Card view for mobile */}
+          <div className="sm:hidden space-y-3">
+            {filteredControllers.map((controller) => (
+              <Card key={controller.id} className="p-4">
+                <div className="space-y-3">
+                  {/* Header: Serial & Status */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-mono font-medium">{controller.serial_number}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {controller.approved_hardware?.name || "Unknown"}
+                      </p>
+                    </div>
                     <Badge className={statusColors[controller.status]}>
                       {controller.status}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {controller.passcode ? (
-                      <div className="flex items-center gap-2">
-                        <code className="bg-muted px-2 py-1 rounded text-sm">
-                          {controller.passcode}
-                        </code>
+                  </div>
+
+                  {/* Info Grid */}
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Connection</p>
+                      {isControllerOnline(controller.last_heartbeat) ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                          </span>
+                          <span className="text-green-600 font-medium">Online</span>
+                        </div>
+                      ) : controller.last_heartbeat ? (
+                        <span className="text-muted-foreground">{formatTimeSince(controller.last_heartbeat)}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Enterprise</p>
+                      <p>{controller.enterprises?.name || "Not claimed"}</p>
+                    </div>
+                    {controller.passcode && (
+                      <div className="col-span-2">
+                        <p className="text-muted-foreground">Passcode</p>
+                        <div className="flex items-center gap-2">
+                          <code className="bg-muted px-2 py-1 rounded text-sm">
+                            {controller.passcode}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyPasscode(controller.passcode!)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                            </svg>
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex flex-wrap gap-2 pt-2 border-t">
+                    {controller.status === "draft" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleStatusChange(controller.id, "ready")}
+                        className="min-h-[44px] flex-1"
+                      >
+                        Mark Ready
+                      </Button>
+                    )}
+                    {controller.status === "ready" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleStatusChange(controller.id, "draft")}
+                        className="min-h-[44px] flex-1"
+                      >
+                        Back to Draft
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEditDialog(controller)}
+                      disabled={controller.status === "deployed"}
+                      className="min-h-[44px] min-w-[44px]"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                        <path d="m15 5 4 4" />
+                      </svg>
+                    </Button>
+                    {!["deployed", "deactivated", "eol"].includes(controller.status) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openDeactivateDialog(controller)}
+                        className="min-h-[44px] min-w-[44px] text-amber-600 hover:text-amber-700"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                          <circle cx="12" cy="12" r="10" />
+                          <rect x="9" y="9" width="6" height="6" rx="1" />
+                        </svg>
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openDeleteDialog(controller)}
+                      disabled={controller.status === "deployed"}
+                      className="min-h-[44px] min-w-[44px] text-destructive hover:text-destructive"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                        <path d="M3 6h18" />
+                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                      </svg>
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop: Table view */}
+          <Card className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Serial Number</TableHead>
+                  <TableHead>Hardware</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Connection</TableHead>
+                  <TableHead>Passcode</TableHead>
+                  <TableHead>Enterprise</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredControllers.map((controller) => (
+                  <TableRow key={controller.id}>
+                    <TableCell className="font-mono font-medium">
+                      {controller.serial_number}
+                    </TableCell>
+                    <TableCell>
+                      {controller.approved_hardware?.name || "Unknown"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={statusColors[controller.status]}>
+                        {controller.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {/* Connection status with pulse animation for online */}
+                      {isControllerOnline(controller.last_heartbeat) ? (
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                          </span>
+                          <span className="text-sm text-green-600 font-medium">Online</span>
+                        </div>
+                      ) : controller.last_heartbeat ? (
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-3 w-3">
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-400"></span>
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            {formatTimeSince(controller.last_heartbeat)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {controller.passcode ? (
+                        <div className="flex items-center gap-2">
+                          <code className="bg-muted px-2 py-1 rounded text-sm">
+                            {controller.passcode}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyPasscode(controller.passcode!)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4"
+                            >
+                              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                            </svg>
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {controller.enterprises?.name || (
+                        <span className="text-muted-foreground">Not claimed</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {/* Status change buttons */}
+                        {controller.status === "draft" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleStatusChange(controller.id, "ready")}
+                          >
+                            Mark Ready
+                          </Button>
+                        )}
+                        {controller.status === "ready" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleStatusChange(controller.id, "draft")}
+                          >
+                            Back to Draft
+                          </Button>
+                        )}
+
+                        {/* Edit button - disabled when deployed */}
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => copyPasscode(controller.passcode!)}
+                          onClick={() => openEditDialog(controller)}
+                          disabled={controller.status === "deployed"}
+                          title={controller.status === "deployed" ? "Cannot edit deployed controller" : "Edit controller"}
                           className="h-8 w-8 p-0"
                         >
                           <svg
@@ -355,45 +887,70 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                             strokeLinejoin="round"
                             className="h-4 w-4"
                           >
-                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                            <path d="m15 5 4 4" />
+                          </svg>
+                        </Button>
+
+                        {/* Deactivate button - only for non-deployed, non-deactivated, non-eol */}
+                        {!["deployed", "deactivated", "eol"].includes(controller.status) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openDeactivateDialog(controller)}
+                            title="Deactivate controller"
+                            className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4"
+                            >
+                              <circle cx="12" cy="12" r="10" />
+                              <rect x="9" y="9" width="6" height="6" rx="1" />
+                            </svg>
+                          </Button>
+                        )}
+
+                        {/* Delete button - disabled when deployed */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openDeleteDialog(controller)}
+                          disabled={controller.status === "deployed"}
+                          title={controller.status === "deployed" ? "Cannot delete deployed controller" : "Delete controller"}
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            <line x1="10" x2="10" y1="11" y2="17" />
+                            <line x1="14" x2="14" y1="11" y2="17" />
                           </svg>
                         </Button>
                       </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {controller.enterprises?.name || (
-                      <span className="text-muted-foreground">Not claimed</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {controller.status === "draft" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleStatusChange(controller.id, "ready")}
-                      >
-                        Mark Ready
-                      </Button>
-                    )}
-                    {controller.status === "ready" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleStatusChange(controller.id, "draft")}
-                      >
-                        Back to Draft
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </>
       )}
 
       {/* Create Controller Dialog */}
@@ -469,6 +1026,280 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Controller Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Controller</DialogTitle>
+            <DialogDescription>
+              Update controller details. Serial number and hardware type cannot be changed.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editController && (
+            <form onSubmit={handleEditSubmit} className="space-y-4 py-4">
+              {/* Read-only info */}
+              <div className="space-y-2">
+                <Label>Serial Number</Label>
+                <div className="px-3 py-2 bg-muted rounded-md font-mono text-sm">
+                  {editController.serial_number}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Hardware Type</Label>
+                <div className="px-3 py-2 bg-muted rounded-md text-sm">
+                  {editController.approved_hardware?.name || "Unknown"}
+                </div>
+              </div>
+
+              {/* Editable fields */}
+              <div className="space-y-2">
+                <Label htmlFor="edit_firmware_version">Firmware Version</Label>
+                <Input
+                  id="edit_firmware_version"
+                  name="firmware_version"
+                  placeholder="e.g., 1.0.0"
+                  value={editFormData.firmware_version}
+                  onChange={handleEditChange}
+                  className="min-h-[44px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_notes">Notes</Label>
+                <textarea
+                  id="edit_notes"
+                  name="notes"
+                  placeholder="Any additional notes about this controller..."
+                  value={editFormData.notes}
+                  onChange={handleEditChange}
+                  rows={3}
+                  className="w-full min-h-[80px] px-3 py-2 rounded-md border border-input bg-background resize-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_status">Status</Label>
+                <select
+                  id="edit_status"
+                  name="status"
+                  value={editFormData.status}
+                  onChange={handleEditChange}
+                  className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="ready">Ready</option>
+                  <option value="claimed">Claimed</option>
+                  <option value="deactivated">Deactivated</option>
+                  <option value="eol">End of Life</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Note: &quot;Deployed&quot; status can only be set when assigning to a site.
+                </p>
+              </div>
+
+              <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditOpen(false)}
+                  className="min-h-[44px] w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={loading} className="min-h-[44px] w-full sm:w-auto">
+                  {loading ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Controller Dialog - PERMANENT/HARD DELETE */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+              >
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              </svg>
+              DELETE Controller - PERMANENT
+            </DialogTitle>
+            <DialogDescription>
+              This action is IRREVERSIBLE and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteController && (
+            <form onSubmit={handleDeleteSubmit} className="space-y-4 py-4">
+              <div className="p-4 bg-destructive/10 border-2 border-destructive/30 rounded-lg">
+                <p className="text-sm font-semibold text-destructive mb-2">
+                  WARNING: This will PERMANENTLY delete all data!
+                </p>
+                <p className="text-sm">
+                  Deleting controller{" "}
+                  <span className="font-mono font-semibold">{deleteController.serial_number}</span>{" "}
+                  will permanently remove:
+                </p>
+                <ul className="text-sm mt-2 ml-4 list-disc space-y-1">
+                  <li>Controller registration</li>
+                  <li>All associated heartbeat data</li>
+                  <li>Site assignments</li>
+                </ul>
+                <p className="text-sm font-semibold text-destructive mt-3">
+                  This data CANNOT be recovered.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="delete_password">
+                  Enter your password to confirm <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="delete_password"
+                  type="password"
+                  placeholder="Your password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className="min-h-[44px]"
+                  required
+                />
+              </div>
+
+              <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeleteOpen(false)}
+                  className="min-h-[44px] w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={loading || !deletePassword}
+                  className="min-h-[44px] w-full sm:w-auto"
+                >
+                  {loading ? "Deleting..." : "DELETE PERMANENTLY"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Deactivate Controller Dialog */}
+      <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 text-amber-600"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              Deactivate Controller
+            </DialogTitle>
+            <DialogDescription>
+              This will prevent the controller from operating or being deployed.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deactivateController && (
+            <form onSubmit={handleDeactivateSubmit} className="space-y-4 py-4">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm text-amber-800">
+                  Are you sure you want to deactivate controller{" "}
+                  <span className="font-mono font-semibold">{deactivateController.serial_number}</span>?
+                </p>
+                <p className="text-sm text-amber-700 mt-2">
+                  This controller will no longer be able to be deployed or operate.
+                </p>
+              </div>
+
+              {/* Show usage warning if controller is used in projects */}
+              {loadingUsage ? (
+                <div className="p-4 bg-muted rounded-lg">
+                  <p className="text-sm text-muted-foreground">Checking usage...</p>
+                </div>
+              ) : deactivateUsage.length > 0 && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm font-semibold text-red-800 mb-2">
+                    Warning: This controller is currently used in the following projects:
+                  </p>
+                  <ul className="text-sm text-red-700 space-y-1 ml-4 list-disc">
+                    {deactivateUsage.map((usage, idx) => (
+                      <li key={idx}>
+                        {usage.project_name} (Site: {usage.site_name})
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-sm text-red-700 mt-2">
+                    Deactivating will stop all control operations for these sites.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="deactivate_password">
+                  Enter your password to confirm <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="deactivate_password"
+                  type="password"
+                  placeholder="Your password"
+                  value={deactivatePassword}
+                  onChange={(e) => setDeactivatePassword(e.target.value)}
+                  className="min-h-[44px]"
+                  required
+                />
+              </div>
+
+              <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeactivateOpen(false)}
+                  className="min-h-[44px] w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={loading || !deactivatePassword}
+                  className="min-h-[44px] w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  {loading ? "Deactivating..." : "Deactivate Controller"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </>

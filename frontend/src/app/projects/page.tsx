@@ -68,32 +68,56 @@ export default async function ProjectsPage() {
     // Table might not exist yet
   }
 
-  // Get site and device counts for each project
-  const projectsWithCounts = await Promise.all(
-    projects.map(async (project) => {
-      let deviceCount = 0;
-      let siteCount = 0;
-      try {
-        // Count devices
-        const { count: devices } = await supabase
-          .from("project_devices")
-          .select("*", { count: "exact", head: true })
-          .eq("project_id", project.id);
-        deviceCount = devices || 0;
+  // Get site and device counts for all projects in batch (avoids N+1 queries)
+  const projectIds = projects.map((p) => p.id);
 
-        // Count sites
-        const { count: sites } = await supabase
-          .from("sites")
-          .select("*", { count: "exact", head: true })
-          .eq("project_id", project.id)
-          .eq("is_active", true);
-        siteCount = sites || 0;
-      } catch {
-        // Ignore errors
+  // Single query for all device counts
+  let deviceCountMap: Record<string, number> = {};
+  if (projectIds.length > 0) {
+    try {
+      const { data: deviceRows } = await supabase
+        .from("project_devices")
+        .select("project_id")
+        .in("project_id", projectIds);
+
+      // Count devices per project
+      if (deviceRows) {
+        for (const row of deviceRows) {
+          deviceCountMap[row.project_id] = (deviceCountMap[row.project_id] || 0) + 1;
+        }
       }
-      return { ...project, deviceCount, siteCount };
-    })
-  );
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  // Single query for all site counts
+  let siteCountMap: Record<string, number> = {};
+  if (projectIds.length > 0) {
+    try {
+      const { data: siteRows } = await supabase
+        .from("sites")
+        .select("project_id")
+        .in("project_id", projectIds)
+        .eq("is_active", true);
+
+      // Count sites per project
+      if (siteRows) {
+        for (const row of siteRows) {
+          siteCountMap[row.project_id] = (siteCountMap[row.project_id] || 0) + 1;
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  // Combine projects with their counts
+  const projectsWithCounts = projects.map((project) => ({
+    ...project,
+    deviceCount: deviceCountMap[project.id] || 0,
+    siteCount: siteCountMap[project.id] || 0,
+  }));
 
   return (
     <DashboardLayout user={{

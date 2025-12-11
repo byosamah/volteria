@@ -96,10 +96,29 @@ export function MasterDeviceList({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Edit form state
+  // Edit form state - Basic fields
   const [editName, setEditName] = useState("");
   const [editIpAddress, setEditIpAddress] = useState("");
   const [editPort, setEditPort] = useState("");
+
+  // Edit form state - Gateway fields
+  // These are only shown when editing a gateway device (not controller)
+  const [editGatewayType, setEditGatewayType] = useState<"netbiter" | "other" | null>(null);
+
+  // Netbiter credentials
+  const [editNetbiterAccountId, setEditNetbiterAccountId] = useState("");
+  const [editNetbiterUsername, setEditNetbiterUsername] = useState("");
+  const [editNetbiterPassword, setEditNetbiterPassword] = useState("");
+  const [editNetbiterSystemId, setEditNetbiterSystemId] = useState("");
+
+  // Other gateway credentials
+  const [editGatewayApiUrl, setEditGatewayApiUrl] = useState("");
+  const [editGatewayApiKey, setEditGatewayApiKey] = useState("");
+  const [editGatewayApiSecret, setEditGatewayApiSecret] = useState("");
+
+  // Track if password/secret was modified (only update if user typed something)
+  const [passwordModified, setPasswordModified] = useState(false);
+  const [secretModified, setSecretModified] = useState(false);
 
   // Check if site already has a controller
   const hasController = devices.some((d) => d.device_type === "controller");
@@ -107,9 +126,25 @@ export function MasterDeviceList({
   // Open edit dialog
   const handleEdit = (device: MasterDevice) => {
     setEditingDevice(device);
+
+    // Basic fields
     setEditName(device.name);
     setEditIpAddress(device.ip_address || "");
     setEditPort(device.port?.toString() || "");
+
+    // Gateway-specific fields (only relevant for gateway devices)
+    setEditGatewayType(device.gateway_type);
+    setEditNetbiterAccountId(device.netbiter_account_id || "");
+    setEditNetbiterUsername(device.netbiter_username || "");
+    setEditNetbiterPassword(""); // Never pre-fill passwords (security)
+    setEditNetbiterSystemId(device.netbiter_system_id || "");
+    setEditGatewayApiUrl(device.gateway_api_url || "");
+    setEditGatewayApiKey(""); // Never pre-fill API keys (security)
+    setEditGatewayApiSecret(""); // Never pre-fill secrets (security)
+
+    // Reset modification flags
+    setPasswordModified(false);
+    setSecretModified(false);
   };
 
   // Save edit
@@ -120,18 +155,60 @@ export function MasterDeviceList({
     try {
       const supabase = createClient();
 
+      // Build update object - always include basic fields
+      const updateData: Record<string, unknown> = {
+        name: editName.trim(),
+        ip_address: editIpAddress.trim() || null,
+        port: editPort ? parseInt(editPort) : null,
+      };
+
+      // Add gateway-specific fields if this is a gateway device
+      if (editingDevice.device_type === "gateway") {
+        updateData.gateway_type = editGatewayType;
+
+        if (editGatewayType === "netbiter") {
+          // Netbiter credentials
+          updateData.netbiter_account_id = editNetbiterAccountId.trim() || null;
+          updateData.netbiter_username = editNetbiterUsername.trim() || null;
+          updateData.netbiter_system_id = editNetbiterSystemId.trim() || null;
+
+          // Only update password if user actually typed something new
+          if (passwordModified && editNetbiterPassword.trim()) {
+            updateData.netbiter_password = editNetbiterPassword.trim();
+          }
+
+          // Clear "other" gateway fields when using Netbiter
+          updateData.gateway_api_url = null;
+          updateData.gateway_api_key = null;
+          updateData.gateway_api_secret = null;
+        } else if (editGatewayType === "other") {
+          // Other gateway credentials
+          updateData.gateway_api_url = editGatewayApiUrl.trim() || null;
+
+          // Only update key/secret if user actually typed something new
+          if (editGatewayApiKey.trim()) {
+            updateData.gateway_api_key = editGatewayApiKey.trim();
+          }
+          if (secretModified && editGatewayApiSecret.trim()) {
+            updateData.gateway_api_secret = editGatewayApiSecret.trim();
+          }
+
+          // Clear Netbiter fields when using Other gateway
+          updateData.netbiter_account_id = null;
+          updateData.netbiter_username = null;
+          updateData.netbiter_password = null;
+          updateData.netbiter_system_id = null;
+        }
+      }
+
       const { error } = await supabase
         .from("site_master_devices")
-        .update({
-          name: editName.trim(),
-          ip_address: editIpAddress.trim() || null,
-          port: editPort ? parseInt(editPort) : null,
-        })
+        .update(updateData)
         .eq("id", editingDevice.id);
 
       if (error) throw error;
 
-      // Update local state
+      // Update local state with all changed fields
       setDevices((prev) =>
         prev.map((d) =>
           d.id === editingDevice.id
@@ -140,6 +217,27 @@ export function MasterDeviceList({
                 name: editName.trim(),
                 ip_address: editIpAddress.trim() || null,
                 port: editPort ? parseInt(editPort) : null,
+                // Gateway fields (only relevant for gateway devices)
+                gateway_type:
+                  editingDevice.device_type === "gateway"
+                    ? editGatewayType
+                    : d.gateway_type,
+                netbiter_account_id:
+                  editGatewayType === "netbiter"
+                    ? editNetbiterAccountId.trim() || null
+                    : null,
+                netbiter_username:
+                  editGatewayType === "netbiter"
+                    ? editNetbiterUsername.trim() || null
+                    : null,
+                netbiter_system_id:
+                  editGatewayType === "netbiter"
+                    ? editNetbiterSystemId.trim() || null
+                    : null,
+                gateway_api_url:
+                  editGatewayType === "other"
+                    ? editGatewayApiUrl.trim() || null
+                    : null,
               }
             : d
         )
@@ -415,6 +513,189 @@ export function MasterDeviceList({
                 className="min-h-[44px]"
               />
             </div>
+
+            {/* Gateway-specific fields - only shown for gateway devices */}
+            {editingDevice?.device_type === "gateway" && (
+              <>
+                {/* Section divider */}
+                <div className="border-t pt-4 mt-2">
+                  <h4 className="font-medium text-sm mb-4">Gateway Configuration</h4>
+                </div>
+
+                {/* Gateway Type Selector */}
+                <div className="space-y-2">
+                  <Label>Gateway Type</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Netbiter option */}
+                    <button
+                      type="button"
+                      onClick={() => setEditGatewayType("netbiter")}
+                      className={`p-3 rounded-lg border-2 text-left transition-all ${
+                        editGatewayType === "netbiter"
+                          ? "border-primary bg-primary/5"
+                          : "border-muted hover:border-muted-foreground/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                            editGatewayType === "netbiter"
+                              ? "border-primary"
+                              : "border-muted-foreground/50"
+                          }`}
+                        >
+                          {editGatewayType === "netbiter" && (
+                            <div className="w-2 h-2 rounded-full bg-primary" />
+                          )}
+                        </div>
+                        <span className="font-medium text-sm">Netbiter</span>
+                      </div>
+                    </button>
+
+                    {/* Other option */}
+                    <button
+                      type="button"
+                      onClick={() => setEditGatewayType("other")}
+                      className={`p-3 rounded-lg border-2 text-left transition-all ${
+                        editGatewayType === "other"
+                          ? "border-primary bg-primary/5"
+                          : "border-muted hover:border-muted-foreground/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                            editGatewayType === "other"
+                              ? "border-primary"
+                              : "border-muted-foreground/50"
+                          }`}
+                        >
+                          {editGatewayType === "other" && (
+                            <div className="w-2 h-2 rounded-full bg-primary" />
+                          )}
+                        </div>
+                        <span className="font-medium text-sm">Other</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Netbiter Credentials */}
+                {editGatewayType === "netbiter" && (
+                  <div className="space-y-4 pt-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-netbiter-account">Account ID</Label>
+                      <Input
+                        id="edit-netbiter-account"
+                        value={editNetbiterAccountId}
+                        onChange={(e) => setEditNetbiterAccountId(e.target.value)}
+                        placeholder="Enter your Netbiter account ID"
+                        className="min-h-[44px]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-netbiter-username">Username</Label>
+                      <Input
+                        id="edit-netbiter-username"
+                        value={editNetbiterUsername}
+                        onChange={(e) => setEditNetbiterUsername(e.target.value)}
+                        placeholder="API username"
+                        className="min-h-[44px]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-netbiter-password">
+                        Password
+                        <span className="text-xs text-muted-foreground ml-2">
+                          (leave empty to keep current)
+                        </span>
+                      </Label>
+                      <Input
+                        id="edit-netbiter-password"
+                        type="password"
+                        value={editNetbiterPassword}
+                        onChange={(e) => {
+                          setEditNetbiterPassword(e.target.value);
+                          setPasswordModified(true);
+                        }}
+                        placeholder="Enter new password to change"
+                        className="min-h-[44px]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-netbiter-system">
+                        System ID
+                        <span className="text-xs text-muted-foreground ml-2">
+                          (optional)
+                        </span>
+                      </Label>
+                      <Input
+                        id="edit-netbiter-system"
+                        value={editNetbiterSystemId}
+                        onChange={(e) => setEditNetbiterSystemId(e.target.value)}
+                        placeholder="Netbiter system/device ID"
+                        className="min-h-[44px]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Other Gateway Credentials */}
+                {editGatewayType === "other" && (
+                  <div className="space-y-4 pt-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-api-url">API URL</Label>
+                      <Input
+                        id="edit-api-url"
+                        value={editGatewayApiUrl}
+                        onChange={(e) => setEditGatewayApiUrl(e.target.value)}
+                        placeholder="https://api.example.com"
+                        className="min-h-[44px]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-api-key">
+                        API Key
+                        <span className="text-xs text-muted-foreground ml-2">
+                          (leave empty to keep current)
+                        </span>
+                      </Label>
+                      <Input
+                        id="edit-api-key"
+                        value={editGatewayApiKey}
+                        onChange={(e) => setEditGatewayApiKey(e.target.value)}
+                        placeholder="Enter new API key to change"
+                        className="min-h-[44px]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-api-secret">
+                        API Secret
+                        <span className="text-xs text-muted-foreground ml-2">
+                          (leave empty to keep current)
+                        </span>
+                      </Label>
+                      <Input
+                        id="edit-api-secret"
+                        type="password"
+                        value={editGatewayApiSecret}
+                        onChange={(e) => {
+                          setEditGatewayApiSecret(e.target.value);
+                          setSecretModified(true);
+                        }}
+                        placeholder="Enter new API secret to change"
+                        className="min-h-[44px]"
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <DialogFooter>

@@ -196,21 +196,29 @@ async def list_projects(
                 "id, name, location, controller_status, is_active"
             ).eq("is_active", True).in_("id", project_ids).range(skip, skip + limit - 1).execute()
 
+        # Get device counts for all projects in one batch query (avoids N+1)
+        project_ids = [row["id"] for row in result.data]
+        device_count_map = {}
+
+        if project_ids:
+            device_rows = db.table("project_devices").select(
+                "project_id"
+            ).in_("project_id", project_ids).eq("enabled", True).execute()
+
+            # Count devices per project
+            for device in device_rows.data:
+                pid = device["project_id"]
+                device_count_map[pid] = device_count_map.get(pid, 0) + 1
+
+        # Build response with counts from map
         projects = []
         for row in result.data:
-            # Get device count for each project
-            device_count_result = db.table("project_devices").select(
-                "id", count="exact"
-            ).eq("project_id", row["id"]).eq("enabled", True).execute()
-
-            device_count = device_count_result.count or 0
-
             projects.append(ProjectSummary(
                 id=str(row["id"]),
                 name=row["name"],
                 location=row.get("location"),
                 controller_status=row.get("controller_status", "offline"),
-                device_count=device_count,
+                device_count=device_count_map.get(row["id"], 0),
                 is_active=row.get("is_active", True)
             ))
 

@@ -35,6 +35,20 @@ interface SyncStatusProps {
 
 type SyncState = "synced" | "sync_needed" | "never_synced" | "offline";
 
+// Format relative time for sync display
+function formatSyncTime(timestamp: string | null): string {
+  if (!timestamp) return "";
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
 export function SyncStatus({
   projectId,
   controllerStatus,
@@ -78,7 +92,7 @@ export function SyncStatus({
     }
   > = {
     synced: {
-      label: "Synced",
+      label: configSyncedAt ? `Synced ${formatSyncTime(configSyncedAt)}` : "Synced",
       variant: "outline",
       className: "border-green-500 text-green-600",
       icon: (
@@ -95,7 +109,9 @@ export function SyncStatus({
           <path d="M20 6 9 17l-5-5" />
         </svg>
       ),
-      tooltip: "Controller has the latest configuration",
+      tooltip: configSyncedAt
+        ? `Last synced: ${new Date(configSyncedAt).toLocaleString()}`
+        : "Controller has the latest configuration",
     },
     sync_needed: {
       label: "Sync Needed",

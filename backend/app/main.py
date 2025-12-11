@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware, sites
+from app.middleware.audit import AuditLoggingMiddleware
 
 
 # ============================================
@@ -122,6 +123,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Audit logging middleware - logs all POST/PATCH/PUT/DELETE requests
+# Must be added AFTER CORS middleware (middleware runs in reverse order)
+app.add_middleware(AuditLoggingMiddleware)
 
 
 # ============================================

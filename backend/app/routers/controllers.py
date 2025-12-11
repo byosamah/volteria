@@ -47,8 +47,9 @@ class ControllerCreate(BaseModel):
 class ControllerUpdate(BaseModel):
     """Update controller request."""
     firmware_version: Optional[str] = Field(None, description="Firmware version")
-    status: Optional[str] = Field(None, description="Status: draft, ready, deployed")
+    status: Optional[str] = Field(None, description="Status: draft, ready, claimed, deployed, eol")
     notes: Optional[str] = Field(None, description="Notes about the controller")
+    enterprise_id: Optional[str] = Field(None, description="Enterprise ID (Super Admin only can change)")
 
 
 class ControllerClaim(BaseModel):
@@ -125,7 +126,7 @@ def db_row_to_controller_response(row: dict) -> ControllerResponse:
 
 @router.get("/", response_model=list[ControllerResponse])
 async def list_controllers(
-    status_filter: Optional[str] = Query(None, description="Filter by status: draft, ready, deployed"),
+    status_filter: Optional[str] = Query(None, description="Filter by status: draft, ready, claimed, deployed, eol"),
     enterprise_id: Optional[UUID] = Query(None, description="Filter by enterprise"),
     include_inactive: bool = Query(False, description="Include inactive controllers"),
     current_user: CurrentUser = Depends(require_role(["super_admin", "backend_admin"])),
@@ -274,12 +275,20 @@ async def update_controller(
     Only super_admin and backend_admin can update controllers.
     """
     try:
-        # Check if controller exists
-        existing = db.table("controllers").select("id, status").eq("id", str(controller_id)).execute()
+        # Check if controller exists (include enterprise_id for reassignment protection)
+        existing = db.table("controllers").select("id, status, enterprise_id").eq("id", str(controller_id)).execute()
         if not existing.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Controller {controller_id} not found"
+            )
+
+        # Check if controller is deployed - cannot edit deployed controllers
+        current_status = existing.data[0].get("status")
+        if current_status == "deployed":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot edit a deployed controller. Remove it from the site first."
             )
 
         # Build update data
@@ -287,14 +296,26 @@ async def update_controller(
         if update.firmware_version is not None:
             update_data["firmware_version"] = update.firmware_version
         if update.status is not None:
-            if update.status not in ["draft", "ready", "deployed"]:
+            if update.status not in ["draft", "ready", "claimed", "deployed", "eol"]:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid status. Must be: draft, ready, or deployed"
+                    detail="Invalid status. Must be: draft, ready, claimed, deployed, or eol"
                 )
             update_data["status"] = update.status
         if update.notes is not None:
             update_data["notes"] = update.notes
+
+        # Enterprise reassignment protection - only Super Admin can change enterprise
+        if update.enterprise_id is not None:
+            existing_enterprise = existing.data[0].get("enterprise_id") if existing.data else None
+            if existing_enterprise is not None:
+                # Controller already has an enterprise - only super_admin can change
+                if current_user.role != "super_admin":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Only Super Admin can reassign a claimed controller to a different enterprise"
+                    )
+            update_data["enterprise_id"] = update.enterprise_id
 
         if not update_data:
             # Nothing to update
@@ -336,12 +357,20 @@ async def delete_controller(
     Only super_admin can delete controllers.
     """
     try:
-        # Check if controller exists
-        existing = db.table("controllers").select("id").eq("id", str(controller_id)).execute()
+        # Check if controller exists and get its status
+        existing = db.table("controllers").select("id, status").eq("id", str(controller_id)).execute()
         if not existing.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Controller {controller_id} not found"
+            )
+
+        # Check if controller is deployed - cannot delete deployed controllers
+        current_status = existing.data[0].get("status")
+        if current_status == "deployed":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot delete a deployed controller. Remove it from the site first."
             )
 
         # Soft delete
@@ -465,10 +494,15 @@ async def claim_controller(
 
         # Check status - must be 'ready'
         if controller.get("status") != "ready":
-            if controller.get("status") == "deployed":
+            if controller.get("status") in ["claimed", "deployed"]:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="This controller has already been claimed"
+                )
+            elif controller.get("status") == "eol":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This controller has been decommissioned and cannot be claimed"
                 )
             else:
                 raise HTTPException(
@@ -483,12 +517,13 @@ async def claim_controller(
                 detail="This controller has already been claimed by another enterprise"
             )
 
-        # Claim the controller
+        # Claim the controller - status becomes 'claimed' (not 'deployed')
+        # Controller will become 'deployed' when added to a site
         update_data = {
             "enterprise_id": enterprise_id,
             "claimed_at": datetime.utcnow().isoformat(),
             "claimed_by": current_user.id,
-            "status": "deployed"
+            "status": "claimed"
         }
 
         db.table("controllers").update(update_data).eq("id", controller["id"]).execute()

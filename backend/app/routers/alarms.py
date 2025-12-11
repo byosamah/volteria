@@ -11,10 +11,11 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from ..services.supabase import get_supabase
+from ..services.notifications import create_alarm_notifications
 from ..dependencies.auth import CurrentUser, get_current_user, require_project_access
 
 router = APIRouter()
@@ -167,6 +168,7 @@ async def list_alarms(
 async def create_alarm(
     project_id: UUID,
     alarm: AlarmCreate,
+    background_tasks: BackgroundTasks,
     supabase=Depends(get_supabase)
 ):
     """
@@ -219,6 +221,15 @@ async def create_alarm(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create alarm"
         )
+
+    # Create notifications for users with project access (runs in background)
+    # This doesn't block the response - controller gets immediate confirmation
+    background_tasks.add_task(
+        create_alarm_notifications,
+        supabase,
+        alarm_data,
+        str(project_id)
+    )
 
     return row_to_alarm_response(result.data[0])
 

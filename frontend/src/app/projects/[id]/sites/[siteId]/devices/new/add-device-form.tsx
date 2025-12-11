@@ -50,7 +50,7 @@ const measurementTypes = [
   { value: "load", label: "Load (Main)", description: "Primary site load measurement" },
   { value: "sub_load", label: "Sub-load", description: "Secondary/partial load measurement" },
   { value: "solar", label: "Solar", description: "Solar inverter output" },
-  { value: "generator", label: "Generator", description: "Diesel generator output" },
+  { value: "generator", label: "Generator", description: "Power generator output" },
   { value: "fuel", label: "Fuel", description: "Fuel consumption or level" },
 ];
 
@@ -296,11 +296,12 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
           <Label htmlFor="template">
             Device Template <span className="text-red-500">*</span>
           </Label>
+          {/* MOBILE-FRIENDLY: 44px touch target */}
           <select
             id="template"
             value={selectedTemplateId}
             onChange={handleTemplateChange}
-            className="w-full h-10 px-3 rounded-md border border-input bg-background"
+            className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
             required
           >
             <option value="">Select a template...</option>
@@ -326,6 +327,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
           <Label htmlFor="name">
             Device Name <span className="text-red-500">*</span>
           </Label>
+          {/* MOBILE-FRIENDLY: 44px touch target */}
           <Input
             id="name"
             name="name"
@@ -333,6 +335,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
             value={formData.name}
             onChange={handleChange}
             required
+            className="min-h-[44px]"
           />
         </div>
 
@@ -341,12 +344,13 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
           <Label htmlFor="measurement_type">
             Measurement Type <span className="text-red-500">*</span>
           </Label>
+          {/* MOBILE-FRIENDLY: 44px touch target */}
           <select
             id="measurement_type"
             name="measurement_type"
             value={formData.measurement_type}
             onChange={handleChange}
-            className="w-full h-10 px-3 rounded-md border border-input bg-background"
+            className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
             required
           >
             <option value="">Select what this device measures...</option>
@@ -374,12 +378,13 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
           <Label htmlFor="protocol">
             Protocol <span className="text-red-500">*</span>
           </Label>
+          {/* MOBILE-FRIENDLY: 44px touch target */}
           <select
             id="protocol"
             name="protocol"
             value={formData.protocol}
             onChange={handleChange}
-            className="w-full h-10 px-3 rounded-md border border-input bg-background"
+            className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
           >
             {protocols.map((p) => (
               <option key={p.value} value={p.value}>
@@ -406,6 +411,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
                   placeholder="e.g., 192.168.1.30"
                   value={formData.ip_address}
                   onChange={handleChange}
+                  className="min-h-[44px]"
                 />
               </div>
               <div className="space-y-2">
@@ -418,6 +424,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
                   max={65535}
                   value={formData.port}
                   onChange={handleChange}
+                  className="min-h-[44px]"
                 />
               </div>
             </div>
@@ -438,6 +445,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
                   placeholder="e.g., 192.168.1.1"
                   value={formData.gateway_ip}
                   onChange={handleChange}
+                  className="min-h-[44px]"
                 />
               </div>
               <div className="space-y-2">
@@ -450,6 +458,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
                   max={65535}
                   value={formData.gateway_port}
                   onChange={handleChange}
+                  className="min-h-[44px]"
                 />
               </div>
             </div>
@@ -470,16 +479,18 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
                   placeholder="e.g., /dev/ttyUSB0"
                   value={formData.serial_port}
                   onChange={handleChange}
+                  className="min-h-[44px]"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="baudrate">Baudrate</Label>
+                {/* MOBILE-FRIENDLY: 44px touch target */}
                 <select
                   id="baudrate"
                   name="baudrate"
                   value={formData.baudrate}
                   onChange={handleChange}
-                  className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                  className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
                 >
                   <option value={9600}>9600</option>
                   <option value={19200}>19200</option>
@@ -506,6 +517,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
             value={formData.slave_id}
             onChange={handleChange}
             required
+            className="min-h-[44px]"
           />
           <p className="text-xs text-muted-foreground">
             Modbus device address (1-247)
@@ -535,6 +547,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
                 }
                 value={formData.rated_power_kw}
                 onChange={handleChange}
+                className="min-h-[44px]"
               />
               <p className="text-xs text-muted-foreground">
                 Override the template default if needed
@@ -545,13 +558,13 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
         </>
       )}
 
-      {/* Form Actions */}
-      <div className="flex gap-4">
-        <Button type="submit" disabled={loading}>
-          {loading ? "Adding..." : "Add Device"}
-        </Button>
-        <Button type="button" variant="outline" asChild>
+      {/* Form Actions - MOBILE-FRIENDLY: Stacked on mobile, row on desktop */}
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-4">
+        <Button type="button" variant="outline" asChild className="min-h-[44px]">
           <Link href={`/projects/${projectId}/sites/${siteId}`}>Cancel</Link>
+        </Button>
+        <Button type="submit" disabled={loading} className="min-h-[44px] w-full sm:w-auto">
+          {loading ? "Adding..." : "Add Device"}
         </Button>
       </div>
     </form>

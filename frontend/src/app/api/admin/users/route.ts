@@ -1,14 +1,20 @@
 /**
  * Admin Users API
  *
- * POST /api/admin/users - Create a new user (requires super_admin role)
+ * GET /api/admin/users - List users (filtered by role/enterprise for enterprise_admin)
+ * POST /api/admin/users - Create a new user
  *
- * Used by the enterprise admin invitation feature for direct user creation.
+ * Access:
+ * - super_admin/backend_admin: Full access to all users
+ * - enterprise_admin: Access only to users in their enterprise
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+
+// Allowed roles for user management
+const ALLOWED_ROLES = ["super_admin", "backend_admin", "enterprise_admin"];
 
 // Create admin client lazily to avoid build-time errors
 function getSupabaseAdmin() {
@@ -26,6 +32,68 @@ function getSupabaseAdmin() {
       persistSession: false,
     },
   });
+}
+
+/**
+ * GET /api/admin/users
+ * List users with optional enterprise filtering
+ */
+export async function GET() {
+  try {
+    const supabase = await createServerClient();
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+
+    if (!currentUser) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get current user's role and enterprise
+    const { data: userData } = await supabase
+      .from("users")
+      .select("role, enterprise_id")
+      .eq("id", currentUser.id)
+      .single();
+
+    if (!userData || !ALLOWED_ROLES.includes(userData.role)) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
+
+    // Build query
+    let query = supabase
+      .from("users")
+      .select(`
+        id,
+        email,
+        role,
+        full_name,
+        is_active,
+        enterprise_id,
+        avatar_url,
+        created_at,
+        enterprises:enterprise_id (name)
+      `)
+      .order("created_at", { ascending: false });
+
+    // Enterprise admin: filter to their enterprise only
+    if (userData.role === "enterprise_admin") {
+      if (!userData.enterprise_id) {
+        return NextResponse.json({ users: [] });
+      }
+      query = query.eq("enterprise_id", userData.enterprise_id);
+    }
+
+    const { data: users, error } = await query;
+
+    if (error) {
+      console.error("[Admin Users API] GET error:", error);
+      return NextResponse.json({ message: "Failed to fetch users" }, { status: 500 });
+    }
+
+    return NextResponse.json({ users: users || [] });
+  } catch (error) {
+    console.error("[Admin Users API] GET unexpected error:", error);
+    return NextResponse.json({ message: "An unexpected error occurred" }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -47,19 +115,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if current user is super_admin
+    // Check if current user has permission
     const { data: userData, error: roleError } = await supabase
       .from("users")
-      .select("role")
+      .select("role, enterprise_id")
       .eq("id", currentUser.id)
       .single();
 
     console.log("[Admin Users API] User role:", userData?.role || "NOT FOUND", roleError ? `Error: ${roleError.message}` : "");
 
-    if (!userData || userData.role !== "super_admin") {
-      console.log("[Admin Users API] ERROR: User is not super_admin, role:", userData?.role);
+    if (!userData || !ALLOWED_ROLES.includes(userData.role)) {
+      console.log("[Admin Users API] ERROR: User role not allowed:", userData?.role);
       return NextResponse.json(
-        { message: "Only super admins can create users directly" },
+        { message: "You don't have permission to create users" },
         { status: 403 }
       );
     }
@@ -85,6 +153,23 @@ export async function POST(request: NextRequest) {
         { message: "Password must be at least 6 characters" },
         { status: 400 }
       );
+    }
+
+    // Enterprise admin restrictions
+    let finalEnterpriseId = enterprise_id;
+    let finalRole = role || "viewer";
+
+    if (userData.role === "enterprise_admin") {
+      // Can only create configurator and viewer roles
+      if (finalRole && !["configurator", "viewer"].includes(finalRole)) {
+        console.log("[Admin Users API] ERROR: Enterprise admin cannot create role:", finalRole);
+        return NextResponse.json(
+          { message: "Enterprise admins can only create configurator and viewer users" },
+          { status: 403 }
+        );
+      }
+      // Force assignment to their enterprise
+      finalEnterpriseId = userData.enterprise_id;
     }
 
     // Check if service key is configured (support both naming conventions)
@@ -140,8 +225,8 @@ export async function POST(request: NextRequest) {
         id: newUser.user.id,
         email: email,
         full_name: [first_name, last_name].filter(Boolean).join(" ") || null,
-        role: role || "enterprise_admin",
-        enterprise_id: enterprise_id || null,
+        role: finalRole,
+        enterprise_id: finalEnterpriseId || null,
       });
 
     if (insertError) {

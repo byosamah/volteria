@@ -3,19 +3,25 @@
 /**
  * Mobile Header
  *
- * Shows logo and hamburger menu button on mobile devices.
+ * Shows logo, notification bell, and hamburger menu button on mobile devices.
  * Hidden on desktop (md:hidden).
  *
  * Features:
- * - 44x44px touch target for hamburger button (WCAG 2.2)
+ * - 44x44px touch target for all buttons (WCAG 2.2)
+ * - Notification bell with unread count
  * - Triggers the mobile sidebar via context
  */
 
 import Image from "next/image";
 import { useMobileNav } from "./mobile-nav-context";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 
-export function MobileHeader() {
+interface MobileHeaderProps {
+  userId?: string;
+}
+
+export function MobileHeader({ userId }: MobileHeaderProps) {
   // Get the toggle function from context to open/close sidebar
   const { toggle } = useMobileNav();
 
@@ -33,31 +39,37 @@ export function MobileHeader() {
         />
       </div>
 
-      {/* Hamburger button - 44x44px minimum tap target */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={toggle}
-        className="min-w-[44px] min-h-[44px] flex items-center justify-center"
-        aria-label="Open navigation menu"
-        aria-expanded={false}
-      >
-        {/* Hamburger icon */}
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-6 w-6"
+      {/* Right side actions */}
+      <div className="flex items-center gap-1">
+        {/* Notification Bell - only show if user is logged in */}
+        {userId && <NotificationBell userId={userId} />}
+
+        {/* Hamburger button - 44x44px minimum tap target */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggle}
+          className="min-w-[44px] min-h-[44px] flex items-center justify-center"
+          aria-label="Open navigation menu"
+          aria-expanded={false}
         >
-          <line x1="4" y1="6" x2="20" y2="6" />
-          <line x1="4" y1="12" x2="20" y2="12" />
-          <line x1="4" y1="18" x2="20" y2="18" />
-        </svg>
-      </Button>
+          {/* Hamburger icon */}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-6 w-6"
+          >
+            <line x1="4" y1="6" x2="20" y2="6" />
+            <line x1="4" y1="12" x2="20" y2="12" />
+            <line x1="4" y1="18" x2="20" y2="18" />
+          </svg>
+        </Button>
+      </div>
     </header>
   );
 }

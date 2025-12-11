@@ -8,7 +8,13 @@
 // USER TYPES
 // ============================================
 
-export type UserRole = "super_admin" | "admin" | "configurator" | "viewer";
+export type UserRole =
+  | "super_admin"
+  | "backend_admin"
+  | "admin"           // Legacy role (same level as enterprise_admin)
+  | "enterprise_admin"
+  | "configurator"
+  | "viewer";
 
 export interface User {
   id: string;
@@ -16,9 +22,26 @@ export interface User {
   role: UserRole;
   full_name: string | null;
   phone: string | null;
+  enterprise_id: string | null;
+  avatar_url: string | null;
   is_active: boolean;
   created_at: string;
   last_login_at: string | null;
+}
+
+// User with joined enterprise data for list displays
+export interface UserWithEnterprise extends User {
+  enterprises: { name: string } | null;
+}
+
+// Project assignment for a user
+export interface UserProjectAssignment {
+  project_id: string;
+  project_name: string | null;
+  enterprise_id: string | null;
+  can_edit: boolean;
+  can_control: boolean;
+  assigned_at: string | null;
 }
 
 // ============================================

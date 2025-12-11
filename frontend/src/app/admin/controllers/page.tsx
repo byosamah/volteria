@@ -5,7 +5,7 @@
  * Only accessible to super_admin and backend_admin users.
  *
  * Features:
- * - List all controllers (draft, ready, deployed)
+ * - List all controllers (draft, ready, claimed, deployed, eol)
  * - Register new controller hardware
  * - Generate/copy passcodes
  * - View deployment status
@@ -55,6 +55,7 @@ export default async function ControllersPage() {
     serial_number: string;
     status: string;
     firmware_version: string | null;
+    notes: string | null;
     passcode: string | null;
     enterprise_id: string | null;
     created_at: string;
@@ -65,6 +66,7 @@ export default async function ControllersPage() {
     enterprises: {
       name: string;
     } | null;
+    last_heartbeat: string | null;
   }> = [];
 
   try {
@@ -75,6 +77,7 @@ export default async function ControllersPage() {
         serial_number,
         status,
         firmware_version,
+        notes,
         passcode,
         enterprise_id,
         created_at,
@@ -98,10 +101,60 @@ export default async function ControllersPage() {
         enterprises: Array.isArray(item.enterprises)
           ? item.enterprises[0] || null
           : item.enterprises,
+        last_heartbeat: null, // Will be populated below
       })) as typeof controllers;
     }
   } catch {
     // Tables might not exist yet
+  }
+
+  // Fetch latest heartbeat for each controller via site_master_devices
+  // Heartbeats are tracked per site, so we need to join through site_master_devices
+  try {
+    const { data: heartbeatData } = await supabase
+      .from("site_master_devices")
+      .select(`
+        controller_id,
+        sites (
+          controller_heartbeats (
+            timestamp
+          )
+        )
+      `)
+      .not("controller_id", "is", null);
+
+    if (heartbeatData) {
+      // Build a map of controller_id -> latest heartbeat timestamp
+      const heartbeatMap = new Map<string, string>();
+
+      for (const item of heartbeatData) {
+        if (!item.controller_id) continue;
+
+        const sites = Array.isArray(item.sites) ? item.sites : [item.sites];
+        for (const site of sites) {
+          if (!site) continue;
+          const heartbeats = Array.isArray(site.controller_heartbeats)
+            ? site.controller_heartbeats
+            : [site.controller_heartbeats];
+
+          for (const hb of heartbeats) {
+            if (!hb?.timestamp) continue;
+            const existing = heartbeatMap.get(item.controller_id);
+            if (!existing || new Date(hb.timestamp) > new Date(existing)) {
+              heartbeatMap.set(item.controller_id, hb.timestamp);
+            }
+          }
+        }
+      }
+
+      // Update controllers with their latest heartbeat
+      controllers = controllers.map((c) => ({
+        ...c,
+        last_heartbeat: heartbeatMap.get(c.id) || null,
+      }));
+    }
+  } catch {
+    // Heartbeat tables might not exist yet
   }
 
   // Fetch hardware types for the create form
@@ -128,7 +181,9 @@ export default async function ControllersPage() {
   // Count by status
   const draftCount = controllers.filter((c) => c.status === "draft").length;
   const readyCount = controllers.filter((c) => c.status === "ready").length;
+  const claimedCount = controllers.filter((c) => c.status === "claimed").length;
   const deployedCount = controllers.filter((c) => c.status === "deployed").length;
+  const eolCount = controllers.filter((c) => c.status === "eol").length;
 
   return (
     <DashboardLayout user={{
@@ -152,10 +207,10 @@ export default async function ControllersPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Total Controllers</CardDescription>
+              <CardDescription>Total</CardDescription>
               <CardTitle className="text-3xl">{controllers.length}</CardTitle>
             </CardHeader>
           </Card>
@@ -173,8 +228,20 @@ export default async function ControllersPage() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
+              <CardDescription>Claimed</CardDescription>
+              <CardTitle className="text-3xl text-blue-600">{claimedCount}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
               <CardDescription>Deployed</CardDescription>
               <CardTitle className="text-3xl text-green-600">{deployedCount}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>End of Life</CardDescription>
+              <CardTitle className="text-3xl text-red-600">{eolCount}</CardTitle>
             </CardHeader>
           </Card>
         </div>

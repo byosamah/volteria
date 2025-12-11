@@ -22,6 +22,9 @@ import { AlarmsViewer } from "@/components/alarms/alarms-viewer";
 import { DeviceList } from "@/components/devices/device-list";
 import { MasterDeviceList } from "@/components/devices/master-device-list";
 import { SyncStatus } from "@/components/projects/sync-status";
+import { PowerFlowChart } from "@/components/charts/power-flow-chart";
+import { SafeModeStatus } from "@/components/sites/safe-mode-status";
+import { DeviceHealthCard } from "@/components/sites/device-health-card";
 import type { ModbusRegister } from "@/components/devices/register-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -58,6 +61,21 @@ function StatusBadge({ status }: { status: string }) {
       {status}
     </Badge>
   );
+}
+
+// Helper to format operation mode for display
+// Converts database values like "zero_dg_reverse" to readable text
+function formatOperationMode(mode: string | null): string {
+  switch (mode) {
+    case "zero_dg_reverse":
+      return "Zero DG Reverse";
+    case "peak_shaving":
+      return "Peak Shaving";
+    case "manual":
+      return "Manual Control";
+    default:
+      return mode || "Not set";
+  }
 }
 
 // Power gauge component
@@ -294,6 +312,11 @@ export default async function SiteDetailPage({
   const solarKw = latestLog?.solar_output_kw || 0;
   const dgKw = latestLog?.dg_power_kw || 0;
 
+  // Calculate device health stats
+  const totalDevices = devices.length;
+  const onlineDevices = devices.filter((d) => d.is_online).length;
+  const offlineDevices = totalDevices - onlineDevices;
+
   return (
     <DashboardLayout user={{
         email: user?.email,
@@ -340,8 +363,20 @@ export default async function SiteDetailPage({
               {site.location || "No location set"}
             </p>
           </div>
-          {/* Settings button */}
-          <div className="flex gap-2">
+          {/* Action buttons: Remote Control and Settings */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            {/* Remote Control button - for users with control permission */}
+            <Button variant="default" asChild className="w-full sm:w-auto min-h-[44px]">
+              <Link href={`/projects/${projectId}/sites/${siteId}/control`}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="12" x2="15" y2="15" />
+                </svg>
+                Remote Control
+              </Link>
+            </Button>
+            {/* Settings button */}
             <Button variant="outline" asChild className="w-full sm:w-auto min-h-[44px]">
               <Link href={`/projects/${projectId}/sites/${siteId}/settings`}>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2">
@@ -453,11 +488,35 @@ export default async function SiteDetailPage({
                 {latestLog?.safe_mode_active ? (
                   <Badge variant="destructive">Safe Mode Active</Badge>
                 ) : (
-                  <Badge variant="outline">Normal Operation</Badge>
+                  // Show the actual operation mode instead of "Normal Operation"
+                  <Badge variant="outline">{formatOperationMode(site.operation_mode)}</Badge>
                 )}
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Power Flow Chart - Historical Data Visualization */}
+        <PowerFlowChart projectId={projectId} siteId={siteId} />
+
+        {/* Status Cards Row - Safe Mode and Device Health */}
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Safe Mode Status Panel */}
+          <SafeModeStatus
+            isActive={latestLog?.safe_mode_active || false}
+            safeModeEnabled={site.safe_mode_enabled || false}
+            safeModeType={site.safe_mode_type}
+            safeModeTimeout={site.safe_mode_timeout_s}
+            safeModeThreshold={site.safe_mode_threshold_kw}
+            safeModePowerLimit={site.safe_mode_power_limit_pct}
+          />
+
+          {/* Device Health Summary */}
+          <DeviceHealthCard
+            totalDevices={totalDevices}
+            onlineDevices={onlineDevices}
+            offlineDevices={offlineDevices}
+          />
         </div>
 
         {/* Tabs */}

@@ -7,6 +7,7 @@ Handles device management:
 - Device status monitoring
 """
 
+import re
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -14,6 +15,41 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from supabase import Client
+
+
+def generate_alias(name: str) -> str:
+    """
+    Convert display name to code-friendly alias (snake_case).
+
+    Examples:
+        "Active Power" -> "active_power"
+        "Voltage Phase-A" -> "voltage_phase_a"
+        "Power Limit %" -> "power_limit_pct"
+        "DC/AC Ratio" -> "dc_ac_ratio"
+        "3-Phase Voltage" -> "reg_3_phase_voltage"
+    """
+    # Start with lowercase
+    alias = name.lower()
+
+    # Replace common special characters with meaningful text
+    alias = alias.replace('%', 'pct')
+    alias = alias.replace('/', '_')
+    alias = alias.replace('-', '_')
+
+    # Replace any remaining non-alphanumeric characters with underscore
+    alias = re.sub(r'[^a-z0-9_]', '_', alias)
+
+    # Collapse multiple underscores into one
+    alias = re.sub(r'_+', '_', alias)
+
+    # Remove leading/trailing underscores
+    alias = alias.strip('_')
+
+    # Ensure starts with letter (prefix with 'reg_' if starts with number)
+    if alias and alias[0].isdigit():
+        alias = 'reg_' + alias
+
+    return alias or 'register'
 
 from app.services.supabase import get_supabase
 from app.dependencies.auth import (
@@ -33,14 +69,19 @@ router = APIRouter()
 class ModbusRegister(BaseModel):
     """Modbus register definition."""
     address: int
-    name: str
+    name: str  # Display name (can be any format, e.g., "Active Power")
+    alias: Optional[str] = None  # Code-friendly name (auto-generated if not provided)
     description: Optional[str] = None
     type: str = "input"  # 'input' or 'holding'
     access: str = "read"  # 'read', 'write', or 'readwrite'
     datatype: str = "uint16"  # 'uint16', 'int16', 'uint32', 'int32', 'float32'
-    scale: Optional[float] = 1.0
+    scale: Optional[float] = 1.0  # Multiplication factor
+    offset: Optional[float] = 0.0  # Addition factor (can be negative)
+    scale_order: Optional[str] = "multiply_first"  # 'multiply_first' or 'add_first'
+    logging_frequency: Optional[float] = 60  # Logging frequency in seconds (default: 1 minute)
     unit: Optional[str] = None
     values: Optional[dict] = None  # For enum-type registers
+    register_role: Optional[str] = "none"  # Control logic role (e.g., "solar_active_power")
 
 
 class DeviceTemplateCreate(BaseModel):
@@ -71,6 +112,20 @@ class DeviceTemplateResponse(BaseModel):
     registers: list[dict]  # Changed from list[ModbusRegister] for flexibility
     specifications: dict
     is_active: bool
+
+
+class DeviceTemplateUpdate(BaseModel):
+    """Update device template request (all fields optional)."""
+    name: Optional[str] = None
+    device_type: Optional[str] = None
+    operation: Optional[str] = None
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    rated_power_kw: Optional[float] = None
+    rated_power_kva: Optional[float] = None
+    template_type: Optional[str] = None
+    registers: Optional[list[ModbusRegister]] = None
+    specifications: Optional[dict] = None
 
 
 # ============================================
@@ -278,6 +333,15 @@ async def create_template(
                 detail=f"Template with ID '{template.template_id}' already exists"
             )
 
+        # Process registers: auto-generate alias if not provided
+        processed_registers = []
+        for reg in template.registers:
+            reg_dict = reg.model_dump()
+            # Auto-generate alias from name if not provided
+            if not reg_dict.get("alias"):
+                reg_dict["alias"] = generate_alias(reg.name)
+            processed_registers.append(reg_dict)
+
         insert_data = {
             "template_id": template.template_id,
             "name": template.name,
@@ -287,7 +351,7 @@ async def create_template(
             "model": template.model,
             "rated_power_kw": template.rated_power_kw,
             "rated_power_kva": template.rated_power_kva,
-            "registers": [reg.model_dump() for reg in template.registers],
+            "registers": processed_registers,
             "specifications": template.specifications,
             "is_active": True
         }
@@ -307,6 +371,70 @@ async def create_template(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create template: {str(e)}"
+        )
+
+
+@router.patch("/templates/{template_id}", response_model=DeviceTemplateResponse)
+async def update_template(
+    template_id: str,
+    template_update: DeviceTemplateUpdate,
+    current_user: CurrentUser = Depends(require_role(["super_admin", "admin"])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Update an existing device template.
+
+    Only admin and super_admin can update templates.
+    Only provided fields will be updated.
+    """
+    try:
+        # Find existing template by template_id
+        existing = db.table("device_templates").select("*").eq("template_id", template_id).execute()
+        if not existing.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template '{template_id}' not found"
+            )
+
+        # Build update data - only include fields that were provided
+        update_data = {}
+        update_dict = template_update.model_dump(exclude_unset=True)
+
+        for field, value in update_dict.items():
+            if field == "registers" and value is not None:
+                # Process registers: auto-generate alias if not provided
+                processed_registers = []
+                for reg in value:
+                    # Handle both ModbusRegister objects and dicts
+                    reg_dict = reg.model_dump() if hasattr(reg, 'model_dump') else reg
+                    # Auto-generate alias from name if not provided
+                    if not reg_dict.get("alias"):
+                        reg_dict["alias"] = generate_alias(reg_dict["name"])
+                    processed_registers.append(reg_dict)
+                update_data["registers"] = processed_registers
+            elif value is not None:
+                update_data[field] = value
+
+        # If no fields to update, return existing template
+        if not update_data:
+            return db_row_to_template_response(existing.data[0])
+
+        # Perform the update
+        result = db.table("device_templates").update(update_data).eq("template_id", template_id).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update template"
+            )
+
+        return db_row_to_template_response(result.data[0])
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update template: {str(e)}"
         )
 
 

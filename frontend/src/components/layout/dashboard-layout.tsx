@@ -23,6 +23,7 @@ import { Sidebar } from "./sidebar";
 interface DashboardLayoutProps {
   children: React.ReactNode;
   user?: {
+    id?: string;  // User ID for notifications
     email?: string;
     full_name?: string;
     role?: string;
@@ -43,7 +44,7 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
       */}
       <div className="flex flex-col md:flex-row min-h-screen">
         {/* Mobile Header - only visible on mobile (hidden on md and up) */}
-        <MobileHeader />
+        <MobileHeader userId={user?.id} />
 
         {/* Mobile Sidebar - Sheet drawer for mobile navigation */}
         <MobileSidebar user={user} />

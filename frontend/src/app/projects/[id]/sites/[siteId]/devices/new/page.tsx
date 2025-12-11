@@ -94,20 +94,23 @@ export default async function AddDeviceToSitePage({
         avatar_url: userProfile?.avatar_url || undefined,
         role: userProfile?.role || undefined,
       }}>
-      <div className="p-6 max-w-2xl mx-auto space-y-6">
+      {/* MOBILE-FRIENDLY: Responsive padding */}
+      <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
+          {/* MOBILE-FRIENDLY: 44px touch target on back button */}
           <Link
             href={`/projects/${id}/sites/${siteId}`}
-            className="text-muted-foreground hover:text-foreground"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center -ml-2 text-muted-foreground hover:text-foreground"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
               <path d="m15 18-6-6 6-6" />
             </svg>
           </Link>
           <div>
-            <h1 className="text-3xl font-bold">Add Device</h1>
-            <p className="text-muted-foreground">{site.name} - {project.name}</p>
+            {/* MOBILE-FRIENDLY: Responsive heading */}
+            <h1 className="text-2xl md:text-3xl font-bold">Add Device</h1>
+            <p className="text-muted-foreground text-sm md:text-base">{site.name} - {project.name}</p>
           </div>
         </div>
 

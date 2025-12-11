@@ -72,11 +72,15 @@ interface ControllersTableProps {
 }
 
 // Status badge colors
+// deployed = green (on a site), claimed = blue (owned but not on site)
+// ready = yellow (can be claimed), draft = gray, eol = red
 function StatusBadge({ status }: { status: string }) {
   const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-    deployed: "default",
-    ready: "secondary",
-    draft: "outline",
+    deployed: "default",      // Green - actively on a site
+    claimed: "secondary",     // Yellow/amber - owned but not on site yet
+    ready: "outline",         // Gray outline - ready to be claimed
+    draft: "outline",         // Gray outline - not ready
+    eol: "destructive",       // Red - decommissioned
   };
 
   return (
@@ -174,14 +178,15 @@ export function ControllersTable({
       // Get current user for claimed_by
       const { data: { user } } = await supabase.auth.getUser();
 
-      // Claim the controller
+      // Claim the controller - status becomes 'claimed' (not 'deployed')
+      // Controller will become 'deployed' automatically when added to a site
       const { error: updateError } = await supabase
         .from("controllers")
         .update({
           enterprise_id: userEnterpriseId,
           claimed_at: new Date().toISOString(),
           claimed_by: user?.id,
-          status: "deployed",
+          status: "claimed",
         })
         .eq("id", controller.id);
 
@@ -288,7 +293,8 @@ export function ControllersTable({
                 Claim Controller
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            {/* MOBILE-FRIENDLY: Dialog with proper margins */}
+            <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Claim a Controller</DialogTitle>
                 <DialogDescription>
@@ -299,13 +305,14 @@ export function ControllersTable({
                 {/* Model Selection (optional) */}
                 <div className="space-y-2">
                   <Label htmlFor="hardwareType">Controller Model (Optional)</Label>
+                  {/* MOBILE-FRIENDLY: 44px touch target */}
                   <select
                     id="hardwareType"
                     value={claimForm.hardwareTypeId}
                     onChange={(e) =>
                       setClaimForm((prev) => ({ ...prev, hardwareTypeId: e.target.value }))
                     }
-                    className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                    className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
                   >
                     <option value="">Any model</option>
                     {hardwareTypes.map((hw) => (
@@ -332,6 +339,7 @@ export function ControllersTable({
                       setClaimForm((prev) => ({ ...prev, serialNumber: e.target.value }))
                     }
                     required
+                    className="min-h-[44px]"
                   />
                 </div>
 
@@ -349,22 +357,25 @@ export function ControllersTable({
                       setClaimForm((prev) => ({ ...prev, passcode: e.target.value }))
                     }
                     required
+                    className="min-h-[44px]"
                   />
                   <p className="text-xs text-muted-foreground">
                     The passcode provided with the controller
                   </p>
                 </div>
 
-                <DialogFooter>
+                {/* MOBILE-FRIENDLY: Stacked buttons on mobile */}
+                <DialogFooter className="flex-col gap-2 sm:flex-row">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setClaimOpen(false)}
                     disabled={claimLoading}
+                    className="min-h-[44px] w-full sm:w-auto"
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={claimLoading}>
+                  <Button type="submit" disabled={claimLoading} className="min-h-[44px] w-full sm:w-auto">
                     {claimLoading ? "Claiming..." : "Claim Controller"}
                   </Button>
                 </DialogFooter>
@@ -399,87 +410,151 @@ export function ControllersTable({
           </p>
         </div>
       ) : (
-        /* Controllers Table */
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Serial Number</TableHead>
-                <TableHead>Model</TableHead>
-                {isSuperAdmin && <TableHead>Enterprise</TableHead>}
-                <TableHead>Status</TableHead>
-                <TableHead>Firmware</TableHead>
-                <TableHead>Claimed</TableHead>
-                {canEdit && <TableHead className="text-right">Actions</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {controllers.map((controller) => (
-                <TableRow key={controller.id}>
-                  <TableCell className="font-medium">
-                    {controller.serial_number}
-                  </TableCell>
-                  <TableCell>
-                    {controller.approved_hardware ? (
-                      <span>
-                        {controller.approved_hardware.manufacturer}{" "}
-                        {controller.approved_hardware.name}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">Unknown</span>
-                    )}
-                  </TableCell>
+        <>
+          {/* MOBILE-FRIENDLY: Card view for mobile */}
+          <div className="sm:hidden space-y-3">
+            {controllers.map((controller) => (
+              <div
+                key={controller.id}
+                className="rounded-lg border bg-card p-4 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{controller.serial_number}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {controller.approved_hardware
+                        ? `${controller.approved_hardware.manufacturer} ${controller.approved_hardware.name}`
+                        : "Unknown model"}
+                    </p>
+                  </div>
+                  <StatusBadge status={controller.status} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Firmware</p>
+                    <p>{controller.firmware_version || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Claimed</p>
+                    <p>{formatDate(controller.claimed_at)}</p>
+                  </div>
                   {isSuperAdmin && (
+                    <div className="col-span-2">
+                      <p className="text-muted-foreground">Enterprise</p>
+                      <p>{controller.enterprises?.name || "Unclaimed"}</p>
+                    </div>
+                  )}
+                </div>
+                {canEdit && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openFirmwareDialog(controller)}
+                    className="w-full min-h-[44px]"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4 mr-2"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" x2="12" y1="3" y2="15" />
+                    </svg>
+                    Update Firmware
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop: Table view */}
+          <div className="hidden sm:block rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Serial Number</TableHead>
+                  <TableHead>Model</TableHead>
+                  {isSuperAdmin && <TableHead>Enterprise</TableHead>}
+                  <TableHead>Status</TableHead>
+                  <TableHead>Firmware</TableHead>
+                  <TableHead>Claimed</TableHead>
+                  {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {controllers.map((controller) => (
+                  <TableRow key={controller.id}>
+                    <TableCell className="font-medium">
+                      {controller.serial_number}
+                    </TableCell>
                     <TableCell>
-                      {controller.enterprises?.name || (
-                        <span className="text-muted-foreground">Unclaimed</span>
+                      {controller.approved_hardware ? (
+                        <span>
+                          {controller.approved_hardware.manufacturer}{" "}
+                          {controller.approved_hardware.name}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Unknown</span>
                       )}
                     </TableCell>
-                  )}
-                  <TableCell>
-                    <StatusBadge status={controller.status} />
-                  </TableCell>
-                  <TableCell>
-                    {controller.firmware_version || (
-                      <span className="text-muted-foreground">-</span>
+                    {isSuperAdmin && (
+                      <TableCell>
+                        {controller.enterprises?.name || (
+                          <span className="text-muted-foreground">Unclaimed</span>
+                        )}
+                      </TableCell>
                     )}
-                  </TableCell>
-                  <TableCell>{formatDate(controller.claimed_at)}</TableCell>
-                  {canEdit && (
-                    <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openFirmwareDialog(controller)}
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-4 w-4 mr-1"
-                        >
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" x2="12" y1="3" y2="15" />
-                        </svg>
-                        Update Firmware
-                      </Button>
+                    <TableCell>
+                      <StatusBadge status={controller.status} />
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                    <TableCell>
+                      {controller.firmware_version || (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>{formatDate(controller.claimed_at)}</TableCell>
+                    {canEdit && (
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openFirmwareDialog(controller)}
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4 mr-1"
+                          >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" x2="12" y1="3" y2="15" />
+                          </svg>
+                          Update Firmware
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
-      {/* Firmware Update Dialog */}
+      {/* Firmware Update Dialog - MOBILE-FRIENDLY */}
       <Dialog open={firmwareOpen} onOpenChange={setFirmwareOpen}>
-        <DialogContent>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Update Firmware Version</DialogTitle>
             <DialogDescription>
@@ -502,22 +577,25 @@ export function ControllersTable({
                 value={newFirmwareVersion}
                 onChange={(e) => setNewFirmwareVersion(e.target.value)}
                 required
+                className="min-h-[44px]"
               />
               <p className="text-xs text-muted-foreground">
                 Enter the new firmware version (e.g., 1.0.2)
               </p>
             </div>
 
-            <DialogFooter>
+            {/* MOBILE-FRIENDLY: Stacked buttons on mobile */}
+            <DialogFooter className="flex-col gap-2 sm:flex-row">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setFirmwareOpen(false)}
                 disabled={firmwareLoading}
+                className="min-h-[44px] w-full sm:w-auto"
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={firmwareLoading}>
+              <Button type="submit" disabled={firmwareLoading} className="min-h-[44px] w-full sm:w-auto">
                 {firmwareLoading ? "Updating..." : "Update Version"}
               </Button>
             </DialogFooter>

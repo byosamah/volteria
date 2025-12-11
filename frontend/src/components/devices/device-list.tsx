@@ -38,6 +38,47 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { RegisterForm, type ModbusRegister } from "./register-form";
 
+// Format logging frequency (in seconds) into readable labels
+// This converts the per-register logging_frequency value to user-friendly text
+function formatLoggingFrequency(seconds?: number): string {
+  if (!seconds) return "1 min";  // Default: 60 seconds
+  if (seconds < 1) return `${seconds * 1000}ms`;
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)}d`;
+}
+
+// Format "last seen" time for device status display
+function formatLastSeen(timestamp: string | null): string {
+  if (!timestamp) return "Never";
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
+// Protocol options - same as add device form
+const protocols = [
+  { value: "tcp", label: "Modbus TCP", description: "Direct TCP connection" },
+  { value: "rtu_gateway", label: "RTU via Gateway", description: "RTU through a TCP gateway (e.g., Netbiter)" },
+  { value: "rtu_direct", label: "Direct RTU", description: "Direct RS485 connection" },
+];
+
+// Measurement type options - what the device measures for control logic
+const measurementTypes = [
+  { value: "load", label: "Load (Main)", description: "Primary site load measurement" },
+  { value: "sub_load", label: "Sub-load", description: "Secondary/partial load measurement" },
+  { value: "solar", label: "Solar", description: "Solar inverter output" },
+  { value: "generator", label: "Generator", description: "Power generator output" },
+  { value: "fuel", label: "Fuel", description: "Fuel consumption or level" },
+];
+
 // Device type
 interface Device {
   id: string;
@@ -45,10 +86,16 @@ interface Device {
   measurement_type: string | null;  // What the device measures: load, sub_load, solar, generator, fuel
   protocol: string;
   slave_id: number;
+  // TCP fields
   ip_address: string | null;
   port: number | null;
+  // RTU Gateway fields
   gateway_ip: string | null;
   gateway_port: number | null;
+  // RTU Direct fields
+  serial_port: string | null;
+  baudrate: number | null;
+  // Status
   is_online: boolean;
   last_seen: string | null;
   // Device-specific registers (copied from template, can be customized)
@@ -64,11 +111,12 @@ interface Device {
 }
 
 // Measurement type labels and colors for display
+// Colors: Yellow=Solar, Blue=Load/Sub-load, Black=Generator, Purple=Fuel
 const measurementTypeConfig: Record<string, { label: string; color: string }> = {
   load: { label: "Load", color: "bg-blue-100 text-blue-700" },
-  sub_load: { label: "Sub-load", color: "bg-cyan-100 text-cyan-700" },
-  solar: { label: "Solar", color: "bg-green-100 text-green-700" },
-  generator: { label: "Generator", color: "bg-orange-100 text-orange-700" },
+  sub_load: { label: "Sub-load", color: "bg-blue-100 text-blue-700" },
+  solar: { label: "Solar", color: "bg-yellow-100 text-yellow-700" },
+  generator: { label: "Generator", color: "bg-slate-200 text-slate-800" },
   fuel: { label: "Fuel", color: "bg-purple-100 text-purple-700" },
 };
 
@@ -118,11 +166,18 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
   // Edit form state - Connection tab
   const [editName, setEditName] = useState("");
+  const [editProtocol, setEditProtocol] = useState("tcp");
+  const [editMeasurementType, setEditMeasurementType] = useState("");
   const [editSlaveId, setEditSlaveId] = useState(1);
+  // TCP fields
   const [editIpAddress, setEditIpAddress] = useState("");
   const [editPort, setEditPort] = useState(502);
+  // RTU Gateway fields
   const [editGatewayIp, setEditGatewayIp] = useState("");
   const [editGatewayPort, setEditGatewayPort] = useState(502);
+  // RTU Direct fields
+  const [editSerialPort, setEditSerialPort] = useState("");
+  const [editBaudrate, setEditBaudrate] = useState(9600);
 
   // Edit form state - Registers tab
   const [editRegisters, setEditRegisters] = useState<ModbusRegister[]>([]);
@@ -131,23 +186,25 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   const [editingRegister, setEditingRegister] = useState<ModbusRegister | undefined>();
   const [editingRegisterIndex, setEditingRegisterIndex] = useState<number>(-1);
 
-  // Edit form state - Logging tab
-  const [editLoggingInterval, setEditLoggingInterval] = useState(1000);
-
   // Open edit dialog
   const openEditDialog = (device: Device) => {
     setEditDevice(device);
-    // Connection tab
+    // Basic info
     setEditName(device.name);
+    setEditProtocol(device.protocol || "tcp");
+    setEditMeasurementType(device.measurement_type || "");
     setEditSlaveId(device.slave_id);
+    // TCP fields
     setEditIpAddress(device.ip_address || "");
     setEditPort(device.port || 502);
+    // RTU Gateway fields
     setEditGatewayIp(device.gateway_ip || "");
     setEditGatewayPort(device.gateway_port || 502);
+    // RTU Direct fields
+    setEditSerialPort(device.serial_port || "");
+    setEditBaudrate(device.baudrate || 9600);
     // Registers tab - load from device
     setEditRegisters(device.registers || []);
-    // Logging tab
-    setEditLoggingInterval(device.logging_interval_ms || 1000);
   };
 
   // Register management functions for editing
@@ -185,6 +242,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   };
 
   // Check for Modbus address conflicts when editing
+  // Uses editProtocol (the selected protocol) to check conflicts with other devices
   const checkEditConflicts = async (): Promise<string | null> => {
     if (!editDevice) return null;
 
@@ -193,7 +251,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       // Skip the device being edited
       if (device.id === editDevice.id) continue;
 
-      if (editDevice.protocol === "tcp" && device.protocol === "tcp") {
+      if (editProtocol === "tcp" && device.protocol === "tcp") {
         // TCP: Check IP + Port + Slave ID
         if (
           device.ip_address === editIpAddress.trim() &&
@@ -202,7 +260,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         ) {
           return `Conflict: Device "${device.name}" already uses IP ${device.ip_address}:${device.port} with Slave ID ${device.slave_id}`;
         }
-      } else if (editDevice.protocol === "rtu_gateway" && device.protocol === "rtu_gateway") {
+      } else if (editProtocol === "rtu_gateway" && device.protocol === "rtu_gateway") {
         // RTU Gateway: Check Gateway IP + Port + Slave ID
         if (
           device.gateway_ip === editGatewayIp.trim() &&
@@ -210,6 +268,14 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
           device.slave_id === editSlaveId
         ) {
           return `Conflict: Device "${device.name}" already uses Gateway ${device.gateway_ip}:${device.gateway_port} with Slave ID ${device.slave_id}`;
+        }
+      } else if (editProtocol === "rtu_direct" && device.protocol === "rtu_direct") {
+        // RTU Direct: Check Serial Port + Slave ID
+        if (
+          device.serial_port === editSerialPort.trim() &&
+          device.slave_id === editSlaveId
+        ) {
+          return `Conflict: Device "${device.name}" already uses ${device.serial_port} with Slave ID ${device.slave_id}`;
         }
       }
     }
@@ -232,21 +298,33 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
     const supabase = createClient();
 
-    // Prepare update data based on protocol
+    // Prepare update data based on selected protocol
+    // Note: logging frequency is now per-register (stored in the registers array)
     const updateData: Record<string, unknown> = {
       name: editName.trim(),
+      protocol: editProtocol,
+      measurement_type: editMeasurementType || null,
       slave_id: editSlaveId,
-      // Include registers and logging interval
       registers: editRegisters.length > 0 ? editRegisters : null,
-      logging_interval_ms: editLoggingInterval,
+      // Clear all protocol-specific fields first, then set the right ones
+      ip_address: null,
+      port: null,
+      gateway_ip: null,
+      gateway_port: null,
+      serial_port: null,
+      baudrate: null,
     };
 
-    if (editDevice.protocol === "tcp") {
+    // Set protocol-specific fields based on selected protocol
+    if (editProtocol === "tcp") {
       updateData.ip_address = editIpAddress.trim();
       updateData.port = editPort;
-    } else if (editDevice.protocol === "rtu_gateway") {
+    } else if (editProtocol === "rtu_gateway") {
       updateData.gateway_ip = editGatewayIp.trim();
       updateData.gateway_port = editGatewayPort;
+    } else if (editProtocol === "rtu_direct") {
+      updateData.serial_port = editSerialPort.trim();
+      updateData.baudrate = editBaudrate;
     }
 
     const { error } = await supabase
@@ -314,7 +392,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   const typeConfigs: Record<string, { title: string; description: string }> = {
     load_meter: { title: "Energy Meters", description: "Power measurement devices" },
     inverter: { title: "Solar Inverters", description: "PV power conversion" },
-    dg: { title: "Diesel Generators", description: "Generator controllers" },
+    dg: { title: "Power Generators", description: "Generator controllers" },
     unknown: { title: "Other Devices", description: "Uncategorized devices" },
   };
 
@@ -326,14 +404,32 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       <div className="flex flex-col gap-3 p-3 rounded-lg bg-muted/50 sm:flex-row sm:items-center sm:justify-between">
         {/* Device info */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div
-            className={`h-3 w-3 rounded-full flex-shrink-0 ${
-              device.is_online ? "bg-[#6baf4f]" : "bg-gray-400"
-            }`}
-          />
+          {/* Status indicator - green pulse when online, gray when offline */}
+          <div className="flex-shrink-0" title={device.is_online ? "Online" : `Last seen: ${formatLastSeen(device.last_seen)}`}>
+            {device.is_online ? (
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+              </span>
+            ) : (
+              <span className="relative flex h-3 w-3">
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-400"></span>
+              </span>
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="font-medium truncate">{device.name}</p>
+              {/* Online/Offline status badge */}
+              {device.is_online ? (
+                <Badge variant="outline" className="flex-shrink-0 text-xs bg-green-50 text-green-700 border-green-200">
+                  Online
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="flex-shrink-0 text-xs bg-gray-100 text-gray-600">
+                  {device.last_seen ? formatLastSeen(device.last_seen) : "Offline"}
+                </Badge>
+              )}
               {/* Measurement type badge - shows what the device measures */}
               {device.measurement_type && measurementTypeConfig[device.measurement_type] && (
                 <Badge
@@ -510,16 +606,17 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
             )}
           </DialogHeader>
 
-          {/* Tabbed Interface */}
+          {/* Tabbed Interface - Connection and Registers only */}
+          {/* Logging frequency is now set per-register, not per-device */}
           <Tabs defaultValue="connection" className="w-full">
-            <TabsList className="w-full grid grid-cols-3">
+            <TabsList className="w-full grid grid-cols-2">
               <TabsTrigger value="connection">Connection</TabsTrigger>
               <TabsTrigger value="registers">Registers</TabsTrigger>
-              <TabsTrigger value="logging">Logging</TabsTrigger>
             </TabsList>
 
             {/* Connection Tab */}
             <TabsContent value="connection" className="space-y-4 py-4">
+              {/* Device Name */}
               <div className="space-y-2">
                 <Label htmlFor="edit-name">Device Name</Label>
                 <Input
@@ -530,6 +627,50 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 />
               </div>
 
+              {/* Measurement Type - what the device measures for control logic */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-measurement-type">Measurement Type</Label>
+                <select
+                  id="edit-measurement-type"
+                  value={editMeasurementType}
+                  onChange={(e) => setEditMeasurementType(e.target.value)}
+                  className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+                >
+                  <option value="">Select what this device measures...</option>
+                  {measurementTypes.map((mt) => (
+                    <option key={mt.value} value={mt.value}>
+                      {mt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {editMeasurementType
+                    ? measurementTypes.find((mt) => mt.value === editMeasurementType)?.description
+                    : "Determines how this device is used in the control logic"}
+                </p>
+              </div>
+
+              {/* Protocol Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-protocol">Protocol</Label>
+                <select
+                  id="edit-protocol"
+                  value={editProtocol}
+                  onChange={(e) => setEditProtocol(e.target.value)}
+                  className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+                >
+                  {protocols.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {protocols.find((p) => p.value === editProtocol)?.description}
+                </p>
+              </div>
+
+              {/* Slave ID - common to all protocols */}
               <div className="space-y-2">
                 <Label htmlFor="edit-slave-id">Slave ID</Label>
                 <Input
@@ -546,8 +687,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 </p>
               </div>
 
-              {editDevice?.protocol === "tcp" && (
-                <>
+              {/* TCP Fields - shown when protocol is tcp */}
+              {editProtocol === "tcp" && (
+                <div className="space-y-4 pl-4 border-l-2 border-muted">
                   <div className="space-y-2">
                     <Label htmlFor="edit-ip">IP Address</Label>
                     <Input
@@ -568,11 +710,12 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                       className="min-h-[44px]"
                     />
                   </div>
-                </>
+                </div>
               )}
 
-              {editDevice?.protocol === "rtu_gateway" && (
-                <>
+              {/* RTU Gateway Fields - shown when protocol is rtu_gateway */}
+              {editProtocol === "rtu_gateway" && (
+                <div className="space-y-4 pl-4 border-l-2 border-muted">
                   <div className="space-y-2">
                     <Label htmlFor="edit-gateway-ip">Gateway IP</Label>
                     <Input
@@ -593,7 +736,38 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                       className="min-h-[44px]"
                     />
                   </div>
-                </>
+                </div>
+              )}
+
+              {/* RTU Direct Fields - shown when protocol is rtu_direct */}
+              {editProtocol === "rtu_direct" && (
+                <div className="space-y-4 pl-4 border-l-2 border-muted">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-serial-port">Serial Port</Label>
+                    <Input
+                      id="edit-serial-port"
+                      value={editSerialPort}
+                      onChange={(e) => setEditSerialPort(e.target.value)}
+                      placeholder="/dev/ttyUSB0"
+                      className="min-h-[44px]"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-baudrate">Baudrate</Label>
+                    <select
+                      id="edit-baudrate"
+                      value={editBaudrate}
+                      onChange={(e) => setEditBaudrate(parseInt(e.target.value))}
+                      className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+                    >
+                      <option value={9600}>9600</option>
+                      <option value={19200}>19200</option>
+                      <option value={38400}>38400</option>
+                      <option value={57600}>57600</option>
+                      <option value={115200}>115200</option>
+                    </select>
+                  </div>
+                </div>
               )}
             </TabsContent>
 
@@ -632,6 +806,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                           <th className="px-3 py-2 text-left font-medium">Name</th>
                           <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
                           <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Datatype</th>
+                          <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Logging</th>
                           <th className="px-3 py-2 text-right font-medium">Actions</th>
                         </tr>
                       </thead>
@@ -648,6 +823,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                               </span>
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
+                              {formatLoggingFrequency(reg.logging_frequency)}
+                            </td>
                             <td className="px-3 py-2 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 <button
@@ -687,68 +865,6 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                   <p className="text-xs mt-1">Click &quot;Add Register&quot; to define Modbus registers.</p>
                 </div>
               )}
-            </TabsContent>
-
-            {/* Logging Tab */}
-            <TabsContent value="logging" className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-logging-interval">Polling Interval (ms)</Label>
-                <Input
-                  id="edit-logging-interval"
-                  type="number"
-                  min={100}
-                  max={60000}
-                  step={100}
-                  value={editLoggingInterval}
-                  onChange={(e) => setEditLoggingInterval(parseInt(e.target.value) || 1000)}
-                  className="min-h-[44px] max-w-[200px]"
-                />
-                <p className="text-xs text-muted-foreground">
-                  How often to poll this device for data (100-60000 ms).
-                  <br />
-                  Common values: 1000ms (1s), 5000ms (5s), 10000ms (10s)
-                </p>
-              </div>
-
-              {/* Quick presets */}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant={editLoggingInterval === 1000 ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setEditLoggingInterval(1000)}
-                  className="min-h-[36px]"
-                >
-                  1 second
-                </Button>
-                <Button
-                  type="button"
-                  variant={editLoggingInterval === 5000 ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setEditLoggingInterval(5000)}
-                  className="min-h-[36px]"
-                >
-                  5 seconds
-                </Button>
-                <Button
-                  type="button"
-                  variant={editLoggingInterval === 10000 ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setEditLoggingInterval(10000)}
-                  className="min-h-[36px]"
-                >
-                  10 seconds
-                </Button>
-                <Button
-                  type="button"
-                  variant={editLoggingInterval === 30000 ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setEditLoggingInterval(30000)}
-                  className="min-h-[36px]"
-                >
-                  30 seconds
-                </Button>
-              </div>
             </TabsContent>
           </Tabs>
 

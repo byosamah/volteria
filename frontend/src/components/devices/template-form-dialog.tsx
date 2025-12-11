@@ -56,6 +56,16 @@ interface TemplateFormDialogProps {
   onSaved?: (template: DeviceTemplate) => void;
 }
 
+// Format logging frequency (in seconds) into readable labels
+function formatLoggingFrequency(seconds?: number): string {
+  if (!seconds) return "1 min";  // Default: 60 seconds
+  if (seconds < 1) return `${seconds * 1000}ms`;
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)}d`;
+}
+
 export function TemplateFormDialog({
   mode,
   template,
@@ -201,21 +211,23 @@ export function TemplateFormDialog({
       };
 
       if (mode === "edit" && template) {
-        // Update existing template
-        const { data, error } = await supabase
-          .from("device_templates")
-          .update(templateData)
-          .eq("id", template.id)
-          .select()
-          .single();
+        // Update existing template via backend API
+        // This ensures proper processing of registers (alias generation, validation)
+        const response = await fetch(`/api/devices/templates/${template.template_id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(templateData),
+        });
 
-        if (error) {
-          console.error("Error updating template:", error);
-          toast.error(error.message || "Failed to update template");
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Error updating template:", errorData);
+          toast.error(errorData.detail || "Failed to update template");
           setLoading(false);
           return;
         }
 
+        const data = await response.json();
         toast.success("Template updated successfully");
         onSaved?.(data);
       } else {
@@ -427,6 +439,7 @@ export function TemplateFormDialog({
                         <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
                         <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
                         <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Access</th>
+                        <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Logging</th>
                         <th className="px-3 py-2 text-right font-medium">Actions</th>
                       </tr>
                     </thead>
@@ -444,6 +457,9 @@ export function TemplateFormDialog({
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
                           <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.access}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
+                            {formatLoggingFrequency(reg.logging_frequency)}
+                          </td>
                           <td className="px-3 py-2 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <button

@@ -120,6 +120,7 @@ export default function AddMasterDevicePage({
         }
 
         // Fetch available controllers (enterprise's claimed, not assigned to any site)
+        // Controllers with 'claimed' status are owned by enterprise but not yet on a site
         const { data: controllers } = await supabase
           .from("controllers")
           .select(`
@@ -134,7 +135,7 @@ export default function AddMasterDevicePage({
           `)
           .eq("enterprise_id", userProfile.enterprise_id)
           .is("site_id", null)
-          .eq("status", "deployed");
+          .eq("status", "claimed");
 
         if (controllers) {
           setAvailableControllers(controllers as unknown as AvailableController[]);

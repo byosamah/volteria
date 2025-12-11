@@ -83,13 +83,15 @@ export function ClaimForm({ enterpriseId, userId }: ClaimFormProps) {
       }
 
       // Claim the controller
+      // Status: "claimed" = owned by enterprise but not yet assigned to a site
+      // Status becomes "deployed" automatically when assigned to a site via site_master_devices
       const { error: claimError } = await supabase
         .from("controllers")
         .update({
           enterprise_id: enterpriseId,
           claimed_at: new Date().toISOString(),
           claimed_by: userId,
-          status: "deployed",
+          status: "claimed",
         })
         .eq("id", controller.id);
 

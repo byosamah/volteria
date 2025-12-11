@@ -37,7 +37,7 @@ function StatCard({
   icon,
 }: {
   title: string;
-  value: string | number;
+  value: React.ReactNode;
   description: string;
   icon: React.ReactNode;
 }) {
@@ -57,34 +57,23 @@ function StatCard({
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  console.log("=== DASHBOARD DEBUG START ===");
 
   // Get current user
   const {
     data: { user },
-    error: authError,
   } = await supabase.auth.getUser();
-
-  console.log("DASHBOARD - Auth user ID:", user?.id);
-  console.log("DASHBOARD - Auth error:", authError);
 
   // Fetch user profile including avatar and role
   let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null } | null = null;
   if (user?.id) {
-    const { data, error: queryError } = await supabase
+    const { data } = await supabase
       .from("users")
       .select("full_name, avatar_url, role")
       .eq("id", user.id)
       .single();
 
-    console.log("DASHBOARD - User profile query result:", JSON.stringify(data));
-    console.log("DASHBOARD - User profile query error:", JSON.stringify(queryError));
-
     userProfile = data;
   }
-
-  console.log("DASHBOARD - Final userProfile.role:", userProfile?.role);
-  console.log("=== DASHBOARD DEBUG END ===")
 
   // Fetch projects (with error handling for missing table)
   let projects: Array<{
@@ -198,23 +187,20 @@ export default async function DashboardPage() {
             }
           />
           <StatCard
-            title="Online"
-            value={onlineCount}
-            description="Controllers connected"
+            title="Controller Status"
+            value={
+              <span className="flex items-center gap-1">
+                <span className="text-green-600">{onlineCount}</span>
+                <span className="text-base font-normal text-muted-foreground">online</span>
+                <span className="text-muted-foreground">-</span>
+                <span className="text-red-500">{projectCount - onlineCount}</span>
+                <span className="text-base font-normal text-muted-foreground">offline</span>
+              </span>
+            }
+            description="Site controllers connectivity"
             icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                 <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-              </svg>
-            }
-          />
-          <StatCard
-            title="Offline"
-            value={projectCount - onlineCount}
-            description="Controllers disconnected"
-            icon={
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
               </svg>
             }
           />

@@ -30,6 +30,34 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// Helper to format operation mode for display
+// Converts database values like "zero_dg_reverse" to readable text
+function formatOperationMode(mode: string | null): string {
+  switch (mode) {
+    case "zero_dg_reverse":
+      return "Zero DG Reverse";
+    case "peak_shaving":
+      return "Peak Shaving";
+    case "manual":
+      return "Manual Control";
+    default:
+      return mode || "Not set";
+  }
+}
+
+// Helper to format grid connection for display
+// Converts database values like "off_grid" to readable text
+function formatGridConnection(connection: string | null): string {
+  switch (connection) {
+    case "off_grid":
+      return "Off-grid";
+    case "on_grid":
+      return "On-grid";
+    default:
+      return connection || "Not set";
+  }
+}
+
 export default async function ProjectDetailPage({
   params,
 }: {
@@ -54,10 +82,10 @@ export default async function ProjectDetailPage({
     userProfile = data;
   }
 
-  // Fetch project details
+  // Fetch project details (only needed columns)
   const { data: project, error } = await supabase
     .from("projects")
-    .select("*")
+    .select("id, name, description, location")
     .eq("id", id)
     .single();
 
@@ -66,6 +94,7 @@ export default async function ProjectDetailPage({
   }
 
   // Fetch sites for this project
+  // Including operation_mode and grid_connection for display on site cards
   let sites: Array<{
     id: string;
     name: string;
@@ -74,12 +103,14 @@ export default async function ProjectDetailPage({
     controller_last_seen: string | null;
     dg_reserve_kw: number;
     is_active: boolean;
+    operation_mode: string | null;      // e.g., "zero_dg_reverse", "peak_shaving", "manual"
+    grid_connection: string | null;     // e.g., "off_grid", "on_grid"
   }> = [];
 
   try {
     const { data } = await supabase
       .from("sites")
-      .select("id, name, location, controller_status, controller_last_seen, dg_reserve_kw, is_active")
+      .select("id, name, location, controller_status, controller_last_seen, dg_reserve_kw, is_active, operation_mode, grid_connection")
       .eq("project_id", id)
       .eq("is_active", true)
       .order("name");
@@ -91,18 +122,26 @@ export default async function ProjectDetailPage({
     // Ignore errors
   }
 
-  // Count devices per site
+  // Count devices per site in batch (avoids N+1 queries)
   const siteDeviceCounts: Record<string, number> = {};
-  for (const site of sites) {
+  const siteIds = sites.map((s) => s.id);
+
+  if (siteIds.length > 0) {
     try {
-      const { count } = await supabase
+      const { data: deviceRows } = await supabase
         .from("project_devices")
-        .select("id", { count: "exact", head: true })
-        .eq("site_id", site.id)
+        .select("site_id")
+        .in("site_id", siteIds)
         .eq("enabled", true);
-      siteDeviceCounts[site.id] = count || 0;
+
+      // Count devices per site
+      if (deviceRows) {
+        for (const row of deviceRows) {
+          siteDeviceCounts[row.site_id] = (siteDeviceCounts[row.site_id] || 0) + 1;
+        }
+      }
     } catch {
-      siteDeviceCounts[site.id] = 0;
+      // Ignore errors
     }
   }
 
@@ -139,8 +178,21 @@ export default async function ProjectDetailPage({
               {project.description || "No description"}
             </p>
           </div>
-          {/* Add Site button */}
-          <div className="flex gap-2">
+          {/* Action buttons: Reports and Add Site */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            {/* Reports button - analytics and data export */}
+            <Button variant="outline" asChild className="w-full sm:w-auto min-h-[44px]">
+              <Link href={`/projects/${id}/reports`}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2">
+                  <path d="M3 3v18h18" />
+                  <path d="M18 17V9" />
+                  <path d="M13 17V5" />
+                  <path d="M8 17v-3" />
+                </svg>
+                Reports
+              </Link>
+            </Button>
+            {/* Add Site button */}
             <Button asChild className="w-full sm:w-auto min-h-[44px]">
               <Link href={`/projects/${id}/sites/new`}>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2">
@@ -163,8 +215,14 @@ export default async function ProjectDetailPage({
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Online</CardDescription>
-              <CardTitle className="text-3xl text-green-600">{onlineSites}</CardTitle>
+              <CardDescription>Controllers</CardDescription>
+              <CardTitle className="text-2xl flex items-center gap-1">
+                <span className="text-green-600">{onlineSites}</span>
+                <span className="text-base font-normal text-muted-foreground">online</span>
+                <span className="text-muted-foreground">-</span>
+                <span className="text-red-500">{totalSites - onlineSites}</span>
+                <span className="text-base font-normal text-muted-foreground">offline</span>
+              </CardTitle>
             </CardHeader>
           </Card>
           <Card>
@@ -210,7 +268,8 @@ export default async function ProjectDetailPage({
                       </p>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span>{siteDeviceCounts[site.id] || 0} devices</span>
-                        <span>DG Reserve: {site.dg_reserve_kw} kW</span>
+                        {/* Show operation mode and grid connection instead of DG Reserve */}
+                        <span>{formatOperationMode(site.operation_mode)} · {formatGridConnection(site.grid_connection)}</span>
                         {site.controller_status === "offline" && site.controller_last_seen && (
                           <span>Last seen: <FormattedDate date={site.controller_last_seen} /></span>
                         )}

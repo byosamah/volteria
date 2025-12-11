@@ -51,12 +51,21 @@ interface Site {
   description: string | null;
   controller_serial_number: string | null;
   controller_status: string | null;
+  // Control method fields
+  control_method: string | null;
+  control_method_backup: string | null;
+  grid_connection: string | null;
+  // Control settings
   dg_reserve_kw: number;
   control_interval_ms: number;
   operation_mode: string | null;
+  // Logging settings
   logging_local_interval_ms: number;
   logging_cloud_interval_ms: number;
   logging_local_retention_days: number;
+  logging_cloud_enabled: boolean;
+  logging_gateway_enabled: boolean;
+  // Safe mode settings
   safe_mode_enabled: boolean;
   safe_mode_type: string;
   safe_mode_timeout_s: number;
@@ -77,16 +86,26 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
   // Form state
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
+    // Basic info
     name: site.name,
     location: site.location || "",
     description: site.description || "",
     controller_serial_number: site.controller_serial_number || "",
+    // Control method
+    control_method: site.control_method || "onsite_controller",
+    control_method_backup: site.control_method_backup || "none",
+    grid_connection: site.grid_connection || "off_grid",
+    // Control settings
     dg_reserve_kw: site.dg_reserve_kw || 0,
     control_interval_ms: site.control_interval_ms || 1000,
     operation_mode: site.operation_mode || "zero_dg_reverse",
+    // Logging settings
     logging_local_interval_ms: site.logging_local_interval_ms || 1000,
     logging_cloud_interval_ms: site.logging_cloud_interval_ms || 5000,
     logging_local_retention_days: site.logging_local_retention_days || 30,
+    logging_cloud_enabled: site.logging_cloud_enabled ?? true,
+    logging_gateway_enabled: site.logging_gateway_enabled ?? false,
+    // Safe mode settings
     safe_mode_enabled: site.safe_mode_enabled ?? true,
     safe_mode_type: site.safe_mode_type || "time_based",
     safe_mode_timeout_s: site.safe_mode_timeout_s || 30,
@@ -128,16 +147,26 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
       const { error } = await supabase
         .from("sites")
         .update({
+          // Basic info
           name: formData.name.trim(),
           location: formData.location.trim() || null,
           description: formData.description.trim() || null,
           controller_serial_number: formData.controller_serial_number.trim() || null,
+          // Control method
+          control_method: formData.control_method,
+          control_method_backup: formData.control_method_backup,
+          grid_connection: formData.grid_connection,
+          // Control settings
           dg_reserve_kw: formData.dg_reserve_kw,
           control_interval_ms: formData.control_interval_ms,
           operation_mode: formData.operation_mode,
+          // Logging settings
           logging_local_interval_ms: formData.logging_local_interval_ms,
           logging_cloud_interval_ms: formData.logging_cloud_interval_ms,
           logging_local_retention_days: formData.logging_local_retention_days,
+          logging_cloud_enabled: formData.logging_cloud_enabled,
+          logging_gateway_enabled: formData.logging_gateway_enabled,
+          // Safe mode settings
           safe_mode_enabled: formData.safe_mode_enabled,
           safe_mode_type: formData.safe_mode_type,
           safe_mode_timeout_s: formData.safe_mode_timeout_s,
@@ -239,6 +268,64 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
 
       <Separator />
 
+      {/* Control Method */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium">Control Method</h3>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="control_method" className="flex items-center gap-1.5">
+              Control Method
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>How the site is controlled. On-site controller runs locally (works offline). Gateway API sends commands through Netbiter (requires internet).</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
+            <select
+              id="control_method"
+              name="control_method"
+              value={formData.control_method}
+              onChange={handleChange}
+              className="w-full h-10 px-3 rounded-md border border-input bg-background"
+            >
+              <option value="onsite_controller">On-site Controller</option>
+              <option value="gateway_api">Gateway API</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="control_method_backup" className="flex items-center gap-1.5">
+              Backup Method
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Fallback control method if primary method fails. Gateway backup switches to cloud control if on-site controller fails.</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
+            <select
+              id="control_method_backup"
+              name="control_method_backup"
+              value={formData.control_method_backup}
+              onChange={handleChange}
+              className="w-full h-10 px-3 rounded-md border border-input bg-background"
+            >
+              <option value="none">None</option>
+              <option value="gateway_backup">Gateway Backup</option>
+              <option value="controller_backup">Controller Backup</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <Separator />
+
       {/* Control Settings */}
       <div className="space-y-4">
         <h3 className="text-lg font-medium">Control Settings</h3>
@@ -291,29 +378,55 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="operation_mode" className="flex items-center gap-1.5">
-            Operation Mode
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span><InfoIcon /></span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs">
-                <p>Control algorithm to use. Zero DG Reverse prevents reverse power flow to diesel generators.</p>
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <select
-            id="operation_mode"
-            name="operation_mode"
-            value={formData.operation_mode}
-            onChange={handleChange}
-            className="w-full h-10 px-3 rounded-md border border-input bg-background"
-          >
-            <option value="zero_dg_reverse">Zero DG Reverse</option>
-            <option value="peak_shaving">Peak Shaving</option>
-            <option value="manual">Manual</option>
-          </select>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="grid_connection" className="flex items-center gap-1.5">
+              Grid Connection
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Type of grid connection. Off-grid: Diesel generators + solar. On-grid: Connected to utility grid.</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
+            <select
+              id="grid_connection"
+              name="grid_connection"
+              value={formData.grid_connection}
+              onChange={handleChange}
+              className="w-full h-10 px-3 rounded-md border border-input bg-background"
+            >
+              <option value="off_grid">Off-grid</option>
+              <option value="on_grid">On-grid</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="operation_mode" className="flex items-center gap-1.5">
+              Operation Mode
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Control algorithm to use. Zero DG Reverse prevents reverse power flow to diesel generators.</p>
+                </TooltipContent>
+              </Tooltip>
+            </Label>
+            <select
+              id="operation_mode"
+              name="operation_mode"
+              value={formData.operation_mode}
+              onChange={handleChange}
+              className="w-full h-10 px-3 rounded-md border border-input bg-background"
+            >
+              <option value="zero_dg_reverse">Zero DG Reverse</option>
+              <option value="peak_shaving">Peak Shaving</option>
+              <option value="manual">Manual</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -392,6 +505,51 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
               onChange={handleChange}
             />
           </div>
+        </div>
+
+        {/* Cloud Logging Toggles */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex items-center gap-2 p-3 border rounded-md cursor-pointer hover:bg-muted/50">
+            <input
+              type="checkbox"
+              name="logging_cloud_enabled"
+              checked={formData.logging_cloud_enabled}
+              onChange={handleChange}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium">Cloud Logging (via Controller)</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Enable cloud sync through the on-site controller. Data is sent directly from the Raspberry Pi to the cloud platform.</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-2 p-3 border rounded-md cursor-pointer hover:bg-muted/50">
+            <input
+              type="checkbox"
+              name="logging_gateway_enabled"
+              checked={formData.logging_gateway_enabled}
+              onChange={handleChange}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium">Gateway Logging</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Enable logging through gateway (e.g., Netbiter). Useful as backup or when controller has no direct internet access.</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </label>
         </div>
       </div>
 

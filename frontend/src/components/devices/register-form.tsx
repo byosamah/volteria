@@ -23,15 +23,80 @@ import {
 // Modbus register type
 export interface ModbusRegister {
   address: number;
-  name: string;
+  name: string;  // Display name (any format, e.g., "Active Power")
+  alias?: string;  // Code-friendly name (auto-generated, e.g., "active_power")
   description?: string;
   type: "input" | "holding";
   access: "read" | "write" | "readwrite";
   datatype: "uint16" | "int16" | "uint32" | "int32" | "float32";
-  scale?: number;
+  scale?: number;  // Multiplication factor
+  offset?: number;  // Addition factor (can be negative)
+  scale_order?: "multiply_first" | "add_first";  // Which operation happens first
+  logging_frequency?: number;  // Logging frequency in seconds
   unit?: string;
   min?: number;
   max?: number;
+  register_role?: string;  // Control logic role (e.g., "solar_active_power")
+}
+
+// Logging frequency options (in seconds)
+const LOGGING_FREQUENCY_OPTIONS = [
+  { value: "0.5", label: "0.5 seconds" },
+  { value: "1", label: "1 second" },
+  { value: "10", label: "10 seconds" },
+  { value: "30", label: "30 seconds" },
+  { value: "60", label: "1 minute" },
+  { value: "300", label: "5 minutes" },
+  { value: "600", label: "10 minutes" },
+  { value: "900", label: "15 minutes" },
+  { value: "1800", label: "30 minutes" },
+  { value: "3600", label: "1 hour" },
+  { value: "86400", label: "24 hours" },
+];
+
+// Register role options - defines how this register is used in control logic
+// This list can be extended when new operational modes are added
+const REGISTER_ROLE_OPTIONS = [
+  { value: "none", label: "None (not used in control)" },
+  { value: "generator_active_power", label: "Generator Active Power" },
+  { value: "generator_reactive_power", label: "Generator Reactive Power" },
+  { value: "solar_active_power", label: "Solar Active Power" },
+  { value: "solar_reactive_power", label: "Solar Reactive Power" },
+  { value: "solar_power_limit_read", label: "Solar Power Limit (Read)" },
+  { value: "solar_power_limit_write", label: "Solar Power Limit Control (Write)" },
+  { value: "solar_reactive_limit_read", label: "Solar Reactive Limit (Read)" },
+  { value: "solar_reactive_limit_write", label: "Solar Reactive Limit Control (Write)" },
+  { value: "load_active_power", label: "Load Active Power" },
+  { value: "load_reactive_power", label: "Load Reactive Power" },
+];
+
+/**
+ * Generate a code-friendly alias from a display name.
+ * Converts "Active Power" to "active_power", "Voltage Phase-A" to "voltage_phase_a", etc.
+ */
+function generateAlias(name: string): string {
+  // Start with lowercase
+  let alias = name.toLowerCase();
+
+  // Replace common special characters with meaningful text
+  alias = alias.replace(/%/g, 'pct');
+  alias = alias.replace(/[/\-]/g, '_');
+
+  // Replace any remaining non-alphanumeric characters with underscore
+  alias = alias.replace(/[^a-z0-9_]/g, '_');
+
+  // Collapse multiple underscores into one
+  alias = alias.replace(/_+/g, '_');
+
+  // Remove leading/trailing underscores
+  alias = alias.replace(/^_|_$/g, '');
+
+  // Ensure starts with letter (prefix with 'reg_' if starts with number)
+  if (alias && /^\d/.test(alias)) {
+    alias = 'reg_' + alias;
+  }
+
+  return alias || 'register';
 }
 
 interface RegisterFormProps {
@@ -66,9 +131,13 @@ export function RegisterForm({
     access: "read" | "write" | "readwrite";
     datatype: "uint16" | "int16" | "uint32" | "int32" | "float32";
     scale: string;
+    offset: string;
+    scale_order: "multiply_first" | "add_first";
+    logging_frequency: string;
     unit: string;
     min: string;
     max: string;
+    register_role: string;  // Control logic role
   }>({
     address: "",
     name: "",
@@ -77,9 +146,13 @@ export function RegisterForm({
     access: "read",
     datatype: "uint16",
     scale: "1",
+    offset: "0",
+    scale_order: "multiply_first",
+    logging_frequency: "60",
     unit: "",
     min: "",
     max: "",
+    register_role: "none",  // Default: not used in control
   });
 
   const [errors, setErrors] = useState<string[]>([]);
@@ -97,9 +170,13 @@ export function RegisterForm({
           access: register.access,
           datatype: register.datatype,
           scale: register.scale?.toString() || "1",
+          offset: register.offset?.toString() || "0",
+          scale_order: register.scale_order || "multiply_first",
+          logging_frequency: register.logging_frequency?.toString() || "60",
           unit: register.unit || "",
           min: register.min?.toString() || "",
           max: register.max?.toString() || "",
+          register_role: register.register_role || "none",
         });
       } else {
         // Adding: reset to empty form
@@ -111,9 +188,13 @@ export function RegisterForm({
           access: "read",
           datatype: "uint16",
           scale: "1",
+          offset: "0",
+          scale_order: "multiply_first",
+          logging_frequency: "60",
           unit: "",
           min: "",
           max: "",
+          register_role: "none",
         });
       }
       setErrors([]);
@@ -156,11 +237,9 @@ export function RegisterForm({
     if (!formData.name.trim()) {
       newErrors.push("Name is required");
     } else {
-      // Check for valid snake_case name
-      if (!/^[a-z][a-z0-9_]*$/.test(formData.name)) {
-        newErrors.push("Name must be lowercase with underscores (snake_case)");
-      }
       // Check for duplicate name (excluding current register in edit mode)
+      // Note: We no longer enforce snake_case - users can enter any display name
+      // The backend will auto-generate a code-friendly alias
       const isDuplicateName = existingRegisters.some(
         (r) =>
           r.name === formData.name &&
@@ -199,6 +278,15 @@ export function RegisterForm({
     if (formData.scale && formData.scale !== "1") {
       newRegister.scale = parseFloat(formData.scale);
     }
+    if (formData.offset && formData.offset !== "0") {
+      newRegister.offset = parseFloat(formData.offset);
+    }
+    if (formData.scale_order !== "multiply_first") {
+      newRegister.scale_order = formData.scale_order;
+    }
+    if (formData.logging_frequency && formData.logging_frequency !== "60") {
+      newRegister.logging_frequency = parseFloat(formData.logging_frequency);
+    }
     if (formData.unit.trim()) {
       newRegister.unit = formData.unit.trim();
     }
@@ -207,6 +295,10 @@ export function RegisterForm({
     }
     if (formData.max.trim()) {
       newRegister.max = parseFloat(formData.max);
+    }
+    // Add register role if not "none" (the default)
+    if (formData.register_role && formData.register_role !== "none") {
+      newRegister.register_role = formData.register_role;
     }
 
     onSave(newRegister);
@@ -262,18 +354,26 @@ export function RegisterForm({
 
             <div className="space-y-2">
               <Label htmlFor="name">
-                Name <span className="text-red-500">*</span>
+                Display Name <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="name"
                 name="name"
-                placeholder="e.g., active_power"
+                placeholder="e.g., Active Power"
                 value={formData.name}
                 onChange={handleChange}
                 className="min-h-[44px]"
                 required
               />
-              <p className="text-xs text-muted-foreground">snake_case</p>
+              {/* Show auto-generated alias preview */}
+              {formData.name.trim() && (
+                <p className="text-xs text-muted-foreground">
+                  Code alias: <code className="bg-muted px-1 rounded">{generateAlias(formData.name)}</code>
+                </p>
+              )}
+              {!formData.name.trim() && (
+                <p className="text-xs text-muted-foreground">Any format (alias auto-generated)</p>
+              )}
             </div>
           </div>
 
@@ -328,30 +428,54 @@ export function RegisterForm({
             </div>
           </div>
 
-          {/* Datatype and Scale - side by side */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="datatype">
-                Data Type <span className="text-red-500">*</span>
-              </Label>
-              <select
-                id="datatype"
-                name="datatype"
-                value={formData.datatype}
-                onChange={handleChange}
-                className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
-                required
-              >
-                <option value="uint16">uint16 (unsigned 16-bit)</option>
-                <option value="int16">int16 (signed 16-bit)</option>
-                <option value="uint32">uint32 (unsigned 32-bit)</option>
-                <option value="int32">int32 (signed 32-bit)</option>
-                <option value="float32">float32 (32-bit float)</option>
-              </select>
-            </div>
+          {/* Register Role - what is this register used for in control logic */}
+          <div className="space-y-2">
+            <Label htmlFor="register_role">
+              Register Role
+              <span className="text-xs text-muted-foreground ml-2">
+                (how is this register used in control logic?)
+              </span>
+            </Label>
+            <select
+              id="register_role"
+              name="register_role"
+              value={formData.register_role}
+              onChange={handleChange}
+              className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+            >
+              {REGISTER_ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
+          {/* Datatype */}
+          <div className="space-y-2">
+            <Label htmlFor="datatype">
+              Data Type <span className="text-red-500">*</span>
+            </Label>
+            <select
+              id="datatype"
+              name="datatype"
+              value={formData.datatype}
+              onChange={handleChange}
+              className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+              required
+            >
+              <option value="uint16">uint16 (unsigned 16-bit)</option>
+              <option value="int16">int16 (signed 16-bit)</option>
+              <option value="uint32">uint32 (unsigned 32-bit)</option>
+              <option value="int32">int32 (signed 32-bit)</option>
+              <option value="float32">float32 (32-bit float)</option>
+            </select>
+          </div>
+
+          {/* Scale, Offset, and Order - in a row */}
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="scale">Scale Factor</Label>
+              <Label htmlFor="scale">Scale (×)</Label>
               <Input
                 id="scale"
                 name="scale"
@@ -362,9 +486,36 @@ export function RegisterForm({
                 onChange={handleChange}
                 className="min-h-[44px]"
               />
-              <p className="text-xs text-muted-foreground">
-                Multiplier for raw value
-              </p>
+              <p className="text-xs text-muted-foreground">Multiplier</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="offset">Offset (+)</Label>
+              <Input
+                id="offset"
+                name="offset"
+                type="number"
+                step="any"
+                placeholder="0"
+                value={formData.offset}
+                onChange={handleChange}
+                className="min-h-[44px]"
+              />
+              <p className="text-xs text-muted-foreground">Addition (can be negative)</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="scale_order">Operation Order</Label>
+              <select
+                id="scale_order"
+                name="scale_order"
+                value={formData.scale_order}
+                onChange={handleChange}
+                className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+              >
+                <option value="multiply_first">(raw × scale) + offset</option>
+                <option value="add_first">(raw + offset) × scale</option>
+              </select>
             </div>
           </div>
 
@@ -409,6 +560,25 @@ export function RegisterForm({
                 className="min-h-[44px]"
               />
             </div>
+          </div>
+
+          {/* Logging Frequency */}
+          <div className="space-y-2">
+            <Label htmlFor="logging_frequency">Logging Frequency</Label>
+            <select
+              id="logging_frequency"
+              name="logging_frequency"
+              value={formData.logging_frequency}
+              onChange={handleChange}
+              className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+            >
+              {LOGGING_FREQUENCY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">How often to log this register</p>
           </div>
 
           <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">

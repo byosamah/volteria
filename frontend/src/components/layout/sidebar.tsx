@@ -55,6 +55,27 @@ const navItems = [
     ),
   },
   {
+    title: "Alarms",
+    href: "/alarms",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      </svg>
+    ),
+  },
+  {
+    title: "My Controllers",
+    href: "/controllers",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <rect width="20" height="14" x="2" y="3" rx="2" />
+        <line x1="8" x2="16" y1="21" y2="21" />
+        <line x1="12" x2="12" y1="17" y2="21" />
+      </svg>
+    ),
+  },
+  {
     title: "Device Templates",
     href: "/devices",
     icon: (
@@ -63,16 +84,6 @@ const navItems = [
         <path d="M12 12h.01" />
         <path d="M17 12h.01" />
         <path d="M7 12h.01" />
-      </svg>
-    ),
-  },
-  {
-    title: "Alarms",
-    href: "/alarms",
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
       </svg>
     ),
   },
@@ -88,7 +99,7 @@ const navItems = [
   },
 ];
 
-// Admin navigation items - visible to super_admin and backend_admin only
+// Admin navigation items - visible to super_admin, backend_admin, and enterprise_admin
 const adminNavItems = [
   {
     title: "Enterprises",
@@ -105,6 +116,20 @@ const adminNavItems = [
         <path d="M14 12h1" />
         <path d="M14 16h1" />
         <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
+      </svg>
+    ),
+  },
+  {
+    title: "Users",
+    href: "/admin/users",
+    // super_admin, backend_admin see all users; enterprise_admin sees their enterprise users
+    roles: ["super_admin", "backend_admin", "enterprise_admin"],
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     ),
   },
@@ -136,6 +161,18 @@ const adminNavItems = [
         <path d="M20 14h3" />
         <path d="M1 9h3" />
         <path d="M1 14h3" />
+      </svg>
+    ),
+  },
+  {
+    title: "Audit Logs",
+    href: "/admin/audit-logs",
+    // Only super_admin, backend_admin, and admin can view audit logs
+    roles: ["super_admin", "backend_admin", "admin"],
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M12 8v4l3 3" />
+        <circle cx="12" cy="12" r="10" />
       </svg>
     ),
   },
@@ -261,28 +298,8 @@ export function Sidebar({ user }: SidebarProps) {
           );
         })}
 
-        {/* My Controllers - visible to enterprise users and super_admin */}
-        {(userEnterpriseId || userRole === "super_admin") && (
-          <Link
-            href="/controllers"
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 min-h-[44px] text-sm transition-colors",
-              pathname === "/controllers" || pathname.startsWith("/controllers/")
-                ? "bg-[#6baf4f] text-white"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-              <rect width="20" height="14" x="2" y="3" rx="2" />
-              <line x1="8" x2="16" y1="21" y2="21" />
-              <line x1="12" x2="12" y1="17" y2="21" />
-            </svg>
-            My Controllers
-          </Link>
-        )}
-
-        {/* Admin section - only shown to super_admin and backend_admin */}
-        {userRole && (userRole === "super_admin" || userRole === "backend_admin") && (
+        {/* Admin section - shown to super_admin, backend_admin, and enterprise_admin */}
+        {userRole && (userRole === "super_admin" || userRole === "backend_admin" || userRole === "enterprise_admin") && (
           <>
             <div className="pt-4 pb-2">
               <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">

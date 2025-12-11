@@ -64,8 +64,9 @@ interface AlarmsViewerProps {
 export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
   const [alarms, setAlarms] = useState<Alarm[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all"); // all, unacknowledged, critical, warning, info
+  const [filter, setFilter] = useState("all"); // all, unacknowledged, unresolved, critical, warning, info
   const [acknowledging, setAcknowledging] = useState<string | null>(null);
+  const [resolving, setResolving] = useState<string | null>(null);
 
   // Fetch alarms
   const fetchAlarms = async () => {
@@ -90,6 +91,8 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
     // Apply filters
     if (filter === "unacknowledged") {
       query = query.eq("acknowledged", false);
+    } else if (filter === "unresolved") {
+      query = query.eq("resolved", false);
     } else if (filter === "critical" || filter === "warning" || filter === "info") {
       query = query.eq("severity", filter);
     }
@@ -160,6 +163,28 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
     }
   };
 
+  // Resolve single alarm (mark issue as fixed)
+  const resolveAlarm = async (alarmId: string) => {
+    setResolving(alarmId);
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from("alarms")
+      .update({
+        resolved: true,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("id", alarmId);
+
+    if (error) {
+      console.error("Error resolving alarm:", error);
+    } else {
+      // Refresh the list
+      fetchAlarms();
+    }
+    setResolving(null);
+  };
+
   // Format timestamp for display
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -221,6 +246,7 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
               <SelectContent>
                 <SelectItem value="all">All Alarms</SelectItem>
                 <SelectItem value="unacknowledged">Unacknowledged</SelectItem>
+                <SelectItem value="unresolved">Unresolved</SelectItem>
                 <SelectItem value="critical">Critical Only</SelectItem>
                 <SelectItem value="warning">Warnings Only</SelectItem>
                 <SelectItem value="info">Info Only</SelectItem>
@@ -290,9 +316,11 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                 >
                   {/* Top row: Severity, Status, Time */}
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {getSeverityBadge(alarm.severity)}
-                      {alarm.acknowledged ? (
+                      {alarm.resolved ? (
+                        <Badge variant="outline" className="text-xs bg-green-100 text-green-800">Resolved</Badge>
+                      ) : alarm.acknowledged ? (
                         <Badge variant="outline" className="text-xs">Ack&apos;d</Badge>
                       ) : (
                         <Badge variant="destructive" className="text-xs">New</Badge>
@@ -314,21 +342,40 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                   {/* Message */}
                   <p className="text-sm text-muted-foreground">{alarm.message}</p>
 
-                  {/* Acknowledge button - 44px touch target */}
-                  {!alarm.acknowledged && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => acknowledgeAlarm(alarm.id)}
-                      disabled={acknowledging === alarm.id}
-                      className="w-full min-h-[44px]"
-                    >
-                      {acknowledging === alarm.id ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                      ) : (
-                        "Acknowledge"
+                  {/* Action buttons - 44px touch targets */}
+                  {(!alarm.acknowledged || (alarm.acknowledged && !alarm.resolved)) && (
+                    <div className="flex gap-2">
+                      {!alarm.acknowledged && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => acknowledgeAlarm(alarm.id)}
+                          disabled={acknowledging === alarm.id}
+                          className="flex-1 min-h-[44px]"
+                        >
+                          {acknowledging === alarm.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                          ) : (
+                            "Acknowledge"
+                          )}
+                        </Button>
                       )}
-                    </Button>
+                      {alarm.acknowledged && !alarm.resolved && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => resolveAlarm(alarm.id)}
+                          disabled={resolving === alarm.id}
+                          className="flex-1 min-h-[44px] border-green-300 text-green-700 hover:bg-green-50"
+                        >
+                          {resolving === alarm.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                          ) : (
+                            "Mark Resolved"
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
@@ -366,28 +413,47 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                         {alarm.message}
                       </TableCell>
                       <TableCell>
-                        {alarm.acknowledged ? (
+                        {alarm.resolved ? (
+                          <Badge variant="outline" className="bg-green-100 text-green-800">Resolved</Badge>
+                        ) : alarm.acknowledged ? (
                           <Badge variant="outline">Acknowledged</Badge>
                         ) : (
                           <Badge variant="destructive">New</Badge>
                         )}
                       </TableCell>
                       <TableCell>
-                        {!alarm.acknowledged && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => acknowledgeAlarm(alarm.id)}
-                            disabled={acknowledging === alarm.id}
-                            className="min-h-[44px]"
-                          >
-                            {acknowledging === alarm.id ? (
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                            ) : (
-                              "Acknowledge"
-                            )}
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {!alarm.acknowledged && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => acknowledgeAlarm(alarm.id)}
+                              disabled={acknowledging === alarm.id}
+                              className="min-h-[44px]"
+                            >
+                              {acknowledging === alarm.id ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                              ) : (
+                                "Acknowledge"
+                              )}
+                            </Button>
+                          )}
+                          {alarm.acknowledged && !alarm.resolved && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => resolveAlarm(alarm.id)}
+                              disabled={resolving === alarm.id}
+                              className="min-h-[44px] text-green-700 hover:text-green-800 hover:bg-green-50"
+                            >
+                              {resolving === alarm.id ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                              ) : (
+                                "Resolve"
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

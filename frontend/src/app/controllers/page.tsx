@@ -10,8 +10,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { redirect } from "next/navigation";
 import { ControllersTable } from "./controllers-table";
+import Link from "next/link";
 
 export default async function ControllersPage() {
   const supabase = await createClient();
@@ -128,6 +131,18 @@ export default async function ControllersPage() {
   // Determine if user can claim/edit (enterprise_admin or super_admin)
   const canEdit = ["super_admin", "enterprise_admin"].includes(userProfile.role || "");
 
+  // Count "ready" controllers available to claim (not yet assigned to any enterprise)
+  let readyToClaimCount = 0;
+  if (canEdit) {
+    const { count } = await supabase
+      .from("controllers")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "ready")
+      .is("enterprise_id", null);
+
+    readyToClaimCount = count || 0;
+  }
+
   return (
     <DashboardLayout
       user={{
@@ -150,6 +165,63 @@ export default async function ControllersPage() {
             </p>
           </div>
         </div>
+
+        {/* Ready to Claim Card - only shown to users who can claim */}
+        {canEdit && readyToClaimCount > 0 && (
+          <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                {/* Icon */}
+                <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-5 w-5 text-green-600 dark:text-green-400"
+                  >
+                    <rect width="20" height="14" x="2" y="3" rx="2" />
+                    <line x1="8" x2="16" y1="21" y2="21" />
+                    <line x1="12" x2="12" y1="17" y2="21" />
+                  </svg>
+                </div>
+                {/* Text */}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-green-900 dark:text-green-100">
+                      {readyToClaimCount} Controller{readyToClaimCount !== 1 ? "s" : ""} Ready to Claim
+                    </span>
+                    <Badge className="bg-green-600 hover:bg-green-700">New</Badge>
+                  </div>
+                  <p className="text-sm text-green-700 dark:text-green-300">
+                    Controllers are ready and waiting for you to claim them
+                  </p>
+                </div>
+              </div>
+              {/* Claim Button */}
+              <Button asChild className="bg-green-600 hover:bg-green-700 min-h-[44px] w-full sm:w-auto">
+                <Link href="/claim">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4 mr-2"
+                  >
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                  Claim Controller
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Controllers Table */}
         <Card>
