@@ -768,16 +768,16 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
               <div className="space-y-2">
                 <Label htmlFor="create-enterprise">Enterprise</Label>
                 <Select
-                  value={createData.enterprise_id}
+                  value={createData.enterprise_id || "none"}
                   onValueChange={(value) =>
-                    setCreateData({ ...createData, enterprise_id: value })
+                    setCreateData({ ...createData, enterprise_id: value === "none" ? "" : value })
                   }
                 >
                   <SelectTrigger id="create-enterprise">
                     <SelectValue placeholder="No enterprise" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No Enterprise</SelectItem>
+                    <SelectItem value="none">No Enterprise</SelectItem>
                     {enterprises.map((e) => (
                       <SelectItem key={e.id} value={e.id}>
                         {e.name}
@@ -876,16 +876,16 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                 <div className="space-y-2">
                   <Label htmlFor="edit-enterprise">Enterprise</Label>
                   <Select
-                    value={editData.enterprise_id}
+                    value={editData.enterprise_id || "none"}
                     onValueChange={(value) =>
-                      setEditData({ ...editData, enterprise_id: value })
+                      setEditData({ ...editData, enterprise_id: value === "none" ? "" : value })
                     }
                   >
                     <SelectTrigger id="edit-enterprise">
                       <SelectValue placeholder="No enterprise" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No Enterprise</SelectItem>
+                      <SelectItem value="none">No Enterprise</SelectItem>
                       {enterprises.map((e) => (
                         <SelectItem key={e.id} value={e.id}>
                           {e.name}
