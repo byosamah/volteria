@@ -83,7 +83,15 @@ export default async function UsersPage() {
     console.error("Failed to fetch users:", usersError);
   }
 
-  const usersList = users || [];
+  // Transform Supabase data to match expected User type
+  // Supabase may return enterprises as array; we need single object or null
+  const usersList = (users || []).map((user) => ({
+    ...user,
+    // If enterprises is an array, take first item; if object, use as-is; otherwise null
+    enterprises: Array.isArray(user.enterprises)
+      ? user.enterprises[0] || null
+      : user.enterprises || null,
+  }));
 
   // Fetch enterprises list (for super admin dropdown in filters/forms)
   let enterprises: Array<{ id: string; name: string }> = [];
