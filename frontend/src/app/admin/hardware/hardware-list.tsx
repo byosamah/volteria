@@ -242,6 +242,13 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
   const [editHardware, setEditHardware] = useState<HardwareType | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Delete state - for super admin hardware deletion
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteHardware, setDeleteHardware] = useState<HardwareType | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+
   // Form state
   const [formData, setFormData] = useState(emptyFormData);
 
@@ -506,6 +513,90 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
     );
   };
 
+  // Open delete dialog
+  const openDeleteDialog = (hardware: HardwareType) => {
+    setDeleteHardware(hardware);
+    setDeletePassword("");
+    setDeleteConfirmName("");
+    setDeleteOpen(true);
+  };
+
+  // Handle hardware deletion
+  const handleDeleteHardware = async () => {
+    if (!deleteHardware || !deletePassword) return;
+
+    // Require typing hardware name to confirm
+    if (deleteConfirmName !== deleteHardware.name) {
+      toast.error("Hardware name does not match");
+      return;
+    }
+
+    setDeleteLoading(true);
+
+    try {
+      // Get current user email for password verification
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) {
+        toast.error("Unable to verify user");
+        setDeleteLoading(false);
+        return;
+      }
+
+      // Verify password first
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: deletePassword,
+      });
+
+      if (authError) {
+        toast.error("Incorrect password");
+        setDeleteLoading(false);
+        return;
+      }
+
+      // Check if hardware is in use by any controllers
+      const { data: controllers } = await supabase
+        .from("controllers_master")
+        .select("id, serial_number")
+        .eq("hardware_type_id", deleteHardware.id)
+        .limit(1);
+
+      if (controllers && controllers.length > 0) {
+        toast.error("Cannot delete: Hardware is in use by controllers");
+        setDeleteLoading(false);
+        return;
+      }
+
+      // Delete hardware from database
+      const { error } = await supabase
+        .from("approved_hardware")
+        .delete()
+        .eq("id", deleteHardware.id);
+
+      if (error) throw error;
+
+      toast.success("Hardware deleted successfully");
+
+      // Optimistic UI update - remove from local state
+      setHardwareTypes(prevHardware =>
+        prevHardware.filter(h => h.id !== deleteHardware.id)
+      );
+
+      // Close dialog and reset state
+      setDeleteOpen(false);
+      setDeleteHardware(null);
+      setDeletePassword("");
+      setDeleteConfirmName("");
+
+      router.refresh();
+    } catch (err) {
+      console.error("Delete error:", err);
+      toast.error("Failed to delete hardware");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <>
       {/* Actions */}
@@ -633,6 +724,31 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
                     onClick={() => toggleActive(hardware)}
                   >
                     {hardware.is_active ? "Deactivate" : "Activate"}
+                  </Button>
+                  {/* Delete button - shows red trash icon */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => openDeleteDialog(hardware)}
+                    title="Delete hardware"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                      <line x1="10" x2="10" y1="11" y2="17" />
+                      <line x1="14" x2="14" y1="11" y2="17" />
+                    </svg>
                   </Button>
                 </div>
               </CardContent>
@@ -1119,6 +1235,119 @@ export function HardwareList({ hardwareTypes: initialHardwareTypes }: HardwareLi
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              {/* Warning triangle icon */}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+              >
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+              </svg>
+              Delete Hardware Type
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Warning banner */}
+          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-2">
+            <p className="font-medium text-red-800 dark:text-red-200">
+              This action cannot be undone!
+            </p>
+            <p className="text-sm text-red-700 dark:text-red-300">
+              Deleting this hardware type will:
+            </p>
+            <ul className="text-sm text-red-700 dark:text-red-300 list-disc list-inside space-y-1">
+              <li>Remove it from the approved hardware list</li>
+              <li>Prevent new controllers from using this type</li>
+              <li>This hardware type will be permanently deleted</li>
+            </ul>
+          </div>
+
+          {/* Hardware info */}
+          {deleteHardware && (
+            <div className="bg-muted rounded-lg p-3">
+              <p className="font-medium">{deleteHardware.name}</p>
+              <p className="text-sm text-muted-foreground font-mono">
+                {deleteHardware.hardware_type}
+              </p>
+              {deleteHardware.manufacturer && (
+                <p className="text-sm text-muted-foreground">
+                  by {deleteHardware.manufacturer}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Type hardware name to confirm */}
+          <div className="space-y-2">
+            <Label htmlFor="delete-confirm-name" className="text-sm">
+              Type <span className="font-semibold">&quot;{deleteHardware?.name}&quot;</span> to confirm:
+            </Label>
+            <Input
+              id="delete-confirm-name"
+              value={deleteConfirmName}
+              onChange={(e) => setDeleteConfirmName(e.target.value)}
+              placeholder="Hardware name"
+              className="min-h-[44px]"
+            />
+          </div>
+
+          {/* Password verification */}
+          <div className="space-y-2">
+            <Label htmlFor="delete-password" className="text-sm">
+              Your password:
+            </Label>
+            <Input
+              id="delete-password"
+              type="password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              placeholder="Enter your password to confirm"
+              className="min-h-[44px]"
+            />
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setDeleteOpen(false);
+                setDeleteHardware(null);
+                setDeletePassword("");
+                setDeleteConfirmName("");
+              }}
+              className="min-h-[44px] w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteHardware}
+              disabled={
+                deleteLoading ||
+                !deletePassword ||
+                deleteConfirmName !== deleteHardware?.name
+              }
+              className="min-h-[44px] w-full sm:w-auto"
+            >
+              {deleteLoading ? "Deleting..." : "Delete Hardware"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

@@ -4,6 +4,8 @@
  * Step 2: Software Setup
  *
  * Guide for setting up the Volteria controller software:
+ * - Hardware-specific instructions based on selected hardware type
+ * - NVMe boot setup for SOL564-NVME16-128
  * - One-line install command
  * - Requirements checklist
  * - What gets installed
@@ -16,7 +18,12 @@ import { Button } from "@/components/ui/button";
 interface StepDownloadImageProps {
   onConfirm: (confirmed: boolean) => void;
   confirmed: boolean;
+  // Hardware type from Step 1 selection - determines which instructions to show
+  hardwareType?: string;
 }
+
+// Hardware types that require NVMe boot setup
+const NVME_HARDWARE_TYPES = ["SOL564-NVME16-128"];
 
 // Setup configuration
 const SETUP_CONFIG = {
@@ -29,8 +36,28 @@ const SETUP_CONFIG = {
 // One-line install command
 const INSTALL_COMMAND = `curl -sSL ${SETUP_CONFIG.scriptUrl} | bash`;
 
-export function StepDownloadImage({ onConfirm, confirmed }: StepDownloadImageProps) {
+export function StepDownloadImage({ onConfirm, confirmed, hardwareType }: StepDownloadImageProps) {
   const [copied, setCopied] = useState(false);
+  const [nvmeCopied, setNvmeCopied] = useState<string | null>(null);
+
+  // Check if this hardware type requires NVMe boot setup
+  const requiresNvmeBoot = hardwareType && NVME_HARDWARE_TYPES.includes(hardwareType);
+
+  // NVMe setup commands
+  const NVME_COMMANDS = {
+    eepromUpdate: "sudo rpi-eeprom-update -a",
+    raspiConfig: "sudo raspi-config",
+    cloneToDisk: "sudo dd if=/dev/mmcblk0 of=/dev/nvme0n1 bs=4M status=progress",
+    expandFilesystem: "sudo raspi-config --expand-rootfs",
+    reboot: "sudo reboot",
+  };
+
+  // Copy NVMe command to clipboard
+  const handleCopyNvmeCommand = (command: string, key: string) => {
+    navigator.clipboard.writeText(command);
+    setNvmeCopied(key);
+    setTimeout(() => setNvmeCopied(null), 2000);
+  };
 
   const handleCopyCommand = () => {
     navigator.clipboard.writeText(INSTALL_COMMAND);
@@ -52,6 +79,26 @@ export function StepDownloadImage({ onConfirm, confirmed }: StepDownloadImagePro
           to run the Volteria controller on your Raspberry Pi. Just run one command!
         </p>
       </div>
+
+      {/* NVMe Hardware Info Banner - Only shown for NVMe hardware types */}
+      {requiresNvmeBoot && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+              <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-medium text-purple-800 mb-1">NVMe SSD Hardware Detected</h3>
+              <p className="text-sm text-purple-700">
+                Your hardware (<code className="bg-purple-100 px-1 rounded">{hardwareType}</code>) includes an NVMe SSD.
+                This guide includes additional steps to configure NVMe boot for faster performance.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Prerequisites */}
       <div className="border rounded-lg p-6 space-y-4">
@@ -82,6 +129,147 @@ export function StepDownloadImage({ onConfirm, confirmed }: StepDownloadImagePro
           </li>
         </ul>
       </div>
+
+      {/* NVMe Boot Setup - Only shown for NVMe hardware types */}
+      {requiresNvmeBoot && (
+        <div className="border-2 border-purple-200 rounded-lg p-6 space-y-4 bg-purple-50/50">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
+              NVMe
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg text-purple-900">NVMe Boot Setup</h3>
+              <p className="text-sm text-purple-700">
+                Configure your Pi to boot from the NVMe SSD for faster performance
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Step 1: Update EEPROM */}
+            <div className="bg-white rounded-lg p-4 border border-purple-200">
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                <div className="flex-1 space-y-2">
+                  <span className="font-medium text-purple-900">Update EEPROM firmware</span>
+                  <p className="text-sm text-purple-700">
+                    Run this command to update the bootloader firmware:
+                  </p>
+                  <div className="relative">
+                    <pre className="bg-zinc-900 text-green-400 p-3 rounded text-sm font-mono overflow-x-auto">
+                      {NVME_COMMANDS.eepromUpdate}
+                    </pre>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleCopyNvmeCommand(NVME_COMMANDS.eepromUpdate, "eeprom")}
+                      className="absolute top-1 right-1"
+                    >
+                      {nvmeCopied === "eeprom" ? "Copied!" : "Copy"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2: Configure Boot Order */}
+            <div className="bg-white rounded-lg p-4 border border-purple-200">
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                <div className="flex-1 space-y-2">
+                  <span className="font-medium text-purple-900">Set NVMe as boot device</span>
+                  <p className="text-sm text-purple-700">
+                    Open the configuration tool:
+                  </p>
+                  <div className="relative">
+                    <pre className="bg-zinc-900 text-green-400 p-3 rounded text-sm font-mono overflow-x-auto">
+                      {NVME_COMMANDS.raspiConfig}
+                    </pre>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleCopyNvmeCommand(NVME_COMMANDS.raspiConfig, "config")}
+                      className="absolute top-1 right-1"
+                    >
+                      {nvmeCopied === "config" ? "Copied!" : "Copy"}
+                    </Button>
+                  </div>
+                  <div className="bg-purple-100 rounded p-3 text-sm text-purple-800">
+                    <p className="font-medium mb-1">Navigate to:</p>
+                    <code className="text-xs">Advanced Options → Boot Order → NVMe/USB Boot</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Clone to NVMe */}
+            <div className="bg-white rounded-lg p-4 border border-purple-200">
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                <div className="flex-1 space-y-2">
+                  <span className="font-medium text-purple-900">Clone SD card to NVMe SSD</span>
+                  <p className="text-sm text-purple-700">
+                    Copy your entire SD card to the NVMe SSD (takes 5-15 minutes):
+                  </p>
+                  <div className="relative">
+                    <pre className="bg-zinc-900 text-green-400 p-3 rounded text-sm font-mono overflow-x-auto">
+                      {NVME_COMMANDS.cloneToDisk}
+                    </pre>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleCopyNvmeCommand(NVME_COMMANDS.cloneToDisk, "clone")}
+                      className="absolute top-1 right-1"
+                    >
+                      {nvmeCopied === "clone" ? "Copied!" : "Copy"}
+                    </Button>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800">
+                    <p className="font-medium">Wait for completion!</p>
+                    <p>This command shows progress. Wait until it finishes before proceeding.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 4: Remove SD and Reboot */}
+            <div className="bg-white rounded-lg p-4 border border-purple-200">
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">4</span>
+                <div className="flex-1 space-y-2">
+                  <span className="font-medium text-purple-900">Remove SD card and reboot</span>
+                  <p className="text-sm text-purple-700">
+                    Shutdown the Pi, physically remove the SD card, then power on to boot from NVMe:
+                  </p>
+                  <div className="relative">
+                    <pre className="bg-zinc-900 text-green-400 p-3 rounded text-sm font-mono overflow-x-auto">
+                      sudo shutdown -h now
+                    </pre>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleCopyNvmeCommand("sudo shutdown -h now", "shutdown")}
+                      className="absolute top-1 right-1"
+                    >
+                      {nvmeCopied === "shutdown" ? "Copied!" : "Copy"}
+                    </Button>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-800">
+                    <p className="font-medium">After removing SD card:</p>
+                    <p>Power on the Pi. It will now boot from the NVMe SSD!</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-purple-200 pt-4">
+            <p className="text-sm text-purple-700">
+              After completing NVMe setup, reconnect via SSH and continue with the software installation below.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Install Command */}
       <div className="border rounded-lg p-6 space-y-4 bg-muted/30">

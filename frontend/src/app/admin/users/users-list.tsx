@@ -448,9 +448,17 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
       }
 
       toast.success("User deleted successfully");
+
+      // Optimistic UI update - remove user from local state immediately
+      // This provides instant feedback without waiting for router.refresh()
+      setUsers(prevUsers => prevUsers.filter(u => u.id !== deleteUser.id));
+
+      // Clean up dialog state
       setDeleteOpen(false);
       setDeleteUser(null);
       setDeletePassword("");
+
+      // Still refresh to sync with server (but UI is already updated)
       router.refresh();
     } catch (err) {
       console.error("Delete user error:", err);

@@ -287,6 +287,7 @@ export function EnterpriseDetailTabs({
   };
 
   // Handle enterprise deletion with password verification (HARD DELETE)
+  // This now DELETES all attached users (not just unassigns)
   const handleDeleteEnterprise = async () => {
     // Validate inputs
     if (confirmEnterpriseName !== enterprise.name) {
@@ -313,26 +314,59 @@ export function EnterpriseDetailTabs({
         return;
       }
 
-      // Step 2: Unassign all related records before deleting enterprise
-      // Unassign users
-      await supabase
+      // Step 2: Get all users belonging to this enterprise
+      const { data: usersToDelete, error: usersError } = await supabase
         .from("users")
-        .update({ enterprise_id: null })
+        .select("id, email, full_name")
         .eq("enterprise_id", enterprise.id);
 
-      // Unassign projects
+      if (usersError) {
+        console.error("Error fetching users:", usersError);
+        toast.error("Failed to fetch enterprise users");
+        setEnterpriseDeleteLoading(false);
+        return;
+      }
+
+      // Step 3: Delete each user via API (handles both DB and Supabase Auth)
+      if (usersToDelete && usersToDelete.length > 0) {
+        toast.info(`Deleting ${usersToDelete.length} user(s)...`);
+
+        for (const user of usersToDelete) {
+          // Skip current user (can't delete yourself)
+          if (user.id === currentUser.id) continue;
+
+          try {
+            const response = await fetch(`/api/admin/users/${user.id}`, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ password: enterpriseDeletePassword }),
+            });
+
+            if (!response.ok) {
+              const result = await response.json();
+              console.error(`Failed to delete user ${user.email}:`, result.message);
+              // Continue with other users even if one fails
+            }
+          } catch (err) {
+            console.error(`Error deleting user ${user.email}:`, err);
+            // Continue with other users
+          }
+        }
+      }
+
+      // Step 4: Unassign projects (keep them but remove enterprise link)
       await supabase
         .from("projects")
         .update({ enterprise_id: null })
         .eq("enterprise_id", enterprise.id);
 
-      // Release controllers (set back to 'ready' status)
+      // Step 5: Release controllers (set back to 'ready' status)
       await supabase
         .from("controllers")
         .update({ enterprise_id: null, status: "ready", claimed_at: null, claimed_by: null })
         .eq("enterprise_id", enterprise.id);
 
-      // Step 3: Delete the enterprise record
+      // Step 6: Delete the enterprise record
       const { error: deleteError } = await supabase
         .from("enterprises")
         .delete()
@@ -345,8 +379,11 @@ export function EnterpriseDetailTabs({
         return;
       }
 
-      // Step 4: Success - redirect to enterprises list
-      toast.success(`Enterprise "${enterprise.name}" deleted successfully`);
+      // Step 7: Success - redirect to enterprises list
+      const deletedUsersCount = usersToDelete?.filter(u => u.id !== currentUser.id).length || 0;
+      toast.success(
+        `Enterprise "${enterprise.name}" and ${deletedUsersCount} user(s) deleted successfully`
+      );
       router.push("/admin/enterprises");
     } catch (err) {
       console.error("Unexpected error:", err);
@@ -1103,7 +1140,9 @@ export function EnterpriseDetailTabs({
                 <p className="font-medium text-red-700 mb-2">This action will:</p>
                 <ul className="list-disc list-inside text-red-600 space-y-1">
                   <li>Remove all enterprise settings</li>
-                  <li>Unassign all users from this enterprise</li>
+                  <li className="font-bold">
+                    PERMANENTLY DELETE {users.length} user(s) attached to this enterprise
+                  </li>
                   <li>Unassign all projects from this enterprise</li>
                   <li>Release all claimed controllers</li>
                 </ul>

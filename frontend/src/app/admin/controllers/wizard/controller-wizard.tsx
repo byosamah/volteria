@@ -266,10 +266,16 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
           />
         );
       case 2:
+        // Find the selected hardware type to pass to Step 2
+        // This allows Step 2 to show hardware-specific instructions
+        const selectedHardware = hardwareTypes.find(
+          (h) => h.id === controllerData.hardware_type_id
+        );
         return (
           <StepDownloadImage
             onConfirm={setStepConfirmed}
             confirmed={stepConfirmed}
+            hardwareType={selectedHardware?.hardware_type || ""}
           />
         );
       case 3:
