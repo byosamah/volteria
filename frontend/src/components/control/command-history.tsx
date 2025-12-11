@@ -157,7 +157,14 @@ export function CommandHistory({ siteId, projectId }: CommandHistoryProps) {
       .limit(20);
 
     if (!error && data) {
-      setCommands(data as ControlCommand[]);
+      // Transform Supabase data: users may be array, convert to single object or null
+      const transformedData = data.map((cmd) => ({
+        ...cmd,
+        users: Array.isArray(cmd.users)
+          ? cmd.users[0] || null
+          : cmd.users || null,
+      }));
+      setCommands(transformedData as ControlCommand[]);
     }
     setLoading(false);
     setRefreshing(false);
