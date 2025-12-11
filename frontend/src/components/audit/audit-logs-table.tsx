@@ -247,7 +247,14 @@ export function AuditLogsTable() {
     if (error) {
       console.error("Failed to fetch audit logs:", error);
     } else {
-      setLogs(data as AuditLog[]);
+      // Transform Supabase data: users may be array, convert to single object or null
+      const transformedData = (data || []).map((log) => ({
+        ...log,
+        users: Array.isArray(log.users)
+          ? log.users[0] || null
+          : log.users || null,
+      }));
+      setLogs(transformedData as AuditLog[]);
       setTotalCount(count || 0);
     }
 
