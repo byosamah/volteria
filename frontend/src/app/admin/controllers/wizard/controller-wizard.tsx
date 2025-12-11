@@ -32,7 +32,7 @@ import { StepRunTests } from "./steps/step-run-tests";
 // Step definitions
 const STEPS = [
   { number: 1, name: "Hardware Info", description: "Enter controller details" },
-  { number: 2, name: "Download Image", description: "Get the Raspberry Pi image" },
+  { number: 2, name: "Software Setup", description: "Install controller software" },
   { number: 3, name: "Flash Image", description: "Write image to SD card" },
   { number: 4, name: "Network Setup", description: "Connect to network" },
   { number: 5, name: "Cloud Connection", description: "Configure cloud access" },
