@@ -4,7 +4,7 @@
  * Step 1: Hardware Info
  *
  * Collect basic hardware information:
- * - Serial number (required, unique)
+ * - Serial number (optional - Pi will self-register when setup script runs)
  * - Hardware type (required)
  * - Firmware version (optional)
  * - Notes (optional)

@@ -114,44 +114,45 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
     setLoading(true);
     try {
       // Validate required fields
-      if (!data.serial_number.trim()) {
-        toast.error("Serial number is required");
-        return false;
-      }
+      // Note: serial_number is OPTIONAL - Pi will self-register when setup script runs
       if (!data.hardware_type_id) {
         toast.error("Hardware type is required");
         return false;
       }
 
-      // First check if a controller with this serial number already exists
-      const { data: existingCheck } = await supabase
-        .from("controllers")
-        .select("id, wizard_step, status")
-        .eq("serial_number", data.serial_number.trim())
-        .maybeSingle();
+      // Only check for existing controller if serial_number is provided
+      const serialNumber = data.serial_number.trim();
+      if (serialNumber) {
+        const { data: existingCheck } = await supabase
+          .from("controllers")
+          .select("id, wizard_step, status")
+          .eq("serial_number", serialNumber)
+          .maybeSingle();
 
-      if (existingCheck) {
-        // Controller already exists - offer to resume or show error
-        if (existingCheck.wizard_step !== null) {
-          // Has incomplete wizard - redirect to resume it
-          toast.info("Controller already exists. Resuming setup wizard...");
-          router.push(`/admin/controllers/wizard?id=${existingCheck.id}`);
-          return false;
-        } else {
-          // Wizard already completed
-          toast.error(
-            `Serial number already registered (status: ${existingCheck.status}). ` +
-            "Use a different serial number or edit the existing controller."
-          );
-          return false;
+        if (existingCheck) {
+          // Controller already exists - offer to resume or show error
+          if (existingCheck.wizard_step !== null) {
+            // Has incomplete wizard - redirect to resume it
+            toast.info("Controller already exists. Resuming setup wizard...");
+            router.push(`/admin/controllers/wizard?id=${existingCheck.id}`);
+            return false;
+          } else {
+            // Wizard already completed
+            toast.error(
+              `Serial number already registered (status: ${existingCheck.status}). ` +
+              "Use a different serial number or edit the existing controller."
+            );
+            return false;
+          }
         }
       }
 
       // Create controller in database
+      // serial_number can be empty - Pi will self-register when setup script runs
       const { data: newController, error } = await supabase
         .from("controllers")
         .insert({
-          serial_number: data.serial_number.trim(),
+          serial_number: serialNumber || null,  // Allow null for self-registration
           hardware_type_id: data.hardware_type_id,
           firmware_version: data.firmware_version.trim() || null,
           notes: data.notes.trim() || null,
