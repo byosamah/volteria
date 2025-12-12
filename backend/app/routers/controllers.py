@@ -543,3 +543,195 @@ async def claim_controller(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to claim controller: {str(e)}"
         )
+
+
+# ============================================
+# ENDPOINTS - CONTROLLER CONFIGURATION
+# ============================================
+
+class ControllerConfigResponse(BaseModel):
+    """Configuration response for controller startup."""
+    status: str  # "assigned", "unassigned", or "error"
+    message: Optional[str] = None
+    controller: Optional[dict] = None
+    site: Optional[dict] = None
+
+
+@router.get("/{controller_id}/config", response_model=ControllerConfigResponse)
+async def get_controller_config(
+    controller_id: UUID,
+    db: Client = Depends(get_supabase)
+):
+    """
+    Get configuration for a controller.
+
+    This endpoint is called by controllers on startup to fetch their configuration.
+    No authentication required - controllers identify themselves by their ID.
+
+    Returns:
+    - If controller is assigned to a site: full site configuration
+    - If controller is not assigned: status "unassigned"
+    """
+    try:
+        # 1. Find the controller
+        controller_result = db.table("controllers").select("""
+            *,
+            approved_hardware:hardware_type_id (name, hardware_type)
+        """).eq("id", str(controller_id)).execute()
+
+        if not controller_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Controller {controller_id} not found"
+            )
+
+        controller = controller_result.data[0]
+
+        # 2. Check if controller is assigned to a site
+        # Look for this controller in site_master_devices
+        site_assignment = db.table("site_master_devices").select("""
+            site_id,
+            sites:site_id (
+                id,
+                name,
+                location,
+                project_id,
+                control_method,
+                control_method_backup,
+                grid_connection,
+                operation_mode,
+                dg_reserve_kw,
+                control_interval_ms,
+                logging_local_interval_ms,
+                logging_cloud_interval_ms,
+                logging_local_retention_days,
+                logging_cloud_enabled,
+                logging_gateway_enabled,
+                safe_mode_enabled,
+                safe_mode_type,
+                safe_mode_timeout_s,
+                safe_mode_rolling_window_min,
+                safe_mode_threshold_pct,
+                safe_mode_power_limit_kw,
+                is_active
+            )
+        """).eq("controller_id", str(controller_id)).execute()
+
+        if not site_assignment.data or not site_assignment.data[0].get("sites"):
+            # Controller not assigned to any site yet
+            return ControllerConfigResponse(
+                status="unassigned",
+                message="Controller not yet assigned to a site. Assign via the Volteria platform.",
+                controller={
+                    "id": str(controller["id"]),
+                    "serial_number": controller.get("serial_number"),
+                    "hardware_type": controller.get("approved_hardware", {}).get("hardware_type"),
+                    "status": controller.get("status")
+                }
+            )
+
+        # 3. Get site data
+        site = site_assignment.data[0]["sites"]
+        site_id = site["id"]
+
+        # 4. Get all devices for this site
+        devices_result = db.table("project_devices").select("""
+            *,
+            device_templates:template_id (
+                template_id,
+                name,
+                device_type,
+                brand,
+                model,
+                rated_power_kw,
+                rated_power_kva,
+                registers
+            )
+        """).eq("site_id", str(site_id)).eq("is_enabled", True).execute()
+
+        # 5. Organize devices by type
+        load_meters = []
+        inverters = []
+        generators = []
+
+        for device in devices_result.data or []:
+            template = device.get("device_templates") or {}
+            device_type = template.get("device_type", "")
+
+            device_config = {
+                "id": str(device["id"]),
+                "name": device.get("name"),
+                "template": template.get("template_id"),
+                "device_type": device_type,
+                "protocol": device.get("protocol"),
+                "ip": device.get("ip_address"),
+                "port": device.get("port"),
+                "slave_id": device.get("slave_id"),
+                "rated_power_kw": template.get("rated_power_kw"),
+                "rated_power_kva": template.get("rated_power_kva"),
+                "measurement_type": device.get("measurement_type"),
+                "registers": template.get("registers", [])
+            }
+
+            if device_type == "load_meter":
+                load_meters.append(device_config)
+            elif device_type == "inverter":
+                inverters.append(device_config)
+            elif device_type == "dg":
+                generators.append(device_config)
+
+        # 6. Build site configuration
+        site_config = {
+            "id": str(site_id),
+            "name": site.get("name"),
+            "location": site.get("location"),
+            "project_id": str(site.get("project_id")),
+            "control": {
+                "method": site.get("control_method"),
+                "method_backup": site.get("control_method_backup"),
+                "grid_connection": site.get("grid_connection"),
+                "operation_mode": site.get("operation_mode"),
+                "dg_reserve_kw": site.get("dg_reserve_kw"),
+                "interval_ms": site.get("control_interval_ms")
+            },
+            "logging": {
+                "local_interval_ms": site.get("logging_local_interval_ms"),
+                "cloud_interval_ms": site.get("logging_cloud_interval_ms"),
+                "local_retention_days": site.get("logging_local_retention_days"),
+                "cloud_enabled": site.get("logging_cloud_enabled"),
+                "gateway_enabled": site.get("logging_gateway_enabled")
+            },
+            "safe_mode": {
+                "enabled": site.get("safe_mode_enabled"),
+                "type": site.get("safe_mode_type"),
+                "timeout_s": site.get("safe_mode_timeout_s"),
+                "rolling_window_min": site.get("safe_mode_rolling_window_min"),
+                "threshold_pct": site.get("safe_mode_threshold_pct"),
+                "power_limit_kw": site.get("safe_mode_power_limit_kw")
+            },
+            "devices": {
+                "load_meters": load_meters,
+                "inverters": inverters,
+                "generators": generators
+            }
+        }
+
+        return ControllerConfigResponse(
+            status="assigned",
+            message="Configuration loaded successfully",
+            controller={
+                "id": str(controller["id"]),
+                "serial_number": controller.get("serial_number"),
+                "hardware_type": controller.get("approved_hardware", {}).get("hardware_type"),
+                "status": controller.get("status")
+            },
+            site=site_config
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch controller config: {str(e)}"
+        )

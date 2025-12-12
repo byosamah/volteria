@@ -39,7 +39,7 @@ class ConfigSync:
         site_id: str,
         api_url: str,
         api_key: str,
-        local_config_path: str = "data/synced_config.json",
+        local_config_path: str = "/data/synced_config.json",
         sync_interval_s: int = 300  # 5 minutes
     ):
         """
@@ -101,6 +101,66 @@ class ConfigSync:
     # ============================================
     # FETCH CONFIG FROM CLOUD
     # ============================================
+
+    @staticmethod
+    async def fetch_by_controller_id(
+        controller_id: str,
+        api_url: str,
+        api_key: str
+    ) -> Optional[dict]:
+        """
+        Fetch configuration using controller ID.
+
+        This is called on startup BEFORE we know the site_id.
+        The controller identifies itself by its ID and gets:
+        - status: "assigned" or "unassigned"
+        - site config (if assigned)
+
+        Args:
+            controller_id: UUID of the controller from config.yaml
+            api_url: Backend API URL (e.g., https://volteria.org/api)
+            api_key: Supabase anon key for authentication
+
+        Returns:
+            Config response dict with status and optionally site config
+        """
+        url = f"{api_url.rstrip('/')}/controllers/{controller_id}/config"
+
+        async with httpx.AsyncClient(
+            headers={
+                "apikey": api_key,
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            timeout=30.0
+        ) as client:
+            try:
+                response = await client.get(url)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"Controller config status: {data.get('status')}")
+                    return data
+
+                elif response.status_code == 404:
+                    logger.error(f"Controller {controller_id} not found in cloud")
+                    return {"status": "error", "message": "Controller not found"}
+
+                else:
+                    logger.error(f"Config fetch failed: HTTP {response.status_code}")
+                    return {"status": "error", "message": f"HTTP {response.status_code}"}
+
+            except httpx.TimeoutException:
+                logger.warning("Config fetch timeout - will use local config if available")
+                return {"status": "error", "message": "Request timeout"}
+
+            except httpx.ConnectError:
+                logger.warning("Cannot reach cloud - will use local config if available")
+                return {"status": "error", "message": "Connection failed"}
+
+            except Exception as e:
+                logger.error(f"Config fetch error: {e}")
+                return {"status": "error", "message": str(e)}
 
     async def fetch_config(self) -> Optional[dict]:
         """

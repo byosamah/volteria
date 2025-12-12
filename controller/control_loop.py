@@ -345,7 +345,9 @@ class ControlLoop:
         # ============================================
         # INITIALIZE LOCAL DATABASE
         # ============================================
-        self.local_db = LocalDatabase(db_path="data/controller.db")
+        # Use absolute path /data/ which is created by setup script
+        # and allowed by systemd ProtectSystem=strict + ReadWritePaths=/data
+        self.local_db = LocalDatabase(db_path="/data/controller.db")
 
         # ============================================
         # INITIALIZE ALARM MANAGER

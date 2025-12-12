@@ -5,8 +5,8 @@
  *
  * Multi-step wizard with 7 steps:
  * 1. Hardware Info - Enter serial number, select hardware type
- * 2. Download Image - Download pre-built Raspberry Pi image
- * 3. Flash Instructions - Guide through Balena Etcher
+ * 2. Flash Image - Write Raspberry Pi OS to SD card (Balena Etcher)
+ * 3. Software Setup - Run setup script (+ NVMe boot config if applicable)
  * 4. Network Setup - WiFi/Ethernet configuration
  * 5. Cloud Connection - Generate & download config.yaml
  * 6. Verify Online - Wait for heartbeat
@@ -30,10 +30,12 @@ import { StepVerifyOnline } from "./steps/step-verify-online";
 import { StepRunTests } from "./steps/step-run-tests";
 
 // Step definitions
+// NOTE: Step 2 and 3 were swapped to match the physical process:
+// First flash the OS to SD card, THEN run the setup script
 const STEPS = [
   { number: 1, name: "Hardware Info", description: "Enter controller details" },
-  { number: 2, name: "Software Setup", description: "Install controller software" },
-  { number: 3, name: "Flash Image", description: "Write image to SD card" },
+  { number: 2, name: "Flash Image", description: "Write image to SD card" },
+  { number: 3, name: "Software Setup", description: "Install controller software" },
   { number: 4, name: "Network Setup", description: "Connect to network" },
   { number: 5, name: "Cloud Connection", description: "Configure cloud access" },
   { number: 6, name: "Verify Online", description: "Confirm controller is online" },
@@ -266,8 +268,17 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
           />
         );
       case 2:
-        // Find the selected hardware type to pass to Step 2
-        // This allows Step 2 to show hardware-specific instructions
+        // Step 2: Flash Image (write OS to SD card first)
+        return (
+          <StepFlashInstructions
+            onConfirm={setStepConfirmed}
+            confirmed={stepConfirmed}
+          />
+        );
+      case 3:
+        // Step 3: Software Setup (run setup script after OS is flashed)
+        // Find the selected hardware type to pass to Step 3
+        // This allows Step 3 to show hardware-specific instructions (e.g., NVMe boot)
         const selectedHardware = hardwareTypes.find(
           (h) => h.id === controllerData.hardware_type_id
         );
@@ -276,13 +287,6 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
             onConfirm={setStepConfirmed}
             confirmed={stepConfirmed}
             hardwareType={selectedHardware?.hardware_type || ""}
-          />
-        );
-      case 3:
-        return (
-          <StepFlashInstructions
-            onConfirm={setStepConfirmed}
-            confirmed={stepConfirmed}
           />
         );
       case 4:

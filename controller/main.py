@@ -11,10 +11,11 @@ Usage:
     python main.py --dry-run          # Print config and exit
 
 The controller will:
-1. Load configuration from YAML file
-2. Connect to all configured devices via Modbus
-3. Run the zero-feeding control loop
-4. Log data locally (SQLite) and sync to cloud
+1. Load MINIMAL config.yaml (controller ID + cloud credentials)
+2. Fetch full configuration from cloud (site, devices, settings)
+3. If not assigned to a site, wait and retry periodically
+4. Once assigned, connect to devices and run control loop
+5. Log data locally (SQLite) and sync to cloud
 """
 
 import argparse
@@ -26,6 +27,7 @@ from pathlib import Path
 import yaml
 
 from control_loop import ControlLoop
+from storage.config_sync import ConfigSync
 
 # Set up logging
 logging.basicConfig(
@@ -33,6 +35,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# How often to check for site assignment when unassigned
+ASSIGNMENT_CHECK_INTERVAL_S = 60  # 1 minute
 
 
 def load_config(config_path: str) -> dict:
@@ -60,9 +65,46 @@ def load_config(config_path: str) -> dict:
         sys.exit(1)
 
 
-def validate_config(config: dict) -> bool:
+def validate_minimal_config(config: dict) -> bool:
     """
-    Validate the configuration.
+    Validate the MINIMAL configuration (just controller ID + cloud credentials).
+
+    This is the new minimal config that only contains what's needed to
+    connect to the cloud and fetch the full configuration.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        True if minimal configuration is valid
+    """
+    errors = []
+
+    # Check controller section
+    controller = config.get("controller", {})
+    if not controller.get("id"):
+        errors.append("Missing controller.id - required to fetch config from cloud")
+
+    # Check cloud section
+    cloud = config.get("cloud", {})
+    if not cloud.get("supabase_url"):
+        errors.append("Missing cloud.supabase_url")
+    if not cloud.get("supabase_key"):
+        errors.append("Missing cloud.supabase_key")
+
+    if errors:
+        for error in errors:
+            logger.error(f"Configuration error: {error}")
+        return False
+
+    return True
+
+
+def validate_full_config(config: dict) -> bool:
+    """
+    Validate the FULL configuration (with site, devices, etc.).
+
+    This validates config after it's been merged with cloud data.
 
     Args:
         config: Configuration dictionary
@@ -105,6 +147,99 @@ def validate_config(config: dict) -> bool:
         return False
 
     return True
+
+
+async def fetch_cloud_config(local_config: dict) -> dict:
+    """
+    Fetch full configuration from cloud using controller ID.
+
+    Args:
+        local_config: Minimal local config with controller.id and cloud credentials
+
+    Returns:
+        Cloud config response with status and optionally site config
+    """
+    controller_id = local_config.get("controller", {}).get("id")
+    cloud = local_config.get("cloud", {})
+
+    # Build API URL (convert Supabase URL to backend API URL)
+    supabase_url = cloud.get("supabase_url", "")
+    # The backend API is at volteria.org/api, not at supabase
+    # For now, derive from supabase URL or use a fixed URL
+    api_url = "https://volteria.org/api"
+
+    api_key = cloud.get("supabase_key", "")
+
+    logger.info(f"Fetching config from cloud for controller {controller_id}...")
+
+    return await ConfigSync.fetch_by_controller_id(
+        controller_id=controller_id,
+        api_url=api_url,
+        api_key=api_key
+    )
+
+
+def merge_configs(local_config: dict, cloud_config: dict) -> dict:
+    """
+    Merge cloud configuration with local config.
+
+    The cloud config provides site, devices, and control settings.
+    Local config provides controller ID and cloud credentials.
+
+    Args:
+        local_config: Minimal local config
+        cloud_config: Full config from cloud (the 'site' field from API response)
+
+    Returns:
+        Merged configuration ready for ControlLoop
+    """
+    # Start with local config (has controller ID and cloud credentials)
+    merged = local_config.copy()
+
+    # Add site info from cloud
+    merged["site"] = {
+        "id": cloud_config.get("id"),
+        "name": cloud_config.get("name"),
+        "location": cloud_config.get("location"),
+        "project_id": cloud_config.get("project_id"),
+    }
+
+    # Add control settings from cloud
+    cloud_control = cloud_config.get("control", {})
+    merged["control"] = {
+        "interval_ms": cloud_control.get("interval_ms", 1000),
+        "dg_reserve_kw": cloud_control.get("dg_reserve_kw", 50),
+        "operation_mode": cloud_control.get("operation_mode", "zero_dg_reverse"),
+    }
+
+    # Add logging settings from cloud
+    cloud_logging = cloud_config.get("logging", {})
+    merged["logging"] = {
+        "local_interval_ms": cloud_logging.get("local_interval_ms", 1000),
+        "cloud_sync_interval_ms": cloud_logging.get("cloud_interval_ms", 5000),
+        "local_retention_days": cloud_logging.get("local_retention_days", 7),
+        "cloud_enabled": cloud_logging.get("cloud_enabled", True),
+    }
+
+    # Add safe mode settings from cloud
+    cloud_safe = cloud_config.get("safe_mode", {})
+    merged["safe_mode"] = {
+        "enabled": cloud_safe.get("enabled", True),
+        "type": cloud_safe.get("type", "rolling_average"),
+        "timeout_s": cloud_safe.get("timeout_s", 30),
+        "rolling_window_minutes": cloud_safe.get("rolling_window_min", 3),
+        "threshold_pct": cloud_safe.get("threshold_pct", 80),
+    }
+
+    # Add devices from cloud
+    cloud_devices = cloud_config.get("devices", {})
+    merged["devices"] = {
+        "load_meters": cloud_devices.get("load_meters", []),
+        "inverters": cloud_devices.get("inverters", []),
+        "generators": cloud_devices.get("generators", []),
+    }
+
+    return merged
 
 
 def print_config_summary(config: dict):
@@ -150,13 +285,105 @@ def print_config_summary(config: dict):
     print("=" * 60 + "\n")
 
 
-async def main_async(config: dict):
+async def wait_for_assignment(local_config: dict) -> dict:
+    """
+    Wait for controller to be assigned to a site.
+
+    Polls the cloud every ASSIGNMENT_CHECK_INTERVAL_S seconds
+    until the controller is assigned to a site.
+
+    Args:
+        local_config: Minimal local config
+
+    Returns:
+        Full merged configuration once assigned
+    """
+    controller_id = local_config.get("controller", {}).get("id", "unknown")
+    serial = local_config.get("controller", {}).get("serial_number", "unknown")
+
+    print("\n" + "=" * 60)
+    print("  WAITING FOR SITE ASSIGNMENT")
+    print("=" * 60)
+    print(f"\n  Controller ID: {controller_id}")
+    print(f"  Serial: {serial}")
+    print(f"\n  This controller is not yet assigned to a site.")
+    print(f"  Please assign it via the Volteria platform.")
+    print(f"\n  Checking every {ASSIGNMENT_CHECK_INTERVAL_S} seconds...")
+    print("  Press Ctrl+C to stop\n")
+    print("=" * 60 + "\n")
+
+    while True:
+        try:
+            # Fetch config from cloud
+            cloud_response = await fetch_cloud_config(local_config)
+
+            if cloud_response and cloud_response.get("status") == "assigned":
+                site_config = cloud_response.get("site", {})
+                logger.info(f"Controller assigned to site: {site_config.get('name')}")
+
+                # Merge and return
+                merged_config = merge_configs(local_config, site_config)
+                return merged_config
+
+            # Still unassigned, wait and retry
+            logger.info("Not assigned yet, waiting...")
+            await asyncio.sleep(ASSIGNMENT_CHECK_INTERVAL_S)
+
+        except asyncio.CancelledError:
+            logger.info("Assignment wait cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Error checking assignment: {e}")
+            await asyncio.sleep(ASSIGNMENT_CHECK_INTERVAL_S)
+
+
+async def main_async(local_config: dict, skip_cloud: bool = False):
     """
     Async main function.
 
     Args:
-        config: Configuration dictionary
+        local_config: Local configuration (minimal or full)
+        skip_cloud: If True, skip cloud fetch (for legacy full configs)
     """
+    config = local_config
+
+    # Check if this is a minimal config (needs cloud fetch)
+    # or a full legacy config (has devices section)
+    is_minimal = "devices" not in local_config or not local_config.get("devices")
+
+    if is_minimal and not skip_cloud:
+        # Fetch configuration from cloud
+        cloud_response = await fetch_cloud_config(local_config)
+
+        if not cloud_response:
+            logger.error("Failed to fetch configuration from cloud")
+            logger.error("Check your internet connection and controller ID")
+            sys.exit(1)
+
+        status = cloud_response.get("status")
+
+        if status == "assigned":
+            # Controller is assigned to a site - merge configs
+            site_config = cloud_response.get("site", {})
+            config = merge_configs(local_config, site_config)
+            logger.info(f"Loaded config for site: {site_config.get('name')}")
+
+        elif status == "unassigned":
+            # Controller not assigned yet - wait for assignment
+            config = await wait_for_assignment(local_config)
+
+        elif status == "error":
+            logger.error(f"Cloud config error: {cloud_response.get('message')}")
+            sys.exit(1)
+
+        # Validate the merged configuration
+        if not validate_full_config(config):
+            logger.error("Configuration validation failed")
+            sys.exit(1)
+
+        # Print summary of loaded config
+        print_config_summary(config)
+
     # Create and run control loop
     loop = ControlLoop(config)
 
@@ -195,6 +422,11 @@ def main():
         action="store_true",
         help="Enable verbose (debug) logging"
     )
+    parser.add_argument(
+        "--skip-cloud",
+        action="store_true",
+        help="Skip cloud config fetch (use local config only)"
+    )
 
     args = parser.parse_args()
 
@@ -205,12 +437,26 @@ def main():
     # Load configuration
     config = load_config(args.config)
 
-    # Validate configuration
-    if not validate_config(config):
-        sys.exit(1)
+    # Check if this is a minimal or full config
+    is_minimal = "devices" not in config or not config.get("devices")
 
-    # Print summary
-    print_config_summary(config)
+    if is_minimal:
+        # Minimal config - validate minimal requirements
+        if not validate_minimal_config(config):
+            sys.exit(1)
+        print("\n" + "=" * 60)
+        print("  VOLTERIA CONTROLLER - CLOUD CONFIGURATION")
+        print("=" * 60)
+        print(f"\n  Controller ID: {config.get('controller', {}).get('id', 'unknown')}")
+        print(f"  Serial: {config.get('controller', {}).get('serial_number', 'unknown')}")
+        print("\n  Configuration will be fetched from cloud...")
+        print("=" * 60 + "\n")
+    else:
+        # Full legacy config - validate all requirements
+        if not validate_full_config(config):
+            sys.exit(1)
+        # Print summary for full config
+        print_config_summary(config)
 
     # Dry run mode
     if args.dry_run:
@@ -222,7 +468,7 @@ def main():
     print("Press Ctrl+C to stop\n")
 
     try:
-        asyncio.run(main_async(config))
+        asyncio.run(main_async(config, skip_cloud=args.skip_cloud))
     except KeyboardInterrupt:
         print("\nStopped by user")
 

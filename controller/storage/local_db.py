@@ -67,17 +67,33 @@ class LocalDatabase:
     and handles data retention cleanup.
     """
 
-    def __init__(self, db_path: str = "data/controller.db"):
+    def __init__(self, db_path: str = "/data/controller.db"):
         """
         Initialize local database.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file.
+                     Default is /data/controller.db which is created by setup script
+                     and allowed by systemd ReadWritePaths.
         """
         self.db_path = Path(db_path)
 
-        # Ensure directory exists
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists with proper error handling
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            if e.errno == 30:  # Read-only filesystem
+                logger.error(
+                    f"Cannot create database directory: {self.db_path.parent} - "
+                    "Filesystem is read-only. This may happen if:\n"
+                    "  1. SD card is mounted read-only (try: sudo mount -o remount,rw /)\n"
+                    "  2. Setup script was not run (creates /data directory)\n"
+                    "  3. Using wrong database path (should be /data/controller.db)"
+                )
+            raise RuntimeError(
+                f"Cannot write to {self.db_path.parent} - check filesystem permissions. "
+                "Run setup script or manually create: sudo mkdir -p /data && sudo chown volteria:volteria /data"
+            ) from e
 
         # Initialize database
         self._init_db()
