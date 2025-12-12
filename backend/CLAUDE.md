@@ -22,7 +22,7 @@ FastAPI backend for Volteria - Energy Management platform providing:
 |-----------|------------|---------|
 | Framework | FastAPI | 0.109.0 |
 | Server | Uvicorn | 0.27.0 |
-| Database | Supabase (PostgreSQL) | 2.3.0 |
+| Database | Supabase (PostgreSQL) | 2.0.0 |
 | Auth | Supabase Auth | - |
 | HTTP Client | httpx | 0.24.1 |
 | Validation | Pydantic | 2.5.3 |
@@ -259,7 +259,7 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 
 # Database
-supabase==2.3.0
+supabase==2.0.0  # Pinned - 2.3.0 has gotrue compatibility issues
 asyncpg==0.29.0
 
 # Authentication

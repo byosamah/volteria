@@ -6,7 +6,9 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 
 # Database
-supabase==2.3.0
+# IMPORTANT: supabase 2.3.0 has gotrue compatibility issues
+# Using 2.0.0 which is stable with httpx 0.24.1
+supabase==2.0.0
 asyncpg==0.29.0
 
 # Authentication
