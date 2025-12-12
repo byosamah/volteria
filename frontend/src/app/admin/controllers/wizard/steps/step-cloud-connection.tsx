@@ -44,7 +44,7 @@ cloud:
           <div>
             <h3 className="font-medium text-green-800 mb-1">Automatic Configuration</h3>
             <p className="text-sm text-green-700">
-              The setup script you ran in Step 3 has already configured the cloud connection!
+              The setup script you ran in Step 2 has already configured the cloud connection!
               No manual configuration needed.
             </p>
           </div>
