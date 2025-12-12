@@ -12,6 +12,7 @@ Features:
 
 import asyncio
 import logging
+import re
 from dataclasses import asdict
 from datetime import datetime
 from typing import Optional
@@ -21,6 +22,28 @@ import httpx
 from .local_db import LocalDatabase, ControlLogRecord, AlarmRecord
 
 logger = logging.getLogger(__name__)
+
+# UUID validation regex pattern
+# Matches standard UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+UUID_PATTERN = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    re.IGNORECASE
+)
+
+
+def is_valid_uuid(value: str) -> bool:
+    """
+    Check if a string is a valid UUID format.
+
+    Args:
+        value: String to check
+
+    Returns:
+        True if the string is a valid UUID format
+    """
+    if not value:
+        return False
+    return bool(UUID_PATTERN.match(value))
 
 
 class CloudSync:
@@ -78,6 +101,15 @@ class CloudSync:
 
         # Control flag
         self._running = False
+
+        # Validate site_id is a proper UUID before enabling sync
+        # This prevents HTTP 400 errors when site_id is a test/placeholder value
+        self._sync_enabled = is_valid_uuid(site_id)
+        if not self._sync_enabled:
+            logger.warning(
+                f"Cloud sync DISABLED: site_id '{site_id}' is not a valid UUID. "
+                f"Controller needs to be assigned to a site via the platform."
+            )
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -154,6 +186,10 @@ class CloudSync:
         Returns:
             Number of logs synced
         """
+        # Skip if sync is disabled (invalid site_id)
+        if not self._sync_enabled:
+            return 0
+
         # Get unsynced logs
         logs = self.local_db.get_unsynced_logs(limit=self.batch_size)
         if not logs:
@@ -208,6 +244,10 @@ class CloudSync:
         Returns:
             Number of alarms synced
         """
+        # Skip if sync is disabled (invalid site_id)
+        if not self._sync_enabled:
+            return 0
+
         # Get unsynced alarms
         alarms = self.local_db.get_unsynced_alarms(limit=self.batch_size)
         if not alarms:
@@ -330,6 +370,11 @@ class CloudSync:
         Returns:
             True if heartbeat was received
         """
+        # Skip if sync is disabled (invalid site_id)
+        if not self._sync_enabled:
+            logger.debug("Heartbeat skipped: not assigned to a valid site")
+            return False
+
         client = await self._get_client()
 
         payload = {
@@ -370,6 +415,7 @@ class CloudSync:
         """Get sync status."""
         stats = self.local_db.get_stats()
         return {
+            "sync_enabled": self._sync_enabled,
             "is_online": self.is_online,
             "last_sync_at": self.last_sync_at.isoformat() if self.last_sync_at else None,
             "last_error": self.last_error,
@@ -377,3 +423,7 @@ class CloudSync:
             "pending_logs": stats["logs_pending"],
             "pending_alarms": stats["alarms_pending"]
         }
+
+    def is_sync_enabled(self) -> bool:
+        """Check if cloud sync is enabled (site_id is valid UUID)."""
+        return self._sync_enabled
