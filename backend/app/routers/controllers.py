@@ -772,8 +772,11 @@ async def register_by_serial(
     import os
 
     # Get Supabase credentials from environment
+    # The Pi needs these to connect to Supabase for cloud sync
     supabase_url = os.environ.get("SUPABASE_URL", "")
-    supabase_anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
+    # Use anon key if available, otherwise fall back to service key
+    # (service key works for Pi but anon key is more appropriate)
+    supabase_anon_key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_SERVICE_KEY", "")
 
     if not supabase_url or not supabase_anon_key:
         raise HTTPException(
