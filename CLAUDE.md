@@ -163,6 +163,82 @@ cd backend && uvicorn app.main:app --reload
 cd simulator && python run_simulation.py
 ```
 
+## Deployment Rules & Troubleshooting
+
+### Pre-Deployment Checklist
+1. **Commit all changes** before deploying
+2. **Push to GitHub** - server pulls from origin
+3. **Check current server state** if unsure: `docker-compose ps`
+
+### Deployment Steps (In Order)
+```bash
+# Step 1: Commit and push
+git add . && git commit -m "message" && git push origin main
+
+# Step 2: Deploy to server
+sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
+  "cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build"
+
+# Step 3: Verify deployment (wait ~2 min for build)
+sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
+  "docker-compose -f /opt/solar-diesel-controller/docker-compose.yml ps"
+
+# Step 4: If 502 errors, restart nginx
+sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
+  "docker restart sdc-nginx"
+```
+
+### Post-Deployment Verification
+| Check | Command | Expected |
+|-------|---------|----------|
+| All containers running | `docker-compose ps` | 3 containers (backend, frontend, nginx) |
+| Backend healthy | Check STATUS column | `healthy` |
+| Frontend responding | `curl -s localhost:3000/login` | HTTP 200 |
+| Site accessible | Visit https://volteria.org | Login page loads |
+
+### Known Issues & Fixes
+
+#### 502 Bad Gateway
+**Cause**: Nginx started before frontend was ready, or frontend container unhealthy
+**Fix**:
+```bash
+docker restart sdc-nginx
+```
+
+#### Frontend Shows "unhealthy" But Works
+**Cause**: Health check hits `/` which returns 307 redirect (not 200)
+**Status**: Known issue, safe to ignore if `/login` returns 200
+**Verify**:
+```bash
+curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login
+# Should return: 200
+```
+
+#### Build Takes Too Long (>5 min)
+**Cause**: Server resource constraints
+**Fix**: Wait for build to complete, don't interrupt
+
+#### Container Won't Start
+**Check logs**:
+```bash
+docker logs sdc-frontend --tail=50
+docker logs sdc-backend --tail=50
+```
+
+### Emergency Recovery
+If site is completely down:
+```bash
+# Full restart of all services
+sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
+  "cd /opt/solar-diesel-controller && docker-compose down && docker-compose up -d --build"
+```
+
+### NEVER Do These
+- Don't deploy during active user sessions if possible
+- Don't interrupt a running build (causes corrupted images)
+- Don't modify files directly on server (always deploy via git)
+- Don't skip the nginx restart if you see 502 errors
+
 ## Database (Supabase)
 
 ### Migration Files (Run in Order)
