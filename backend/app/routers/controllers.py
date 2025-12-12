@@ -161,6 +161,122 @@ async def list_controllers(
         )
 
 
+# ============================================
+# ENDPOINTS - SERIAL-BASED REGISTRATION (MUST BE BEFORE /{controller_id})
+# ============================================
+# NOTE: This route MUST come before /{controller_id} to avoid route conflicts
+# FastAPI matches routes in order - more specific routes need to be defined first
+
+class SerialRegisterResponse(BaseModel):
+    """Response for serial-based registration (called by setup script)."""
+    controller_id: str
+    serial_number: str
+    supabase_url: str
+    supabase_anon_key: str
+    status: str  # "registered" (existing) or "new" (just created)
+    message: str
+
+
+@router.get("/by-serial/{serial}/register", response_model=SerialRegisterResponse)
+async def register_by_serial(
+    serial: str,
+    db: Client = Depends(get_supabase)
+):
+    """
+    Register or fetch controller config using Pi's hardware serial number.
+
+    This endpoint is called by the setup script on the Raspberry Pi.
+    It reads the Pi's hardware serial from /proc/cpuinfo and calls this endpoint.
+
+    Behavior:
+    - If a controller with this serial exists → return its config
+    - If no controller exists → create a new one in "draft" status
+
+    No authentication required - the Pi identifies itself by its hardware serial.
+    The serial number is unique to each Raspberry Pi and cannot be spoofed easily.
+    """
+    import os
+
+    # Get Supabase credentials from environment
+    # The Pi needs these to connect to Supabase for cloud sync
+    supabase_url = os.environ.get("SUPABASE_URL", "")
+    # Use anon key if available, otherwise fall back to service key
+    # (service key works for Pi but anon key is more appropriate)
+    supabase_anon_key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_SERVICE_KEY", "")
+
+    if not supabase_url or not supabase_anon_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server configuration error: Supabase credentials not set"
+        )
+
+    try:
+        # Check if controller with this serial already exists
+        existing = db.table("controllers").select("id, serial_number, status").eq(
+            "serial_number", serial
+        ).execute()
+
+        if existing.data:
+            # Controller already exists - return its config
+            controller = existing.data[0]
+            return SerialRegisterResponse(
+                controller_id=str(controller["id"]),
+                serial_number=controller["serial_number"],
+                supabase_url=supabase_url,
+                supabase_anon_key=supabase_anon_key,
+                status="registered",
+                message="Controller already registered"
+            )
+
+        # Controller doesn't exist - create a new one (self-registration)
+        # First, get the default hardware type (Raspberry Pi 5)
+        hardware_result = db.table("approved_hardware").select("id").eq(
+            "is_active", True
+        ).limit(1).execute()
+
+        hardware_type_id = None
+        if hardware_result.data:
+            hardware_type_id = hardware_result.data[0]["id"]
+
+        # Create new controller in draft status
+        new_controller = {
+            "serial_number": serial,
+            "status": "draft",
+            "is_active": True,
+            "notes": "Auto-registered by setup script"
+        }
+
+        if hardware_type_id:
+            new_controller["hardware_type_id"] = hardware_type_id
+
+        result = db.table("controllers").insert(new_controller).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create controller record"
+            )
+
+        controller = result.data[0]
+
+        return SerialRegisterResponse(
+            controller_id=str(controller["id"]),
+            serial_number=serial,
+            supabase_url=supabase_url,
+            supabase_anon_key=supabase_anon_key,
+            status="new",
+            message="Controller registered successfully. Assign it to a site via the Volteria platform."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to register controller: {str(e)}"
+        )
+
+
 @router.get("/{controller_id}", response_model=ControllerResponse)
 async def get_controller(
     controller_id: UUID,
@@ -734,118 +850,4 @@ async def get_controller_config(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch controller config: {str(e)}"
-        )
-
-
-# ============================================
-# ENDPOINTS - SERIAL-BASED REGISTRATION
-# ============================================
-
-class SerialRegisterResponse(BaseModel):
-    """Response for serial-based registration (called by setup script)."""
-    controller_id: str
-    serial_number: str
-    supabase_url: str
-    supabase_anon_key: str
-    status: str  # "registered" (existing) or "new" (just created)
-    message: str
-
-
-@router.get("/by-serial/{serial}/register", response_model=SerialRegisterResponse)
-async def register_by_serial(
-    serial: str,
-    db: Client = Depends(get_supabase)
-):
-    """
-    Register or fetch controller config using Pi's hardware serial number.
-
-    This endpoint is called by the setup script on the Raspberry Pi.
-    It reads the Pi's hardware serial from /proc/cpuinfo and calls this endpoint.
-
-    Behavior:
-    - If a controller with this serial exists → return its config
-    - If no controller exists → create a new one in "draft" status
-
-    No authentication required - the Pi identifies itself by its hardware serial.
-    The serial number is unique to each Raspberry Pi and cannot be spoofed easily.
-    """
-    import os
-
-    # Get Supabase credentials from environment
-    # The Pi needs these to connect to Supabase for cloud sync
-    supabase_url = os.environ.get("SUPABASE_URL", "")
-    # Use anon key if available, otherwise fall back to service key
-    # (service key works for Pi but anon key is more appropriate)
-    supabase_anon_key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_SERVICE_KEY", "")
-
-    if not supabase_url or not supabase_anon_key:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error: Supabase credentials not set"
-        )
-
-    try:
-        # Check if controller with this serial already exists
-        existing = db.table("controllers").select("id, serial_number, status").eq(
-            "serial_number", serial
-        ).execute()
-
-        if existing.data:
-            # Controller already exists - return its config
-            controller = existing.data[0]
-            return SerialRegisterResponse(
-                controller_id=str(controller["id"]),
-                serial_number=controller["serial_number"],
-                supabase_url=supabase_url,
-                supabase_anon_key=supabase_anon_key,
-                status="registered",
-                message="Controller already registered"
-            )
-
-        # Controller doesn't exist - create a new one (self-registration)
-        # First, get the default hardware type (Raspberry Pi 5)
-        hardware_result = db.table("approved_hardware").select("id").eq(
-            "is_active", True
-        ).limit(1).execute()
-
-        hardware_type_id = None
-        if hardware_result.data:
-            hardware_type_id = hardware_result.data[0]["id"]
-
-        # Create new controller in draft status
-        new_controller = {
-            "serial_number": serial,
-            "status": "draft",
-            "is_active": True,
-            "notes": "Auto-registered by setup script"
-        }
-
-        if hardware_type_id:
-            new_controller["hardware_type_id"] = hardware_type_id
-
-        result = db.table("controllers").insert(new_controller).execute()
-
-        if not result.data:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create controller record"
-            )
-
-        controller = result.data[0]
-
-        return SerialRegisterResponse(
-            controller_id=str(controller["id"]),
-            serial_number=serial,
-            supabase_url=supabase_url,
-            supabase_anon_key=supabase_anon_key,
-            status="new",
-            message="Controller registered successfully. Assign it to a site via the Volteria platform."
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to register controller: {str(e)}"
         )
