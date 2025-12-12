@@ -22,12 +22,15 @@ import argparse
 import asyncio
 import logging
 import sys
+import time
 from pathlib import Path
 
 import yaml
 
 from control_loop import ControlLoop
 from storage.config_sync import ConfigSync
+from storage.cloud_sync import CloudSync
+from storage.local_db import LocalDatabase
 
 # Set up logging
 logging.basicConfig(
@@ -292,6 +295,9 @@ async def wait_for_assignment(local_config: dict) -> dict:
     Polls the cloud every ASSIGNMENT_CHECK_INTERVAL_S seconds
     until the controller is assigned to a site.
 
+    IMPORTANT: While waiting, we send heartbeats so the Wizard Step 6
+    "Verify Online" can detect that the controller is running.
+
     Args:
         local_config: Minimal local config
 
@@ -301,6 +307,24 @@ async def wait_for_assignment(local_config: dict) -> dict:
     controller_id = local_config.get("controller", {}).get("id", "unknown")
     serial = local_config.get("controller", {}).get("serial_number", "unknown")
 
+    # Set up heartbeat capability while waiting
+    cloud = local_config.get("cloud", {})
+    supabase_url = cloud.get("supabase_url", "")
+    supabase_key = cloud.get("supabase_key", "")
+
+    # Create a local database for the CloudSync (required but won't be heavily used)
+    local_db = LocalDatabase(db_path="/data/controller.db")
+
+    # Create CloudSync with controller_id for heartbeat-only mode
+    # site_id is not valid yet, but controller_id allows heartbeats
+    cloud_sync = CloudSync(
+        site_id="unassigned",  # Not a valid UUID, sync disabled
+        supabase_url=supabase_url,
+        supabase_key=supabase_key,
+        local_db=local_db,
+        controller_id=controller_id  # This enables heartbeat-only mode
+    )
+
     print("\n" + "=" * 60)
     print("  WAITING FOR SITE ASSIGNMENT")
     print("=" * 60)
@@ -309,17 +333,38 @@ async def wait_for_assignment(local_config: dict) -> dict:
     print(f"\n  This controller is not yet assigned to a site.")
     print(f"  Please assign it via the Volteria platform.")
     print(f"\n  Checking every {ASSIGNMENT_CHECK_INTERVAL_S} seconds...")
+    print(f"  Sending heartbeats every {ASSIGNMENT_CHECK_INTERVAL_S} seconds...")
     print("  Press Ctrl+C to stop\n")
     print("=" * 60 + "\n")
 
+    start_time = time.time()
+
     while True:
         try:
+            # Calculate uptime
+            uptime_seconds = int(time.time() - start_time)
+
+            # Send heartbeat so Wizard Step 6 can detect us
+            heartbeat_sent = await cloud_sync.send_heartbeat(
+                firmware_version="1.0.0",
+                uptime_seconds=uptime_seconds,
+                cpu_usage_pct=0.0,
+                memory_usage_pct=0.0
+            )
+            if heartbeat_sent:
+                logger.info("Heartbeat sent successfully (waiting for assignment)")
+            else:
+                logger.warning("Failed to send heartbeat")
+
             # Fetch config from cloud
             cloud_response = await fetch_cloud_config(local_config)
 
             if cloud_response and cloud_response.get("status") == "assigned":
                 site_config = cloud_response.get("site", {})
                 logger.info(f"Controller assigned to site: {site_config.get('name')}")
+
+                # Clean up
+                await cloud_sync.close()
 
                 # Merge and return
                 merged_config = merge_configs(local_config, site_config)
@@ -331,6 +376,7 @@ async def wait_for_assignment(local_config: dict) -> dict:
 
         except asyncio.CancelledError:
             logger.info("Assignment wait cancelled")
+            await cloud_sync.close()
             raise
         except Exception as e:
             logger.error(f"Error checking assignment: {e}")
