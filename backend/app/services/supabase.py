@@ -23,10 +23,16 @@ class Settings(BaseSettings):
 
     Create a .env file with:
     - SUPABASE_URL=https://xxx.supabase.co
-    - SUPABASE_KEY=your-service-role-key
+    - SUPABASE_SERVICE_KEY=your-service-role-key
     """
     supabase_url: str = ""
-    supabase_key: str = ""
+    # Accept both SUPABASE_KEY and SUPABASE_SERVICE_KEY
+    supabase_service_key: str = ""
+
+    @property
+    def supabase_key(self) -> str:
+        """Get the Supabase key (from SUPABASE_SERVICE_KEY env var)."""
+        return self.supabase_service_key
 
     class Config:
         env_file = ".env"
