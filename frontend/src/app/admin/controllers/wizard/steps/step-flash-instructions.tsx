@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Step 3: Flash Instructions
+ * Step 2: Flash Instructions
  *
- * Visual guide for flashing the image using Balena Etcher
+ * Visual guide for flashing Raspberry Pi OS to SD card using Raspberry Pi Imager.
+ * No custom image needed - we use standard Raspberry Pi OS Lite.
  */
 
 interface StepFlashInstructionsProps {
@@ -11,28 +12,29 @@ interface StepFlashInstructionsProps {
   confirmed: boolean;
 }
 
-const BALENA_ETCHER_URL = "https://etcher.balena.io/";
+const PI_IMAGER_URL = "https://www.raspberrypi.com/software/";
 
 export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstructionsProps) {
   return (
     <div className="space-y-6">
       {/* Introduction */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-medium text-blue-800 mb-2">Flash the Image to SD Card</h3>
+        <h3 className="font-medium text-blue-800 mb-2">Flash Raspberry Pi OS to SD Card</h3>
         <p className="text-sm text-blue-700">
-          We recommend using Balena Etcher - a free, easy-to-use tool that works on Windows, Mac, and Linux.
+          We use the official Raspberry Pi Imager to flash Raspberry Pi OS Lite.
+          The Volteria software will be installed automatically in the next step.
         </p>
       </div>
 
-      {/* Balena Etcher download */}
+      {/* Raspberry Pi Imager download */}
       <div className="border rounded-lg p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="font-medium">Balena Etcher</h4>
-            <p className="text-sm text-muted-foreground">Free SD card flashing tool</p>
+            <h4 className="font-medium">Raspberry Pi Imager</h4>
+            <p className="text-sm text-muted-foreground">Official tool for flashing Pi OS</p>
           </div>
           <a
-            href={BALENA_ETCHER_URL}
+            href={PI_IMAGER_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
@@ -51,7 +53,7 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
               <polyline points="15 3 21 3 21 9" />
               <line x1="10" y1="14" x2="21" y2="3" />
             </svg>
-            Download Etcher
+            Download Imager
           </a>
         </div>
       </div>
@@ -69,7 +71,7 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
             <h5 className="font-medium">Insert SD Card</h5>
             <p className="text-sm text-muted-foreground">
               Insert your microSD card into your computer using an SD card reader.
-              Make sure the card is at least 32GB.
+              Use at least a <span className="font-medium">32GB card</span> (Class 10 or faster recommended).
             </p>
           </div>
         </div>
@@ -80,9 +82,9 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
             2
           </div>
           <div>
-            <h5 className="font-medium">Open Balena Etcher</h5>
+            <h5 className="font-medium">Open Raspberry Pi Imager</h5>
             <p className="text-sm text-muted-foreground">
-              Launch Balena Etcher. If you haven&apos;t installed it yet, download it from the link above.
+              Launch Raspberry Pi Imager. If you haven&apos;t installed it yet, download it from the link above.
             </p>
           </div>
         </div>
@@ -93,10 +95,10 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
             3
           </div>
           <div>
-            <h5 className="font-medium">Select the Image</h5>
+            <h5 className="font-medium">Choose Device</h5>
             <p className="text-sm text-muted-foreground">
-              Click &quot;Flash from file&quot; and select the <code className="bg-muted px-1 rounded">volteria-controller-v1.0.0.img.gz</code> file
-              you downloaded in the previous step. Etcher can flash compressed files directly.
+              Click <span className="font-medium">&quot;Choose Device&quot;</span> and select <code className="bg-muted px-1 rounded">Raspberry Pi 5</code>
+              {" "}(or your Pi model).
             </p>
           </div>
         </div>
@@ -107,10 +109,12 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
             4
           </div>
           <div>
-            <h5 className="font-medium">Select Target Drive</h5>
+            <h5 className="font-medium">Choose Operating System</h5>
             <p className="text-sm text-muted-foreground">
-              Click &quot;Select target&quot; and choose your SD card.
-              <span className="text-amber-600 font-medium"> Be careful to select the correct drive!</span>
+              Click <span className="font-medium">&quot;Choose OS&quot;</span> → <code className="bg-muted px-1 rounded">Raspberry Pi OS (other)</code> → <code className="bg-muted px-1 rounded">Raspberry Pi OS Lite (64-bit)</code>
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              We use the Lite version (no desktop) for better performance on the controller.
             </p>
           </div>
         </div>
@@ -121,24 +125,106 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
             5
           </div>
           <div>
-            <h5 className="font-medium">Flash!</h5>
+            <h5 className="font-medium">Choose Storage</h5>
             <p className="text-sm text-muted-foreground">
-              Click &quot;Flash!&quot; and wait for the process to complete. This usually takes 5-10 minutes.
-              Etcher will verify the flash automatically.
+              Click <span className="font-medium">&quot;Choose Storage&quot;</span> and select your SD card.
+              <span className="text-amber-600 font-medium"> Double-check you select the correct drive!</span>
             </p>
           </div>
         </div>
 
-        {/* Step 6 */}
+        {/* Step 6 - Settings (Important!) */}
+        <div className="flex gap-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50">
+          <div className="flex-shrink-0 w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+            6
+          </div>
+          <div>
+            <h5 className="font-medium text-blue-900">Configure Settings (Important!)</h5>
+            <p className="text-sm text-blue-800 mb-2">
+              Click the <span className="font-medium">gear icon</span> or <span className="font-medium">&quot;Edit Settings&quot;</span> to configure:
+            </p>
+            <ul className="text-sm text-blue-700 space-y-1 ml-4">
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span><span className="font-medium">Enable SSH</span> - Select &quot;Use password authentication&quot;</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span><span className="font-medium">Set username:</span> <code className="bg-blue-100 px-1 rounded">pi</code></span>
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span><span className="font-medium">Set password:</span> Choose a secure password</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span><span className="font-medium">Configure WiFi</span> (optional - Ethernet recommended)</span>
+              </li>
+            </ul>
+            <p className="text-xs text-blue-600 mt-2 font-medium">
+              These settings are required to SSH into your Pi in the next step!
+            </p>
+          </div>
+        </div>
+
+        {/* Step 7 */}
         <div className="flex gap-4 p-4 border rounded-lg">
           <div className="flex-shrink-0 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
-            6
+            7
+          </div>
+          <div>
+            <h5 className="font-medium">Write to SD Card</h5>
+            <p className="text-sm text-muted-foreground">
+              Click <span className="font-medium">&quot;Write&quot;</span> and confirm. Wait for the process to complete (5-10 minutes).
+              The Imager will verify the write automatically.
+            </p>
+          </div>
+        </div>
+
+        {/* Step 8 */}
+        <div className="flex gap-4 p-4 border rounded-lg">
+          <div className="flex-shrink-0 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
+            8
           </div>
           <div>
             <h5 className="font-medium">Insert into Raspberry Pi</h5>
             <p className="text-sm text-muted-foreground">
-              Once flashing is complete, safely eject the SD card from your computer
-              and insert it into your Raspberry Pi 5.
+              Once complete, safely eject the SD card from your computer
+              and insert it into your Raspberry Pi. Connect Ethernet and power on.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Info about what comes next */}
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="flex gap-3">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
+          >
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <div>
+            <h4 className="font-medium text-green-800">What&apos;s Next</h4>
+            <p className="text-sm text-green-700">
+              In the next step, you&apos;ll SSH into your Pi and run our setup script.
+              The script will install all Volteria software and configure your controller automatically.
             </p>
           </div>
         </div>
@@ -180,7 +266,7 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
           className="w-5 h-5 rounded border-gray-300"
         />
         <span className="text-sm">
-          I have flashed the image to my SD card and inserted it into the Raspberry Pi
+          I have flashed Raspberry Pi OS to my SD card and inserted it into the Raspberry Pi
         </span>
       </label>
     </div>
