@@ -66,7 +66,8 @@ class CloudSync:
         sync_interval_ms: int = 5000,
         max_retries: int = 3,
         batch_size: int = 100,
-        project_id: str = None  # Optional: for backward compatibility
+        project_id: str = None,  # Optional: for backward compatibility
+        controller_id: str = None  # Controller ID for heartbeats before site assignment
     ):
         """
         Initialize cloud sync service.
@@ -80,9 +81,11 @@ class CloudSync:
             max_retries: Maximum retry attempts for failed syncs
             batch_size: Maximum records per batch upload
             project_id: Optional UUID of the project (for backward compatibility)
+            controller_id: Controller ID for heartbeats before site assignment
         """
         self.site_id = site_id
         self.project_id = project_id  # Optional: kept for backward compatibility
+        self.controller_id = controller_id  # For heartbeats before site assignment
         self.supabase_url = supabase_url.rstrip("/")
         self.supabase_key = supabase_key
         self.local_db = local_db
@@ -109,6 +112,14 @@ class CloudSync:
             logger.warning(
                 f"Cloud sync DISABLED: site_id '{site_id}' is not a valid UUID. "
                 f"Controller needs to be assigned to a site via the platform."
+            )
+
+        # Validate controller_id for heartbeat-only mode
+        self._heartbeat_enabled = is_valid_uuid(controller_id) if controller_id else False
+        if self._heartbeat_enabled and not self._sync_enabled:
+            logger.info(
+                f"Heartbeat-only mode ENABLED: controller_id '{controller_id}' is valid. "
+                f"Controller can send heartbeats but not sync logs/alarms until assigned to a site."
             )
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -360,6 +371,7 @@ class CloudSync:
         Send heartbeat to cloud.
 
         Called every 5 minutes to indicate controller is online.
+        Can send heartbeats even before site assignment if controller_id is valid.
 
         Args:
             firmware_version: Current firmware version
@@ -370,22 +382,34 @@ class CloudSync:
         Returns:
             True if heartbeat was received
         """
-        # Skip if sync is disabled (invalid site_id)
-        if not self._sync_enabled:
-            logger.debug("Heartbeat skipped: not assigned to a valid site")
+        # Check if we can send heartbeats
+        # Either: sync is enabled (valid site_id) OR heartbeat-only mode (valid controller_id)
+        if not self._sync_enabled and not self._heartbeat_enabled:
+            logger.debug("Heartbeat skipped: no valid site_id or controller_id")
             return False
 
         client = await self._get_client()
 
+        # Build payload based on what IDs we have
         payload = {
-            "site_id": self.site_id,  # Primary: site is the physical location
             "firmware_version": firmware_version,
             "uptime_seconds": uptime_seconds,
             "cpu_usage_pct": cpu_usage_pct,
-            "memory_usage_pct": memory_usage_pct
+            "memory_usage_pct": memory_usage_pct,
+            # Include controller_id in metadata for wizard detection
+            "metadata": {"controller_id": self.controller_id} if self.controller_id else {}
         }
+
+        # Include controller_id if valid (for pre-assignment detection)
+        if self._heartbeat_enabled:
+            payload["controller_id"] = self.controller_id
+
+        # Include site_id only if valid UUID (otherwise Supabase will reject it)
+        if self._sync_enabled:
+            payload["site_id"] = self.site_id
+
         # Include project_id if available (for backward compatibility)
-        if self.project_id:
+        if self.project_id and is_valid_uuid(self.project_id):
             payload["project_id"] = self.project_id
 
         try:
@@ -399,7 +423,8 @@ class CloudSync:
                 logger.debug("Heartbeat sent successfully")
                 return True
 
-            logger.warning(f"Heartbeat failed: {response.status_code}")
+            # Log the error response for debugging
+            logger.warning(f"Heartbeat failed: {response.status_code} - {response.text}")
             return False
 
         except Exception as e:
@@ -416,6 +441,8 @@ class CloudSync:
         stats = self.local_db.get_stats()
         return {
             "sync_enabled": self._sync_enabled,
+            "heartbeat_enabled": self._heartbeat_enabled,
+            "controller_id": self.controller_id,
             "is_online": self.is_online,
             "last_sync_at": self.last_sync_at.isoformat() if self.last_sync_at else None,
             "last_error": self.last_error,
@@ -427,3 +454,7 @@ class CloudSync:
     def is_sync_enabled(self) -> bool:
         """Check if cloud sync is enabled (site_id is valid UUID)."""
         return self._sync_enabled
+
+    def is_heartbeat_enabled(self) -> bool:
+        """Check if heartbeat is enabled (controller_id is valid UUID)."""
+        return self._heartbeat_enabled or self._sync_enabled

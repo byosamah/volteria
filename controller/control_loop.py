@@ -293,6 +293,11 @@ class ControlLoop:
         self.site_id = site_cfg.get("id", "")
         # Note: project_id is no longer used - sites architecture replaces projects with controllers
 
+        # Controller info - used for heartbeats before site assignment
+        # New config format uses "controller" section, legacy uses "site_controller"
+        controller_cfg = config.get("controller", {}) or config.get("site_controller", {})
+        self.controller_id = controller_cfg.get("id", "")
+
         # Control settings
         control_cfg = config.get("control", {})
         self.interval_ms = control_cfg.get("interval_ms", 1000)
@@ -386,7 +391,8 @@ class ControlLoop:
                 supabase_url=cloud_cfg["supabase_url"],
                 supabase_key=cloud_cfg.get("supabase_key", ""),
                 local_db=self.local_db,
-                sync_interval_ms=self.cloud_interval_ms
+                sync_interval_ms=self.cloud_interval_ms,
+                controller_id=self.controller_id  # For heartbeats before site assignment
             )
 
         # Modbus connections (will be established on start)
@@ -404,6 +410,8 @@ class ControlLoop:
         self._start_time = time.time()
 
         logger.info(f"Control loop initialized:")
+        logger.info(f"  - Controller ID: {self.controller_id or 'Not set'}")
+        logger.info(f"  - Site ID: {self.site_id or 'Not assigned'}")
         logger.info(f"  - Interval: {self.interval_ms}ms")
         logger.info(f"  - DG Reserve: {self.dg_reserve_kw} kW")
         logger.info(f"  - Operation Mode: {self.operation_mode}")
@@ -414,6 +422,8 @@ class ControlLoop:
         logger.info(f"  - Total Inverter Capacity: {self.total_inverter_capacity_kw} kW")
         logger.info(f"  - Safe Mode: {'Enabled' if self.safe_mode_enabled else 'Disabled'}")
         logger.info(f"  - Cloud Sync: {'Enabled' if self.cloud_sync else 'Disabled'}")
+        if self.cloud_sync:
+            logger.info(f"  - Heartbeat Enabled: {self.cloud_sync.is_heartbeat_enabled()}")
 
     # ============================================
     # DEVICE FILTERING BY MEASUREMENT TYPE
