@@ -871,10 +871,10 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Connection</TableHead>
                   <TableHead>Serial Number</TableHead>
                   <TableHead>Hardware</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Connection</TableHead>
                   <TableHead>Passcode</TableHead>
                   <TableHead>Enterprise</TableHead>
                   <TableHead>Actions</TableHead>
@@ -883,17 +883,6 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
               <TableBody>
                 {filteredControllers.map((controller) => (
                   <TableRow key={controller.id}>
-                    <TableCell className="font-mono font-medium">
-                      {controller.serial_number}
-                    </TableCell>
-                    <TableCell>
-                      {controller.approved_hardware?.name || "Unknown"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={statusColors[controller.status]}>
-                        {controller.status}
-                      </Badge>
-                    </TableCell>
                     <TableCell>
                       {/* Connection status with pulse animation for online */}
                       {(() => {
@@ -923,6 +912,17 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                           return <span className="text-sm text-muted-foreground">—</span>;
                         }
                       })()}
+                    </TableCell>
+                    <TableCell className="font-mono font-medium">
+                      {controller.serial_number}
+                    </TableCell>
+                    <TableCell>
+                      {controller.approved_hardware?.name || "Unknown"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={statusColors[controller.status]}>
+                        {controller.status}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       {controller.passcode ? (
