@@ -53,11 +53,11 @@ interface Controller {
   last_heartbeat: string | null;
 }
 
-// Helper to determine if controller is online (heartbeat within last 10 minutes)
+// Helper to determine if controller is online (heartbeat within last 1 minute)
 const isControllerOnline = (lastHeartbeat: string | null): boolean => {
   if (!lastHeartbeat) return false;
-  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
-  return new Date(lastHeartbeat).getTime() > tenMinutesAgo;
+  const oneMinuteAgo = Date.now() - 1 * 60 * 1000;
+  return new Date(lastHeartbeat).getTime() > oneMinuteAgo;
 };
 
 // Helper to format time since last heartbeat
@@ -140,9 +140,11 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
   const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isPolling, setIsPolling] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Fetch heartbeats from API
   const fetchHeartbeats = useCallback(async () => {
+    setIsRefreshing(true);
     try {
       const res = await fetch("/api/controllers/heartbeats");
       if (res.ok) {
@@ -152,6 +154,8 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
       }
     } catch (error) {
       console.error("Failed to fetch heartbeats:", error);
+    } finally {
+      setIsRefreshing(false);
     }
   }, []);
 
@@ -680,6 +684,7 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
             variant="ghost"
             size="sm"
             onClick={fetchHeartbeats}
+            disabled={isRefreshing}
             className="h-8 w-8 p-0"
             title="Refresh connection status"
           >
@@ -691,7 +696,7 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="h-4 w-4"
+              className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
             >
               <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
