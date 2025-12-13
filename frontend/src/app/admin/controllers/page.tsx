@@ -108,42 +108,25 @@ export default async function ControllersPage() {
     // Tables might not exist yet
   }
 
-  // Fetch latest heartbeat for each controller via site_master_devices
-  // Heartbeats are tracked per site, so we need to join through site_master_devices
+  // Fetch latest heartbeat for each controller DIRECTLY from controller_heartbeats table
+  // Controllers send heartbeats with their controller_id, even before being assigned to a site
+  // This allows showing online/offline status for ALL controllers in the master list
   try {
     const { data: heartbeatData } = await supabase
-      .from("site_master_devices")
-      .select(`
-        controller_id,
-        sites (
-          controller_heartbeats (
-            timestamp
-          )
-        )
-      `)
-      .not("controller_id", "is", null);
+      .from("controller_heartbeats")
+      .select("controller_id, timestamp")
+      .not("controller_id", "is", null)
+      .order("timestamp", { ascending: false });
 
     if (heartbeatData) {
       // Build a map of controller_id -> latest heartbeat timestamp
+      // Since results are ordered by timestamp DESC, the first occurrence for each controller is the latest
       const heartbeatMap = new Map<string, string>();
 
-      for (const item of heartbeatData) {
-        if (!item.controller_id) continue;
-
-        const sites = Array.isArray(item.sites) ? item.sites : [item.sites];
-        for (const site of sites) {
-          if (!site) continue;
-          const heartbeats = Array.isArray(site.controller_heartbeats)
-            ? site.controller_heartbeats
-            : [site.controller_heartbeats];
-
-          for (const hb of heartbeats) {
-            if (!hb?.timestamp) continue;
-            const existing = heartbeatMap.get(item.controller_id);
-            if (!existing || new Date(hb.timestamp) > new Date(existing)) {
-              heartbeatMap.set(item.controller_id, hb.timestamp);
-            }
-          }
+      for (const hb of heartbeatData) {
+        // Only store the first (most recent) heartbeat for each controller
+        if (hb.controller_id && !heartbeatMap.has(hb.controller_id)) {
+          heartbeatMap.set(hb.controller_id, hb.timestamp);
         }
       }
 

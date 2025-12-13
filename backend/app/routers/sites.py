@@ -494,6 +494,44 @@ async def register_controller(
         }
 
         db.table("sites").update(update_data).eq("id", str(site_id)).execute()
+
+        # Create site_master_devices record for controller assignment
+        # This is what the /controllers/{id}/config endpoint checks to determine assignment
+        controller_result = db.table("controllers").select("id").eq(
+            "serial_number", controller.serial_number
+        ).execute()
+
+        if controller_result.data and len(controller_result.data) > 0:
+            controller_uuid = controller_result.data[0]["id"]
+
+            # Check if a site_master_devices record already exists for this controller
+            existing_device = db.table("site_master_devices").select("id").eq(
+                "controller_id", controller_uuid
+            ).execute()
+
+            if existing_device.data and len(existing_device.data) > 0:
+                # Update existing record to point to new site
+                db.table("site_master_devices").update({
+                    "site_id": str(site_id),
+                    "is_active": True
+                }).eq("controller_id", controller_uuid).execute()
+            else:
+                # Create new site_master_devices record
+                db.table("site_master_devices").insert({
+                    "site_id": str(site_id),
+                    "device_type": "controller",
+                    "name": f"Controller {controller.serial_number}",
+                    "controller_id": controller_uuid,
+                    "is_active": True,
+                    "created_by": str(current_user.id)
+                }).execute()
+
+            # Update controller status to deployed and link to site
+            db.table("controllers").update({
+                "status": "deployed",
+                "site_id": str(site_id)
+            }).eq("id", controller_uuid).execute()
+
         return controller
     except HTTPException:
         raise
