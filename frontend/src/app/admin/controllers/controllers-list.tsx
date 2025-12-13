@@ -7,7 +7,7 @@
  * Includes create dialog, status management, and passcode display.
  */
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -135,6 +135,67 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
     firmware_version: "",
     notes: "",
   });
+
+  // Heartbeat polling state - for auto-updating connection status
+  const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+
+  // Fetch heartbeats from API
+  const fetchHeartbeats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/controllers/heartbeats");
+      if (res.ok) {
+        const data = await res.json();
+        setHeartbeats(data);
+        setLastUpdated(new Date());
+      }
+    } catch (error) {
+      console.error("Failed to fetch heartbeats:", error);
+    }
+  }, []);
+
+  // Smart polling effect - polls every 30s when tab is visible
+  useEffect(() => {
+    // Initial fetch
+    fetchHeartbeats();
+    setIsPolling(true);
+
+    // Set up polling interval
+    let intervalId: NodeJS.Timeout;
+
+    const startPolling = () => {
+      intervalId = setInterval(fetchHeartbeats, 30000); // 30 seconds
+    };
+
+    // Handle tab visibility changes
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab is hidden - stop polling
+        clearInterval(intervalId);
+        setIsPolling(false);
+      } else {
+        // Tab is visible - fetch immediately and resume polling
+        fetchHeartbeats();
+        startPolling();
+        setIsPolling(true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    startPolling();
+
+    // Cleanup
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [fetchHeartbeats]);
+
+  // Helper to get heartbeat for a controller (polled data or initial prop)
+  const getControllerHeartbeat = (controllerId: string, initialHeartbeat: string | null): string | null => {
+    return heartbeats[controllerId] || initialHeartbeat;
+  };
 
   // Filter controllers - search by serial number, hardware name, or enterprise name
   const filteredControllers = controllers.filter((c) => {
@@ -598,6 +659,47 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
             Register Controller
           </Link>
         </Button>
+
+        {/* Auto-refresh status indicator */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {isPolling && (
+            <span className="flex items-center gap-1">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              <span className="hidden sm:inline">Live</span>
+            </span>
+          )}
+          {lastUpdated && (
+            <span className="hidden sm:inline">
+              Updated {formatTimeSince(lastUpdated.toISOString())}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={fetchHeartbeats}
+            className="h-8 w-8 p-0"
+            title="Refresh connection status"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+              <path d="M16 21h5v-5" />
+            </svg>
+          </Button>
+        </div>
       </div>
 
       {/* Controllers Table */}
@@ -652,19 +754,24 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
                       <p className="text-muted-foreground">Connection</p>
-                      {isControllerOnline(controller.last_heartbeat) ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                          </span>
-                          <span className="text-green-600 font-medium">Online</span>
-                        </div>
-                      ) : controller.last_heartbeat ? (
-                        <span className="text-muted-foreground">{formatTimeSince(controller.last_heartbeat)}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      {(() => {
+                        const heartbeat = getControllerHeartbeat(controller.id, controller.last_heartbeat);
+                        if (isControllerOnline(heartbeat)) {
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                              </span>
+                              <span className="text-green-600 font-medium">Online</span>
+                            </div>
+                          );
+                        } else if (heartbeat) {
+                          return <span className="text-muted-foreground">{formatTimeSince(heartbeat)}</span>;
+                        } else {
+                          return <span className="text-muted-foreground">—</span>;
+                        }
+                      })()}
                     </div>
                     <div>
                       <p className="text-muted-foreground">Enterprise</p>
@@ -789,26 +896,33 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                     </TableCell>
                     <TableCell>
                       {/* Connection status with pulse animation for online */}
-                      {isControllerOnline(controller.last_heartbeat) ? (
-                        <div className="flex items-center gap-2">
-                          <span className="relative flex h-3 w-3">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                          </span>
-                          <span className="text-sm text-green-600 font-medium">Online</span>
-                        </div>
-                      ) : controller.last_heartbeat ? (
-                        <div className="flex items-center gap-2">
-                          <span className="relative flex h-3 w-3">
-                            <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-400"></span>
-                          </span>
-                          <span className="text-sm text-muted-foreground">
-                            {formatTimeSince(controller.last_heartbeat)}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">—</span>
-                      )}
+                      {(() => {
+                        const heartbeat = getControllerHeartbeat(controller.id, controller.last_heartbeat);
+                        if (isControllerOnline(heartbeat)) {
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                              </span>
+                              <span className="text-sm text-green-600 font-medium">Online</span>
+                            </div>
+                          );
+                        } else if (heartbeat) {
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="relative flex h-3 w-3">
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-400"></span>
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {formatTimeSince(heartbeat)}
+                              </span>
+                            </div>
+                          );
+                        } else {
+                          return <span className="text-sm text-muted-foreground">—</span>;
+                        }
+                      })()}
                     </TableCell>
                     <TableCell>
                       {controller.passcode ? (
