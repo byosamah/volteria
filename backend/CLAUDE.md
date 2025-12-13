@@ -97,6 +97,8 @@ backend/
 | `/{id}` | DELETE | Delete site | Admin+ |
 | `/project/{project_id}` | GET | List sites in project | Yes |
 
+**Note on Controller Registration**: When a controller registers via `/api/projects/register-controller`, the backend also creates a `site_master_devices` record linking the controller to the site. This enables the frontend to query heartbeats for all controllers (assigned or not).
+
 ### Devices (`/api/devices/`)
 | Endpoint | Method | Description | Auth |
 |----------|--------|-------------|------|

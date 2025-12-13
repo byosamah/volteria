@@ -103,7 +103,9 @@ src/app/
 ├── debug/
 │   └── auth/page.tsx                  # Debug auth endpoint
 │
-└── api/                               # Next.js API Routes (5 routes)
+└── api/                               # Next.js API Routes (6 routes)
+    ├── controllers/
+    │   └── heartbeats/route.ts        # Heartbeat polling for connection status
     └── admin/
         ├── invite/route.ts            # Send email invitations
         └── users/
@@ -164,6 +166,15 @@ Full list of editable fields in `/projects/[id]/sites/[siteId]/settings/`:
 - **Controller Status**: Combined widget showing "X online - Y offline"
 - Color coded: green for online, red for offline
 - Same pattern on Dashboard (`/`) and Project Detail (`/projects/[id]`)
+
+### Controller Master List (`/admin/controllers`)
+Live connection status for all registered controllers:
+- **Smart Polling**: Fetches heartbeats every 30 seconds (pauses when tab hidden via Page Visibility API)
+- **Connection Column**: First column showing online/offline status
+- **Visual Indicators**: Green pulsing dot (online), red dot (offline)
+- **Refresh Button**: Manual refresh with spinning animation feedback
+- **Offline Threshold**: 1 minute (controller marked offline if no heartbeat in 1 min)
+- **API Route**: `GET /api/controllers/heartbeats` returns latest heartbeat timestamp per controller_id
 
 ## Components Structure
 ```

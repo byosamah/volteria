@@ -20,7 +20,7 @@
 - **Hardware**: Raspberry Pi 5 with NVMe SSD (SOL564-NVME16-128)
 - **Cloud Database**: Supabase (PostgreSQL)
 - **Cloud Hosting**: DigitalOcean Droplet
-- **Heartbeat**: Controller sends status every 5 minutes
+- **Heartbeat**: Controller sends status every 5 minutes; frontend marks offline after 1 minute without heartbeat
 
 ## Approved Hardware Types
 | Hardware ID | Description | Storage |
