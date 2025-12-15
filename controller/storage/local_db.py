@@ -59,6 +59,24 @@ class AlarmRecord:
     synced: bool = False
 
 
+@dataclass
+class DeviceReadingRecord:
+    """
+    A single device reading record.
+
+    Stores per-device register readings for Historical Data visualization.
+    """
+    timestamp: datetime
+    site_id: str
+    device_id: str
+    register_name: str
+    value: float
+    unit: Optional[str] = None
+    # Internal tracking
+    id: Optional[int] = None
+    synced: bool = False
+
+
 class LocalDatabase:
     """
     SQLite database for local storage.
@@ -160,6 +178,35 @@ class LocalDatabase:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_alarms_synced
                 ON alarms(synced)
+            """)
+
+            # Device readings table (per-device time-series for Historical Data)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS device_readings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    site_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    register_name TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    unit TEXT,
+                    synced INTEGER DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(device_id, register_name, timestamp)
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_readings_site_time
+                ON device_readings(site_id, timestamp DESC)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_readings_device_time
+                ON device_readings(device_id, timestamp DESC)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_readings_synced
+                ON device_readings(synced) WHERE synced = 0
             """)
 
             conn.commit()
@@ -351,6 +398,144 @@ class LocalDatabase:
         )
 
     # ============================================
+    # DEVICE READINGS (Per-device time-series)
+    # ============================================
+
+    def insert_device_reading(self, record: "DeviceReadingRecord") -> int:
+        """
+        Insert a device reading record.
+
+        Uses INSERT OR REPLACE to handle duplicates (same device/register/timestamp).
+
+        Args:
+            record: Device reading data
+
+        Returns:
+            ID of inserted record
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                INSERT OR REPLACE INTO device_readings (
+                    timestamp, site_id, device_id, register_name, value, unit, synced
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                record.timestamp.isoformat(),
+                record.site_id,
+                record.device_id,
+                record.register_name,
+                record.value,
+                record.unit,
+                1 if record.synced else 0
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def insert_device_readings_batch(
+        self,
+        records: list["DeviceReadingRecord"]
+    ) -> int:
+        """
+        Insert multiple device readings in a batch.
+
+        More efficient than individual inserts for bulk logging.
+
+        Args:
+            records: List of device reading records
+
+        Returns:
+            Number of records inserted
+        """
+        if not records:
+            return 0
+
+        with self._get_connection() as conn:
+            data = [
+                (
+                    r.timestamp.isoformat(),
+                    r.site_id,
+                    r.device_id,
+                    r.register_name,
+                    r.value,
+                    r.unit,
+                    1 if r.synced else 0
+                )
+                for r in records
+            ]
+            conn.executemany("""
+                INSERT OR REPLACE INTO device_readings (
+                    timestamp, site_id, device_id, register_name, value, unit, synced
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, data)
+            conn.commit()
+            return len(records)
+
+    def get_unsynced_device_readings(
+        self,
+        limit: int = 100
+    ) -> list["DeviceReadingRecord"]:
+        """
+        Get device readings that haven't been synced to cloud.
+
+        Args:
+            limit: Maximum number of records to return
+
+        Returns:
+            List of unsynced device reading records
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM device_readings
+                WHERE synced = 0
+                ORDER BY timestamp ASC
+                LIMIT ?
+            """, (limit,))
+
+            rows = cursor.fetchall()
+            return [self._row_to_device_reading(row) for row in rows]
+
+    def mark_device_readings_synced(self, ids: list[int]):
+        """
+        Mark device readings as synced after successful cloud upload.
+
+        Args:
+            ids: List of record IDs to mark as synced
+        """
+        if not ids:
+            return
+
+        with self._get_connection() as conn:
+            placeholders = ",".join("?" * len(ids))
+            conn.execute(f"""
+                UPDATE device_readings
+                SET synced = 1
+                WHERE id IN ({placeholders})
+            """, ids)
+            conn.commit()
+
+        logger.debug(f"Marked {len(ids)} device readings as synced")
+
+    def get_unsynced_device_readings_count(self) -> int:
+        """Get count of unsynced device reading records."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM device_readings WHERE synced = 0"
+            )
+            return cursor.fetchone()[0]
+
+    def _row_to_device_reading(self, row: sqlite3.Row) -> "DeviceReadingRecord":
+        """Convert database row to DeviceReadingRecord."""
+        return DeviceReadingRecord(
+            id=row["id"],
+            timestamp=datetime.fromisoformat(row["timestamp"]),
+            site_id=row["site_id"],
+            device_id=row["device_id"],
+            register_name=row["register_name"],
+            value=row["value"],
+            unit=row["unit"],
+            synced=bool(row["synced"])
+        )
+
+    # ============================================
     # DATA RETENTION
     # ============================================
 
@@ -381,12 +566,19 @@ class LocalDatabase:
             """, (cutoff_str,))
             alarms_deleted = cursor.rowcount
 
+            # Delete old synced device readings
+            cursor = conn.execute("""
+                DELETE FROM device_readings
+                WHERE synced = 1 AND timestamp < ?
+            """, (cutoff_str,))
+            readings_deleted = cursor.rowcount
+
             conn.commit()
 
-        if logs_deleted > 0 or alarms_deleted > 0:
+        if logs_deleted > 0 or alarms_deleted > 0 or readings_deleted > 0:
             logger.info(
-                f"Cleanup: deleted {logs_deleted} logs, {alarms_deleted} alarms "
-                f"older than {retention_days} days"
+                f"Cleanup: deleted {logs_deleted} logs, {alarms_deleted} alarms, "
+                f"{readings_deleted} readings older than {retention_days} days"
             )
 
     # ============================================
@@ -413,6 +605,14 @@ class LocalDatabase:
             row = cursor.fetchone()
             stats["alarms_total"] = row["total"]
             stats["alarms_pending"] = row["pending"] or 0
+
+            # Device reading counts
+            cursor = conn.execute(
+                "SELECT COUNT(*) as total, SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) as pending FROM device_readings"
+            )
+            row = cursor.fetchone()
+            stats["readings_total"] = row["total"]
+            stats["readings_pending"] = row["pending"] or 0
 
             # Database size
             stats["db_size_mb"] = self.db_path.stat().st_size / (1024 * 1024)

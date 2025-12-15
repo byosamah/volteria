@@ -24,7 +24,9 @@ controller/
 ├── main.py                  # Entry point (231 lines)
 ├── config.yaml              # Site configuration (96 lines)
 ├── control_loop.py          # Main control algorithm (888 lines)
-├── alarms.py                # Alarm generation (274 lines)
+├── alarms.py                # Alarm generation + threshold integration
+├── alarm_evaluator.py       # Threshold alarm evaluation (NEW)
+├── calculated_fields.py     # Calculated field computations (NEW)
 ├── safe_mode.py             # Safe mode logic (337 lines)
 ├── requirements.txt         # Python dependencies
 ├── storage/
@@ -77,6 +79,7 @@ Every 5 seconds:
 | `NOT_REPORTING` | Warning | Device not sending data |
 | `WRITE_FAILED` | Critical | Modbus write command failed |
 | `COMMAND_NOT_TAKEN` | Critical | Inverter rejected limit command |
+| `THRESHOLD_ALARM` | Variable | Template-defined threshold exceeded |
 
 ## Device Protocols
 | Device | Protocol | Connection |

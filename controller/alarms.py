@@ -11,6 +11,7 @@ Alarm Types:
 - controller_offline: Site controller missed heartbeat (cloud-side)
 - write_failed: Modbus write operation failed
 - command_not_taken: Inverter didn't accept command
+- threshold_alarm: Threshold condition exceeded (from templates)
 """
 
 import logging
@@ -20,6 +21,7 @@ from enum import Enum
 from typing import Optional, Callable
 
 from storage.local_db import LocalDatabase, AlarmRecord
+from alarm_evaluator import ThresholdAlarmEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +34,14 @@ class AlarmType(Enum):
     NOT_REPORTING = "not_reporting"
     WRITE_FAILED = "write_failed"
     COMMAND_NOT_TAKEN = "command_not_taken"
+    THRESHOLD_ALARM = "threshold_alarm"
 
 
 class Severity(Enum):
-    """Alarm severity levels."""
+    """Alarm severity levels (ordered from low to high)."""
     INFO = "info"
     WARNING = "warning"
+    MAJOR = "major"        # Between warning and critical
     CRITICAL = "critical"
 
 
@@ -64,6 +68,7 @@ class AlarmManager:
     - Deduplicate repeated alarms (cooldown period)
     - Store alarms in local database
     - Severity-based logging
+    - Threshold-based alarms from templates
     """
 
     def __init__(
@@ -84,7 +89,43 @@ class AlarmManager:
         # Track last alarm time per type+device to prevent duplicates
         self._last_alarm: dict[str, datetime] = {}
 
+        # Initialize threshold alarm evaluator with callback to raise_alarm
+        self._threshold_evaluator = ThresholdAlarmEvaluator(
+            alarm_callback=self._handle_threshold_alarm
+        )
+
         logger.info(f"Alarm manager initialized (cooldown: {cooldown_seconds}s)")
+
+    def _handle_threshold_alarm(
+        self,
+        alarm_id: str,
+        message: str,
+        severity: str,
+        alarm_type: str,
+        device_name: Optional[str]
+    ):
+        """
+        Handle a threshold alarm from the evaluator.
+
+        This is called by ThresholdAlarmEvaluator when a threshold is exceeded.
+        """
+        # Convert severity string to Severity enum
+        severity_map = {
+            "info": Severity.INFO,
+            "warning": Severity.WARNING,
+            "major": Severity.MAJOR,
+            "critical": Severity.CRITICAL,
+        }
+        sev = severity_map.get(severity, Severity.WARNING)
+
+        # Raise the alarm
+        self.raise_alarm(
+            alarm_type=AlarmType.THRESHOLD_ALARM,
+            message=f"[{alarm_id}] {message}",
+            device_name=device_name,
+            severity=sev,
+            force=True  # Evaluator handles its own cooldown
+        )
 
     def _get_alarm_key(self, alarm_type: AlarmType, device_name: Optional[str]) -> str:
         """Get unique key for deduplication."""
@@ -231,6 +272,78 @@ class AlarmManager:
         )
 
     # ============================================
+    # THRESHOLD ALARMS
+    # ============================================
+
+    def load_alarm_definitions(self, definitions: list[dict]):
+        """
+        Load alarm definitions from templates.
+
+        Args:
+            definitions: List of alarm definition dictionaries
+        """
+        self._threshold_evaluator.load_alarm_definitions(definitions)
+        logger.info(f"Loaded {len(definitions)} alarm definitions")
+
+    def load_site_overrides(self, overrides: list[dict]):
+        """
+        Load site-specific alarm overrides.
+
+        Args:
+            overrides: List of override dictionaries
+        """
+        self._threshold_evaluator.load_site_overrides(overrides)
+        logger.info(f"Loaded {len(overrides)} site overrides")
+
+    def check_threshold(
+        self,
+        alarm_id: str,
+        value: float,
+        device_name: Optional[str] = None
+    ) -> bool:
+        """
+        Check a value against a specific alarm threshold.
+
+        Args:
+            alarm_id: The alarm definition ID
+            value: The value to check
+            device_name: Optional device name
+
+        Returns:
+            True if alarm was triggered
+        """
+        result = self._threshold_evaluator.evaluate(alarm_id, value, device_name)
+        return result.triggered
+
+    def check_thresholds_by_source(
+        self,
+        source_type: str,
+        source_key: str,
+        value: float,
+        device_name: Optional[str] = None
+    ) -> int:
+        """
+        Check a value against all matching threshold alarms.
+
+        Args:
+            source_type: The source type (e.g., "device_info")
+            source_key: The source key (e.g., "cpu_temp_celsius")
+            value: The value to check
+            device_name: Optional device name
+
+        Returns:
+            Number of alarms triggered
+        """
+        results = self._threshold_evaluator.evaluate_by_source(
+            source_type, source_key, value, device_name
+        )
+        return sum(1 for r in results if r.triggered)
+
+    def get_threshold_evaluator_status(self) -> dict:
+        """Get threshold evaluator status for monitoring."""
+        return self._threshold_evaluator.get_status()
+
+    # ============================================
     # STATUS
     # ============================================
 
@@ -272,3 +385,23 @@ class AlarmManager:
             for key in keys_to_remove:
                 del self._last_alarm[key]
             logger.info(f"Cleared cooldown for {alarm_type.value}")
+
+    def get_active_alarms_count(self) -> int:
+        """
+        Get count of currently active (recent) alarms.
+
+        An alarm is considered "active" if it was triggered within the cooldown period.
+        This is used for the site status header to indicate if there are ongoing issues.
+
+        Returns:
+            Number of active alarms
+        """
+        now = datetime.now()
+        active_count = 0
+
+        for key, last_time in self._last_alarm.items():
+            elapsed = (now - last_time).total_seconds()
+            if elapsed < self.cooldown_seconds:
+                active_count += 1
+
+        return active_count

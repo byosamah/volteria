@@ -23,3 +23,6 @@ python-json-logger>=2.0.0
 
 # Environment variables
 python-dotenv>=1.0.0
+
+# System metrics (CPU, memory, disk)
+psutil>=5.9.0

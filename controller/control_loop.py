@@ -25,6 +25,8 @@ from datetime import datetime
 from typing import Optional
 from collections import deque
 
+import psutil
+
 try:
     from pymodbus.client import AsyncModbusTcpClient
 except ImportError:
@@ -33,7 +35,7 @@ except ImportError:
     raise
 
 # Import new modules
-from storage.local_db import LocalDatabase, ControlLogRecord
+from storage.local_db import LocalDatabase, ControlLogRecord, DeviceReadingRecord
 from storage.cloud_sync import CloudSync
 from safe_mode import SafeModeManager, SafeModeType
 from alarms import AlarmManager, AlarmType
@@ -409,6 +411,11 @@ class ControlLoop:
         # Startup time for uptime calculation
         self._start_time = time.time()
 
+        # Control loop status tracking (for site status header)
+        # Values: "stopped" | "running" | "error" | "unknown"
+        self._control_status = "stopped"
+        self._control_last_error: Optional[str] = None
+
         logger.info(f"Control loop initialized:")
         logger.info(f"  - Controller ID: {self.controller_id or 'Not set'}")
         logger.info(f"  - Site ID: {self.site_id or 'Not assigned'}")
@@ -537,6 +544,14 @@ class ControlLoop:
                     self._last_device_update[meter.name] = time.time()
                     logger.debug(f"{meter.name}: {power_kw:.1f} kW")
 
+                    # Log device reading for Historical Data
+                    self._log_device_reading(
+                        device=meter,
+                        register_name="active_power",
+                        value=power_kw,
+                        unit="kW"
+                    )
+
             except Exception as e:
                 logger.error(f"Error reading {meter.name}: {e}")
 
@@ -578,6 +593,14 @@ class ControlLoop:
                     online_count += 1
                     self._last_device_update[inverter.name] = time.time()
                     logger.debug(f"{inverter.name}: {power_kw:.1f} kW")
+
+                    # Log device reading for Historical Data
+                    self._log_device_reading(
+                        device=inverter,
+                        register_name="active_power",
+                        value=power_kw,
+                        unit="kW"
+                    )
 
             except Exception as e:
                 logger.error(f"Error reading {inverter.name}: {e}")
@@ -780,6 +803,36 @@ class ControlLoop:
         )
         self.local_db.insert_log(record)
 
+    def _log_device_reading(
+        self,
+        device: DeviceConfig,
+        register_name: str,
+        value: float,
+        unit: str
+    ):
+        """
+        Log individual device register reading for Historical Data.
+
+        Args:
+            device: Device configuration
+            register_name: Name of the register (e.g., 'active_power')
+            value: The reading value
+            unit: Unit of measurement (e.g., 'kW')
+        """
+        # Skip if device has no ID (not synced from cloud)
+        if not device.id:
+            return
+
+        record = DeviceReadingRecord(
+            timestamp=datetime.now(),
+            site_id=self.site_id,
+            device_id=device.id,
+            register_name=register_name,
+            value=value,
+            unit=unit
+        )
+        self.local_db.insert_device_reading(record)
+
     async def run(self):
         """
         Start the control loop.
@@ -789,6 +842,8 @@ class ControlLoop:
         """
         logger.info("Starting control loop...")
         self._running = True
+        self._control_status = "running"  # Set status to running when loop starts
+        self._control_last_error = None    # Clear any previous errors
 
         # Start cloud sync in background if enabled
         sync_task = None
@@ -812,11 +867,18 @@ class ControlLoop:
 
         except asyncio.CancelledError:
             logger.info("Control loop cancelled")
+            self._control_status = "stopped"
         except Exception as e:
             logger.error(f"Control loop error: {e}")
+            self._control_status = "error"
+            self._control_last_error = str(e)
             self.alarm_manager.control_error(str(e))
             raise
         finally:
+            # Set status to stopped when loop ends
+            if self._control_status == "running":
+                self._control_status = "stopped"
+
             # Stop cloud sync
             if self.cloud_sync:
                 self.cloud_sync.stop()
@@ -841,9 +903,39 @@ class ControlLoop:
         now = time.time()
         if now - self._last_heartbeat >= self._heartbeat_interval:
             uptime = int(now - self._start_time)
+
+            # Collect real system metrics
+            cpu_pct = psutil.cpu_percent(interval=None)
+            mem_pct = psutil.virtual_memory().percent
+            disk_pct = psutil.disk_usage("/").percent
+
+            # CPU temperature (Raspberry Pi specific)
+            cpu_temp = None
+            try:
+                with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+                    cpu_temp = float(f.read().strip()) / 1000.0
+            except (FileNotFoundError, IOError, ValueError):
+                pass
+
+            # Get active alarms count from alarm manager
+            active_alarms = self.alarm_manager.get_active_alarms_count()
+
+            # Get local config version if available
+            config_version = None
+            # TODO: Get config version from config_sync when implemented
+
             await self.cloud_sync.send_heartbeat(
                 firmware_version="1.0.0",
-                uptime_seconds=uptime
+                uptime_seconds=uptime,
+                cpu_usage_pct=cpu_pct,
+                memory_usage_pct=mem_pct,
+                disk_usage_pct=disk_pct,
+                cpu_temp_celsius=cpu_temp,
+                # Control loop status fields (for site status header)
+                control_loop_status=self._control_status,
+                control_last_error=self._control_last_error,
+                active_alarms_count=active_alarms,
+                config_version=config_version
             )
             self._last_heartbeat = now
 
