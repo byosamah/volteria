@@ -19,7 +19,7 @@ from typing import Optional
 
 import httpx
 
-from .local_db import LocalDatabase, ControlLogRecord, AlarmRecord
+from .local_db import LocalDatabase, ControlLogRecord, AlarmRecord, DeviceReadingRecord
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +174,8 @@ class CloudSync:
         1. Check connection
         2. Sync pending logs
         3. Sync pending alarms
-        4. Update status
+        4. Sync pending device readings
+        5. Update status
         """
         # Sync logs
         logs_synced = await self._sync_logs()
@@ -182,9 +183,15 @@ class CloudSync:
         # Sync alarms
         alarms_synced = await self._sync_alarms()
 
+        # Sync device readings
+        readings_synced = await self._sync_device_readings()
+
         # Log status
-        if logs_synced > 0 or alarms_synced > 0:
-            logger.info(f"Synced {logs_synced} logs, {alarms_synced} alarms to cloud")
+        if logs_synced > 0 or alarms_synced > 0 or readings_synced > 0:
+            logger.info(
+                f"Synced {logs_synced} logs, {alarms_synced} alarms, "
+                f"{readings_synced} device readings to cloud"
+            )
 
     # ============================================
     # LOG SYNC
@@ -297,6 +304,54 @@ class CloudSync:
         return payload
 
     # ============================================
+    # DEVICE READINGS SYNC
+    # ============================================
+
+    async def _sync_device_readings(self) -> int:
+        """
+        Sync pending device readings to cloud.
+
+        Returns:
+            Number of device readings synced
+        """
+        # Skip if sync is disabled (invalid site_id)
+        if not self._sync_enabled:
+            return 0
+
+        # Get unsynced readings
+        readings = self.local_db.get_unsynced_device_readings(limit=self.batch_size)
+        if not readings:
+            return 0
+
+        # Prepare batch payload
+        payload = [self._device_reading_to_payload(reading) for reading in readings]
+
+        # Try to upload with retry
+        success = await self._upload_with_retry(
+            endpoint="/rest/v1/device_readings",
+            payload=payload
+        )
+
+        if success:
+            # Mark as synced
+            ids = [reading.id for reading in readings if reading.id]
+            self.local_db.mark_device_readings_synced(ids)
+            return len(readings)
+
+        return 0
+
+    def _device_reading_to_payload(self, reading: DeviceReadingRecord) -> dict:
+        """Convert device reading record to API payload."""
+        return {
+            "site_id": reading.site_id,
+            "device_id": reading.device_id,
+            "register_name": reading.register_name,
+            "value": reading.value,
+            "unit": reading.unit,
+            "timestamp": reading.timestamp.isoformat()
+        }
+
+    # ============================================
     # UPLOAD WITH RETRY
     # ============================================
 
@@ -365,7 +420,14 @@ class CloudSync:
         firmware_version: str = "1.0.0",
         uptime_seconds: int = 0,
         cpu_usage_pct: float = 0.0,
-        memory_usage_pct: float = 0.0
+        memory_usage_pct: float = 0.0,
+        disk_usage_pct: float = 0.0,
+        cpu_temp_celsius: float | None = None,
+        # Control loop status fields (for site status header)
+        control_loop_status: str = "unknown",  # running | stopped | error | unknown
+        control_last_error: str | None = None,
+        active_alarms_count: int = 0,
+        config_version: str | None = None  # Hash of local config for sync detection
     ) -> bool:
         """
         Send heartbeat to cloud.
@@ -378,6 +440,12 @@ class CloudSync:
             uptime_seconds: Controller uptime
             cpu_usage_pct: CPU usage percentage
             memory_usage_pct: Memory usage percentage
+            disk_usage_pct: Disk usage percentage
+            cpu_temp_celsius: CPU temperature in Celsius (Raspberry Pi specific)
+            control_loop_status: Status of control loop (running/stopped/error/unknown)
+            control_last_error: Most recent error message if status is 'error'
+            active_alarms_count: Number of currently active (unacknowledged) alarms
+            config_version: Hash of local config for sync detection
 
         Returns:
             True if heartbeat was received
@@ -391,13 +459,26 @@ class CloudSync:
         client = await self._get_client()
 
         # Build payload based on what IDs we have
+        # Build metadata with controller_id, cpu_temp, and config_version
+        metadata = {}
+        if self.controller_id:
+            metadata["controller_id"] = self.controller_id
+        if cpu_temp_celsius is not None:
+            metadata["cpu_temp_celsius"] = cpu_temp_celsius
+        if config_version:
+            metadata["config_version"] = config_version
+
         payload = {
             "firmware_version": firmware_version,
             "uptime_seconds": uptime_seconds,
             "cpu_usage_pct": cpu_usage_pct,
             "memory_usage_pct": memory_usage_pct,
-            # Include controller_id in metadata for wizard detection
-            "metadata": {"controller_id": self.controller_id} if self.controller_id else {}
+            "disk_usage_pct": disk_usage_pct,
+            # Control loop status fields (new)
+            "control_loop_status": control_loop_status,
+            "last_error": control_last_error,
+            "active_alarms_count": active_alarms_count,
+            "metadata": metadata
         }
 
         # Include controller_id if valid (for pre-assignment detection)
@@ -448,7 +529,8 @@ class CloudSync:
             "last_error": self.last_error,
             "consecutive_failures": self.consecutive_failures,
             "pending_logs": stats["logs_pending"],
-            "pending_alarms": stats["alarms_pending"]
+            "pending_alarms": stats["alarms_pending"],
+            "pending_readings": stats["readings_pending"]
         }
 
     def is_sync_enabled(self) -> bool:
