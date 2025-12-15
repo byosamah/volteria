@@ -704,10 +704,14 @@ async def get_controller_config(
         controller = controller_result.data[0]
 
         # 2. Check if controller is assigned to a site
-        # Look for this controller in site_master_devices
-        site_assignment = db.table("site_master_devices").select("""
-            site_id,
-            sites:site_id (
+        # Primary: Check controllers.site_id (set when deployed via register_controller)
+        # Fallback: Check site_master_devices table
+        site = None
+        site_id = controller.get("site_id")
+
+        if site_id:
+            # Controller has site_id set directly - fetch site config
+            site_result = db.table("sites").select("""
                 id,
                 name,
                 location,
@@ -730,11 +734,46 @@ async def get_controller_config(
                 safe_mode_threshold_pct,
                 safe_mode_power_limit_kw,
                 is_active
-            )
-        """).eq("controller_id", str(controller_id)).execute()
+            """).eq("id", str(site_id)).execute()
 
-        if not site_assignment.data or not site_assignment.data[0].get("sites"):
-            # Controller not assigned to any site yet
+            if site_result.data:
+                site = site_result.data[0]
+
+        # Fallback: Check site_master_devices if no site found via controllers.site_id
+        if not site:
+            site_assignment = db.table("site_master_devices").select("""
+                site_id,
+                sites:site_id (
+                    id,
+                    name,
+                    location,
+                    project_id,
+                    control_method,
+                    control_method_backup,
+                    grid_connection,
+                    operation_mode,
+                    dg_reserve_kw,
+                    control_interval_ms,
+                    logging_local_interval_ms,
+                    logging_cloud_interval_ms,
+                    logging_local_retention_days,
+                    logging_cloud_enabled,
+                    logging_gateway_enabled,
+                    safe_mode_enabled,
+                    safe_mode_type,
+                    safe_mode_timeout_s,
+                    safe_mode_rolling_window_min,
+                    safe_mode_threshold_pct,
+                    safe_mode_power_limit_kw,
+                    is_active
+                )
+            """).eq("controller_id", str(controller_id)).execute()
+
+            if site_assignment.data and site_assignment.data[0].get("sites"):
+                site = site_assignment.data[0]["sites"]
+
+        # If still no site found, controller is not assigned
+        if not site:
             return ControllerConfigResponse(
                 status="unassigned",
                 message="Controller not yet assigned to a site. Assign via the Volteria platform.",
@@ -746,8 +785,7 @@ async def get_controller_config(
                 }
             )
 
-        # 3. Get site data
-        site = site_assignment.data[0]["sites"]
+        # 3. Get site data (site is already populated from above)
         site_id = site["id"]
 
         # 4. Get all devices for this site
@@ -763,7 +801,7 @@ async def get_controller_config(
                 rated_power_kva,
                 registers
             )
-        """).eq("site_id", str(site_id)).eq("is_enabled", True).execute()
+        """).eq("site_id", str(site_id)).eq("enabled", True).execute()
 
         # 5. Organize devices by type
         load_meters = []
