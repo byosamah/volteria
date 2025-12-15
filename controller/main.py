@@ -25,6 +25,7 @@ import sys
 import time
 from pathlib import Path
 
+import psutil
 import yaml
 
 from control_loop import ControlLoop
@@ -41,6 +42,47 @@ logger = logging.getLogger(__name__)
 
 # How often to check for site assignment when unassigned
 ASSIGNMENT_CHECK_INTERVAL_S = 60  # 1 minute
+
+
+def get_system_metrics() -> dict:
+    """
+    Collect real system metrics using psutil.
+
+    Returns a dictionary with:
+    - cpu_usage_pct: CPU usage percentage
+    - memory_usage_pct: Memory usage percentage
+    - disk_usage_pct: Disk usage percentage (root partition)
+    - cpu_temp_celsius: CPU temperature (Raspberry Pi specific, None if unavailable)
+    """
+    # CPU usage - use interval=None for non-blocking (uses previous sample)
+    # First call returns 0.0, subsequent calls return real value
+    cpu_pct = psutil.cpu_percent(interval=None)
+
+    # Memory usage
+    mem = psutil.virtual_memory()
+    mem_pct = mem.percent
+
+    # Disk usage (root partition)
+    disk = psutil.disk_usage("/")
+    disk_pct = disk.percent
+
+    # CPU temperature (Raspberry Pi specific)
+    # Raspberry Pi stores temp in /sys/class/thermal/thermal_zone0/temp
+    cpu_temp = None
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+            # Value is in milli-celsius, convert to celsius
+            cpu_temp = float(f.read().strip()) / 1000.0
+    except (FileNotFoundError, IOError, ValueError):
+        # Not a Raspberry Pi or temp sensor not available
+        pass
+
+    return {
+        "cpu_usage_pct": cpu_pct,
+        "memory_usage_pct": mem_pct,
+        "disk_usage_pct": disk_pct,
+        "cpu_temp_celsius": cpu_temp
+    }
 
 
 def load_config(config_path: str) -> dict:
@@ -103,17 +145,15 @@ def validate_minimal_config(config: dict) -> bool:
     return True
 
 
-def validate_full_config(config: dict) -> bool:
+def get_validation_errors(config: dict) -> list:
     """
-    Validate the FULL configuration (with site, devices, etc.).
-
-    This validates config after it's been merged with cloud data.
+    Get list of validation errors for a configuration.
 
     Args:
         config: Configuration dictionary
 
     Returns:
-        True if configuration is valid
+        List of error messages (empty if valid)
     """
     errors = []
 
@@ -130,8 +170,6 @@ def validate_full_config(config: dict) -> bool:
 
     # Check devices
     devices = config.get("devices", {})
-    if not devices.get("inverters"):
-        errors.append("At least one inverter is required")
 
     # Check minimum device configuration
     has_meters = bool(devices.get("load_meters"))
@@ -143,6 +181,23 @@ def validate_full_config(config: dict) -> bool:
 
     if not has_meters and not has_dgs:
         errors.append("At least one load meter OR DG is required for load calculation")
+
+    return errors
+
+
+def validate_full_config(config: dict) -> bool:
+    """
+    Validate the FULL configuration (with site, devices, etc.).
+
+    This validates config after it's been merged with cloud data.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        True if configuration is valid
+    """
+    errors = get_validation_errors(config)
 
     if errors:
         for error in errors:
@@ -344,12 +399,14 @@ async def wait_for_assignment(local_config: dict) -> dict:
             # Calculate uptime
             uptime_seconds = int(time.time() - start_time)
 
+            # Collect real system metrics
+            metrics = get_system_metrics()
+
             # Send heartbeat so Wizard Step 6 can detect us
             heartbeat_sent = await cloud_sync.send_heartbeat(
                 firmware_version="1.0.0",
                 uptime_seconds=uptime_seconds,
-                cpu_usage_pct=0.0,
-                memory_usage_pct=0.0
+                **metrics
             )
             if heartbeat_sent:
                 logger.info("Heartbeat sent successfully (waiting for assignment)")
@@ -380,6 +437,121 @@ async def wait_for_assignment(local_config: dict) -> dict:
             raise
         except Exception as e:
             logger.error(f"Error checking assignment: {e}")
+            await asyncio.sleep(ASSIGNMENT_CHECK_INTERVAL_S)
+
+
+async def wait_for_valid_config(local_config: dict, current_config: dict) -> dict:
+    """
+    Wait for configuration to become valid.
+
+    When config validation fails (e.g., no devices configured), this function
+    sends heartbeats showing "config_error" status while waiting for the user
+    to fix the configuration via the Volteria platform.
+
+    This ensures the controller shows as "online" even when control loop
+    can't start due to configuration issues.
+
+    Args:
+        local_config: Minimal local config with controller ID and credentials
+        current_config: Current merged config that failed validation
+
+    Returns:
+        Valid merged configuration once user fixes the errors
+    """
+    controller_id = local_config.get("controller", {}).get("id", "unknown")
+    serial = local_config.get("controller", {}).get("serial_number", "unknown")
+
+    # Collect validation errors for display
+    errors = get_validation_errors(current_config)
+    error_msg = "; ".join(errors)
+
+    # Set up CloudSync for heartbeats
+    cloud = local_config.get("cloud", {})
+    supabase_url = cloud.get("supabase_url", "")
+    supabase_key = cloud.get("supabase_key", "")
+
+    # Create local database for CloudSync
+    local_db = LocalDatabase(db_path="/data/controller.db")
+
+    # Create CloudSync with site_id from current config (if available)
+    site_id = current_config.get("site", {}).get("id", "unassigned")
+    cloud_sync = CloudSync(
+        site_id=site_id if site_id else "unassigned",
+        supabase_url=supabase_url,
+        supabase_key=supabase_key,
+        local_db=local_db,
+        controller_id=controller_id
+    )
+
+    print("\n" + "=" * 60)
+    print("  WAITING FOR VALID CONFIGURATION")
+    print("=" * 60)
+    print(f"\n  Controller ID: {controller_id}")
+    print(f"  Serial: {serial}")
+    print(f"  Site: {current_config.get('site', {}).get('name', 'Unknown')}")
+    print(f"\n  Configuration errors:")
+    for err in errors:
+        print(f"    - {err}")
+    print(f"\n  Please fix via the Volteria platform.")
+    print(f"  Checking every {ASSIGNMENT_CHECK_INTERVAL_S} seconds...")
+    print(f"  Sending heartbeats to show online status...")
+    print("  Press Ctrl+C to stop\n")
+    print("=" * 60 + "\n")
+
+    start_time = time.time()
+
+    while True:
+        try:
+            # Calculate uptime
+            uptime_seconds = int(time.time() - start_time)
+
+            # Collect real system metrics
+            metrics = get_system_metrics()
+
+            # Send heartbeat with "config_error" status so frontend shows online
+            heartbeat_sent = await cloud_sync.send_heartbeat(
+                firmware_version="1.0.0",
+                uptime_seconds=uptime_seconds,
+                control_loop_status="config_error",
+                control_last_error=error_msg,
+                active_alarms_count=0,
+                **metrics
+            )
+            if heartbeat_sent:
+                logger.info(f"Heartbeat sent (config_error: {error_msg[:50]}...)")
+            else:
+                logger.warning("Failed to send heartbeat")
+
+            # Check for updated config from cloud
+            cloud_response = await fetch_cloud_config(local_config)
+
+            if cloud_response and cloud_response.get("status") == "assigned":
+                site_config = cloud_response.get("site", {})
+                new_config = merge_configs(local_config, site_config)
+
+                # Check if new config is valid
+                new_errors = get_validation_errors(new_config)
+                if not new_errors:
+                    logger.info("Configuration is now valid!")
+                    await cloud_sync.close()
+                    return new_config
+                else:
+                    # Update error message if errors changed
+                    new_error_msg = "; ".join(new_errors)
+                    if new_error_msg != error_msg:
+                        error_msg = new_error_msg
+                        logger.info(f"Config errors updated: {error_msg}")
+
+            # Still invalid, wait and retry
+            logger.info("Config still invalid, waiting for fix...")
+            await asyncio.sleep(ASSIGNMENT_CHECK_INTERVAL_S)
+
+        except asyncio.CancelledError:
+            logger.info("Config wait cancelled")
+            await cloud_sync.close()
+            raise
+        except Exception as e:
+            logger.error(f"Error checking config: {e}")
             await asyncio.sleep(ASSIGNMENT_CHECK_INTERVAL_S)
 
 
@@ -425,7 +597,9 @@ async def main_async(local_config: dict, skip_cloud: bool = False):
         # Validate the merged configuration
         if not validate_full_config(config):
             logger.error("Configuration validation failed")
-            sys.exit(1)
+            # Instead of exiting, wait for valid config while sending heartbeats
+            # This ensures controller shows "online" even with config errors
+            config = await wait_for_valid_config(local_config, config)
 
         # Print summary of loaded config
         print_config_summary(config)
