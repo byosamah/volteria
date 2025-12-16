@@ -20,7 +20,6 @@ export async function GET() {
       .order("timestamp", { ascending: false });
 
     if (error) {
-      console.error("Failed to fetch heartbeats:", error);
       return NextResponse.json({});
     }
 
@@ -38,8 +37,7 @@ export async function GET() {
     }
 
     return NextResponse.json(heartbeatMap);
-  } catch (error) {
-    console.error("Error in heartbeats API:", error);
+  } catch {
     return NextResponse.json({});
   }
 }

@@ -18,7 +18,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { History, RefreshCw, Zap, Gauge, AlertOctagon, User, Clock } from "lucide-react";
+import { History, RefreshCw, Zap, Gauge, AlertOctagon, User, Clock, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 // Command type from the database
@@ -26,7 +26,7 @@ interface ControlCommand {
   id: string;
   site_id: string;
   project_id: string;
-  command_type: "set_power_limit" | "set_dg_reserve" | "emergency_stop" | "resume_operations";
+  command_type: "set_power_limit" | "set_dg_reserve" | "emergency_stop" | "resume_operations" | "write_register";
   command_value: Record<string, number | string | boolean>;
   status: "queued" | "sent" | "executed" | "failed";
   executed_by?: string;
@@ -69,6 +69,12 @@ function formatCommandType(type: string): { label: string; icon: React.ReactNode
         label: "Resume Operations",
         icon: <RefreshCw className="h-4 w-4" />,
         color: "bg-green-100 text-green-700",
+      };
+    case "write_register":
+      return {
+        label: "Write Register",
+        icon: <Settings className="h-4 w-4" />,
+        color: "bg-purple-100 text-purple-700",
       };
     default:
       return {
@@ -123,6 +129,8 @@ function formatCommandValue(type: string, value: Record<string, number | string 
       return "All inverters → 0%";
     case "resume_operations":
       return "Normal operation";
+    case "write_register":
+      return `${value.device_name}: ${value.register_name} = ${value.value}${value.unit ? " " + value.unit : ""}`;
     default:
       return JSON.stringify(value);
   }
@@ -175,9 +183,11 @@ export function CommandHistory({ siteId, projectId }: CommandHistoryProps) {
     fetchCommands();
 
     // Subscribe to new commands
+    // Use siteId in channel name to ensure proper cleanup when site changes
     const supabase = createClient();
+    const channelName = `control_commands_${siteId}`;
     const channel = supabase
-      .channel("control_commands_changes")
+      .channel(channelName)
       .on(
         "postgres_changes",
         {

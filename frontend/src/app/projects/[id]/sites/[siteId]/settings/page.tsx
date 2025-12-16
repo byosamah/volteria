@@ -115,7 +115,7 @@ export default async function SiteSettingsPage({
                   All devices and data for this site will be permanently removed
                 </p>
               </div>
-              <DeleteSiteButton siteId={siteId} siteName={site.name} projectId={projectId} />
+              <DeleteSiteButton siteId={siteId} siteName={site.name} projectId={projectId} userRole={userProfile?.role || undefined} />
             </div>
           </CardContent>
         </Card>

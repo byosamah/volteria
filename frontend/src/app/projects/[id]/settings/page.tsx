@@ -124,6 +124,7 @@ export default async function ProjectSettingsPage({
                 projectName={project.name}
                 siteCount={siteCount ?? 0}
                 deviceCount={deviceCount ?? 0}
+                userRole={userProfile?.role || undefined}
               />
             </div>
           </CardContent>

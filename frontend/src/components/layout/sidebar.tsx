@@ -24,14 +24,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { User, Settings, LogOut } from "lucide-react";
 
 // Navigation items
+// hideFromViewer: true means the item is hidden from viewer role users
 const navItems = [
   {
     title: "Dashboard",
@@ -65,8 +67,21 @@ const navItems = [
     ),
   },
   {
+    title: "Historical Data",
+    href: "/historical-data",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M3 3v18h18" />
+        <path d="M18 17V9" />
+        <path d="M13 17V5" />
+        <path d="M8 17v-3" />
+      </svg>
+    ),
+  },
+  {
     title: "My Controllers",
     href: "/controllers",
+    hideFromViewer: true,  // Viewers cannot access controllers
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
         <rect width="20" height="14" x="2" y="3" rx="2" />
@@ -78,6 +93,7 @@ const navItems = [
   {
     title: "Device Templates",
     href: "/devices",
+    hideFromViewer: true,  // Viewers cannot access device templates
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
         <rect x="2" y="6" width="20" height="12" rx="2" />
@@ -90,6 +106,7 @@ const navItems = [
   {
     title: "System Settings",
     href: "/settings",
+    hideFromViewer: true,  // Viewers cannot access system settings
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
         <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
@@ -165,6 +182,32 @@ const adminNavItems = [
     ),
   },
   {
+    title: "Controller Templates",
+    href: "/admin/controller-templates",
+    // Only super_admin can manage controller templates
+    roles: ["super_admin"],
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M12 3v12" />
+        <path d="m8 11 4 4 4-4" />
+        <path d="M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4" />
+      </svg>
+    ),
+  },
+  {
+    title: "Data Usage",
+    href: "/admin/data-usage",
+    // Only super_admin and backend_admin can view data usage analytics
+    roles: ["super_admin", "backend_admin"],
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <ellipse cx="12" cy="5" rx="9" ry="3" />
+        <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+        <path d="M3 12A9 3 0 0 0 21 12" />
+      </svg>
+    ),
+  },
+  {
     title: "Audit Logs",
     href: "/admin/audit-logs",
     // Only super_admin, backend_admin, and admin can view audit logs
@@ -204,6 +247,12 @@ export function Sidebar({ user }: SidebarProps) {
 
   // Fetch user role and enterprise_id only if not provided via props
   useEffect(() => {
+    // If user is empty object (loading state), skip fetch
+    // The actual page will provide full user data when it renders
+    if (!user || Object.keys(user).length === 0) {
+      return;
+    }
+
     // If both are already provided via props, no need to fetch
     if (user?.role && user?.enterprise_id !== undefined) {
       return;
@@ -276,7 +325,10 @@ export function Sidebar({ user }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
-        {navItems.map((item) => {
+        {navItems
+          // Filter out items hidden from viewers
+          .filter((item) => !item.hideFromViewer || userRole !== "viewer")
+          .map((item) => {
           const isActive = pathname === item.href ||
             (item.href !== "/" && pathname.startsWith(item.href));
 
@@ -353,15 +405,61 @@ export function Sidebar({ user }: SidebarProps) {
               </div>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-64" sideOffset={8}>
+            {/* Header with user info */}
+            <div className="px-3 py-3 border-b">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10 ring-2 ring-muted">
+                  <AvatarImage src={user?.avatar_url} alt="Profile" />
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
+                    {userInitials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="font-medium text-sm truncate">
+                    {user?.full_name || "User"}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate">
+                    {user?.email}
+                  </span>
+                </div>
+              </div>
+              {/* Role badge */}
+              {userRole && (
+                <Badge
+                  variant="secondary"
+                  className="mt-2 text-xs capitalize"
+                >
+                  {userRole.replace(/_/g, " ")}
+                </Badge>
+              )}
+            </div>
+
+            {/* Menu items with icons */}
+            <div className="py-1">
+              <DropdownMenuItem asChild>
+                <Link href="/account" className="flex items-center gap-3 cursor-pointer">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span>My Account</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/settings" className="flex items-center gap-3 cursor-pointer">
+                  <Settings className="h-4 w-4 text-muted-foreground" />
+                  <span>Account Settings</span>
+                </Link>
+              </DropdownMenuItem>
+            </div>
+
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/account">Account Settings</Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-              Log out
+
+            {/* Logout with red styling */}
+            <DropdownMenuItem
+              onClick={handleLogout}
+              className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
+            >
+              <LogOut className="h-4 w-4 mr-3" />
+              <span>Log out</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

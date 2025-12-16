@@ -22,8 +22,8 @@ interface MobileHeaderProps {
 }
 
 export function MobileHeader({ userId }: MobileHeaderProps) {
-  // Get the toggle function from context to open/close sidebar
-  const { toggle } = useMobileNav();
+  // Get the toggle function and open state from context
+  const { isOpen, toggle } = useMobileNav();
 
   return (
     // Only show on mobile (hidden on md and above)
@@ -51,7 +51,7 @@ export function MobileHeader({ userId }: MobileHeaderProps) {
           onClick={toggle}
           className="min-w-[44px] min-h-[44px] flex items-center justify-center"
           aria-label="Open navigation menu"
-          aria-expanded={false}
+          aria-expanded={isOpen}
         >
           {/* Hamburger icon */}
           <svg

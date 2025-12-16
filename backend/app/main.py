@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware, sites
+from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware, sites, usage, dashboards
 from app.middleware.audit import AuditLoggingMiddleware
 
 
@@ -188,6 +188,20 @@ app.include_router(
     sites.router,
     prefix="/api/sites",
     tags=["Sites"]
+)
+
+# Usage router - storage analytics and billing
+app.include_router(
+    usage.router,
+    prefix="/api/usage",
+    tags=["Usage & Storage"]
+)
+
+# Dashboards router - customizable site dashboards
+app.include_router(
+    dashboards.router,
+    prefix="/api/dashboards",
+    tags=["Dashboards"]
 )
 
 

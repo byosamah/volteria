@@ -24,6 +24,7 @@ import { ChevronLeft, Zap, Gauge, AlertTriangle, History, Power, ShieldAlert } f
 import { RemoteControlPanel } from "@/components/control/remote-control-panel";
 import { CommandHistory } from "@/components/control/command-history";
 import { EmergencyStopCard } from "@/components/control/emergency-stop-card";
+import { DeviceRegistersPanel } from "@/components/control/device-registers-panel";
 
 // Page props with project and site IDs from URL
 interface ControlPageProps {
@@ -148,6 +149,25 @@ export default async function ControlPage({ params }: ControlPageProps) {
     notFound();
   }
 
+  // Fetch devices with registers for this site
+  const { data: devices } = await supabase
+    .from("project_devices")
+    .select(`
+      id,
+      name,
+      is_online,
+      registers,
+      device_templates (
+        name,
+        device_type,
+        brand,
+        model
+      )
+    `)
+    .eq("site_id", siteId)
+    .eq("enabled", true)
+    .order("name");
+
   // Check if controller is online - commands only work when online
   const isOnline = site.controller_status === "online";
 
@@ -231,6 +251,20 @@ export default async function ControlPage({ params }: ControlPageProps) {
             isOnline={isOnline}
           />
         </div>
+
+        {/* Device Registers Panel - View and edit device registers */}
+        <DeviceRegistersPanel
+          siteId={siteId}
+          projectId={projectId}
+          devices={(devices || []).map((d) => ({
+            ...d,
+            // Supabase returns joined data as arrays - extract first element
+            device_templates: Array.isArray(d.device_templates)
+              ? d.device_templates[0] || null
+              : d.device_templates || null,
+          }))}
+          isOnline={isOnline}
+        />
 
         {/* Command History - Shows all recent commands sent to this site */}
         <CommandHistory

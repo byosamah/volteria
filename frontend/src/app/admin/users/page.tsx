@@ -59,6 +59,7 @@ export default async function UsersPage() {
       email,
       role,
       full_name,
+      phone,
       is_active,
       enterprise_id,
       avatar_url,
@@ -106,18 +107,37 @@ export default async function UsersPage() {
   }
 
   // Fetch projects (for project assignment in edit dialog)
-  // Enterprise admin only sees their enterprise's projects
-  let projectsQuery = supabase
-    .from("projects")
-    .select("id, name, enterprise_id")
-    .eq("is_active", true)
-    .order("name");
+  // Enterprise admins see projects they have access to via user_projects
+  // Other admins see all projects
+  let projects: Array<{ id: string; name: string; enterprise_id: string | null }> = [];
 
-  if (userProfile.role === "enterprise_admin" && userProfile.enterprise_id) {
-    projectsQuery = projectsQuery.eq("enterprise_id", userProfile.enterprise_id);
+  if (userProfile.role === "enterprise_admin") {
+    // Enterprise admins see projects they have access to via user_projects
+    const { data: userProjectAssignments } = await supabase
+      .from("user_projects")
+      .select("project_id")
+      .eq("user_id", user.id);
+
+    const projectIds = userProjectAssignments?.map(up => up.project_id) || [];
+
+    if (projectIds.length > 0) {
+      const { data: projectsData } = await supabase
+        .from("projects")
+        .select("id, name, enterprise_id")
+        .in("id", projectIds)
+        .eq("is_active", true)
+        .order("name");
+      projects = projectsData || [];
+    }
+  } else {
+    // Super admin / backend admin / admin see all projects
+    const { data: projectsData } = await supabase
+      .from("projects")
+      .select("id, name, enterprise_id")
+      .eq("is_active", true)
+      .order("name");
+    projects = projectsData || [];
   }
-
-  const { data: projects } = await projectsQuery;
 
   // Calculate stats
   const totalUsers = usersList.length;

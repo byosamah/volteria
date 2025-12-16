@@ -28,11 +28,14 @@ interface DeviceTemplate {
   model: string;
   rated_power_kw: number | null;
   template_type?: string | null; // 'public' or 'custom'
+  enterprise_id?: string | null; // Which enterprise owns custom templates
 }
 
 interface DeviceTemplatesListProps {
   templates: DeviceTemplate[];
   userRole?: string;
+  userEnterpriseId?: string | null; // Current user's enterprise
+  enterprises?: Array<{ id: string; name: string }>; // For super admin to select enterprise for custom templates
 }
 
 // Device type badge colors
@@ -40,6 +43,7 @@ const deviceTypeColors: Record<string, string> = {
   inverter: "bg-amber-100 text-amber-800",
   load_meter: "bg-blue-100 text-blue-800",
   dg: "bg-slate-100 text-slate-800",
+  sensor: "bg-purple-100 text-purple-800",
 };
 
 // Device type labels
@@ -47,6 +51,7 @@ const deviceTypeLabels: Record<string, string> = {
   inverter: "Solar Inverter",
   load_meter: "Energy Meter",
   dg: "Generator Controller",
+  sensor: "Sensor",
 };
 
 // Device type icons (as components)
@@ -77,6 +82,11 @@ const deviceTypeIcons: Record<string, React.ReactNode> = {
       <path d="M15 17v-6" />
     </svg>
   ),
+  sensor: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-purple-600">
+      <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+    </svg>
+  ),
 };
 
 // Section background colors
@@ -84,6 +94,7 @@ const sectionBgColors: Record<string, string> = {
   inverter: "bg-amber-100",
   load_meter: "bg-blue-100",
   dg: "bg-slate-100",
+  sensor: "bg-purple-100",
 };
 
 // Section titles
@@ -91,9 +102,10 @@ const sectionTitles: Record<string, string> = {
   inverter: "Solar Inverters",
   load_meter: "Energy Meters",
   dg: "Generator Controllers",
+  sensor: "Sensors",
 };
 
-export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesListProps) {
+export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, enterprises }: DeviceTemplatesListProps) {
   const router = useRouter();
 
   // State for search and filters
@@ -107,8 +119,29 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingTemplate, setEditingTemplate] = useState<DeviceTemplate | undefined>();
 
-  // Check if user can edit templates (admin or super_admin)
-  const canEdit = userRole === "admin" || userRole === "super_admin";
+  // Permission: Can CREATE templates (add button visibility)
+  // - super_admin/admin can create any template
+  // - enterprise_admin can create custom templates for their enterprise
+  const canCreate = userRole === "super_admin" ||
+                    userRole === "admin" ||
+                    userRole === "enterprise_admin";
+
+  // Permission: Can EDIT a specific template
+  // - super_admin/admin can edit all templates
+  // - enterprise_admin can only edit their enterprise's custom templates
+  const canEditTemplate = (template: DeviceTemplate): boolean => {
+    // Super admin and admin can edit all templates
+    if (userRole === "super_admin" || userRole === "admin") return true;
+
+    // Enterprise admin can only edit their enterprise's custom templates
+    if (userRole === "enterprise_admin" &&
+        template.template_type === "custom" &&
+        template.enterprise_id === userEnterpriseId) {
+      return true;
+    }
+
+    return false;
+  };
 
   // Open dialog in create mode
   const handleAddTemplate = () => {
@@ -225,6 +258,7 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
           <option value="inverter">Solar Inverters</option>
           <option value="load_meter">Energy Meters</option>
           <option value="dg">Generator Controllers</option>
+          <option value="sensor">Sensors</option>
         </select>
 
         {/* Brand Filter */}
@@ -259,8 +293,8 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
           </Button>
         )}
 
-        {/* Add Template Button (Admin only) */}
-        {canEdit && (
+        {/* Add Template Button (admin, super_admin, enterprise_admin) */}
+        {canCreate && (
           <Button className="min-h-[44px]" onClick={handleAddTemplate}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -322,7 +356,7 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
       ) : (
         <div className="space-y-8">
           {/* Render each device type section */}
-          {(["inverter", "load_meter", "dg"] as const).map((type) => {
+          {(["inverter", "load_meter", "dg", "sensor"] as const).map((type) => {
             const typeTemplates = templatesByType[type];
             if (!typeTemplates || typeTemplates.length === 0) return null;
 
@@ -350,11 +384,7 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
                           </div>
                           <div className="flex flex-col items-end gap-1">
                             <Badge className={deviceTypeColors[template.device_type]}>
-                              {template.device_type === "inverter"
-                                ? "Solar Inverter"
-                                : template.device_type === "load_meter"
-                                ? "Energy Meter"
-                                : "Generator Controller"}
+                              {deviceTypeLabels[template.device_type] || template.device_type}
                             </Badge>
                             {/* Template type badge - Public (green) or Custom (blue) */}
                             <Badge
@@ -384,8 +414,8 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
                           </div>
                         </div>
 
-                        {/* Edit button (admin only) - shows on hover/focus */}
-                        {canEdit && (
+                        {/* Edit button - shows on hover/focus if user has permission */}
+                        {canEditTemplate(template) && (
                           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                             <Button
                               variant="ghost"
@@ -426,6 +456,9 @@ export function DeviceTemplatesList({ templates, userRole }: DeviceTemplatesList
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onSaved={handleTemplateSaved}
+        userRole={userRole}
+        userEnterpriseId={userEnterpriseId}
+        enterprises={enterprises}
       />
     </div>
   );

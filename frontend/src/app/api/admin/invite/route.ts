@@ -32,13 +32,9 @@ function getSupabaseAdmin() {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("[Admin Invite API] POST request received");
-
     // Get the current user to verify they have permission
     const supabase = await createServerClient();
     const { data: { user: currentUser } } = await supabase.auth.getUser();
-
-    console.log("[Admin Invite API] Current user:", currentUser?.id || "NOT AUTHENTICATED");
 
     if (!currentUser) {
       return NextResponse.json(
@@ -48,13 +44,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if current user is super_admin
-    const { data: userData, error: roleError } = await supabase
+    const { data: userData } = await supabase
       .from("users")
       .select("role")
       .eq("id", currentUser.id)
       .single();
-
-    console.log("[Admin Invite API] User role:", userData?.role || "NOT FOUND", roleError ? `Error: ${roleError.message}` : "");
 
     if (!userData || userData.role !== "super_admin") {
       return NextResponse.json(
@@ -67,8 +61,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, first_name, last_name, role, enterprise_id } = body;
 
-    console.log("[Admin Invite API] Inviting user:", email, "role:", role, "enterprise_id:", enterprise_id);
-
     // Validate required fields
     if (!email) {
       return NextResponse.json(
@@ -79,7 +71,6 @@ export async function POST(request: NextRequest) {
 
     // Check if service key is configured
     const hasServiceKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY);
-    console.log("[Admin Invite API] Service key configured:", hasServiceKey);
 
     if (!hasServiceKey) {
       return NextResponse.json(
@@ -93,8 +84,6 @@ export async function POST(request: NextRequest) {
 
     // Use Supabase Admin API to invite user by email
     // This sends an invitation email with a link to set their password
-    console.log("[Admin Invite API] Calling inviteUserByEmail...");
-
     const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       email,
       {
@@ -115,14 +104,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (inviteError) {
-      console.error("[Admin Invite API] Error inviting user:", inviteError.message, inviteError);
+      console.error("[Admin Invite API] Error inviting user:", inviteError.message);
       return NextResponse.json(
         { message: inviteError.message || "Failed to send invitation" },
         { status: 400 }
       );
     }
-
-    console.log("[Admin Invite API] SUCCESS: Invitation sent to", email);
 
     return NextResponse.json({
       success: true,

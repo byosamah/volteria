@@ -12,9 +12,30 @@
  * - Edit/Delete functionality
  */
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+// Helper to determine if controller is online (heartbeat within last 1 minute)
+const isControllerOnline = (lastHeartbeat: string | null): boolean => {
+  if (!lastHeartbeat) return false;
+  const oneMinuteAgo = Date.now() - 1 * 60 * 1000;
+  return new Date(lastHeartbeat).getTime() > oneMinuteAgo;
+};
+
+// Helper to format time since last heartbeat
+const formatTimeSince = (timestamp: string | null): string => {
+  if (!timestamp) return "Never";
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return "Just now";
+};
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +99,7 @@ interface MasterDeviceListProps {
   projectId: string;
   siteId: string;
   masterDevices: MasterDevice[];
+  userRole?: string; // User role for permission checks
 }
 
 // ============================================
@@ -88,13 +110,77 @@ export function MasterDeviceList({
   projectId,
   siteId,
   masterDevices: initialDevices,
+  userRole,
 }: MasterDeviceListProps) {
+  // Only admins can delete - configurators and viewers cannot
+  const canDelete = userRole && !["configurator", "viewer"].includes(userRole);
   const router = useRouter();
   const [devices, setDevices] = useState(initialDevices);
   const [editingDevice, setEditingDevice] = useState<MasterDevice | null>(null);
   const [deletingDevice, setDeletingDevice] = useState<MasterDevice | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Heartbeat polling state - for live connection status
+  const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
+  const [isPolling, setIsPolling] = useState(false);
+
+  // Fetch heartbeats from API
+  const fetchHeartbeats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/controllers/heartbeats");
+      if (res.ok) {
+        const data = await res.json();
+        setHeartbeats(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch heartbeats:", error);
+    }
+  }, []);
+
+  // Smart polling effect - polls every 30s when tab is visible
+  useEffect(() => {
+    // Only poll if we have controller-type devices
+    const hasControllers = devices.some(d => d.device_type === "controller" && d.controller_id);
+    if (!hasControllers) return;
+
+    // Initial fetch
+    fetchHeartbeats();
+    setIsPolling(true);
+
+    // Set up polling interval
+    let intervalId: NodeJS.Timeout;
+
+    const startPolling = () => {
+      intervalId = setInterval(fetchHeartbeats, 30000); // 30 seconds
+    };
+
+    // Handle tab visibility changes
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(intervalId);
+        setIsPolling(false);
+      } else {
+        fetchHeartbeats();
+        startPolling();
+        setIsPolling(true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    startPolling();
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [fetchHeartbeats, devices]);
+
+  // Helper to get heartbeat for a controller
+  const getControllerHeartbeat = (controllerId: string | null): string | null => {
+    if (!controllerId) return null;
+    return heartbeats[controllerId] || null;
+  };
 
   // Edit form state - Basic fields
   const [editName, setEditName] = useState("");
@@ -388,13 +474,39 @@ export function MasterDeviceList({
                   className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    {/* Online/Offline indicator */}
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                        device.is_online ? "bg-green-500" : "bg-gray-300"
-                      }`}
-                      title={device.is_online ? "Online" : "Offline"}
-                    />
+                    {/* Online/Offline indicator - uses live heartbeat data for controllers */}
+                    {device.device_type === "controller" && device.controller_id ? (
+                      // Controller: use polled heartbeat data
+                      (() => {
+                        const heartbeat = getControllerHeartbeat(device.controller_id);
+                        const online = isControllerOnline(heartbeat);
+                        return (
+                          <div
+                            className="flex items-center gap-1.5 flex-shrink-0"
+                            title={online ? "Online" : heartbeat ? formatTimeSince(heartbeat) : "Offline"}
+                          >
+                            {online ? (
+                              <span className="relative flex h-2.5 w-2.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                              </span>
+                            ) : (
+                              <span className="relative flex h-2.5 w-2.5">
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-300"></span>
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      // Gateway: use static is_online field
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                          device.is_online ? "bg-green-500" : "bg-gray-300"
+                        }`}
+                        title={device.is_online ? "Online" : "Offline"}
+                      />
+                    )}
 
                     {/* Device info */}
                     <div className="min-w-0 flex-1">
@@ -431,30 +543,32 @@ export function MasterDeviceList({
                       </svg>
                       <span className="sr-only">Edit</span>
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 text-destructive hover:text-destructive"
-                      onClick={() => setDeletingDevice(device)}
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-4 w-4"
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 text-destructive hover:text-destructive"
+                        onClick={() => setDeletingDevice(device)}
                       >
-                        <path d="M3 6h18" />
-                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                        <line x1="10" x2="10" y1="11" y2="17" />
-                        <line x1="14" x2="14" y1="11" y2="17" />
-                      </svg>
-                      <span className="sr-only">Delete</span>
-                    </Button>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          <line x1="10" x2="10" y1="11" y2="17" />
+                          <line x1="14" x2="14" y1="11" y2="17" />
+                        </svg>
+                        <span className="sr-only">Delete</span>
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}

@@ -7,11 +7,33 @@
  * - Table of claimed controllers
  * - Claim new controller dialog
  * - Update firmware dialog
+ * - Live connection status with polling
  */
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+// Helper to determine if controller is online (heartbeat within last 1 minute)
+const isControllerOnline = (lastHeartbeat: string | null): boolean => {
+  if (!lastHeartbeat) return false;
+  const oneMinuteAgo = Date.now() - 1 * 60 * 1000;
+  return new Date(lastHeartbeat).getTime() > oneMinuteAgo;
+};
+
+// Helper to format time since last heartbeat
+const formatTimeSince = (timestamp: string | null): string => {
+  if (!timestamp) return "Never";
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return "Just now";
+};
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +76,7 @@ interface Controller {
   enterprises: {
     name: string;
   } | null;
+  last_heartbeat: string | null;
 }
 
 interface HardwareType {
@@ -63,28 +86,36 @@ interface HardwareType {
   manufacturer: string;
 }
 
+interface Enterprise {
+  id: string;
+  name: string;
+}
+
 interface ControllersTableProps {
   controllers: Controller[];
   hardwareTypes: HardwareType[];
+  enterprises: Enterprise[];
   canEdit: boolean;
   isSuperAdmin: boolean;
   userEnterpriseId: string | null;
+  userEnterpriseName: string | null;
 }
 
-// Status badge colors
-// deployed = green (on a site), claimed = blue (owned but not on site)
-// ready = yellow (can be claimed), draft = gray, eol = red
-function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-    deployed: "default",      // Green - actively on a site
-    claimed: "secondary",     // Yellow/amber - owned but not on site yet
-    ready: "outline",         // Gray outline - ready to be claimed
-    draft: "outline",         // Gray outline - not ready
-    eol: "destructive",       // Red - decommissioned
-  };
+// Status badge colors - matches Controller Master List styling
+// draft = gray, ready = yellow (can be claimed), claimed = blue (owned but no site)
+// deployed = green (on a site), deactivated = amber (disabled), eol = red (decommissioned)
+const statusColors: Record<string, string> = {
+  draft: "bg-gray-100 text-gray-800",
+  ready: "bg-yellow-100 text-yellow-800",
+  claimed: "bg-blue-100 text-blue-800",
+  deployed: "bg-green-100 text-green-800",
+  deactivated: "bg-amber-100 text-amber-800",
+  eol: "bg-red-100 text-red-800",
+};
 
+function StatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant={variants[status] || "outline"} className="capitalize">
+    <Badge className={`${statusColors[status] || "bg-gray-100 text-gray-800"} capitalize`}>
       {status}
     </Badge>
   );
@@ -93,9 +124,11 @@ function StatusBadge({ status }: { status: string }) {
 export function ControllersTable({
   controllers,
   hardwareTypes,
+  enterprises,
   canEdit,
   isSuperAdmin,
   userEnterpriseId,
+  userEnterpriseName,
 }: ControllersTableProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -107,6 +140,7 @@ export function ControllersTable({
     hardwareTypeId: "",
     serialNumber: "",
     passcode: "",
+    enterpriseId: userEnterpriseId || "",
   });
 
   // Firmware dialog state
@@ -114,6 +148,71 @@ export function ControllersTable({
   const [firmwareLoading, setFirmwareLoading] = useState(false);
   const [selectedController, setSelectedController] = useState<Controller | null>(null);
   const [newFirmwareVersion, setNewFirmwareVersion] = useState("");
+
+  // Heartbeat polling state - for auto-updating connection status
+  const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Fetch heartbeats from API
+  const fetchHeartbeats = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const res = await fetch("/api/controllers/heartbeats");
+      if (res.ok) {
+        const data = await res.json();
+        setHeartbeats(data);
+        setLastUpdated(new Date());
+      }
+    } catch (error) {
+      console.error("Failed to fetch heartbeats:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  // Smart polling effect - polls every 30s when tab is visible
+  useEffect(() => {
+    // Initial fetch
+    fetchHeartbeats();
+    setIsPolling(true);
+
+    // Set up polling interval
+    let intervalId: NodeJS.Timeout;
+
+    const startPolling = () => {
+      intervalId = setInterval(fetchHeartbeats, 30000); // 30 seconds
+    };
+
+    // Handle tab visibility changes
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab is hidden - stop polling
+        clearInterval(intervalId);
+        setIsPolling(false);
+      } else {
+        // Tab is visible - fetch immediately and resume polling
+        fetchHeartbeats();
+        startPolling();
+        setIsPolling(true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    startPolling();
+
+    // Cleanup
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [fetchHeartbeats]);
+
+  // Helper to get heartbeat for a controller (polled data or initial prop)
+  const getControllerHeartbeat = (controllerId: string, initialHeartbeat: string | null): string | null => {
+    return heartbeats[controllerId] || initialHeartbeat;
+  };
 
   // Handle claim form submission
   const handleClaim = async (e: React.FormEvent) => {
@@ -168,9 +267,24 @@ export function ControllersTable({
         return;
       }
 
-      // If hardware type selected, verify it matches
-      if (claimForm.hardwareTypeId && controller.hardware_type_id !== claimForm.hardwareTypeId) {
+      // Controller model is required
+      if (!claimForm.hardwareTypeId) {
+        toast.error("Please select a controller model");
+        setClaimLoading(false);
+        return;
+      }
+
+      // Verify selected hardware type matches the controller
+      if (controller.hardware_type_id !== claimForm.hardwareTypeId) {
         toast.error("Controller model doesn't match. Please verify the model selection.");
+        setClaimLoading(false);
+        return;
+      }
+
+      // Validate enterprise selection for super admin
+      const selectedEnterpriseId = isSuperAdmin ? claimForm.enterpriseId : userEnterpriseId;
+      if (!selectedEnterpriseId) {
+        toast.error("Please select an enterprise");
         setClaimLoading(false);
         return;
       }
@@ -183,7 +297,7 @@ export function ControllersTable({
       const { error: updateError } = await supabase
         .from("controllers")
         .update({
-          enterprise_id: userEnterpriseId,
+          enterprise_id: selectedEnterpriseId,
           claimed_at: new Date().toISOString(),
           claimed_by: user?.id,
           status: "claimed",
@@ -200,7 +314,7 @@ export function ControllersTable({
       // Success!
       toast.success("Controller claimed successfully!");
       setClaimOpen(false);
-      setClaimForm({ hardwareTypeId: "", serialNumber: "", passcode: "" });
+      setClaimForm({ hardwareTypeId: "", serialNumber: "", passcode: "", enterpriseId: userEnterpriseId || "" });
       router.refresh();
     } catch (err) {
       console.error("Unexpected error:", err);
@@ -272,9 +386,52 @@ export function ControllersTable({
 
   return (
     <div className="space-y-4">
-      {/* Actions */}
-      {canEdit && (
-        <div className="flex justify-end">
+      {/* Actions bar with live indicator and claim button */}
+      <div className="flex items-center justify-between gap-4">
+        {/* Auto-refresh status indicator */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {isPolling && (
+            <span className="flex items-center gap-1">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              <span className="hidden sm:inline">Live</span>
+            </span>
+          )}
+          {lastUpdated && (
+            <span className="hidden sm:inline">
+              Updated {formatTimeSince(lastUpdated.toISOString())}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={fetchHeartbeats}
+            disabled={isRefreshing}
+            className="h-8 w-8 p-0"
+            title="Refresh connection status"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+            >
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+              <path d="M16 21h5v-5" />
+            </svg>
+          </Button>
+        </div>
+
+        {/* Claim button - only for super_admin (enterprise admins use separate claim flow) */}
+        {isSuperAdmin && (
           <Dialog open={claimOpen} onOpenChange={setClaimOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -302,9 +459,11 @@ export function ControllersTable({
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleClaim} className="space-y-4">
-                {/* Model Selection (optional) */}
+                {/* Model Selection (required) */}
                 <div className="space-y-2">
-                  <Label htmlFor="hardwareType">Controller Model (Optional)</Label>
+                  <Label htmlFor="hardwareType">
+                    Controller Model <span className="text-red-500">*</span>
+                  </Label>
                   {/* MOBILE-FRIENDLY: 44px touch target */}
                   <select
                     id="hardwareType"
@@ -313,17 +472,60 @@ export function ControllersTable({
                       setClaimForm((prev) => ({ ...prev, hardwareTypeId: e.target.value }))
                     }
                     className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+                    required
                   >
-                    <option value="">Any model</option>
+                    <option value="">Select a model</option>
                     {hardwareTypes.map((hw) => (
                       <option key={hw.id} value={hw.id}>
-                        {hw.manufacturer} {hw.name}
+                        {hw.hardware_type}
                       </option>
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">
-                    Select model to verify it matches the controller
+                    Must match the controller hardware
                   </p>
+                </div>
+
+                {/* Enterprise Selection - editable only for super admin */}
+                <div className="space-y-2">
+                  <Label htmlFor="enterprise">
+                    Enterprise {isSuperAdmin && <span className="text-red-500">*</span>}
+                  </Label>
+                  {isSuperAdmin ? (
+                    <>
+                      <select
+                        id="enterprise"
+                        value={claimForm.enterpriseId}
+                        onChange={(e) =>
+                          setClaimForm((prev) => ({ ...prev, enterpriseId: e.target.value }))
+                        }
+                        className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+                        required
+                      >
+                        <option value="">Select an enterprise</option>
+                        {enterprises.map((ent) => (
+                          <option key={ent.id} value={ent.id}>
+                            {ent.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-muted-foreground">
+                        Select which enterprise will own this controller
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Input
+                        id="enterprise"
+                        value={userEnterpriseName || "Not assigned"}
+                        disabled
+                        className="min-h-[44px] bg-muted"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Controller will be claimed for your enterprise
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 {/* Serial Number */}
@@ -382,8 +584,8 @@ export function ControllersTable({
               </form>
             </DialogContent>
           </Dialog>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Empty State */}
       {controllers.length === 0 ? (
@@ -422,14 +624,40 @@ export function ControllersTable({
                   <div>
                     <p className="font-medium">{controller.serial_number}</p>
                     <p className="text-sm text-muted-foreground">
-                      {controller.approved_hardware
-                        ? `${controller.approved_hardware.manufacturer} ${controller.approved_hardware.name}`
-                        : "Unknown model"}
+                      {controller.approved_hardware?.name || "Unknown model"}
                     </p>
                   </div>
                   <StatusBadge status={controller.status} />
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Connection</p>
+                    {(() => {
+                      const heartbeat = getControllerHeartbeat(controller.id, controller.last_heartbeat);
+                      if (isControllerOnline(heartbeat)) {
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                            </span>
+                            <span className="text-green-600 font-medium">Online</span>
+                          </div>
+                        );
+                      } else if (heartbeat) {
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <span className="relative flex h-2 w-2">
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-400"></span>
+                            </span>
+                            <span className="text-muted-foreground">{formatTimeSince(heartbeat)}</span>
+                          </div>
+                        );
+                      } else {
+                        return <span className="text-muted-foreground">—</span>;
+                      }
+                    })()}
+                  </div>
                   <div>
                     <p className="text-muted-foreground">Firmware</p>
                     <p>{controller.firmware_version || "-"}</p>
@@ -439,7 +667,7 @@ export function ControllersTable({
                     <p>{formatDate(controller.claimed_at)}</p>
                   </div>
                   {isSuperAdmin && (
-                    <div className="col-span-2">
+                    <div>
                       <p className="text-muted-foreground">Enterprise</p>
                       <p>{controller.enterprises?.name || "Unclaimed"}</p>
                     </div>
@@ -478,28 +706,53 @@ export function ControllersTable({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Serial Number</TableHead>
-                  <TableHead>Model</TableHead>
-                  {isSuperAdmin && <TableHead>Enterprise</TableHead>}
+                  <TableHead>Connection</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Firmware</TableHead>
+                  <TableHead>Hardware</TableHead>
+                  {isSuperAdmin && <TableHead>Enterprise</TableHead>}
                   <TableHead>Claimed</TableHead>
+                  <TableHead>Firmware</TableHead>
                   {canEdit && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {controllers.map((controller) => (
                   <TableRow key={controller.id}>
-                    <TableCell className="font-medium">
-                      {controller.serial_number}
+                    <TableCell>
+                      {/* Connection status with pulse animation for online */}
+                      {(() => {
+                        const heartbeat = getControllerHeartbeat(controller.id, controller.last_heartbeat);
+                        if (isControllerOnline(heartbeat)) {
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                              </span>
+                              <span className="text-sm text-green-600 font-medium">Online</span>
+                            </div>
+                          );
+                        } else if (heartbeat) {
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="relative flex h-3 w-3">
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-400"></span>
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {formatTimeSince(heartbeat)}
+                              </span>
+                            </div>
+                          );
+                        } else {
+                          return <span className="text-sm text-muted-foreground">—</span>;
+                        }
+                      })()}
                     </TableCell>
                     <TableCell>
-                      {controller.approved_hardware ? (
-                        <span>
-                          {controller.approved_hardware.manufacturer}{" "}
-                          {controller.approved_hardware.name}
-                        </span>
-                      ) : (
+                      <StatusBadge status={controller.status} />
+                    </TableCell>
+                    <TableCell>
+                      {controller.approved_hardware?.name || (
                         <span className="text-muted-foreground">Unknown</span>
                       )}
                     </TableCell>
@@ -510,15 +763,12 @@ export function ControllersTable({
                         )}
                       </TableCell>
                     )}
-                    <TableCell>
-                      <StatusBadge status={controller.status} />
-                    </TableCell>
+                    <TableCell>{formatDate(controller.claimed_at)}</TableCell>
                     <TableCell>
                       {controller.firmware_version || (
                         <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell>{formatDate(controller.claimed_at)}</TableCell>
                     {canEdit && (
                       <TableCell className="text-right">
                         <Button

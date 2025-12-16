@@ -100,6 +100,8 @@ interface Device {
   last_seen: string | null;
   // Device-specific registers (copied from template, can be customized)
   registers: ModbusRegister[] | null;
+  // Device-specific alarm registers (copied from template, can be customized)
+  alarm_registers: ModbusRegister[] | null;
   // Logging interval in milliseconds
   logging_interval_ms: number | null;
   device_templates: {
@@ -134,9 +136,12 @@ interface DeviceListProps {
   siteId?: string;  // Optional: for sites architecture
   devices: Device[];
   latestReadings?: LatestReadings | null; // Optional: latest power readings
+  userRole?: string; // User role for permission checks
 }
 
-export function DeviceList({ projectId, siteId, devices: initialDevices, latestReadings }: DeviceListProps) {
+export function DeviceList({ projectId, siteId, devices: initialDevices, latestReadings, userRole }: DeviceListProps) {
+  // Only admins can delete - configurators and viewers cannot
+  const canDelete = userRole && !["configurator", "viewer"].includes(userRole);
   const router = useRouter();
   const [devices, setDevices] = useState(initialDevices);
 
@@ -186,6 +191,13 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   const [editingRegister, setEditingRegister] = useState<ModbusRegister | undefined>();
   const [editingRegisterIndex, setEditingRegisterIndex] = useState<number>(-1);
 
+  // Edit form state - Alarm Registers tab
+  const [editAlarmRegisters, setEditAlarmRegisters] = useState<ModbusRegister[]>([]);
+  const [alarmRegisterFormOpen, setAlarmRegisterFormOpen] = useState(false);
+  const [alarmRegisterFormMode, setAlarmRegisterFormMode] = useState<"add" | "edit">("add");
+  const [editingAlarmRegister, setEditingAlarmRegister] = useState<ModbusRegister | undefined>();
+  const [editingAlarmRegisterIndex, setEditingAlarmRegisterIndex] = useState<number>(-1);
+
   // Open edit dialog
   const openEditDialog = (device: Device) => {
     setEditDevice(device);
@@ -205,6 +217,8 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     setEditBaudrate(device.baudrate || 9600);
     // Registers tab - load from device
     setEditRegisters(device.registers || []);
+    // Alarm Registers tab - load from device
+    setEditAlarmRegisters(device.alarm_registers || []);
   };
 
   // Register management functions for editing
@@ -238,6 +252,40 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       // Add new register (sorted by address)
       setEditRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
       toast.success("Register added");
+    }
+  };
+
+  // Alarm Register management functions for editing
+  const handleAddAlarmRegister = () => {
+    setAlarmRegisterFormMode("add");
+    setEditingAlarmRegister(undefined);
+    setEditingAlarmRegisterIndex(-1);
+    setAlarmRegisterFormOpen(true);
+  };
+
+  const handleEditAlarmRegister = (register: ModbusRegister, index: number) => {
+    setAlarmRegisterFormMode("edit");
+    setEditingAlarmRegister(register);
+    setEditingAlarmRegisterIndex(index);
+    setAlarmRegisterFormOpen(true);
+  };
+
+  const handleDeleteAlarmRegister = (index: number) => {
+    setEditAlarmRegisters((prev) => prev.filter((_, i) => i !== index));
+    toast.success("Alarm register removed");
+  };
+
+  const handleSaveAlarmRegister = (register: ModbusRegister) => {
+    if (alarmRegisterFormMode === "edit" && editingAlarmRegisterIndex >= 0) {
+      // Update existing alarm register
+      setEditAlarmRegisters((prev) =>
+        prev.map((r, i) => (i === editingAlarmRegisterIndex ? register : r))
+      );
+      toast.success("Alarm register updated");
+    } else {
+      // Add new alarm register (sorted by address)
+      setEditAlarmRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
+      toast.success("Alarm register added");
     }
   };
 
@@ -306,6 +354,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       measurement_type: editMeasurementType || null,
       slave_id: editSlaveId,
       registers: editRegisters.length > 0 ? editRegisters : null,
+      alarm_registers: editAlarmRegisters.length > 0 ? editAlarmRegisters : null,
       // Clear all protocol-specific fields first, then set the right ones
       ip_address: null,
       port: null,
@@ -393,6 +442,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     load_meter: { title: "Energy Meters", description: "Power measurement devices" },
     inverter: { title: "Solar Inverters", description: "PV power conversion" },
     dg: { title: "Power Generators", description: "Generator controllers" },
+    sensor: { title: "Sensors", description: "Temperature, fuel level, and monitoring devices" },
     unknown: { title: "Other Devices", description: "Uncategorized devices" },
   };
 
@@ -481,18 +531,20 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
               <path d="m15 5 4 4" />
             </svg>
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setDeleteDevice(device)}
-            className="min-w-[44px] min-h-[44px]"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-              <path d="M3 6h18" />
-              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-            </svg>
-          </Button>
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDeleteDevice(device)}
+              className="min-w-[44px] min-h-[44px]"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              </svg>
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -544,6 +596,23 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
           <CardContent>
             <div className="space-y-2">
               {devicesByType["dg"].map((device) => (
+                <DeviceCard key={device.id} device={device} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sensors */}
+      {devicesByType["sensor"] && devicesByType["sensor"].length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">{typeConfigs.sensor.title}</CardTitle>
+            <CardDescription>{typeConfigs.sensor.description}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {devicesByType["sensor"].map((device) => (
                 <DeviceCard key={device.id} device={device} />
               ))}
             </div>
@@ -606,12 +675,13 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
             )}
           </DialogHeader>
 
-          {/* Tabbed Interface - Connection and Registers only */}
+          {/* Tabbed Interface - Connection, Registers, and Alarm Registers */}
           {/* Logging frequency is now set per-register, not per-device */}
           <Tabs defaultValue="connection" className="w-full">
-            <TabsList className="w-full grid grid-cols-2">
+            <TabsList className="w-full grid grid-cols-3">
               <TabsTrigger value="connection">Connection</TabsTrigger>
               <TabsTrigger value="registers">Registers</TabsTrigger>
+              <TabsTrigger value="alarm-registers">Alarms</TabsTrigger>
             </TabsList>
 
             {/* Connection Tab */}
@@ -804,7 +874,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                         <tr>
                           <th className="px-3 py-2 text-left font-medium">Addr</th>
                           <th className="px-3 py-2 text-left font-medium">Name</th>
-                          <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
+                          <th className="px-3 py-2 text-left font-medium">Type</th>
                           <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Datatype</th>
                           <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Logging</th>
                           <th className="px-3 py-2 text-right font-medium">Actions</th>
@@ -815,7 +885,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                           <tr key={index} className="hover:bg-muted/30">
                             <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
                             <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
-                            <td className="px-3 py-2 hidden sm:table-cell">
+                            <td className="px-3 py-2">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                                 reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
                               }`}>
@@ -839,18 +909,20 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                                     <path d="m15 5 4 4"/>
                                   </svg>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteRegister(index)}
-                                  className="p-1.5 rounded hover:bg-red-100 transition-colors"
-                                  title="Delete register"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-                                    <path d="M3 6h18"/>
-                                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                                  </svg>
-                                </button>
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRegister(index)}
+                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
+                                    title="Delete register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+                                      <path d="M3 6h18"/>
+                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    </svg>
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -863,6 +935,104 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 <div className="border rounded-md p-6 text-center text-muted-foreground">
                   <p className="text-sm">No registers configured for this device.</p>
                   <p className="text-xs mt-1">Click &quot;Add Register&quot; to define Modbus registers.</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Alarm Registers Tab */}
+            <TabsContent value="alarm-registers" className="space-y-4 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Alarm Registers</p>
+                  <p className="text-xs text-muted-foreground">
+                    Device-specific alarm registers for monitoring faults and warnings
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddAlarmRegister}
+                  className="min-h-[36px]"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Add Alarm Register
+                </Button>
+              </div>
+
+              {/* Alarm Registers Table */}
+              {editAlarmRegisters.length > 0 ? (
+                <div className="border rounded-md overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium">Addr</th>
+                          <th className="px-3 py-2 text-left font-medium">Name</th>
+                          <th className="px-3 py-2 text-left font-medium">Type</th>
+                          <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Datatype</th>
+                          <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Logging</th>
+                          <th className="px-3 py-2 text-right font-medium">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {editAlarmRegisters.map((reg, index) => (
+                          <tr key={index} className="hover:bg-muted/30">
+                            <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
+                            <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
+                            <td className="px-3 py-2">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+                              }`}>
+                                {reg.type}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
+                              {formatLoggingFrequency(reg.logging_frequency)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditAlarmRegister(reg, index)}
+                                  className="p-1.5 rounded hover:bg-muted transition-colors"
+                                  title="Edit alarm register"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
+                                    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                    <path d="m15 5 4 4"/>
+                                  </svg>
+                                </button>
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteAlarmRegister(index)}
+                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
+                                    title="Delete alarm register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+                                      <path d="M3 6h18"/>
+                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="border rounded-md p-6 text-center text-muted-foreground">
+                  <p className="text-sm">No alarm registers configured for this device.</p>
+                  <p className="text-xs mt-1">Click &quot;Add Alarm Register&quot; to define alarm-specific registers.</p>
                 </div>
               )}
             </TabsContent>
@@ -887,6 +1057,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         open={registerFormOpen}
         onOpenChange={setRegisterFormOpen}
         onSave={handleSaveRegister}
+      />
+
+      {/* Alarm Register Form Dialog (nested) - for adding/editing alarm registers */}
+      <RegisterForm
+        mode={alarmRegisterFormMode}
+        register={editingAlarmRegister}
+        existingRegisters={editAlarmRegisters}
+        open={alarmRegisterFormOpen}
+        onOpenChange={setAlarmRegisterFormOpen}
+        onSave={handleSaveAlarmRegister}
       />
 
       {/* Delete Confirmation Dialog - MOBILE-FRIENDLY & COMPACT */}

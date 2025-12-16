@@ -188,7 +188,22 @@ export type AlarmType =
   | "write_failed"
   | "command_not_taken";
 
-export type AlarmSeverity = "info" | "warning" | "critical";
+export type AlarmSeverity = "info" | "warning" | "major" | "critical";
+
+// Per-project notification settings for a user
+export interface UserProjectNotificationSettings {
+  // Email settings
+  email_enabled: boolean;
+  email_min_severity: AlarmSeverity;
+  email_on_active: boolean;
+  email_on_resolved: boolean;
+  // SMS settings (pluggable for future)
+  sms_enabled: boolean;
+  sms_phone_number: string | null;
+  sms_min_severity: AlarmSeverity;
+  sms_on_active: boolean;
+  sms_on_resolved: boolean;
+}
 
 export interface Alarm {
   id: string;
@@ -223,4 +238,142 @@ export interface LiveData {
   dg_kw: number;
   solar_limit_pct: number;
   safe_mode: boolean;
+}
+
+// ============================================
+// ALARM DEFINITION TYPES
+// ============================================
+
+// Source types for alarm definitions
+export type AlarmSourceType =
+  | "modbus_register"   // From a Modbus register value
+  | "device_info"       // From controller heartbeat (cpu_temp, disk_usage, etc.)
+  | "calculated_field"  // From a calculated value (total_solar, total_load)
+  | "heartbeat";        // Heartbeat timeout detection
+
+// Operators for threshold conditions
+export type ThresholdOperator = ">" | ">=" | "<" | "<=" | "==" | "!=";
+
+// Single threshold condition within an alarm definition
+export interface AlarmCondition {
+  operator: ThresholdOperator;
+  value: number;
+  severity: AlarmSeverity;
+  message: string;
+}
+
+// Complete alarm definition (stored in templates)
+export interface AlarmDefinition {
+  id: string;                        // Unique ID within template (e.g., "high_cpu_temp")
+  name: string;                      // Display name
+  description: string;               // Detailed description
+  source_type: AlarmSourceType;      // What triggers this alarm
+  source_key: string;                // Register name or field name
+  conditions: AlarmCondition[];      // Threshold conditions (evaluated in order)
+  enabled_by_default: boolean;       // Whether enabled when device is added
+  cooldown_seconds: number;          // Deduplication cooldown between alarms
+}
+
+// ============================================
+// CONTROLLER TEMPLATE TYPES
+// ============================================
+
+// System register definition (for controller logging)
+export interface SystemRegister {
+  name: string;                      // e.g., "cpu_temp"
+  source: "device_info" | "calculated";
+  field: string;                     // e.g., "cpu_temp_celsius"
+  unit: string;                      // e.g., "C"
+  description?: string;
+}
+
+// Controller template (for Raspberry Pi, gateways)
+export interface ControllerTemplate {
+  id: string;
+  template_id: string;               // e.g., "rpi5_standard"
+  name: string;                      // e.g., "Raspberry Pi 5 Standard"
+  description: string | null;
+  controller_type: "raspberry_pi" | "gateway" | "plc";
+  hardware_type_id: string | null;   // Link to approved_hardware
+  brand: string | null;
+  model: string | null;
+  registers: SystemRegister[];       // System metrics to log
+  alarm_definitions: AlarmDefinition[];
+  calculated_fields: string[];       // References to calculated_field_definitions
+  specifications: Record<string, unknown>;
+  template_type: "master" | "custom";
+  enterprise_id: string | null;      // NULL for master templates
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+
+// ============================================
+// SITE ALARM OVERRIDE TYPES
+// ============================================
+
+// Site-specific alarm configuration override
+export interface SiteAlarmOverride {
+  id: string;
+  site_id: string;
+  source_type: "controller_template" | "device_template" | "device";
+  source_id: string;                 // Template or device ID
+  alarm_definition_id: string;       // Which alarm is being overridden
+  enabled: boolean | null;           // NULL = use template default
+  conditions_override: AlarmCondition[] | null;  // NULL = use template defaults
+  cooldown_seconds_override: number | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Effective alarm config (template + site override merged)
+export interface EffectiveAlarmConfig {
+  alarm_definition: AlarmDefinition;
+  override?: SiteAlarmOverride;
+  enabled: boolean;                  // Final enabled state
+  conditions: AlarmCondition[];      // Final conditions
+  cooldown_seconds: number;          // Final cooldown
+  is_customized: boolean;            // Whether site has overrides
+}
+
+// ============================================
+// CALCULATED FIELD TYPES
+// ============================================
+
+// Calculation types
+export type CalculationType =
+  | "sum"          // Sum of values (Total Solar, Total Load)
+  | "difference"   // A - B (DG Power = Load - Solar)
+  | "cumulative"   // Rolling sum over time (Daily Energy)
+  | "average"      // Average of values
+  | "max"          // Maximum value
+  | "min";         // Minimum value
+
+// Time window for cumulative calculations
+export type TimeWindow = "hour" | "day" | "week" | "month" | "year";
+
+// Calculation scope
+export type CalculationScope = "controller" | "device";
+
+// Calculated field definition
+export interface CalculatedFieldDefinition {
+  id: string;
+  field_id: string;                  // e.g., "total_solar_kw"
+  name: string;                      // e.g., "Total Solar Power"
+  description: string | null;
+  scope: CalculationScope;
+  device_types: DeviceType[] | null; // For device scope
+  calculation_type: CalculationType;
+  time_window: TimeWindow | null;    // For cumulative calculations
+  calculation_config: Record<string, unknown>;
+  unit: string | null;
+  log_enabled: boolean;
+  logging_frequency_seconds: number;
+  is_system: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }

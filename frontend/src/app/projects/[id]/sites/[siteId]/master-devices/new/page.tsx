@@ -306,7 +306,7 @@ export default function AddMasterDevicePage({
                           <span className="font-semibold">Controller</span>
                         </div>
                         <p className="text-sm text-muted-foreground mt-2">
-                          On-site Raspberry Pi that runs control logic locally.
+                          On-site controller that runs control logic locally.
                         </p>
                         {hasExistingController && (
                           <p className="text-xs text-amber-600 mt-2">

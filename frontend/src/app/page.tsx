@@ -10,24 +10,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { FormattedDate } from "@/components/ui/formatted-date";
+import { ProjectStatusBadge } from "@/components/projects/project-status-badge";
 import Link from "next/link";
-
-// Status badge component
-function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-    online: "default",
-    offline: "secondary",
-    error: "destructive",
-  };
-
-  return (
-    <Badge variant={variants[status] || "outline"} className="capitalize">
-      {status}
-    </Badge>
-  );
-}
 
 // Stat card component
 function StatCard({
@@ -75,74 +60,58 @@ export default async function DashboardPage() {
     userProfile = data;
   }
 
-  // Fetch projects (with error handling for missing table)
-  let projects: Array<{
+  // Fetch projects, sites, and alarms in parallel for better performance
+  // Note: Status is now fetched live by ProjectStatusBadge component
+  const [projectsResult, sitesResult, alarmsResult] = await Promise.all([
+    // Fetch projects - wrap in Promise.resolve to convert PromiseLike to Promise
+    Promise.resolve(
+      supabase
+        .from("projects")
+        .select("id, name, location")
+        .eq("is_active", true)
+        .order("name")
+        .limit(6)
+    ).then(({ data, error }) => ({ data, error })),
+
+    // Fetch total site count
+    Promise.resolve(
+      supabase
+        .from("sites")
+        .select("*", { count: "exact", head: true })
+        .eq("is_active", true)
+    ).then(({ count, error }) => ({ count, error })),
+
+    // Fetch recent alarms
+    Promise.resolve(
+      supabase
+        .from("alarms")
+        .select("id, alarm_type, message, severity, created_at")
+        .eq("acknowledged", false)
+        .order("created_at", { ascending: false })
+        .limit(5)
+    ).then(({ data, error }) => ({ data, error })),
+  ]);
+
+  // Process projects result
+  const projects: Array<{
     id: string;
     name: string;
     location: string | null;
-    controller_status: string;
-    controller_last_seen: string | null;
-  }> = [];
-  let projectCount = 0;
-  let onlineCount = 0;
+  }> = projectsResult.data && !projectsResult.error ? projectsResult.data : [];
+  const projectCount = projects.length;
 
-  try {
-    const { data, error } = await supabase
-      .from("projects")
-      .select("id, name, location, controller_status, controller_last_seen")
-      .eq("is_active", true)
-      .order("name")
-      .limit(6);
+  // Process sites result
+  const siteCount = sitesResult.count !== null && !sitesResult.error ? sitesResult.count : 0;
 
-    if (!error && data) {
-      projects = data;
-      projectCount = data.length;
-      onlineCount = data.filter((p) => p.controller_status === "online").length;
-    }
-  } catch {
-    // Table might not exist yet
-  }
-
-  // Fetch total site count
-  let siteCount = 0;
-  try {
-    const { count, error } = await supabase
-      .from("sites")
-      .select("*", { count: "exact", head: true })
-      .eq("is_active", true);
-
-    if (!error && count !== null) {
-      siteCount = count;
-    }
-  } catch {
-    // Table might not exist yet
-  }
-
-  // Fetch recent alarms
-  let alarms: Array<{
+  // Process alarms result
+  const alarms: Array<{
     id: string;
     alarm_type: string;
     message: string;
     severity: string;
     created_at: string;
-  }> = [];
-  let unacknowledgedCount = 0;
-
-  try {
-    const { data, error } = await supabase
-      .from("alarms")
-      .select("id, alarm_type, message, severity, created_at")
-      .eq("acknowledged", false)
-      .order("created_at", { ascending: false })
-      .limit(5);
-
-    if (!error && data) {
-      alarms = data;
-      unacknowledgedCount = data.length;
-    }
-  } catch {
-    // Table might not exist yet
-  }
+  }> = alarmsResult.data && !alarmsResult.error ? alarmsResult.data : [];
+  const unacknowledgedCount = alarms.length;
 
   return (
     <DashboardLayout user={{
@@ -187,17 +156,17 @@ export default async function DashboardPage() {
             }
           />
           <StatCard
-            title="Controller Status"
+            title="Site Status"
             value={
               <span className="flex items-center gap-1">
-                <span className="text-green-600">{onlineCount}</span>
-                <span className="text-base font-normal text-muted-foreground">online</span>
-                <span className="text-muted-foreground">-</span>
-                <span className="text-red-500">{projectCount - onlineCount}</span>
-                <span className="text-base font-normal text-muted-foreground">offline</span>
+                <span className="relative flex h-2.5 w-2.5 mr-1">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                </span>
+                <span className="text-base font-normal text-muted-foreground">Live</span>
               </span>
             }
-            description="Site controllers connectivity"
+            description="Per-project status shown in cards"
             icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                 <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
@@ -257,14 +226,8 @@ export default async function DashboardPage() {
                         <p className="text-sm text-muted-foreground">
                           {project.location || "No location"}
                         </p>
-                        {/* Show last seen timestamp if offline */}
-                        {project.controller_status === "offline" && project.controller_last_seen && (
-                          <p className="text-xs text-muted-foreground">
-                            Last seen: <FormattedDate date={project.controller_last_seen} />
-                          </p>
-                        )}
                       </div>
-                      <StatusBadge status={project.controller_status} />
+                      <ProjectStatusBadge projectId={project.id} />
                     </Link>
                   ))}
                 </div>

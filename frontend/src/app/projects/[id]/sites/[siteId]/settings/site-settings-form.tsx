@@ -252,7 +252,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
                 <span><InfoIcon /></span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">
-                <p>Unique identifier for the Raspberry Pi controller at this site. Used for secure communication with the cloud platform.</p>
+                <p>Unique identifier for the controller at this site. Used for secure communication with the cloud platform.</p>
               </TooltipContent>
             </Tooltip>
           </Label>
@@ -524,7 +524,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
                   <span><InfoIcon /></span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
-                  <p>Enable cloud sync through the on-site controller. Data is sent directly from the Raspberry Pi to the cloud platform.</p>
+                  <p>Enable cloud sync through the on-site controller. Data is sent directly from the controller to the cloud platform.</p>
                 </TooltipContent>
               </Tooltip>
             </div>

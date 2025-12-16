@@ -33,6 +33,7 @@ import {
 import { toast } from "sonner";
 
 // Navigation items (same as desktop sidebar)
+// hideFromViewer: true means the item is hidden from viewer role users
 const navItems = [
   {
     title: "Dashboard",
@@ -66,8 +67,21 @@ const navItems = [
     ),
   },
   {
+    title: "Historical Data",
+    href: "/historical-data",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M3 3v18h18" />
+        <path d="M18 17V9" />
+        <path d="M13 17V5" />
+        <path d="M8 17v-3" />
+      </svg>
+    ),
+  },
+  {
     title: "My Controllers",
     href: "/controllers",
+    hideFromViewer: true,  // Viewers cannot access controllers
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
         <rect width="20" height="14" x="2" y="3" rx="2" />
@@ -79,6 +93,7 @@ const navItems = [
   {
     title: "Device Templates",
     href: "/devices",
+    hideFromViewer: true,  // Viewers cannot access device templates
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
         <rect x="2" y="6" width="20" height="12" rx="2" />
@@ -91,6 +106,7 @@ const navItems = [
   {
     title: "System Settings",
     href: "/settings",
+    hideFromViewer: true,  // Viewers cannot access system settings
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
         <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
@@ -165,6 +181,19 @@ const adminNavItems = [
     ),
   },
   {
+    title: "Data Usage",
+    href: "/admin/data-usage",
+    // Only super_admin and backend_admin can view data usage analytics
+    roles: ["super_admin", "backend_admin"],
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <ellipse cx="12" cy="5" rx="9" ry="3" />
+        <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+        <path d="M3 12A9 3 0 0 0 21 12" />
+      </svg>
+    ),
+  },
+  {
     title: "Audit Logs",
     href: "/admin/audit-logs",
     // Only super_admin, backend_admin, and admin can view audit logs
@@ -207,6 +236,12 @@ export function MobileSidebar({ user }: MobileSidebarProps) {
 
   // Fetch user role and enterprise_id only if not provided via props
   useEffect(() => {
+    // If user is empty object (loading state), skip fetch
+    // The actual page will provide full user data when it renders
+    if (!user || Object.keys(user).length === 0) {
+      return;
+    }
+
     // If both are already provided via props, no need to fetch
     if (user?.role && user?.enterprise_id !== undefined) {
       return;
@@ -287,7 +322,10 @@ export function MobileSidebar({ user }: MobileSidebarProps) {
 
         {/* Navigation - 44px minimum tap targets */}
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
+          {navItems
+            // Filter out items hidden from viewers
+            .filter((item) => !item.hideFromViewer || userRole !== "viewer")
+            .map((item) => {
             const isActive = pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href));
 
@@ -311,8 +349,8 @@ export function MobileSidebar({ user }: MobileSidebarProps) {
             );
           })}
 
-          {/* Admin section - only shown to super_admin and backend_admin */}
-          {userRole && (userRole === "super_admin" || userRole === "backend_admin") && (
+          {/* Admin section - shown to super_admin, backend_admin, and enterprise_admin */}
+          {userRole && (userRole === "super_admin" || userRole === "backend_admin" || userRole === "enterprise_admin") && (
             <>
               <div className="pt-4 pb-2">
                 <span className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">

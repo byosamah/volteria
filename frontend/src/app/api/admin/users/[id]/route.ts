@@ -86,13 +86,17 @@ export async function PATCH(
 
     // Parse request body
     const body = await request.json();
-    const { full_name, role, enterprise_id, is_active } = body;
+    const { full_name, role, enterprise_id, is_active, phone } = body;
 
     // Build update data
     const updateData: Record<string, unknown> = {};
 
     if (full_name !== undefined) {
       updateData.full_name = full_name;
+    }
+
+    if (phone !== undefined) {
+      updateData.phone = phone || null;
     }
 
     if (is_active !== undefined) {

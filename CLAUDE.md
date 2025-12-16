@@ -270,6 +270,10 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | 23 | `023_control_commands.sql` | Remote control command audit trail |
 | 24 | `024_audit_logs.sql` | Comprehensive user action audit logs |
 | 25 | `025_add_sol564_nvme_hardware.sql` | NVMe hardware type (SOL564-NVME16-128) |
+| 35 | `035_controller_templates.sql` | Controller templates with alarm definitions |
+| 36 | `036_alarm_definitions_structure.sql` | Alarm definitions JSONB for device_templates |
+| 37 | `037_site_alarm_overrides.sql` | Site-specific alarm threshold overrides |
+| 38 | `038_calculated_fields.sql` | Calculated field definitions (totals, energy) |
 
 ### Core Tables
 | Table | Purpose | RLS |
@@ -291,6 +295,9 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | `notifications` | In-app notification queue | Enabled |
 | `control_commands` | Remote control audit trail | Enabled |
 | `audit_logs` | User action audit logs | Enabled |
+| `controller_templates` | Controller template definitions | Enabled |
+| `site_alarm_overrides` | Site-specific alarm threshold overrides | Enabled |
+| `calculated_field_definitions` | Calculated field formulas | Enabled |
 
 ### User Roles (Hierarchy)
 | Role | Level | Permissions |
@@ -335,6 +342,54 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 - Safe mode status indicator
 - Device health summary (online/offline counts)
 - Config sync status with timestamps
+
+### Controller Templates & Threshold Alarms (Phase 6)
+Controller templates define alarm thresholds and calculated fields for Raspberry Pi controllers.
+
+**Admin Page** (`/admin/controller-templates`):
+- Super admin only access
+- Create/edit/delete controller templates
+- Define Modbus registers for logging
+- Configure alarm definitions with threshold conditions
+- Select calculated fields (Total Solar, Total Load, etc.)
+
+**Site Alarm Configuration** (`/projects/[id]/sites/[siteId]/alarms`):
+- View all alarms from controller and device templates
+- Enable/disable alarms per site
+- Override threshold conditions (e.g., change CPU temp warning from 70°C to 75°C)
+- "Customized" badge shows when using non-default values
+- "Reset to Default" to restore template settings
+- Permission-gated (requires `can_edit`)
+
+**Alarm Definition Structure**:
+```typescript
+interface AlarmDefinition {
+  id: string;                    // "high_cpu_temp"
+  name: string;                  // "High CPU Temperature"
+  source_type: "device_info" | "modbus_register" | "calculated_field" | "heartbeat";
+  source_key: string;            // "cpu_temp_celsius"
+  conditions: AlarmCondition[];  // Threshold conditions
+  enabled_by_default: boolean;
+  cooldown_seconds: number;
+}
+
+interface AlarmCondition {
+  operator: ">" | ">=" | "<" | "<=" | "==" | "!=";
+  value: number;
+  severity: "info" | "warning" | "major" | "critical";
+  message: string;
+}
+```
+
+**Calculated Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_solar_kw` | sum | Sum of all inverter outputs |
+| `total_load_kw` | sum | Sum of all load meters |
+| `total_dg_kw` | sum | Sum of all DG outputs |
+| `implied_dg_kw` | difference | Load - Solar (implied DG) |
+| `daily_solar_kwh` | cumulative | Solar energy today |
+| `daily_load_kwh` | cumulative | Load energy today |
 
 ## Environment Variables
 

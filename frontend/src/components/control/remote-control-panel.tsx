@@ -13,7 +13,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,28 @@ export function RemoteControlPanel({
   // Local state for form values
   const [powerLimit, setPowerLimit] = useState(currentPowerLimit);
   const [dgReserve, setDgReserve] = useState(currentDgReserve);
+
+  // Sync local state when props change (e.g., after page refresh or parent re-fetch)
+  // This prevents stale closure where local state doesn't match server values
+  useEffect(() => {
+    setPowerLimit(currentPowerLimit);
+  }, [currentPowerLimit]);
+
+  useEffect(() => {
+    setDgReserve(currentDgReserve);
+  }, [currentDgReserve]);
+
+  // Refs for timeout cleanup (prevents memory leak on unmount)
+  const powerSuccessTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const dgSuccessTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (powerSuccessTimeoutRef.current) clearTimeout(powerSuccessTimeoutRef.current);
+      if (dgSuccessTimeoutRef.current) clearTimeout(dgSuccessTimeoutRef.current);
+    };
+  }, []);
 
   // Submission states
   const [submittingPower, setSubmittingPower] = useState(false);
@@ -76,8 +98,9 @@ export function RemoteControlPanel({
       });
 
       setPowerSuccess(true);
-      // Clear success indicator after 3 seconds
-      setTimeout(() => setPowerSuccess(false), 3000);
+      // Clear success indicator after 3 seconds (with cleanup on unmount)
+      if (powerSuccessTimeoutRef.current) clearTimeout(powerSuccessTimeoutRef.current);
+      powerSuccessTimeoutRef.current = setTimeout(() => setPowerSuccess(false), 3000);
     } catch (err) {
       console.error("Failed to set power limit:", err);
       setError("Failed to update power limit. Please try again.");
@@ -113,8 +136,9 @@ export function RemoteControlPanel({
       });
 
       setDgSuccess(true);
-      // Clear success indicator after 3 seconds
-      setTimeout(() => setDgSuccess(false), 3000);
+      // Clear success indicator after 3 seconds (with cleanup on unmount)
+      if (dgSuccessTimeoutRef.current) clearTimeout(dgSuccessTimeoutRef.current);
+      dgSuccessTimeoutRef.current = setTimeout(() => setDgSuccess(false), 3000);
     } catch (err) {
       console.error("Failed to set DG reserve:", err);
       setError("Failed to update DG reserve. Please try again.");
@@ -169,7 +193,7 @@ export function RemoteControlPanel({
           />
 
           {/* Quick preset buttons */}
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap" role="group" aria-label="Power limit presets">
             {[0, 25, 50, 75, 100].map((preset) => (
               <Button
                 key={preset}
@@ -177,6 +201,8 @@ export function RemoteControlPanel({
                 size="sm"
                 onClick={() => setPowerLimit(preset)}
                 className="min-h-[44px] min-w-[44px]"
+                aria-label={`Set power limit to ${preset}%`}
+                aria-pressed={powerLimit === preset}
               >
                 {preset}%
               </Button>

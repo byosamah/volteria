@@ -65,6 +65,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [open, setOpen] = useState(false);
 
   // Fetch notifications
@@ -87,6 +88,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     }
 
     setLoading(false);
+    setInitialLoadComplete(true);
   };
 
   // Initial fetch and subscription
@@ -94,9 +96,11 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     fetchNotifications();
 
     // Subscribe to new notifications
+    // Use userId in channel name to ensure proper cleanup when user changes
     const supabase = createClient();
-    const subscription = supabase
-      .channel("notifications")
+    const channelName = `notifications-${userId}`;
+    const channel = supabase
+      .channel(channelName)
       .on(
         "postgres_changes",
         {
@@ -113,8 +117,9 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       )
       .subscribe();
 
+    // Cleanup: properly remove the channel to prevent memory leaks
     return () => {
-      subscription.unsubscribe();
+      supabase.removeChannel(channel);
     };
   }, [userId]);
 
@@ -152,6 +157,15 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       setUnreadCount(0);
     }
   };
+
+  // Show skeleton while initial load is in progress
+  if (!initialLoadComplete) {
+    return (
+      <div className="h-[44px] w-[44px] flex items-center justify-center">
+        <div className="h-5 w-5 rounded-full bg-muted animate-pulse" />
+      </div>
+    );
+  }
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>

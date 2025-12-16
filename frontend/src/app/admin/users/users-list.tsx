@@ -46,7 +46,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Search, Plus, Pencil, Trash2, UserPlus, Mail, Key } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, UserPlus, Mail, Key, ChevronDown, ChevronUp } from "lucide-react";
+import { ProjectNotificationSettings, DEFAULT_NOTIFICATION_SETTINGS } from "@/components/users/project-notification-settings";
+import { UserProjectNotificationSettings } from "@/lib/types";
 
 // Type definitions
 interface User {
@@ -54,6 +56,7 @@ interface User {
   email: string;
   role: string;
   full_name: string | null;
+  phone: string | null;
   is_active: boolean;
   enterprise_id: string | null;
   avatar_url: string | null;
@@ -132,6 +135,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
     password: "",
     first_name: "",
     last_name: "",
+    phone: "",
     role: "viewer",
     enterprise_id: "",
   });
@@ -142,12 +146,19 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
   const [editLoading, setEditLoading] = useState(false);
   const [editData, setEditData] = useState({
     full_name: "",
+    phone: "",
     role: "",
     enterprise_id: "",
     is_active: true,
   });
   const [userProjects, setUserProjects] = useState<ProjectAssignment[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
+
+  // Notification settings state
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [projectNotificationSettings, setProjectNotificationSettings] = useState<
+    Record<string, UserProjectNotificationSettings>
+  >({});
 
   // Delete dialog state
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -224,6 +235,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
       if (createMethod === "direct" && (!createData.password || createData.password.length < 6)) {
         toast.error("Password must be at least 6 characters");
         setCreateLoading(false);
+        setCreateData(prev => ({ ...prev, password: "" })); // Security: clear password on validation error
         return;
       }
 
@@ -239,6 +251,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
         role: createData.role,
         first_name: createData.first_name.trim() || undefined,
         last_name: createData.last_name.trim() || undefined,
+        phone: createData.phone.trim() || undefined,
       };
 
       // Add enterprise_id if set
@@ -259,11 +272,21 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
         body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
+      // Safely parse JSON response (may fail on malformed responses)
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        toast.error("Invalid server response");
+        setCreateLoading(false);
+        setCreateData(prev => ({ ...prev, password: "" }));
+        return;
+      }
 
       if (!response.ok) {
         toast.error(result.message || "Failed to create user");
         setCreateLoading(false);
+        setCreateData(prev => ({ ...prev, password: "" })); // Security: clear password on error
         return;
       }
 
@@ -279,6 +302,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
         password: "",
         first_name: "",
         last_name: "",
+        phone: "",
         role: "viewer",
         enterprise_id: "",
       });
@@ -286,6 +310,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
     } catch (err) {
       console.error("Create user error:", err);
       toast.error("An unexpected error occurred");
+      setCreateData(prev => ({ ...prev, password: "" })); // Security: clear password on error
     } finally {
       setCreateLoading(false);
     }
@@ -296,19 +321,46 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
     setEditUser(user);
     setEditData({
       full_name: user.full_name || "",
+      phone: user.phone || "",
       role: user.role,
       enterprise_id: user.enterprise_id || "",
       is_active: user.is_active,
     });
     setEditOpen(true);
+    // Reset notification state
+    setExpandedProjects(new Set());
+    setProjectNotificationSettings({});
 
-    // Fetch user's project assignments
+    // Check if Enterprise Admin is editing themselves
+    const isSelfEditingEnterpriseAdmin =
+      currentUser.role === "enterprise_admin" &&
+      user.id === currentUser.id;
+
     setProjectsLoading(true);
     try {
-      const response = await fetch(`/api/admin/users/${user.id}/projects`);
-      if (response.ok) {
-        const data = await response.json();
-        setUserProjects(data.assignments || []);
+      if (isSelfEditingEnterpriseAdmin) {
+        // Enterprise Admin editing themselves: auto-assign ALL enterprise projects
+        // Filter projects that belong to their enterprise
+        const enterpriseProjects = projects.filter(
+          (p) => p.enterprise_id === currentUser.enterprise_id
+        );
+
+        // Create assignments with full permissions for all enterprise projects
+        const autoAssignments: ProjectAssignment[] = enterpriseProjects.map((p) => ({
+          project_id: p.id,
+          project_name: p.name,
+          can_edit: true,
+          can_control: true,
+        }));
+
+        setUserProjects(autoAssignments);
+      } else {
+        // Normal case: fetch user's actual project assignments
+        const response = await fetch(`/api/admin/users/${user.id}/projects`);
+        if (response.ok) {
+          const data = await response.json();
+          setUserProjects(data.assignments || []);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch user projects:", err);
@@ -325,18 +377,34 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
     setEditLoading(true);
 
     try {
+      // Build request body - only include enterprise_id if user can change it
+      // Only super_admin and backend_admin can change enterprise assignment
+      const canModifyEnterprise = ["super_admin", "backend_admin"].includes(currentUser.role);
+      const requestBody: Record<string, unknown> = {
+        full_name: editData.full_name.trim() || null,
+        phone: editData.phone.trim() || null,
+        role: editData.role,
+        is_active: editData.is_active,
+      };
+      if (canModifyEnterprise) {
+        requestBody.enterprise_id = editData.enterprise_id || null;
+      }
+
       const response = await fetch(`/api/admin/users/${editUser.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: editData.full_name.trim() || null,
-          role: editData.role,
-          enterprise_id: editData.enterprise_id || null,
-          is_active: editData.is_active,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
-      const result = await response.json();
+      // Safely parse JSON response
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        toast.error("Invalid server response");
+        setEditLoading(false);
+        return;
+      }
 
       if (!response.ok) {
         toast.error(result.message || "Failed to update user");
@@ -411,11 +479,96 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
 
       if (response.ok) {
         setUserProjects((prev) => prev.filter((p) => p.project_id !== projectId));
+        // Also remove notification settings from state
+        setProjectNotificationSettings((prev) => {
+          const updated = { ...prev };
+          delete updated[projectId];
+          return updated;
+        });
+        // Collapse if expanded
+        setExpandedProjects((prev) => {
+          const updated = new Set(prev);
+          updated.delete(projectId);
+          return updated;
+        });
         toast.success("User removed from project");
       }
     } catch (err) {
       console.error("Remove from project error:", err);
       toast.error("Failed to remove user from project");
+    }
+  };
+
+  // Toggle project expansion for notification settings
+  const toggleProjectExpansion = async (projectId: string) => {
+    const isCurrentlyExpanded = expandedProjects.has(projectId);
+
+    if (isCurrentlyExpanded) {
+      // Collapse
+      setExpandedProjects((prev) => {
+        const updated = new Set(prev);
+        updated.delete(projectId);
+        return updated;
+      });
+    } else {
+      // Expand and fetch settings if not already loaded
+      setExpandedProjects((prev) => new Set(prev).add(projectId));
+
+      // Fetch notification settings if not already loaded
+      if (!projectNotificationSettings[projectId] && editUser) {
+        try {
+          const response = await fetch(
+            `/api/admin/users/${editUser.id}/projects/${projectId}/notifications`
+          );
+          if (response.ok) {
+            const settings = await response.json();
+            setProjectNotificationSettings((prev) => ({
+              ...prev,
+              [projectId]: settings,
+            }));
+          }
+        } catch (err) {
+          console.error("Failed to fetch notification settings:", err);
+          // Use defaults on error
+          setProjectNotificationSettings((prev) => ({
+            ...prev,
+            [projectId]: DEFAULT_NOTIFICATION_SETTINGS,
+          }));
+        }
+      }
+    }
+  };
+
+  // Update notification settings for a project
+  const updateNotificationSettings = async (
+    projectId: string,
+    settings: UserProjectNotificationSettings
+  ) => {
+    if (!editUser) return;
+
+    // Optimistically update UI
+    setProjectNotificationSettings((prev) => ({
+      ...prev,
+      [projectId]: settings,
+    }));
+
+    // Save to server
+    try {
+      const response = await fetch(
+        `/api/admin/users/${editUser.id}/projects/${projectId}/notifications`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(settings),
+        }
+      );
+
+      if (!response.ok) {
+        toast.error("Failed to save notification settings");
+      }
+    } catch (err) {
+      console.error("Update notification settings error:", err);
+      toast.error("Failed to save notification settings");
     }
   };
 
@@ -439,11 +592,21 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
         body: JSON.stringify({ password: deletePassword }),
       });
 
-      const result = await response.json();
+      // Safely parse JSON response
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        toast.error("Invalid server response");
+        setDeleteLoading(false);
+        setDeletePassword("");
+        return;
+      }
 
       if (!response.ok) {
         toast.error(result.message || "Failed to delete user");
         setDeleteLoading(false);
+        setDeletePassword(""); // Security: clear password on error
         return;
       }
 
@@ -463,6 +626,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
     } catch (err) {
       console.error("Delete user error:", err);
       toast.error("An unexpected error occurred");
+      setDeletePassword(""); // Security: clear password on error
     } finally {
       setDeleteLoading(false);
     }
@@ -603,8 +767,9 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                       size="icon"
                       onClick={() => openEditDialog(user)}
                       className="min-w-[44px] min-h-[44px]"
+                      aria-label={`Edit user ${user.full_name || user.email}`}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     {canDelete && user.id !== currentUser.id && (
                       <Button
@@ -612,8 +777,9 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                         size="icon"
                         onClick={() => openDeleteDialog(user)}
                         className="min-w-[44px] min-h-[44px]"
+                        aria-label={`Delete user ${user.full_name || user.email}`}
                       >
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                        <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
                       </Button>
                     )}
                   </div>
@@ -710,8 +876,9 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                           size="icon"
                           onClick={() => openEditDialog(user)}
                           className="min-w-[44px] min-h-[44px]"
+                          aria-label={`Edit user ${user.full_name || user.email}`}
                         >
-                          <Pencil className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" aria-hidden="true" />
                         </Button>
                         {canDelete && user.id !== currentUser.id && (
                           <Button
@@ -719,8 +886,9 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                             size="icon"
                             onClick={() => openDeleteDialog(user)}
                             className="min-w-[44px] min-h-[44px]"
+                            aria-label={`Delete user ${user.full_name || user.email}`}
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
                           </Button>
                         )}
                       </div>
@@ -807,6 +975,23 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                 }
                 placeholder="john@example.com"
               />
+            </div>
+
+            {/* Mobile Number */}
+            <div className="space-y-2">
+              <Label htmlFor="phone">Mobile Number</Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={createData.phone}
+                onChange={(e) =>
+                  setCreateData({ ...createData, phone: e.target.value })
+                }
+                placeholder="+966 50 123 4567"
+              />
+              <p className="text-xs text-muted-foreground">
+                For receiving alarm notifications
+              </p>
             </div>
 
             {/* Password (for direct creation) */}
@@ -935,27 +1120,65 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                 />
               </div>
 
-              {/* Role */}
+              {/* Mobile Number */}
               <div className="space-y-2">
-                <Label htmlFor="edit-role">Role</Label>
-                <Select
-                  value={editData.role}
-                  onValueChange={(value) =>
-                    setEditData({ ...editData, role: value })
+                <Label htmlFor="edit-phone">Mobile Number</Label>
+                <Input
+                  id="edit-phone"
+                  type="tel"
+                  value={editData.phone}
+                  onChange={(e) =>
+                    setEditData({ ...editData, phone: e.target.value })
                   }
-                >
-                  <SelectTrigger id="edit-role">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getAvailableRoles().map((role) => (
-                      <SelectItem key={role.value} value={role.value}>
-                        {role.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="+966 50 123 4567"
+                />
+                <p className="text-xs text-muted-foreground">
+                  For receiving alarm notifications
+                </p>
               </div>
+
+              {/* Role */}
+              {/* Lock role when Enterprise Admin is editing themselves */}
+              {(() => {
+                const isSelfEditingEnterpriseAdmin =
+                  currentUser.role === "enterprise_admin" &&
+                  editUser?.id === currentUser.id;
+
+                return (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-role">Role</Label>
+                    {isSelfEditingEnterpriseAdmin ? (
+                      // Read-only display for self-editing Enterprise Admin
+                      <div className="flex items-center h-10 px-3 border rounded-md bg-muted">
+                        <Badge className={roleColors["enterprise_admin"]}>
+                          Enterprise Admin
+                        </Badge>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          (Cannot change your own role)
+                        </span>
+                      </div>
+                    ) : (
+                      <Select
+                        value={editData.role}
+                        onValueChange={(value) =>
+                          setEditData({ ...editData, role: value })
+                        }
+                      >
+                        <SelectTrigger id="edit-role">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getAvailableRoles().map((role) => (
+                            <SelectItem key={role.value} value={role.value}>
+                              {role.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Enterprise (only for super admin) */}
               {canChangeEnterprise && (
@@ -995,92 +1218,157 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
               </div>
 
               {/* Project Assignments */}
-              <div className="space-y-3">
-                <Label>Project Assignments</Label>
-                {projectsLoading ? (
-                  <div className="text-sm text-muted-foreground">
-                    Loading projects...
-                  </div>
-                ) : projects.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    No projects available
-                  </div>
-                ) : (
-                  <div className="border rounded-lg divide-y max-h-[200px] overflow-y-auto">
-                    {projects.map((project) => {
-                      const assignment = userProjects.find(
-                        (p) => p.project_id === project.id
-                      );
-                      const isAssigned = !!assignment;
+              {(() => {
+                // Check if Enterprise Admin is editing themselves
+                const isSelfEditingEnterpriseAdmin =
+                  currentUser.role === "enterprise_admin" &&
+                  editUser?.id === currentUser.id;
 
-                      return (
-                        <div
-                          key={project.id}
-                          className="flex items-center justify-between p-3"
-                        >
-                          <div className="flex-1">
-                            <div className="font-medium text-sm">
-                              {project.name}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                              <Checkbox
-                                id={`edit-${project.id}`}
-                                checked={assignment?.can_edit || false}
-                                onCheckedChange={(checked) =>
-                                  handleProjectToggle(
-                                    project.id,
-                                    "can_edit",
-                                    checked as boolean
-                                  )
-                                }
-                              />
-                              <Label
-                                htmlFor={`edit-${project.id}`}
-                                className="text-xs"
-                              >
-                                Edit
-                              </Label>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Checkbox
-                                id={`control-${project.id}`}
-                                checked={assignment?.can_control || false}
-                                onCheckedChange={(checked) =>
-                                  handleProjectToggle(
-                                    project.id,
-                                    "can_control",
-                                    checked as boolean
-                                  )
-                                }
-                              />
-                              <Label
-                                htmlFor={`control-${project.id}`}
-                                className="text-xs"
-                              >
-                                Control
-                              </Label>
-                            </div>
-                            {isAssigned && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  handleRemoveFromProject(project.id)
-                                }
-                              >
-                                <Trash2 className="h-3 w-3 text-destructive" />
-                              </Button>
+                return (
+                  <div className="space-y-3">
+                    <Label>Project Assignments</Label>
+
+                    {/* Info message for Enterprise Admin self-edit */}
+                    {isSelfEditingEnterpriseAdmin && (
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                        As an Enterprise Admin, you have full access to all projects in your enterprise.
+                        You can customize alarm notification settings for each project below.
+                      </div>
+                    )}
+
+                    {projectsLoading ? (
+                      <div className="text-sm text-muted-foreground">
+                        Loading projects...
+                      </div>
+                    ) : userProjects.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">
+                        No projects available
+                      </div>
+                    ) : (
+                      <div className="border rounded-lg divide-y max-h-[350px] overflow-y-auto">
+                        {userProjects.map((assignment) => {
+                          const project = projects.find(
+                            (p) => p.id === assignment.project_id
+                          );
+                          const isExpanded = expandedProjects.has(assignment.project_id);
+                          const notificationSettings =
+                            projectNotificationSettings[assignment.project_id];
+
+                          return (
+                            <div key={assignment.project_id} className="p-3">
+                              {/* Project header row */}
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 flex-1">
+                                  {/* Expand/collapse button for notification settings */}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() =>
+                                      toggleProjectExpansion(assignment.project_id)
+                                    }
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronUp className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronDown className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                  <div className="font-medium text-sm">
+                                    {assignment.project_name || project?.name || "Unknown Project"}
+                                  </div>
+                                </div>
+
+                                {/* Show read-only badges for Enterprise Admin self-edit, or checkboxes for others */}
+                                {isSelfEditingEnterpriseAdmin ? (
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="secondary" className="text-xs">
+                                      Full Access
+                                    </Badge>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                      <Checkbox
+                                        id={`edit-${assignment.project_id}`}
+                                        checked={assignment.can_edit || false}
+                                        onCheckedChange={(checked) =>
+                                          handleProjectToggle(
+                                            assignment.project_id,
+                                            "can_edit",
+                                            checked as boolean
+                                          )
+                                        }
+                                      />
+                                      <Label
+                                        htmlFor={`edit-${assignment.project_id}`}
+                                        className="text-xs"
+                                      >
+                                        Edit
+                                      </Label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Checkbox
+                                        id={`control-${assignment.project_id}`}
+                                        checked={assignment.can_control || false}
+                                        onCheckedChange={(checked) =>
+                                          handleProjectToggle(
+                                            assignment.project_id,
+                                            "can_control",
+                                            checked as boolean
+                                          )
+                                        }
+                                      />
+                                      <Label
+                                        htmlFor={`control-${assignment.project_id}`}
+                                        className="text-xs"
+                                      >
+                                        Control
+                                      </Label>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        handleRemoveFromProject(assignment.project_id)
+                                      }
+                                    >
+                                      <Trash2 className="h-3 w-3 text-destructive" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+
+                            {/* Notification settings - collapsible */}
+                            {isExpanded && (
+                              <div className="mt-3 ml-8">
+                                {notificationSettings ? (
+                                  <ProjectNotificationSettings
+                                    settings={notificationSettings}
+                                    onChange={(newSettings) =>
+                                      updateNotificationSettings(
+                                        assignment.project_id,
+                                        newSettings
+                                      )
+                                    }
+                                  />
+                                ) : (
+                                  <div className="text-sm text-muted-foreground py-2">
+                                    Loading notification settings...
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+              })()}
 
               <DialogFooter>
                 <Button

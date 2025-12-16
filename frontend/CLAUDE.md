@@ -66,6 +66,9 @@ src/app/
 │               ├── page.tsx           # Site dashboard (with charts)
 │               ├── settings/page.tsx  # Site settings
 │               ├── control/page.tsx   # Remote control panel
+│               ├── alarms/
+│               │   ├── page.tsx       # Site alarm configuration
+│               │   └── site-alarm-config.tsx  # Alarm override editor
 │               ├── devices/
 │               │   └── new/page.tsx   # Add device to site
 │               └── master-devices/
@@ -98,6 +101,10 @@ src/app/
 │   ├── hardware/
 │   │   ├── page.tsx                   # Approved hardware list with delete (super_admin)
 │   │   └── loading.tsx                # Loading skeleton
+│   ├── controller-templates/
+│   │   ├── page.tsx                   # Controller templates list (super_admin only)
+│   │   ├── loading.tsx                # Loading skeleton
+│   │   └── controller-templates-list.tsx  # Main client component with CRUD
 │   └── audit-logs/page.tsx            # Audit logs dashboard (admin only)
 │
 ├── debug/
@@ -195,7 +202,8 @@ src/components/
 │   ├── device-templates-list.tsx      # Available templates
 │   ├── master-device-list.tsx         # Master devices list
 │   ├── register-form.tsx              # Modbus register config
-│   └── template-form-dialog.tsx       # Create/edit template
+│   ├── template-form-dialog.tsx       # Create/edit template
+│   └── calculated-fields-form.tsx     # Calculated fields selector
 │
 ├── charts/                            # Recharts visualizations
 │   ├── power-flow-chart.tsx           # Live power flow (1h/6h/24h/7d)
@@ -204,7 +212,8 @@ src/components/
 │
 ├── sites/                             # Site-specific components
 │   ├── safe-mode-status.tsx           # Safe mode indicator panel
-│   └── device-health-card.tsx         # Device online/offline summary
+│   ├── device-health-card.tsx         # Device online/offline summary
+│   └── calculated-fields-display.tsx  # Show computed calculated values
 │
 ├── control/                           # Remote control components
 │   ├── remote-control-panel.tsx       # Power limit slider, DG reserve
@@ -229,7 +238,10 @@ src/components/
 │   └── control-logs-viewer.tsx        # Control logs viewer
 │
 ├── alarms/
-│   └── alarms-viewer.tsx              # Alarms with resolve functionality
+│   ├── alarms-viewer.tsx              # Alarms with resolve functionality
+│   ├── alarm-condition-builder.tsx    # Threshold condition editor
+│   ├── alarm-definition-form.tsx      # Alarm definition editor
+│   └── index.ts                       # Component exports
 │
 └── ui/                                # 22 shadcn/ui components
     ├── alert-dialog.tsx
@@ -406,13 +418,78 @@ interface ControlLog {
 }
 
 type AlarmType = "communication_lost" | "control_error" | "safe_mode_triggered" |
-                 "not_reporting" | "controller_offline" | "write_failed" | "command_not_taken"
-type AlarmSeverity = "info" | "warning" | "critical"
+                 "not_reporting" | "controller_offline" | "write_failed" |
+                 "command_not_taken" | "threshold_alarm"
+type AlarmSeverity = "info" | "warning" | "major" | "critical"
 
 interface Alarm {
   id, project_id, alarm_type, device_name, message, severity,
   acknowledged, acknowledged_by, acknowledged_at,
   resolved, resolved_at, created_at
+}
+```
+
+### Alarm & Template Types
+```typescript
+// Alarm Definition Types
+type AlarmSourceType = "modbus_register" | "device_info" | "calculated_field" | "heartbeat"
+type ThresholdOperator = ">" | ">=" | "<" | "<=" | "==" | "!="
+
+interface AlarmCondition {
+  operator: ThresholdOperator
+  value: number
+  severity: AlarmSeverity
+  message: string
+}
+
+interface AlarmDefinition {
+  id: string
+  name: string
+  description: string
+  source_type: AlarmSourceType
+  source_key: string
+  conditions: AlarmCondition[]
+  enabled_by_default: boolean
+  cooldown_seconds: number
+}
+
+// Controller Template Types
+interface ControllerTemplate {
+  id: string
+  template_id: string
+  name: string
+  controller_type: "raspberry_pi" | "gateway" | "plc"
+  hardware_type_id: string | null
+  registers: ModbusRegister[]
+  alarm_definitions: AlarmDefinition[]
+  calculated_fields: string[]  // IDs of selected calculated fields
+  is_active: boolean
+}
+
+// Site Alarm Override Types
+interface SiteAlarmOverride {
+  id: string
+  site_id: string
+  source_type: "controller_template" | "device_template" | "device"
+  source_id: string
+  alarm_definition_id: string
+  enabled: boolean | null
+  conditions_override: AlarmCondition[] | null
+  cooldown_seconds_override: number | null
+}
+
+// Calculated Field Types
+type CalculationType = "sum" | "difference" | "cumulative" | "average" | "max" | "min"
+type TimeWindow = "hour" | "day" | "week" | "month" | "year"
+
+interface CalculatedFieldDefinition {
+  field_id: string
+  name: string
+  scope: "controller" | "device"
+  calculation_type: CalculationType
+  time_window: TimeWindow | null
+  unit: string
+  is_system: boolean
 }
 ```
 
@@ -463,6 +540,60 @@ interface Alarm {
 - **Safe Mode Status**: Panel showing active state, configuration
 - **Device Health Card**: Online/offline counts with progress bar
 - **Sync Status**: Shows "Synced Xm ago" with tooltip
+
+## New Features (Phase 6)
+
+### Controller Templates (`/admin/controller-templates`)
+Super admin page for creating and managing controller templates:
+- **Template List**: View all templates with stats (active, alarm count)
+- **Create/Edit Dialog**: Multi-section form with tabs
+  - Basic Info: Template ID, name, description, controller type, hardware type
+  - Registers: Modbus register configuration (reuses RegisterForm)
+  - Alarms: Alarm definitions with threshold conditions
+  - Calculated Fields: Select which calculations to include
+- **Alarm Definition Editor**: Collapsible cards for each alarm
+  - ID, name, description fields
+  - Source type and key selection
+  - Threshold condition builder (operator, value, severity, message)
+  - Enable by default toggle
+  - Cooldown configuration
+
+### Site Alarm Configuration (`/projects/[id]/sites/[siteId]/alarms`)
+Site-level alarm customization page:
+- **Stats Cards**: Total alarms, customized count, sources count
+- **Alarm Sources**: Grouped by controller template and device templates
+- **Per-Alarm Controls**:
+  - Enable/disable toggle
+  - Threshold conditions preview (colored badges)
+  - Edit Thresholds button → opens condition builder dialog
+  - Reset to Default button (appears when customized)
+  - "Customized" badge when overrides exist
+- **Permissions**: Only users with `can_edit` can modify
+
+### Alarm Components
+Reusable components for alarm management:
+- **`alarm-condition-builder.tsx`**: Row-based condition editor
+  - Operator selector (>, >=, <, <=, ==, !=)
+  - Value input (number)
+  - Severity selector with color coding
+  - Message input
+  - Add/remove condition buttons
+- **`alarm-definition-form.tsx`**: Full alarm definition editor
+  - Collapsible card layout
+  - Basic info (ID, name, description)
+  - Source configuration (type, key)
+  - Conditions builder integration
+  - Enable/disable and cooldown settings
+
+### Calculated Fields Components
+- **`calculated-fields-form.tsx`**: Template field selector
+  - Grouped by scope (controller/device)
+  - Checkbox selection with descriptions
+  - Shows calculation type and time window badges
+- **`calculated-fields-display.tsx`**: Site dashboard widget
+  - Grid layout with computed values
+  - Unit display and last updated timestamp
+  - Compact mode for sidebars
 
 ## Development
 

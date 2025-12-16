@@ -18,16 +18,41 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ControlLogsViewer } from "@/components/logs/control-logs-viewer";
+import { ControlLogsTabTrigger } from "@/components/logs/control-logs-tab-trigger";
 import { AlarmsViewer } from "@/components/alarms/alarms-viewer";
 import { DeviceList } from "@/components/devices/device-list";
 import { MasterDeviceList } from "@/components/devices/master-device-list";
-import { SyncStatus } from "@/components/projects/sync-status";
-import { PowerFlowChart } from "@/components/charts/power-flow-chart";
+import { SiteStatusHeader } from "@/components/sites/site-status-header";
 import { SafeModeStatus } from "@/components/sites/safe-mode-status";
 import { DeviceHealthCard } from "@/components/sites/device-health-card";
+import { ControllerHealthCard } from "@/components/sites/controller-health-card";
+import { SiteTestButton } from "@/components/sites/site-test-button";
 import type { ModbusRegister } from "@/components/devices/register-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import dynamic from "next/dynamic";
+
+// Dynamic import for heavy chart component (recharts ~200KB)
+// This reduces initial bundle size and improves page load time
+// Note: The PowerFlowChart is a Client Component ("use client"), so Next.js
+// automatically handles SSR/CSR boundaries - no ssr:false needed
+const PowerFlowChart = dynamic(
+  () => import("@/components/charts/power-flow-chart").then((mod) => mod.PowerFlowChart),
+  {
+    loading: () => (
+      <Card>
+        <CardHeader>
+          <CardTitle>Power Flow</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64 animate-pulse bg-muted rounded-lg flex items-center justify-center">
+            <span className="text-sm text-muted-foreground">Loading chart...</span>
+          </div>
+        </CardContent>
+      </Card>
+    ),
+  }
+);
 
 // Minimum firmware version required for full functionality
 const MINIMUM_FIRMWARE_VERSION = "1.0.0";
@@ -46,21 +71,6 @@ function isVersionOutdated(current: string | null, minimum: string): boolean {
     if (curr > min) return false;
   }
   return false; // Equal versions
-}
-
-// Status badge component
-function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-    online: "default",
-    offline: "secondary",
-    error: "destructive",
-  };
-
-  return (
-    <Badge variant={variants[status] || "outline"} className="capitalize">
-      {status}
-    </Badge>
-  );
 }
 
 // Helper to format operation mode for display
@@ -171,6 +181,7 @@ export default async function SiteDetailPage({
     is_online: boolean;
     last_seen: string | null;
     registers: ModbusRegister[] | null;
+    alarm_registers: ModbusRegister[] | null;
     logging_interval_ms: number | null;
     device_templates: {
       name: string;
@@ -198,6 +209,7 @@ export default async function SiteDetailPage({
         is_online,
         last_seen,
         registers,
+        alarm_registers,
         logging_interval_ms,
         device_templates (
           name,
@@ -321,6 +333,9 @@ export default async function SiteDetailPage({
   const onlineDevices = devices.filter((d) => d.is_online).length;
   const offlineDevices = totalDevices - onlineDevices;
 
+  // Check if site has a controller (for showing controller health card)
+  const hasController = masterDevices.some((d) => d.device_type === "controller");
+
   return (
     <DashboardLayout user={{
         email: user?.email,
@@ -344,14 +359,8 @@ export default async function SiteDetailPage({
                 </svg>
               </Link>
               <h1 className="text-2xl md:text-3xl font-bold">{site.name}</h1>
-              <StatusBadge status={site.controller_status} />
-              {/* Sync Status - shows whether config matches controller */}
-              <SyncStatus
-                projectId={siteId}
-                controllerStatus={site.controller_status}
-                updatedAt={site.updated_at}
-                configSyncedAt={site.config_synced_at}
-              />
+              {/* Site Status Header - unified connection, control logic, and sync status */}
+              <SiteStatusHeader siteId={siteId} controlMethod={site.control_method} />
             </div>
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -367,8 +376,22 @@ export default async function SiteDetailPage({
               {site.location || "No location set"}
             </p>
           </div>
-          {/* Action buttons: Remote Control and Settings */}
+          {/* Action buttons: Dashboard, Run Test, Remote Control, and Settings */}
           <div className="flex flex-col sm:flex-row gap-2">
+            {/* Dashboard button - opens interactive site dashboard builder */}
+            <Button variant="outline" asChild className="w-full sm:w-auto min-h-[44px]">
+              <Link href={`/projects/${projectId}/sites/${siteId}/dashboard`}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2">
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                </svg>
+                Dashboard
+              </Link>
+            </Button>
+            {/* Run Test button - quick diagnostic test */}
+            <SiteTestButton siteId={siteId} siteName={site.name} />
             {/* Remote Control button - for users with control permission */}
             <Button variant="default" asChild className="w-full sm:w-auto min-h-[44px]">
               <Link href={`/projects/${projectId}/sites/${siteId}/control`}>
@@ -503,8 +526,8 @@ export default async function SiteDetailPage({
         {/* Power Flow Chart - Historical Data Visualization */}
         <PowerFlowChart projectId={projectId} siteId={siteId} />
 
-        {/* Status Cards Row - Safe Mode and Device Health */}
-        <div className="grid gap-4 md:grid-cols-2">
+        {/* Status Cards Row - Safe Mode, Device Health, and Controller Health */}
+        <div className={`grid gap-4 md:grid-cols-2 ${hasController ? "lg:grid-cols-3" : ""}`}>
           {/* Safe Mode Status Panel */}
           <SafeModeStatus
             isActive={latestLog?.safe_mode_active || false}
@@ -521,13 +544,16 @@ export default async function SiteDetailPage({
             onlineDevices={onlineDevices}
             offlineDevices={offlineDevices}
           />
+
+          {/* Controller Health - Only shown when site has a controller */}
+          {hasController && <ControllerHealthCard siteId={siteId} />}
         </div>
 
         {/* Tabs */}
         <Tabs defaultValue="devices" className="space-y-4">
           <TabsList>
             <TabsTrigger value="devices">Devices</TabsTrigger>
-            <TabsTrigger value="logs">Control Logs</TabsTrigger>
+            <ControlLogsTabTrigger value="logs" siteId={siteId} />
             <TabsTrigger value="alarms">Alarms</TabsTrigger>
           </TabsList>
 
@@ -537,6 +563,7 @@ export default async function SiteDetailPage({
               projectId={projectId}
               siteId={siteId}
               masterDevices={masterDevices}
+              userRole={userProfile?.role || undefined}
             />
 
             {/* Regular Devices (Load Meters, Inverters, DG Controllers) */}
@@ -551,6 +578,7 @@ export default async function SiteDetailPage({
                 dg_power_kw: latestLog.dg_power_kw,
                 timestamp: latestLog.timestamp,
               } : null}
+              userRole={userProfile?.role || undefined}
             />
           </TabsContent>
 

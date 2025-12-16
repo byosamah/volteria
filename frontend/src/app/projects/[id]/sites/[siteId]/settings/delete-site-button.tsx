@@ -28,9 +28,13 @@ interface DeleteSiteButtonProps {
   siteId: string;
   siteName: string;
   projectId: string;
+  userRole?: string;
 }
 
-export function DeleteSiteButton({ siteId, siteName, projectId }: DeleteSiteButtonProps) {
+export function DeleteSiteButton({ siteId, siteName, projectId, userRole }: DeleteSiteButtonProps) {
+  // Only admins can delete - configurators and viewers cannot
+  const canDelete = userRole && !["configurator", "viewer"].includes(userRole);
+  if (!canDelete) return null;
   const router = useRouter();
   const supabase = createClient();
   const [loading, setLoading] = useState(false);

@@ -35,7 +35,7 @@ ALARM_TYPES = [
     "command_not_taken",     # Inverter didn't accept command
 ]
 
-SEVERITY_LEVELS = ["info", "warning", "critical"]
+SEVERITY_LEVELS = ["info", "warning", "major", "critical"]
 
 
 # ============================================

@@ -7,9 +7,10 @@
  * - Time range filtering
  * - Pagination
  * - Export functionality (CSV/JSON)
+ * - Contextual empty states based on controller status
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,12 +49,28 @@ interface ControlLogsViewerProps {
   siteId?: string;  // Optional: for sites architecture
 }
 
+// Site status interface for contextual empty states
+interface SiteStatus {
+  connection: {
+    status: "online" | "offline";
+    lastSeen: string | null;
+    type: "controller" | "gateway" | "none";
+  };
+  logging: {
+    hasLogs: boolean;
+    lastLogTimestamp: string | null;
+    totalLogs: number;
+  };
+}
+
 export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps) {
   const [logs, setLogs] = useState<ControlLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("1h"); // 1h, 6h, 24h, 7d
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [siteStatus, setSiteStatus] = useState<SiteStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
   const pageSize = 50;
 
   // Calculate start time based on time range
@@ -72,6 +89,24 @@ export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps)
         return new Date(now.getTime() - 60 * 60 * 1000);
     }
   };
+
+  // Fetch site status (controller/gateway connection and logging status)
+  const fetchSiteStatus = useCallback(async () => {
+    // Only fetch status for sites (not project-level)
+    if (!siteId) return;
+
+    setStatusLoading(true);
+    try {
+      const response = await fetch(`/api/sites/${siteId}/status`);
+      if (response.ok) {
+        const data = await response.json();
+        setSiteStatus(data);
+      }
+    } catch (error) {
+      console.error("Error fetching site status:", error);
+    }
+    setStatusLoading(false);
+  }, [siteId]);
 
   // Fetch logs
   const fetchLogs = async () => {
@@ -106,6 +141,11 @@ export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps)
     }
     setLoading(false);
   };
+
+  // Fetch site status on mount (for contextual empty states)
+  useEffect(() => {
+    fetchSiteStatus();
+  }, [fetchSiteStatus]);
 
   // Fetch logs when time range or page changes
   useEffect(() => {
@@ -218,6 +258,117 @@ export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps)
     return date.toLocaleString();
   };
 
+  // Format relative time (e.g., "5 minutes ago")
+  const formatRelativeTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return "just now";
+    if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? "" : "s"} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  };
+
+  // Render contextual empty state based on site status
+  const renderEmptyState = () => {
+    // If we're still loading status, show generic message
+    if (statusLoading) {
+      return (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Checking controller status...</p>
+        </div>
+      );
+    }
+
+    // For project-level view (no siteId), show generic message
+    if (!siteId || !siteStatus) {
+      return (
+        <div className="text-center py-12">
+          <svg className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-muted-foreground font-medium">No logs found for this time period</p>
+          <p className="text-muted-foreground/70 text-sm mt-1">Try selecting a different time range</p>
+        </div>
+      );
+    }
+
+    const { connection, logging } = siteStatus;
+
+    // Case 1: No controller assigned to this site
+    if (connection.type === "none") {
+      return (
+        <div className="text-center py-12">
+          <svg className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13.181 8.68a4.503 4.503 0 011.903 6.405m-9.768-2.782L3.56 14.06a4.5 4.5 0 005.657 5.656l1.757-1.757m9.768-2.782l1.757-1.757a4.5 4.5 0 00-5.656-5.657l-1.757 1.757m5.574 6.161l-.881-.881m-9.768 2.782l-.881-.881m9.768-2.782l.881.881m-9.768 2.782l.881.881M9.75 9.75l4.5 4.5" />
+          </svg>
+          <p className="text-muted-foreground font-medium">No controller assigned</p>
+          <p className="text-muted-foreground/70 text-sm mt-1">
+            Assign a controller to this site to start collecting logs
+          </p>
+        </div>
+      );
+    }
+
+    // Case 2: Controller is offline
+    if (connection.status === "offline") {
+      return (
+        <div className="text-center py-12">
+          <svg className="h-12 w-12 text-destructive/50 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
+          </svg>
+          <p className="text-muted-foreground font-medium">Controller is offline</p>
+          <p className="text-muted-foreground/70 text-sm mt-1">
+            {connection.lastSeen
+              ? `Last seen ${formatRelativeTime(connection.lastSeen)}`
+              : "Never connected"}
+          </p>
+          {logging.hasLogs && logging.lastLogTimestamp && (
+            <p className="text-muted-foreground/70 text-sm mt-1">
+              Last log received {formatRelativeTime(logging.lastLogTimestamp)}
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    // Case 3: Controller online but no logs at all for this site
+    if (!logging.hasLogs) {
+      return (
+        <div className="text-center py-12">
+          <svg className="h-12 w-12 text-primary/50 mx-auto mb-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-muted-foreground font-medium">Waiting for data...</p>
+          <p className="text-muted-foreground/70 text-sm mt-1">
+            Controller is online. Data will appear shortly.
+          </p>
+        </div>
+      );
+    }
+
+    // Case 4: Controller online, has logs but none in selected time range
+    return (
+      <div className="text-center py-12">
+        <svg className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+        </svg>
+        <p className="text-muted-foreground font-medium">No logs in this time range</p>
+        <p className="text-muted-foreground/70 text-sm mt-1">
+          {logging.lastLogTimestamp && (
+            <>Last log received {formatRelativeTime(logging.lastLogTimestamp)}</>
+          )}
+        </p>
+        <p className="text-muted-foreground/70 text-sm">Try selecting a longer time range</p>
+      </div>
+    );
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -278,9 +429,7 @@ export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps)
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
         ) : logs.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">
-            No logs found for this time period
-          </p>
+          renderEmptyState()
         ) : (
           <>
             {/* MOBILE: Card view for small screens */}

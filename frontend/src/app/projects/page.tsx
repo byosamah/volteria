@@ -34,14 +34,12 @@ export default async function ProjectsPage() {
   }
 
   // Fetch all projects
+  // Note: Status is now fetched live by ProjectStatusBadge component
   let projects: Array<{
     id: string;
     name: string;
     location: string | null;
     description: string | null;
-    controller_serial_number: string | null;
-    controller_status: string;
-    controller_last_seen: string | null;
     created_at: string;
   }> = [];
 
@@ -53,9 +51,6 @@ export default async function ProjectsPage() {
         name,
         location,
         description,
-        controller_serial_number,
-        controller_status,
-        controller_last_seen,
         created_at
       `)
       .eq("is_active", true)
@@ -93,18 +88,45 @@ export default async function ProjectsPage() {
 
   // Single query for all site counts
   let siteCountMap: Record<string, number> = {};
+  // Store site_id -> project_id mapping for controller count lookup
+  let siteToProjectMap: Record<string, string> = {};
   if (projectIds.length > 0) {
     try {
       const { data: siteRows } = await supabase
         .from("sites")
-        .select("project_id")
+        .select("id, project_id")
         .in("project_id", projectIds)
         .eq("is_active", true);
 
-      // Count sites per project
+      // Count sites per project and build site->project mapping
       if (siteRows) {
         for (const row of siteRows) {
           siteCountMap[row.project_id] = (siteCountMap[row.project_id] || 0) + 1;
+          siteToProjectMap[row.id] = row.project_id;
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  // Single query for all controller counts (master devices via sites)
+  let controllerCountMap: Record<string, number> = {};
+  const siteIds = Object.keys(siteToProjectMap);
+  if (siteIds.length > 0) {
+    try {
+      const { data: masterDeviceRows } = await supabase
+        .from("site_master_devices")
+        .select("site_id")
+        .in("site_id", siteIds);
+
+      // Count master devices per project (via site->project mapping)
+      if (masterDeviceRows) {
+        for (const row of masterDeviceRows) {
+          const projectId = siteToProjectMap[row.site_id];
+          if (projectId) {
+            controllerCountMap[projectId] = (controllerCountMap[projectId] || 0) + 1;
+          }
         }
       }
     } catch {
@@ -117,6 +139,7 @@ export default async function ProjectsPage() {
     ...project,
     deviceCount: deviceCountMap[project.id] || 0,
     siteCount: siteCountMap[project.id] || 0,
+    controllerCount: controllerCountMap[project.id] || 0,
   }));
 
   return (

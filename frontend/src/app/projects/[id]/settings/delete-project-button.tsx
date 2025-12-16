@@ -28,6 +28,7 @@ interface DeleteProjectButtonProps {
   projectName: string;
   siteCount: number;    // Number of active sites in project
   deviceCount: number;  // Number of active devices in project
+  userRole?: string;    // User role for permission checks
 }
 
 export function DeleteProjectButton({
@@ -35,7 +36,11 @@ export function DeleteProjectButton({
   projectName,
   siteCount,
   deviceCount,
+  userRole,
 }: DeleteProjectButtonProps) {
+  // Only admins can delete - configurators and viewers cannot
+  const canDeleteRole = userRole && !["configurator", "viewer"].includes(userRole);
+  if (!canDeleteRole) return null;
   const router = useRouter();
   const supabase = createClient();
 

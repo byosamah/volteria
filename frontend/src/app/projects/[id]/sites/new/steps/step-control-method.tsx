@@ -4,7 +4,7 @@
  * Step 2: Control Method
  *
  * Select how the site will be controlled:
- * - On-site Local Controller (Raspberry Pi)
+ * - On-site Local Controller
  * - Remote Control via Gateway API (Netbiter)
  */
 
@@ -68,7 +68,7 @@ export function StepControlMethod({ formData, updateField }: StepProps) {
                   <span className="font-semibold">On-site Local Controller</span>
                 </div>
                 <p className="text-sm text-muted-foreground mt-2">
-                  Raspberry Pi runs control logic locally. Works offline with fastest response time.
+                  Controller runs control logic locally. Works offline with fastest response time.
                 </p>
                 <div className="flex items-center gap-2 mt-3 text-xs text-green-600">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">

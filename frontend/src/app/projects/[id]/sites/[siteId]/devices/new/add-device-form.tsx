@@ -30,6 +30,7 @@ interface DeviceTemplate {
   model: string;
   rated_power_kw: number | null;
   registers: unknown[] | null;  // Modbus registers to copy to device
+  alarm_registers: unknown[] | null;  // Alarm registers to copy to device
 }
 
 interface AddDeviceFormProps {
@@ -247,6 +248,8 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
         rated_power_kw: formData.rated_power_kw ? parseFloat(formData.rated_power_kw as string) : null,
         // Copy registers from template - device can edit these independently
         registers: selectedTemplate?.registers || [],
+        // Copy alarm registers from template - device can edit these independently
+        alarm_registers: selectedTemplate?.alarm_registers || [],
         // Default logging interval (1 second)
         logging_interval_ms: 1000,
         enabled: true,

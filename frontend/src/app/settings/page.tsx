@@ -5,12 +5,29 @@
  * - Enterprise name and ID
  * - Contact information
  * - Address details
+ * - Data usage (storage consumption)
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import Link from "next/link";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { HardDrive, Database, Bell, Activity, AlertTriangle } from "lucide-react";
+
+// Helper to format bytes to human-readable format
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+function bytesToGB(bytes: number): number {
+  return Math.round((bytes / (1024 ** 3)) * 100) / 100;
+}
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -37,6 +54,11 @@ export default async function SettingsPage() {
     userProfile = data;
   }
 
+  // Viewers cannot access system settings page
+  if (userProfile?.role === "viewer") {
+    redirect("/projects");
+  }
+
   // Fetch enterprise information if user belongs to one
   let enterprise: {
     id: string;
@@ -49,16 +71,68 @@ export default async function SettingsPage() {
     country: string | null;
     created_at: string;
     is_active: boolean;
+    usage_package_id: string | null;
+    usage_warning_level: string | null;
+    usage_grace_period_start: string | null;
+  } | null = null;
+
+  // Usage package and snapshot data
+  let usagePackage: {
+    id: string;
+    name: string;
+    storage_limit_bytes: number;
+    bandwidth_limit_bytes: number | null;
+    max_sites: number | null;
+    max_controllers: number | null;
+  } | null = null;
+
+  let usageSnapshot: {
+    snapshot_date: string;
+    total_storage_bytes: number;
+    control_logs_bytes: number;
+    control_logs_rows: number;
+    alarms_bytes: number;
+    heartbeats_bytes: number;
+    sites_count: number;
+    controllers_count: number;
+    users_count: number;
   } | null = null;
 
   if (userProfile?.enterprise_id) {
+    // Fetch enterprise with usage package info
     const { data } = await supabase
       .from("enterprises")
-      .select("id, name, enterprise_id, contact_email, contact_phone, address, city, country, created_at, is_active")
+      .select("id, name, enterprise_id, contact_email, contact_phone, address, city, country, created_at, is_active, usage_package_id, usage_warning_level, usage_grace_period_start")
       .eq("id", userProfile.enterprise_id)
       .single();
     enterprise = data;
+
+    // Fetch usage package if enterprise has one
+    if (enterprise?.usage_package_id) {
+      const { data: pkgData } = await supabase
+        .from("usage_packages")
+        .select("id, name, storage_limit_bytes, bandwidth_limit_bytes, max_sites, max_controllers")
+        .eq("id", enterprise.usage_package_id)
+        .single();
+      usagePackage = pkgData;
+    }
+
+    // Fetch latest usage snapshot
+    const today = new Date().toISOString().split("T")[0];
+    const { data: snapshotData } = await supabase
+      .from("enterprise_usage_snapshots")
+      .select("snapshot_date, total_storage_bytes, control_logs_bytes, control_logs_rows, alarms_bytes, heartbeats_bytes, sites_count, controllers_count, users_count")
+      .eq("enterprise_id", userProfile.enterprise_id)
+      .order("snapshot_date", { ascending: false })
+      .limit(1)
+      .single();
+    usageSnapshot = snapshotData;
   }
+
+  // Calculate usage percentage
+  const usagePercent = usagePackage && usageSnapshot
+    ? Math.round((usageSnapshot.total_storage_bytes / usagePackage.storage_limit_bytes) * 1000) / 10
+    : 0;
 
   return (
     <DashboardLayout user={{
@@ -76,95 +150,6 @@ export default async function SettingsPage() {
           <p className="text-muted-foreground text-sm md:text-base">
             General system information
           </p>
-        </div>
-
-        {/* Settings Navigation Cards */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          {/* Notification Preferences Link */}
-          <Link href="/settings/notifications" className="group">
-            <Card className="h-full transition-colors hover:border-primary/50">
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-5 w-5 text-primary"
-                  >
-                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium group-hover:text-primary transition-colors">
-                    Notification Preferences
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Configure email and in-app alerts
-                  </p>
-                </div>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors"
-                >
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-              </CardContent>
-            </Card>
-          </Link>
-
-          {/* Account Link */}
-          <Link href="/account" className="group">
-            <Card className="h-full transition-colors hover:border-primary/50">
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-5 w-5 text-primary"
-                  >
-                    <circle cx="12" cy="8" r="5" />
-                    <path d="M20 21a8 8 0 0 0-16 0" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium group-hover:text-primary transition-colors">
-                    Account Settings
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Profile, password, and security
-                  </p>
-                </div>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors"
-                >
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-              </CardContent>
-            </Card>
-          </Link>
         </div>
 
         {/* Enterprise Information */}
@@ -199,6 +184,136 @@ export default async function SettingsPage() {
                     {enterprise.is_active ? "Active" : "Inactive"}
                   </span>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Data Usage Card - Shows storage consumption */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <HardDrive className="h-5 w-5" />
+                  Data Usage
+                </CardTitle>
+                <CardDescription>
+                  Your organization&apos;s storage consumption
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Package info */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Current Package</p>
+                    <p className="font-medium">
+                      {usagePackage ? usagePackage.name : "No package assigned"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Storage Limit</p>
+                    <p className="font-medium">
+                      {usagePackage
+                        ? `${bytesToGB(usagePackage.storage_limit_bytes)} GB`
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                {usagePackage && usageSnapshot && (
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Storage Used</span>
+                      <span className={usagePercent >= 80 ? "text-amber-600 font-medium" : ""}>
+                        {bytesToGB(usageSnapshot.total_storage_bytes)} GB /{" "}
+                        {bytesToGB(usagePackage.storage_limit_bytes)} GB ({usagePercent}%)
+                      </span>
+                    </div>
+                    <Progress
+                      value={Math.min(usagePercent, 100)}
+                      className={`h-2 ${
+                        usagePercent >= 100
+                          ? "[&>div]:bg-red-500"
+                          : usagePercent >= 80
+                          ? "[&>div]:bg-amber-500"
+                          : "[&>div]:bg-green-500"
+                      }`}
+                    />
+                  </div>
+                )}
+
+                {/* Storage Breakdown */}
+                {usageSnapshot && (
+                  <div className="grid gap-3 sm:grid-cols-3 pt-2">
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
+                      <Database className="h-4 w-4 text-blue-500" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Control Logs</p>
+                        <p className="text-sm font-medium">
+                          {formatBytes(usageSnapshot.control_logs_bytes)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
+                      <Bell className="h-4 w-4 text-amber-500" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Alarms</p>
+                        <p className="text-sm font-medium">
+                          {formatBytes(usageSnapshot.alarms_bytes)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
+                      <Activity className="h-4 w-4 text-green-500" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Heartbeats</p>
+                        <p className="text-sm font-medium">
+                          {formatBytes(usageSnapshot.heartbeats_bytes)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Warning alert if approaching limit */}
+                {usagePercent >= 80 && usagePercent < 100 && (
+                  <Alert className="border-amber-200 bg-amber-50">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertDescription className="text-amber-800">
+                      You&apos;re approaching your storage limit. Consider deleting old data
+                      or contact your administrator about upgrading your package.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Critical alert if exceeded */}
+                {usagePercent >= 100 && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      Storage limit exceeded! You have a 30-day grace period.
+                      Please delete old data or upgrade your package to avoid data loss.
+                      {enterprise.usage_grace_period_start && (
+                        <span className="block mt-1 text-sm">
+                          Grace period started:{" "}
+                          {new Date(enterprise.usage_grace_period_start).toLocaleDateString()}
+                        </span>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* No data yet */}
+                {!usageSnapshot && (
+                  <p className="text-sm text-muted-foreground">
+                    No usage data available yet. Data snapshots are calculated daily.
+                  </p>
+                )}
+
+                {/* Last updated */}
+                {usageSnapshot?.snapshot_date && (
+                  <p className="text-xs text-muted-foreground pt-2">
+                    Last updated: {new Date(usageSnapshot.snapshot_date).toLocaleDateString()}
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -279,22 +394,18 @@ export default async function SettingsPage() {
             </Card>
           </>
         ) : (
-          /* No Enterprise - Show basic info */
+          /* No Enterprise - Show message */
           <Card>
             <CardHeader>
-              <CardTitle>System Information</CardTitle>
+              <CardTitle>Enterprise Information</CardTitle>
               <CardDescription>
-                General information
+                Organization details
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent>
               <p className="text-muted-foreground">
-                No enterprise information available. Contact your administrator if you believe this is an error.
+                No enterprise assigned to your account. Contact your administrator if you believe this is an error.
               </p>
-              <div>
-                <p className="text-sm text-muted-foreground">Your Role</p>
-                <p className="font-medium capitalize">{userProfile?.role?.replace(/_/g, ' ') || "Unknown"}</p>
-              </div>
             </CardContent>
           </Card>
         )}

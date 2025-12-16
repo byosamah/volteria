@@ -66,6 +66,7 @@ export async function GET() {
         email,
         role,
         full_name,
+        phone,
         is_active,
         enterprise_id,
         avatar_url,
@@ -98,17 +99,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    // Debug: Log that the endpoint was called
-    console.log("[Admin Users API] POST request received");
-
     // Get the current user to verify they have permission
     const supabase = await createServerClient();
     const { data: { user: currentUser } } = await supabase.auth.getUser();
 
-    console.log("[Admin Users API] Current user:", currentUser?.id || "NOT AUTHENTICATED");
-
     if (!currentUser) {
-      console.log("[Admin Users API] ERROR: No authenticated user");
       return NextResponse.json(
         { message: "Unauthorized" },
         { status: 401 }
@@ -116,16 +111,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if current user has permission
-    const { data: userData, error: roleError } = await supabase
+    const { data: userData } = await supabase
       .from("users")
       .select("role, enterprise_id")
       .eq("id", currentUser.id)
       .single();
 
-    console.log("[Admin Users API] User role:", userData?.role || "NOT FOUND", roleError ? `Error: ${roleError.message}` : "");
-
     if (!userData || !ALLOWED_ROLES.includes(userData.role)) {
-      console.log("[Admin Users API] ERROR: User role not allowed:", userData?.role);
       return NextResponse.json(
         { message: "You don't have permission to create users" },
         { status: 403 }
@@ -134,13 +126,10 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { email, password, first_name, last_name, role, enterprise_id } = body;
-
-    console.log("[Admin Users API] Creating user:", email, "role:", role, "enterprise_id:", enterprise_id);
+    const { email, password, first_name, last_name, role, enterprise_id, phone } = body;
 
     // Validate required fields
     if (!email || !password) {
-      console.log("[Admin Users API] ERROR: Missing email or password");
       return NextResponse.json(
         { message: "Email and password are required" },
         { status: 400 }
@@ -148,7 +137,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (password.length < 6) {
-      console.log("[Admin Users API] ERROR: Password too short");
       return NextResponse.json(
         { message: "Password must be at least 6 characters" },
         { status: 400 }
@@ -162,7 +150,6 @@ export async function POST(request: NextRequest) {
     if (userData.role === "enterprise_admin") {
       // Can only create configurator and viewer roles
       if (finalRole && !["configurator", "viewer"].includes(finalRole)) {
-        console.log("[Admin Users API] ERROR: Enterprise admin cannot create role:", finalRole);
         return NextResponse.json(
           { message: "Enterprise admins can only create configurator and viewer users" },
           { status: 403 }
@@ -174,10 +161,8 @@ export async function POST(request: NextRequest) {
 
     // Check if service key is configured (support both naming conventions)
     const hasServiceKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY);
-    console.log("[Admin Users API] Service key configured:", hasServiceKey);
 
     if (!hasServiceKey) {
-      console.log("[Admin Users API] ERROR: Neither SUPABASE_SERVICE_ROLE_KEY nor SUPABASE_SERVICE_KEY is set");
       return NextResponse.json(
         { message: "Server configuration error: Missing service key" },
         { status: 500 }
@@ -188,7 +173,6 @@ export async function POST(request: NextRequest) {
     const supabaseAdmin = getSupabaseAdmin();
 
     // Create user with Supabase Admin API
-    console.log("[Admin Users API] Calling supabase.auth.admin.createUser...");
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -200,7 +184,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (createError) {
-      console.error("[Admin Users API] ERROR creating auth user:", createError.message, createError);
+      console.error("[Admin Users API] ERROR creating auth user:", createError.message);
       return NextResponse.json(
         { message: createError.message || "Failed to create user" },
         { status: 400 }
@@ -208,39 +192,33 @@ export async function POST(request: NextRequest) {
     }
 
     if (!newUser.user) {
-      console.log("[Admin Users API] ERROR: newUser.user is null");
       return NextResponse.json(
         { message: "Failed to create user" },
         { status: 500 }
       );
     }
 
-    console.log("[Admin Users API] Auth user created successfully:", newUser.user.id);
-
     // Insert user record in our users table
-    console.log("[Admin Users API] Inserting into users table...");
     const { error: insertError } = await supabaseAdmin
       .from("users")
       .insert({
         id: newUser.user.id,
         email: email,
         full_name: [first_name, last_name].filter(Boolean).join(" ") || null,
+        phone: phone || null,
         role: finalRole,
         enterprise_id: finalEnterpriseId || null,
       });
 
     if (insertError) {
-      console.error("[Admin Users API] ERROR inserting user record:", insertError.message, insertError);
+      console.error("[Admin Users API] ERROR inserting user record:", insertError.message);
       // User was created in auth but not in our table - try to clean up
-      console.log("[Admin Users API] Rolling back: deleting auth user...");
       await supabaseAdmin.auth.admin.deleteUser(newUser.user.id);
       return NextResponse.json(
         { message: insertError.message || "Failed to create user record" },
         { status: 500 }
       );
     }
-
-    console.log("[Admin Users API] SUCCESS: User created and inserted into users table");
 
     return NextResponse.json({
       success: true,

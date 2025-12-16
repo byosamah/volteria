@@ -51,6 +51,7 @@ interface Controller {
     name: string;
   } | null;
   last_heartbeat: string | null;
+  pending_restart: boolean | null;
 }
 
 // Helper to determine if controller is online (heartbeat within last 1 minute)
@@ -127,6 +128,11 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
   const [deactivatePassword, setDeactivatePassword] = useState("");
   const [deactivateUsage, setDeactivateUsage] = useState<{ project_name: string; site_name: string }[]>([]);
   const [loadingUsage, setLoadingUsage] = useState(false);
+
+  // Restart dialog state
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [restartController, setRestartController] = useState<Controller | null>(null);
+  const [restartLoading, setRestartLoading] = useState(false);
 
   // Create form state
   const [formData, setFormData] = useState({
@@ -292,6 +298,7 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
         approved_hardware: hwData || null,
         enterprises: null,
         last_heartbeat: null, // New controllers haven't sent heartbeats yet
+        pending_restart: null, // New controllers don't have pending restart
       };
       setControllers([newController, ...controllers]);
       setCreateOpen(false);
@@ -605,6 +612,52 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
     }
   };
 
+  // Open restart dialog
+  const openRestartDialog = (controller: Controller) => {
+    setRestartController(controller);
+    setRestartOpen(true);
+  };
+
+  // Handle restart submit
+  const handleRestartSubmit = async () => {
+    if (!restartController) return;
+
+    setRestartLoading(true);
+    try {
+      const { error } = await supabase
+        .from("controllers")
+        .update({
+          pending_restart: true,
+          restart_requested_at: new Date().toISOString(),
+        })
+        .eq("id", restartController.id);
+
+      if (error) {
+        console.error("Error sending restart command:", error);
+        toast.error("Failed to send restart command");
+        return;
+      }
+
+      // Update local state
+      setControllers(
+        controllers.map((c) =>
+          c.id === restartController.id
+            ? { ...c, pending_restart: true }
+            : c
+        )
+      );
+
+      toast.success("Restart command sent to controller");
+      setRestartOpen(false);
+      setRestartController(null);
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setRestartLoading(false);
+    }
+  };
+
   return (
     <>
       {/* Search and Actions */}
@@ -839,6 +892,21 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                         <path d="m15 5 4 4" />
                       </svg>
                     </Button>
+                    {/* Restart button - mobile */}
+                    {controller.status === "deployed" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openRestartDialog(controller)}
+                        disabled={controller.pending_restart === true}
+                        className="min-h-[44px] min-w-[44px] text-blue-600 hover:text-blue-700"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${controller.pending_restart ? "animate-spin" : ""}`}>
+                          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                          <path d="M21 3v5h-5" />
+                        </svg>
+                      </Button>
+                    )}
                     {!["deployed", "deactivated", "eol"].includes(controller.status) && (
                       <Button
                         variant="ghost"
@@ -877,9 +945,9 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
               <TableHeader>
                 <TableRow>
                   <TableHead>Connection</TableHead>
-                  <TableHead>Serial Number</TableHead>
-                  <TableHead>Hardware</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Hardware</TableHead>
+                  <TableHead>Serial Number</TableHead>
                   <TableHead>Passcode</TableHead>
                   <TableHead>Enterprise</TableHead>
                   <TableHead>Actions</TableHead>
@@ -918,16 +986,16 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                         }
                       })()}
                     </TableCell>
-                    <TableCell className="font-mono font-medium">
-                      {controller.serial_number}
-                    </TableCell>
-                    <TableCell>
-                      {controller.approved_hardware?.name || "Unknown"}
-                    </TableCell>
                     <TableCell>
                       <Badge className={statusColors[controller.status]}>
                         {controller.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {controller.approved_hardware?.name || "Unknown"}
+                    </TableCell>
+                    <TableCell className="font-mono font-medium">
+                      {controller.serial_number}
                     </TableCell>
                     <TableCell>
                       {controller.passcode ? (
@@ -1010,6 +1078,32 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                             <path d="m15 5 4 4" />
                           </svg>
                         </Button>
+
+                        {/* Restart button - only for deployed controllers */}
+                        {controller.status === "deployed" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openRestartDialog(controller)}
+                            title={controller.pending_restart ? "Restart pending..." : "Restart controller"}
+                            disabled={controller.pending_restart === true}
+                            className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className={`h-4 w-4 ${controller.pending_restart ? "animate-spin" : ""}`}
+                            >
+                              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                              <path d="M21 3v5h-5" />
+                            </svg>
+                          </Button>
+                        )}
 
                         {/* Deactivate button - only for non-deployed, non-deactivated, non-eol */}
                         {!["deployed", "deactivated", "eol"].includes(controller.status) && (
@@ -1418,6 +1512,77 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                 </Button>
               </DialogFooter>
             </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Restart Controller Dialog */}
+      <Dialog open={restartOpen} onOpenChange={setRestartOpen}>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 text-blue-600"
+              >
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+              </svg>
+              Restart Controller
+            </DialogTitle>
+            <DialogDescription>
+              Send a restart command to this controller.
+            </DialogDescription>
+          </DialogHeader>
+
+          {restartController && (
+            <div className="space-y-4 py-4">
+              {/* Controller info */}
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Serial Number:</span>{" "}
+                  <span className="font-mono font-medium">{restartController.serial_number}</span>
+                </p>
+                <p className="text-sm mt-1">
+                  <span className="text-muted-foreground">Hardware:</span>{" "}
+                  {restartController.approved_hardware?.name || "Unknown"}
+                </p>
+              </div>
+
+              {/* Info message */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-950/30 dark:border-blue-900">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  The controller will restart within its next polling cycle (typically within 1-5 minutes).
+                  The controller will briefly go offline during the restart.
+                </p>
+              </div>
+
+              <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setRestartOpen(false);
+                    setRestartController(null);
+                  }}
+                  className="min-h-[44px] w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleRestartSubmit}
+                  disabled={restartLoading}
+                  className="min-h-[44px] w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
+                >
+                  {restartLoading ? "Sending..." : "Restart Controller"}
+                </Button>
+              </DialogFooter>
+            </div>
           )}
         </DialogContent>
       </Dialog>

@@ -71,12 +71,13 @@ export default async function AddDeviceToSitePage({
     model: string;
     rated_power_kw: number | null;
     registers: unknown[] | null;
+    alarm_registers: unknown[] | null;
   }> = [];
 
   try {
     const { data } = await supabase
       .from("device_templates")
-      .select("id, template_id, name, device_type, brand, model, rated_power_kw, registers")
+      .select("id, template_id, name, device_type, brand, model, rated_power_kw, registers, alarm_registers")
       .order("device_type")
       .order("brand");
 

@@ -329,7 +329,8 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
   // Check if can proceed to next step
   const canProceed = () => {
     if (currentStep === 1) {
-      return controllerData.serial_number && controllerData.hardware_type_id;
+      // Only hardware_type_id is required - serial_number is optional (Pi self-registers)
+      return !!controllerData.hardware_type_id;
     }
     if (currentStep === 7) {
       return false; // Step 7 has its own completion flow

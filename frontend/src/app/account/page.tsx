@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AccountSettingsForm } from "./account-settings-form";
+import Link from "next/link";
 
 export default async function AccountPage() {
   const supabase = await createClient();
@@ -96,6 +97,60 @@ export default async function AccountPage() {
                   : "Unknown"}
               </p>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Preferences Link */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Preferences</CardTitle>
+            <CardDescription>
+              Manage your notification settings
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/settings/notifications"
+              className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-5 w-5 text-primary"
+                  >
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-medium group-hover:text-primary transition-colors">
+                    Notification Preferences
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Configure email and in-app alerts
+                  </p>
+                </div>
+              </div>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors"
+              >
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </Link>
           </CardContent>
         </Card>
       </div>

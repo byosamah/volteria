@@ -11,7 +11,7 @@
 
 /**
  * Control method options
- * - onsite_controller: Raspberry Pi runs control logic locally (works offline)
+ * - onsite_controller: Controller runs control logic locally (works offline)
  * - gateway_api: Server sends commands through Netbiter gateway (requires internet)
  */
 export type ControlMethod = "onsite_controller" | "gateway_api";

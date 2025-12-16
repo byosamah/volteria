@@ -39,6 +39,11 @@ export default async function ControllersPage() {
     redirect("/login");
   }
 
+  // Viewers cannot access controllers page
+  if (userProfile.role === "viewer") {
+    redirect("/projects");
+  }
+
   // Check if user has access (must have enterprise_id OR be super_admin)
   const isSuperAdmin = userProfile.role === "super_admin";
   const hasEnterprise = !!userProfile.enterprise_id;
@@ -98,6 +103,24 @@ export default async function ControllersPage() {
     console.error("Error fetching controllers:", controllersError);
   }
 
+  // Fetch heartbeat data for connection status display
+  // Get latest heartbeat timestamp for each controller
+  const { data: heartbeatData } = await supabase
+    .from("controller_heartbeats")
+    .select("controller_id, timestamp")
+    .not("controller_id", "is", null)
+    .order("timestamp", { ascending: false });
+
+  // Build map of controller_id -> latest heartbeat timestamp
+  const heartbeatMap = new Map<string, string>();
+  if (heartbeatData) {
+    for (const hb of heartbeatData) {
+      if (hb.controller_id && !heartbeatMap.has(hb.controller_id)) {
+        heartbeatMap.set(hb.controller_id, hb.timestamp);
+      }
+    }
+  }
+
   // Transform data to match expected type (Supabase returns single objects for FK joins)
   // TypeScript can't infer this correctly so we need to cast
   interface ControllerRow {
@@ -118,8 +141,17 @@ export default async function ControllersPage() {
     enterprises: {
       name: string;
     } | null;
+    last_heartbeat?: string | null;
   }
-  const controllers = (controllersData as unknown as ControllerRow[]) || [];
+
+  // Add last_heartbeat to each controller from the heartbeat map
+  const controllersWithHeartbeat = ((controllersData as unknown as ControllerRow[]) || []).map(
+    (controller) => ({
+      ...controller,
+      last_heartbeat: heartbeatMap.get(controller.id) || null,
+    })
+  );
+  const controllers = controllersWithHeartbeat;
 
   // Fetch approved hardware for the claim dialog dropdown
   const { data: hardwareTypes } = await supabase
@@ -128,12 +160,20 @@ export default async function ControllersPage() {
     .eq("is_active", true)
     .order("name");
 
+  // Fetch enterprises for super admin dropdown in claim dialog
+  // Super admins can assign controllers to any enterprise
+  const { data: enterprises } = await supabase
+    .from("enterprises")
+    .select("id, name")
+    .order("name");
+
   // Determine if user can claim/edit (enterprise_admin or super_admin)
   const canEdit = ["super_admin", "enterprise_admin"].includes(userProfile.role || "");
 
   // Count "ready" controllers available to claim (not yet assigned to any enterprise)
+  // Only super_admin needs this - enterprise admins see status summary instead
   let readyToClaimCount = 0;
-  if (canEdit) {
+  if (isSuperAdmin) {
     const { count } = await supabase
       .from("controllers")
       .select("*", { count: "exact", head: true })
@@ -142,6 +182,10 @@ export default async function ControllersPage() {
 
     readyToClaimCount = count || 0;
   }
+
+  // Count controllers by deployment status (for enterprise admin summary)
+  const deployedCount = controllers.filter((c) => c.status === "deployed").length;
+  const readyToDeployCount = controllers.filter((c) => c.status === "claimed").length;
 
   return (
     <DashboardLayout
@@ -166,8 +210,8 @@ export default async function ControllersPage() {
           </div>
         </div>
 
-        {/* Ready to Claim Card - only shown to users who can claim */}
-        {canEdit && readyToClaimCount > 0 && (
+        {/* Ready to Claim Card - only shown to super_admin */}
+        {isSuperAdmin && readyToClaimCount > 0 && (
           <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
             <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
@@ -223,6 +267,60 @@ export default async function ControllersPage() {
           </Card>
         )}
 
+        {/* Status Summary Card - for enterprise admins (not super_admin) */}
+        {!isSuperAdmin && canEdit && (deployedCount > 0 || readyToDeployCount > 0) && (
+          <Card className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30">
+            <CardContent className="p-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
+                {/* Deployed count */}
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-5 w-5 text-green-600 dark:text-green-400"
+                    >
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-400">{deployedCount}</p>
+                    <p className="text-sm text-muted-foreground">Deployed</p>
+                  </div>
+                </div>
+
+                {/* Ready to Deploy count */}
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-5 w-5 text-blue-600 dark:text-blue-400"
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{readyToDeployCount}</p>
+                    <p className="text-sm text-muted-foreground">Ready to Deploy</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Controllers Table */}
         <Card>
           <CardHeader>
@@ -235,9 +333,11 @@ export default async function ControllersPage() {
             <ControllersTable
               controllers={controllers || []}
               hardwareTypes={hardwareTypes || []}
+              enterprises={enterprises || []}
               canEdit={canEdit}
               isSuperAdmin={isSuperAdmin}
               userEnterpriseId={userProfile.enterprise_id}
+              userEnterpriseName={enterpriseName !== "All Enterprises" ? enterpriseName : null}
             />
           </CardContent>
         </Card>

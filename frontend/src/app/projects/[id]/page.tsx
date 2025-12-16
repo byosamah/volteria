@@ -174,9 +174,12 @@ export default async function ProjectDetailPage({
               </Link>
               <h1 className="text-2xl md:text-3xl font-bold">{project.name}</h1>
             </div>
-            <p className="text-muted-foreground text-sm md:text-base">
-              {project.description || "No description"}
-            </p>
+{/* Only show description if it exists - no placeholder text */}
+            {project.description && (
+              <p className="text-muted-foreground text-sm md:text-base">
+                {project.description}
+              </p>
+            )}
           </div>
           {/* Action buttons: Reports and Add Site */}
           <div className="flex flex-col sm:flex-row gap-2">

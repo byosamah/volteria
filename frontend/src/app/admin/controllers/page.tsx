@@ -67,6 +67,7 @@ export default async function ControllersPage() {
       name: string;
     } | null;
     last_heartbeat: string | null;
+    pending_restart: boolean | null;
   }> = [];
 
   try {
@@ -81,6 +82,7 @@ export default async function ControllersPage() {
         passcode,
         enterprise_id,
         created_at,
+        pending_restart,
         approved_hardware:hardware_type_id (
           name,
           hardware_type

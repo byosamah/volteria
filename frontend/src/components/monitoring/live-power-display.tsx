@@ -11,7 +11,7 @@
  * - Safe Mode Status
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -70,8 +70,16 @@ export function LivePowerDisplay({ projectId, dgReserveKw }: LivePowerDisplayPro
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isStale, setIsStale] = useState(false);
 
+  // Use ref for stale check to avoid infinite effect loop
+  // (state lastUpdate is for display, ref is for interval closure)
+  const lastUpdateRef = useRef<Date | null>(null);
+  const staleCheckRef = useRef<NodeJS.Timeout | null>(null);
+
   // Fetch latest data and subscribe to updates
   useEffect(() => {
+    // Skip if tab is hidden (Page Visibility API)
+    if (document.hidden) return;
+
     const fetchLatest = async () => {
       const { data, error } = await supabase
         .from("control_logs")
@@ -83,7 +91,9 @@ export function LivePowerDisplay({ projectId, dgReserveKw }: LivePowerDisplayPro
 
       if (!error && data) {
         setLiveData(data);
-        setLastUpdate(new Date());
+        const now = new Date();
+        setLastUpdate(now);
+        lastUpdateRef.current = now;
       }
     };
 
@@ -102,25 +112,52 @@ export function LivePowerDisplay({ projectId, dgReserveKw }: LivePowerDisplayPro
         },
         (payload) => {
           setLiveData(payload.new as LiveData);
-          setLastUpdate(new Date());
+          const now = new Date();
+          setLastUpdate(now);
+          lastUpdateRef.current = now;
           setIsStale(false);
         }
       )
       .subscribe();
 
-    // Check for stale data every 10 seconds
-    const staleCheck = setInterval(() => {
-      if (lastUpdate) {
-        const secondsSinceUpdate = (Date.now() - lastUpdate.getTime()) / 1000;
+    // Check for stale data every 10 seconds (uses ref to avoid stale closure)
+    staleCheckRef.current = setInterval(() => {
+      if (lastUpdateRef.current) {
+        const secondsSinceUpdate = (Date.now() - lastUpdateRef.current.getTime()) / 1000;
         setIsStale(secondsSinceUpdate > 30);
       }
     }, 10000);
 
+    // Handle tab visibility changes - pause/resume when tab hidden
+    const handleVisibility = () => {
+      if (document.hidden) {
+        // Tab hidden - clear stale check interval
+        if (staleCheckRef.current) {
+          clearInterval(staleCheckRef.current);
+          staleCheckRef.current = null;
+        }
+      } else {
+        // Tab visible - refetch and restart stale check
+        fetchLatest();
+        staleCheckRef.current = setInterval(() => {
+          if (lastUpdateRef.current) {
+            const secondsSinceUpdate = (Date.now() - lastUpdateRef.current.getTime()) / 1000;
+            setIsStale(secondsSinceUpdate > 30);
+          }
+        }, 10000);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       supabase.removeChannel(channel);
-      clearInterval(staleCheck);
+      if (staleCheckRef.current) {
+        clearInterval(staleCheckRef.current);
+      }
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [projectId, supabase, lastUpdate]);
+  }, [projectId, supabase]); // Removed lastUpdate - using ref instead
 
   // Calculate derived values
   const loadKw = liveData?.total_load_kw || 0;
