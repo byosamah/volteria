@@ -28,11 +28,13 @@ export async function GET(
     const { projectId } = await params;
     const supabase = await createClient();
 
-    // Step 1: Get all sites for this project
+    // Step 1: Get all active sites for this project
+    // Note: Must filter by is_active to match projects/page.tsx site count
     const { data: sites, error: sitesError } = await supabase
       .from("sites")
       .select("id")
-      .eq("project_id", projectId);
+      .eq("project_id", projectId)
+      .eq("is_active", true);
 
     if (sitesError) {
       return NextResponse.json(

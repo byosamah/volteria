@@ -270,10 +270,25 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | 23 | `023_control_commands.sql` | Remote control command audit trail |
 | 24 | `024_audit_logs.sql` | Comprehensive user action audit logs |
 | 25 | `025_add_sol564_nvme_hardware.sql` | NVMe hardware type (SOL564-NVME16-128) |
+| 26 | `026_alarms_threshold_type.sql` | Threshold alarm type support |
+| 27 | `027_controller_restart.sql` | Controller restart tracking |
+| 28 | `028_site_status_fields.sql` | Site status fields |
+| 29 | `029_alarm_registers.sql` | Alarm registers |
+| 30 | `030_device_alarm_registers.sql` | Device alarm registers |
+| 31 | `031_per_project_alarm_notifications.sql` | Per-project alarm notifications |
+| 32 | `032_site_test_results.sql` | Site test results |
+| 33 | `033_device_readings.sql` | Device readings table |
+| 34 | `034_write_register_command.sql` | Write register command |
 | 35 | `035_controller_templates.sql` | Controller templates with alarm definitions |
 | 36 | `036_alarm_definitions_structure.sql` | Alarm definitions JSONB for device_templates |
 | 37 | `037_site_alarm_overrides.sql` | Site-specific alarm threshold overrides |
 | 38 | `038_calculated_fields.sql` | Calculated field definitions (totals, energy) |
+| 39 | `039_usage_packages.sql` | Data usage packages |
+| 40 | `040_usage_snapshots.sql` | Usage tracking snapshots |
+| 41 | `041_api_request_logs.sql` | API request logging |
+| 42 | `042_data_retention.sql` | Data retention policies |
+| 43 | `043_site_dashboards.sql` | Site dashboards + widgets |
+| 44 | `044_sensor_device_type.sql` | Sensor device type |
 
 ### Core Tables
 | Table | Purpose | RLS |
@@ -298,6 +313,13 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | `controller_templates` | Controller template definitions | Enabled |
 | `site_alarm_overrides` | Site-specific alarm threshold overrides | Enabled |
 | `calculated_field_definitions` | Calculated field formulas | Enabled |
+| `site_dashboards` | Custom dashboards per site | Enabled |
+| `dashboard_widgets` | Widget configurations for dashboards | Enabled |
+| `usage_packages` | Data usage packages | Enabled |
+| `usage_snapshots` | Usage tracking snapshots | Enabled |
+| `api_request_logs` | API request logging | Enabled |
+| `data_retention_policies` | Data retention rules | Enabled |
+| `device_readings` | Device reading history | Enabled |
 
 ### User Roles (Hierarchy)
 | Role | Level | Permissions |
@@ -391,6 +413,50 @@ interface AlarmCondition {
 | `daily_solar_kwh` | cumulative | Solar energy today |
 | `daily_load_kwh` | cumulative | Load energy today |
 
+### Site Dashboard System (Phase 7)
+Custom dashboards with drag-drop widget placement for site monitoring.
+
+**Dashboard Page** (`/projects/[id]/sites/[siteId]/dashboard`):
+- Responsive grid-based canvas
+- 6 widget types for data visualization
+- Edit mode for widget positioning and configuration
+- Live data polling every 5 seconds (pauses when tab hidden)
+
+**Widget Types**:
+| Type | Description |
+|------|-------------|
+| `value_display` | Single register value with unit and label |
+| `chart` | Line/area/bar chart with time range selection |
+| `icon` | Status icon with color thresholds |
+| `status_indicator` | Online/offline device status |
+| `alarm_list` | Recent alarms with severity filtering |
+| `text` | Custom text/markdown display |
+
+**Widget Configuration**:
+Each widget has configurable properties:
+- Position (row, column) and size (width, height)
+- Data source (device, register)
+- Display options (colors, thresholds, labels)
+- Time ranges for charts (1h, 6h, 24h, 7d)
+
+### Historical Data (Phase 7)
+Historical data viewer for analyzing past readings.
+
+**Historical Data Page** (`/historical-data`):
+- Date range picker with presets (24h, 7d, 30d, custom)
+- Device and register selection
+- Data visualization with recharts
+- CSV export with selected columns
+- Smart polling with Page Visibility API
+
+### Data Usage & Retention (Phase 7)
+Data usage monitoring and retention policies.
+
+**Admin Data Usage** (`/admin/data-usage`):
+- Usage statistics per project/site
+- Package management
+- Retention policy configuration
+
 ## Environment Variables
 
 ### Required for Build (Next.js)
@@ -413,7 +479,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 3. **Offline Operation**: Controller works fully independently without internet. Data buffers locally and syncs on reconnect.
 
-4. **Database Migrations**: Always run migrations in order (001 through 025). See `database/migrations/` folder.
+4. **Database Migrations**: Always run migrations in order (001 through 044). See `database/migrations/` folder.
 
 5. **httpx Version**: Backend requires `httpx==0.24.1` (newer versions break Supabase compatibility).
 

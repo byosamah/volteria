@@ -34,7 +34,7 @@ FastAPI backend for Volteria - Energy Management platform providing:
 backend/
 ├── app/
 │   ├── main.py                  # FastAPI app entry (222 lines)
-│   ├── routers/                 # 9 API route handlers (77 endpoints total)
+│   ├── routers/                 # 11 API route handlers (90+ endpoints total)
 │   │   ├── auth.py              # Authentication & users (824 lines, 11 endpoints)
 │   │   ├── projects.py          # Project CRUD (619 lines)
 │   │   ├── sites.py             # Site management (712 lines)
@@ -43,7 +43,9 @@ backend/
 │   │   ├── enterprises.py       # Enterprise mgmt (518 lines)
 │   │   ├── alarms.py            # Alarm endpoints (485 lines)
 │   │   ├── logs.py              # Data logs (411 lines)
-│   │   └── hardware.py          # Hardware specs (275 lines)
+│   │   ├── hardware.py          # Hardware specs (275 lines)
+│   │   ├── dashboards.py        # Dashboard management (NEW)
+│   │   └── usage.py             # Data usage tracking (NEW)
 │   ├── services/
 │   │   ├── supabase.py          # Supabase client (93 lines)
 │   │   └── notifications.py     # Auto-create notifications on alarms
@@ -161,6 +163,27 @@ backend/
 | `/{id}` | DELETE | Remove hardware | Super Admin |
 | `/specs` | GET | List hardware specs | Yes |
 
+### Dashboards (`/api/dashboards/`)
+| Endpoint | Method | Description | Auth |
+|----------|--------|-------------|------|
+| `/{site_id}` | GET | Get site dashboard | Yes |
+| `/{site_id}` | POST | Create dashboard | Configurator+ |
+| `/{site_id}` | DELETE | Delete dashboard | Admin+ |
+| `/{site_id}/widgets` | GET | List dashboard widgets | Yes |
+| `/{site_id}/widgets` | POST | Add widget | Configurator+ |
+| `/{site_id}/widgets/{widget_id}` | PATCH | Update widget | Configurator+ |
+| `/{site_id}/widgets/{widget_id}` | DELETE | Remove widget | Configurator+ |
+| `/{site_id}/widgets/batch` | PATCH | Batch update positions | Configurator+ |
+| `/{site_id}/live-data` | GET | Get live data for widgets | Yes |
+
+### Usage (`/api/usage/`)
+| Endpoint | Method | Description | Auth |
+|----------|--------|-------------|------|
+| `/` | GET | List usage data | Admin+ |
+| `/packages` | GET | List usage packages | Admin+ |
+| `/snapshots` | GET | Get usage snapshots | Admin+ |
+| `/retention` | GET | Get retention policies | Admin+ |
+
 ### Health
 | Endpoint | Method | Description | Auth |
 |----------|--------|-------------|------|
@@ -214,6 +237,19 @@ ROLE_HIERARCHY = {
 - `controllers_master` - Registered hardware
 - `approved_hardware` - Hardware approval list
 - `hardware_detailed_specs` - Device specifications
+
+### Dashboard Tables
+- `site_dashboards` - Custom dashboards per site
+- `dashboard_widgets` - Widget configurations
+
+### Usage & Retention Tables
+- `usage_packages` - Data usage packages
+- `usage_snapshots` - Usage tracking snapshots
+- `api_request_logs` - API request logging
+- `data_retention_policies` - Data retention rules
+
+### Device Data Tables
+- `device_readings` - Device reading history
 
 ## Environment Variables
 ```env

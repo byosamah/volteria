@@ -66,6 +66,9 @@ src/app/
 │               ├── page.tsx           # Site dashboard (with charts)
 │               ├── settings/page.tsx  # Site settings
 │               ├── control/page.tsx   # Remote control panel
+│               ├── dashboard/
+│               │   ├── page.tsx           # Custom dashboard canvas
+│               │   └── dashboard-canvas.tsx  # Canvas with widgets
 │               ├── alarms/
 │               │   ├── page.tsx       # Site alarm configuration
 │               │   └── site-alarm-config.tsx  # Alarm override editor
@@ -77,6 +80,7 @@ src/app/
 ├── devices/page.tsx                   # Global device management
 ├── alarms/page.tsx                    # Alarms viewer with filtering
 ├── controllers/page.tsx               # My Controllers (enterprise users)
+├── historical-data/page.tsx           # Historical data viewer
 ├── account/page.tsx                   # User profile & avatar
 ├── settings/
 │   ├── page.tsx                       # User settings hub
@@ -105,14 +109,39 @@ src/app/
 │   │   ├── page.tsx                   # Controller templates list (super_admin only)
 │   │   ├── loading.tsx                # Loading skeleton
 │   │   └── controller-templates-list.tsx  # Main client component with CRUD
+│   ├── data-usage/
+│   │   ├── page.tsx                   # Data usage admin
+│   │   ├── data-usage-list.tsx        # Usage list component
+│   │   └── usage-chart.tsx            # Usage chart
 │   └── audit-logs/page.tsx            # Audit logs dashboard (admin only)
 │
 ├── debug/
 │   └── auth/page.tsx                  # Debug auth endpoint
 │
-└── api/                               # Next.js API Routes (6 routes)
+└── api/                               # Next.js API Routes (20+ routes)
     ├── controllers/
     │   └── heartbeats/route.ts        # Heartbeat polling for connection status
+    ├── dashboards/
+    │   └── [siteId]/
+    │       ├── route.ts               # Dashboard CRUD
+    │       ├── live-data/route.ts     # Live data polling (5s)
+    │       └── widgets/
+    │           ├── route.ts           # Widget CRUD
+    │           ├── [widgetId]/route.ts  # Single widget ops
+    │           └── batch/route.ts     # Batch widget updates
+    ├── historical/route.ts            # Historical data query
+    ├── sites/
+    │   └── [siteId]/
+    │       ├── status/route.ts        # Site status
+    │       ├── heartbeats/route.ts    # Site heartbeats
+    │       ├── controller-health/route.ts  # Controller health
+    │       └── test/route.ts          # Site tests
+    ├── projects/
+    │   └── [projectId]/
+    │       └── status/route.ts        # Project status (online/offline counts)
+    ├── devices/
+    │   └── [deviceId]/
+    │       └── registers/route.ts     # Device registers
     └── admin/
         ├── invite/route.ts            # Send email invitations
         └── users/
@@ -195,6 +224,7 @@ src/components/
 │
 ├── projects/
 │   ├── project-card.tsx               # Project summary card
+│   ├── project-status-badge.tsx       # Live status badge with polling
 │   └── sync-status.tsx                # Sync status indicator (last sync time)
 │
 ├── devices/
@@ -213,12 +243,17 @@ src/components/
 ├── sites/                             # Site-specific components
 │   ├── safe-mode-status.tsx           # Safe mode indicator panel
 │   ├── device-health-card.tsx         # Device online/offline summary
-│   └── calculated-fields-display.tsx  # Show computed calculated values
+│   ├── calculated-fields-display.tsx  # Show computed calculated values
+│   ├── controller-health-card.tsx     # Controller health display
+│   ├── site-status-header.tsx         # Site status header
+│   ├── site-test-button.tsx           # Site test trigger
+│   └── site-test-modal.tsx            # Site test modal
 │
 ├── control/                           # Remote control components
 │   ├── remote-control-panel.tsx       # Power limit slider, DG reserve
 │   ├── command-history.tsx            # Command audit trail
-│   └── emergency-stop-card.tsx        # Emergency stop button
+│   ├── emergency-stop-card.tsx        # Emergency stop button
+│   └── device-registers-panel.tsx     # Device registers display
 │
 ├── reports/                           # Reports components
 │   ├── efficiency-metrics-card.tsx    # Solar utilization, safe mode %
@@ -235,13 +270,30 @@ src/components/
 │   └── live-power-display.tsx         # Real-time power gauge
 │
 ├── logs/
-│   └── control-logs-viewer.tsx        # Control logs viewer
+│   ├── control-logs-viewer.tsx        # Control logs viewer
+│   └── control-logs-tab-trigger.tsx   # Tab trigger with badge
+│
+├── dashboard/                         # Dashboard widgets
+│   ├── alarm-list-widget.tsx          # Recent alarms widget
+│   ├── chart-widget.tsx               # Chart widget (line/area/bar)
+│   ├── icon-widget.tsx                # Status icon widget
+│   ├── status-indicator-widget.tsx    # Online/offline indicator
+│   ├── value-display-widget.tsx       # Single value display
+│   ├── text-widget.tsx                # Text/markdown widget
+│   ├── widget-config-dialog.tsx       # Widget configuration dialog
+│   └── widget-picker.tsx              # Widget type selector
+│
+├── historical/
+│   └── historical-data-client.tsx     # Historical data viewer
 │
 ├── alarms/
 │   ├── alarms-viewer.tsx              # Alarms with resolve functionality
 │   ├── alarm-condition-builder.tsx    # Threshold condition editor
 │   ├── alarm-definition-form.tsx      # Alarm definition editor
 │   └── index.ts                       # Component exports
+│
+├── users/                             # User management components
+│   └── user-notification-settings.tsx # Per-user notification settings
 │
 └── ui/                                # 22 shadcn/ui components
     ├── alert-dialog.tsx
@@ -594,6 +646,46 @@ Reusable components for alarm management:
   - Grid layout with computed values
   - Unit display and last updated timestamp
   - Compact mode for sidebars
+
+## New Features (Phase 7)
+
+### Site Dashboard System (`/projects/[id]/sites/[siteId]/dashboard`)
+Custom dashboards with drag-drop widget placement:
+- **Dashboard Canvas**: Responsive grid-based layout
+- **Edit Mode**: Toggle to position and configure widgets
+- **Live Data Polling**: 5-second updates with Page Visibility API (pauses when tab hidden)
+- **Widget Types**: 6 types (value, chart, icon, status, alarm list, text)
+- **Widget Config**: Per-widget settings for data source, colors, thresholds
+
+### Dashboard Widgets
+| Widget Type | Component | Description |
+|-------------|-----------|-------------|
+| `value_display` | `value-display-widget.tsx` | Single register value with unit |
+| `chart` | `chart-widget.tsx` | Line/area/bar chart with time range |
+| `icon` | `icon-widget.tsx` | Status icon with color thresholds |
+| `status_indicator` | `status-indicator-widget.tsx` | Online/offline device status |
+| `alarm_list` | `alarm-list-widget.tsx` | Recent alarms with severity filter |
+| `text` | `text-widget.tsx` | Custom text/markdown display |
+
+### Historical Data (`/historical-data`)
+Historical data viewer for analyzing past readings:
+- **Date Range Picker**: Presets (24h, 7d, 30d) + custom range
+- **Device Selection**: Filter by device and register
+- **Chart Visualization**: Time-series chart with recharts
+- **CSV Export**: Export selected data columns
+- **Smart Polling**: Page Visibility API to pause when tab hidden
+
+### Project Status Badge
+Live status polling component showing online/offline site counts:
+- **`project-status-badge.tsx`**: Aggregated status for project cards
+- **30-second polling**: Pauses when tab hidden
+- **Visual States**: Pulsing green dot (online), gray dot (offline)
+- **API**: `GET /api/projects/[projectId]/status`
+
+### Performance Optimizations
+- **React.memo**: Memoized widgets prevent unnecessary re-renders
+- **Page Visibility API**: All polling pauses when tab is hidden
+- **aria-expanded**: Proper accessibility attributes on hamburger menu
 
 ## Development
 
