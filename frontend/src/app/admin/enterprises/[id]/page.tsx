@@ -112,6 +112,7 @@ export default async function EnterpriseDetailPage({
   }
 
   // Fetch projects belonging to this enterprise
+  // Two paths: direct enterprise_id OR via controllers assigned to enterprise
   let projects: Array<{
     id: string;
     name: string;
@@ -121,15 +122,52 @@ export default async function EnterpriseDetailPage({
   }> = [];
 
   try {
-    const { data, error } = await supabase
+    // Path 1: Direct enterprise_id match
+    const { data: directProjects } = await supabase
       .from("projects")
       .select("id, name, location, controller_status, created_at")
       .eq("enterprise_id", id)
       .order("name");
 
-    if (!error && data) {
-      projects = data;
+    // Path 2: Projects via controllers (controller → site_master_devices → site → project)
+    // First get sites that have controllers assigned to this enterprise
+    let controllerProjects: typeof projects = [];
+    if (controllers.length > 0) {
+      const { data: controllerSites } = await supabase
+        .from("site_master_devices")
+        .select("site_id, sites!inner(project_id)")
+        .eq("device_type", "controller")
+        .in("controller_id", controllers.map(c => c.id));
+
+      // Get unique project IDs from controller sites
+      const projectIdsFromControllers = new Set<string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (controllerSites || []).forEach((cs: any) => {
+        if (cs.sites?.project_id) {
+          projectIdsFromControllers.add(cs.sites.project_id);
+        }
+      });
+
+      // Fetch those projects too
+      if (projectIdsFromControllers.size > 0) {
+        const { data: ctrlProjects } = await supabase
+          .from("projects")
+          .select("id, name, location, controller_status, created_at")
+          .in("id", Array.from(projectIdsFromControllers))
+          .order("name");
+        controllerProjects = ctrlProjects || [];
+      }
     }
+
+    // Merge and deduplicate by id
+    const projectMap = new Map<string, typeof projects[0]>();
+    [...(directProjects || []), ...controllerProjects].forEach(p => {
+      if (!projectMap.has(p.id)) {
+        projectMap.set(p.id, p);
+      }
+    });
+    projects = Array.from(projectMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
   } catch {
     // Table might not exist yet
   }
