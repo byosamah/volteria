@@ -549,10 +549,13 @@ async def site_heartbeat(
     uptime_seconds: Optional[int] = None,
     cpu_usage_pct: Optional[float] = None,
     memory_usage_pct: Optional[float] = None,
+    disk_usage_pct: Optional[float] = None,
+    metadata: Optional[dict] = None,
     db: Client = Depends(get_supabase)
 ):
     """
     Receive heartbeat from site controller.
+    Stores all system metrics including CPU, memory, disk, and temperature.
     """
     try:
         update_data = {
@@ -565,19 +568,37 @@ async def site_heartbeat(
 
         db.table("sites").update(update_data).eq("id", str(site_id)).execute()
 
-        # Also insert into heartbeats table
+        # Look up controller_id from site_master_devices
+        # This links heartbeats to the controller for frontend queries
+        controller_id = None
+        try:
+            master_result = db.table("site_master_devices").select("controller_id").eq(
+                "site_id", str(site_id)
+            ).eq("device_type", "controller").limit(1).execute()
+
+            if master_result.data and master_result.data[0].get("controller_id"):
+                controller_id = master_result.data[0]["controller_id"]
+        except Exception:
+            # Continue without controller_id if lookup fails
+            pass
+
+        # Insert heartbeat with ALL fields including controller_id
         heartbeat_data = {
             "site_id": str(site_id),
+            "controller_id": controller_id,
             "firmware_version": firmware_version,
             "uptime_seconds": uptime_seconds,
             "cpu_usage_pct": cpu_usage_pct,
-            "memory_usage_pct": memory_usage_pct
+            "memory_usage_pct": memory_usage_pct,
+            "disk_usage_pct": disk_usage_pct,
+            "metadata": metadata or {}
         }
         db.table("controller_heartbeats").insert(heartbeat_data).execute()
 
         return {
             "status": "received",
             "site_id": str(site_id),
+            "controller_id": controller_id,
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
