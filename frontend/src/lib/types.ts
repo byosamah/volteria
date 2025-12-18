@@ -21,7 +21,7 @@ export interface User {
   email: string;
   role: UserRole;
   full_name: string | null;
-  phone: string | null;
+  phone?: string | null;  // Optional - column may not exist in all deployments
   enterprise_id: string | null;
   avatar_url: string | null;
   is_active: boolean;
@@ -133,6 +133,24 @@ export interface ModbusRegister {
   values?: Record<string, unknown>;
 }
 
+// Alarm severity levels - unified for both alarm thresholds and general alarms
+// "info" for informational, "warning" for low priority, "minor" for medium,
+// "major" for high priority, "critical" for immediate attention
+export type AlarmSeverity = "info" | "warning" | "minor" | "major" | "critical";
+export type ThresholdOperator = ">" | ">=" | "<" | "<=" | "==" | "!=";
+
+export interface AlarmThreshold {
+  operator: ThresholdOperator;
+  value: number;
+  severity: AlarmSeverity;
+  message?: string;
+}
+
+// Alarm register extends ModbusRegister with optional thresholds
+export interface AlarmRegister extends ModbusRegister {
+  thresholds?: AlarmThreshold[];
+}
+
 export interface ProjectDevice {
   id: string;
   project_id: string;
@@ -187,8 +205,6 @@ export type AlarmType =
   | "controller_offline"
   | "write_failed"
   | "command_not_taken";
-
-export type AlarmSeverity = "info" | "warning" | "major" | "critical";
 
 // Per-project notification settings for a user
 export interface UserProjectNotificationSettings {
@@ -250,9 +266,6 @@ export type AlarmSourceType =
   | "device_info"       // From controller heartbeat (cpu_temp, disk_usage, etc.)
   | "calculated_field"  // From a calculated value (total_solar, total_load)
   | "heartbeat";        // Heartbeat timeout detection
-
-// Operators for threshold conditions
-export type ThresholdOperator = ">" | ">=" | "<" | "<=" | "==" | "!=";
 
 // Single threshold condition within an alarm definition
 export interface AlarmCondition {

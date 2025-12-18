@@ -19,6 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Trash2, Plus, ChevronDown, ChevronUp } from "lucide-react";
+import type { AlarmThreshold, AlarmSeverity, ThresholdOperator } from "@/lib/types";
 
 // Modbus register type
 export interface ModbusRegister {
@@ -37,7 +39,26 @@ export interface ModbusRegister {
   min?: number;
   max?: number;
   register_role?: string;  // Control logic role (e.g., "solar_active_power")
+  thresholds?: AlarmThreshold[];  // Alarm thresholds for alarm registers
 }
+
+// Severity options for alarm thresholds
+const SEVERITY_OPTIONS: { value: AlarmSeverity; label: string; color: string }[] = [
+  { value: "warning", label: "Warning", color: "bg-yellow-100 text-yellow-800 border-yellow-300" },
+  { value: "minor", label: "Minor", color: "bg-orange-100 text-orange-800 border-orange-300" },
+  { value: "major", label: "Major", color: "bg-orange-200 text-orange-900 border-orange-400" },
+  { value: "critical", label: "Critical", color: "bg-red-100 text-red-800 border-red-300" },
+];
+
+// Operator options for thresholds
+const OPERATOR_OPTIONS: { value: ThresholdOperator; label: string }[] = [
+  { value: ">", label: ">" },
+  { value: ">=", label: ">=" },
+  { value: "<", label: "<" },
+  { value: "<=", label: "<=" },
+  { value: "==", label: "==" },
+  { value: "!=", label: "!=" },
+];
 
 // Logging frequency options (in seconds)
 const LOGGING_FREQUENCY_OPTIONS = [
@@ -112,6 +133,8 @@ interface RegisterFormProps {
   onOpenChange: (open: boolean) => void;
   // Callback when register is saved
   onSave: (register: ModbusRegister) => void;
+  // Whether this is an alarm register (shows threshold configuration)
+  isAlarmRegister?: boolean;
 }
 
 export function RegisterForm({
@@ -121,6 +144,7 @@ export function RegisterForm({
   open,
   onOpenChange,
   onSave,
+  isAlarmRegister = false,
 }: RegisterFormProps) {
   // Form state
   const [formData, setFormData] = useState<{
@@ -157,6 +181,10 @@ export function RegisterForm({
 
   const [errors, setErrors] = useState<string[]>([]);
 
+  // Alarm thresholds state (only used when isAlarmRegister is true)
+  const [thresholds, setThresholds] = useState<AlarmThreshold[]>([]);
+  const [thresholdsExpanded, setThresholdsExpanded] = useState(false);
+
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
@@ -178,6 +206,9 @@ export function RegisterForm({
           max: register.max?.toString() || "",
           register_role: register.register_role || "none",
         });
+        // Load existing thresholds if editing an alarm register
+        setThresholds(register.thresholds || []);
+        setThresholdsExpanded((register.thresholds?.length || 0) > 0);
       } else {
         // Adding: reset to empty form
         setFormData({
@@ -196,6 +227,9 @@ export function RegisterForm({
           max: "",
           register_role: "none",
         });
+        // Reset thresholds when adding new register
+        setThresholds([]);
+        setThresholdsExpanded(false);
       }
       setErrors([]);
     }
@@ -254,6 +288,31 @@ export function RegisterForm({
     return newErrors.length === 0;
   };
 
+  // Threshold management functions
+  const addThreshold = () => {
+    setThresholds((prev) => [
+      ...prev,
+      { operator: ">" as ThresholdOperator, value: 0, severity: "warning" as AlarmSeverity, message: "" },
+    ]);
+    setThresholdsExpanded(true);
+  };
+
+  const removeThreshold = (index: number) => {
+    setThresholds((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateThreshold = (index: number, field: keyof AlarmThreshold, value: string | number) => {
+    setThresholds((prev) =>
+      prev.map((t, i) => {
+        if (i !== index) return t;
+        if (field === "value") {
+          return { ...t, [field]: typeof value === "string" ? parseFloat(value) || 0 : value };
+        }
+        return { ...t, [field]: value };
+      })
+    );
+  };
+
   // Handle form submission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,6 +358,15 @@ export function RegisterForm({
     // Add register role if not "none" (the default)
     if (formData.register_role && formData.register_role !== "none") {
       newRegister.register_role = formData.register_role;
+    }
+
+    // Add alarm thresholds if this is an alarm register and thresholds are defined
+    if (isAlarmRegister && thresholds.length > 0) {
+      // Filter out thresholds with no message (clean up empty ones)
+      const validThresholds = thresholds.filter((t) => t.value !== undefined);
+      if (validThresholds.length > 0) {
+        newRegister.thresholds = validThresholds;
+      }
     }
 
     onSave(newRegister);
@@ -580,6 +648,139 @@ export function RegisterForm({
             </select>
             <p className="text-xs text-muted-foreground">How often to log this register</p>
           </div>
+
+          {/* Alarm Thresholds Section (only for alarm registers) */}
+          {isAlarmRegister && (
+            <div className="space-y-3 pt-2">
+              {/* Collapsible header */}
+              <button
+                type="button"
+                onClick={() => setThresholdsExpanded(!thresholdsExpanded)}
+                className="flex items-center justify-between w-full text-left"
+              >
+                <span className="font-medium text-sm">
+                  Thresholds (optional)
+                  {thresholds.length > 0 && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      ({thresholds.length} configured)
+                    </span>
+                  )}
+                </span>
+                {thresholdsExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </button>
+
+              {/* Threshold list */}
+              {thresholdsExpanded && (
+                <div className="space-y-3 border rounded-md p-3 bg-muted/20">
+                  {thresholds.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">
+                      No thresholds configured. Add one to trigger alarms at specific values.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {thresholds.map((threshold, index) => (
+                        <div
+                          key={index}
+                          className="flex flex-wrap items-center gap-2 p-2 border rounded-md bg-background"
+                        >
+                          {/* Operator */}
+                          <select
+                            value={threshold.operator}
+                            onChange={(e) =>
+                              updateThreshold(index, "operator", e.target.value)
+                            }
+                            className="min-h-[36px] px-2 rounded-md border border-input bg-background w-16"
+                          >
+                            {OPERATOR_OPTIONS.map((op) => (
+                              <option key={op.value} value={op.value}>
+                                {op.label}
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Value */}
+                          <Input
+                            type="number"
+                            step="any"
+                            value={threshold.value}
+                            onChange={(e) =>
+                              updateThreshold(index, "value", e.target.value)
+                            }
+                            className="min-h-[36px] w-20"
+                            placeholder="Value"
+                          />
+
+                          <span className="text-muted-foreground">→</span>
+
+                          {/* Severity */}
+                          <select
+                            value={threshold.severity}
+                            onChange={(e) =>
+                              updateThreshold(index, "severity", e.target.value)
+                            }
+                            className={`min-h-[36px] px-2 rounded-md border w-24 ${
+                              SEVERITY_OPTIONS.find((s) => s.value === threshold.severity)
+                                ?.color || ""
+                            }`}
+                          >
+                            {SEVERITY_OPTIONS.map((sev) => (
+                              <option key={sev.value} value={sev.value}>
+                                {sev.label}
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Message */}
+                          <Input
+                            type="text"
+                            value={threshold.message || ""}
+                            onChange={(e) =>
+                              updateThreshold(index, "message", e.target.value)
+                            }
+                            className="min-h-[36px] flex-1 min-w-[120px]"
+                            placeholder="Alarm message (optional)"
+                          />
+
+                          {/* Delete button */}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeThreshold(index)}
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add threshold button */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addThreshold}
+                    className="w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Threshold
+                  </Button>
+
+                  {/* Help text */}
+                  <p className="text-xs text-muted-foreground">
+                    Thresholds are evaluated in order. Add multiple conditions to trigger
+                    different severity levels (e.g., &gt;70 → Warning, &gt;80 → Critical).
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">
             <Button

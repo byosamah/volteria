@@ -56,7 +56,7 @@ interface User {
   email: string;
   role: string;
   full_name: string | null;
-  phone: string | null;
+  phone?: string | null;  // Optional - column may not exist in all deployments
   is_active: boolean;
   enterprise_id: string | null;
   avatar_url: string | null;

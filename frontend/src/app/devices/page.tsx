@@ -58,12 +58,25 @@ export default async function DevicesPage() {
       access: string;
       logging_interval?: string;
     }> | null;
+    alarm_registers: Array<{
+      address: number;
+      name: string;
+      type: string;
+      datatype: string;
+      access: string;
+      thresholds?: Array<{
+        operator: string;
+        value: number;
+        severity: string;
+        message?: string;
+      }>;
+    }> | null;
   }> = [];
 
   try {
     const { data, error } = await supabase
       .from("device_templates")
-      .select("id, template_id, name, device_type, brand, model, rated_power_kw, template_type, enterprise_id, registers")
+      .select("id, template_id, name, device_type, brand, model, rated_power_kw, template_type, enterprise_id, registers, alarm_registers")
       .order("device_type")
       .order("brand");
 

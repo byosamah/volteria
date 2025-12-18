@@ -670,8 +670,7 @@ export function TemplateFormDialog({
                         <th className="px-3 py-2 text-left font-medium">Name</th>
                         <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
                         <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
-                        <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Access</th>
-                        <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Logging</th>
+                        <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Thresholds</th>
                         <th className="px-3 py-2 text-right font-medium">Actions</th>
                       </tr>
                     </thead>
@@ -688,9 +687,14 @@ export function TemplateFormDialog({
                             </span>
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.access}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
-                            {formatLoggingFrequency(reg.logging_frequency)}
+                          <td className="px-3 py-2 hidden md:table-cell">
+                            {reg.thresholds && reg.thresholds.length > 0 ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                {reg.thresholds.length} configured
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">None</span>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -777,6 +781,7 @@ export function TemplateFormDialog({
         open={alarmRegisterFormOpen}
         onOpenChange={setAlarmRegisterFormOpen}
         onSave={handleSaveAlarmRegister}
+        isAlarmRegister={true}
       />
     </Dialog>
   );
