@@ -476,7 +476,7 @@ export function MasterDeviceList({
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     {/* Online/Offline indicator - uses live heartbeat data for controllers */}
                     {device.device_type === "controller" && device.controller_id ? (
-                      // Controller: use polled heartbeat data
+                      // Controller: use polled heartbeat data with visible status text
                       (() => {
                         const heartbeat = getControllerHeartbeat(device.controller_id);
                         const online = isControllerOnline(heartbeat);
@@ -486,14 +486,22 @@ export function MasterDeviceList({
                             title={online ? "Online" : heartbeat ? formatTimeSince(heartbeat) : "Offline"}
                           >
                             {online ? (
-                              <span className="relative flex h-2.5 w-2.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-                              </span>
+                              <>
+                                <span className="relative flex h-2.5 w-2.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                                </span>
+                                <span className="text-xs text-green-600 font-medium">Online</span>
+                              </>
                             ) : (
-                              <span className="relative flex h-2.5 w-2.5">
-                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-300"></span>
-                              </span>
+                              <>
+                                <span className="relative flex h-2.5 w-2.5">
+                                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-300"></span>
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {heartbeat ? formatTimeSince(heartbeat) : "Offline"}
+                                </span>
+                              </>
                             )}
                           </div>
                         );
