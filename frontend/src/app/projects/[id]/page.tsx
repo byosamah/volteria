@@ -16,15 +16,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 // Status badge component
+// Colors: green for online, gray for offline, red for error
 function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-    online: "default",
-    offline: "secondary",
-    error: "destructive",
+  // Custom color classes for each status
+  const colorClasses: Record<string, string> = {
+    online: "bg-green-100 text-green-700 border-green-200",
+    offline: "bg-gray-100 text-gray-500 border-gray-200",
+    error: "bg-red-100 text-red-700 border-red-200",
   };
 
   return (
-    <Badge variant={variants[status] || "outline"} className="capitalize">
+    <Badge
+      variant="outline"
+      className={`capitalize ${colorClasses[status] || "bg-gray-100 text-gray-500 border-gray-200"}`}
+    >
       {status}
     </Badge>
   );
