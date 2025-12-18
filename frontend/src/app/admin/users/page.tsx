@@ -59,7 +59,6 @@ export default async function UsersPage() {
       email,
       role,
       full_name,
-      phone,
       is_active,
       enterprise_id,
       avatar_url,
@@ -71,8 +70,8 @@ export default async function UsersPage() {
   // Enterprise admin: filter to their enterprise only
   if (userProfile.role === "enterprise_admin") {
     if (!userProfile.enterprise_id) {
-      // Enterprise admin without enterprise - show empty list
-      usersQuery = usersQuery.eq("enterprise_id", "none");
+      // Enterprise admin without enterprise - show users without enterprise
+      usersQuery = usersQuery.is("enterprise_id", null);
     } else {
       usersQuery = usersQuery.eq("enterprise_id", userProfile.enterprise_id);
     }
