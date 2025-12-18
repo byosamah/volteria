@@ -99,6 +99,55 @@ export default async function DataUsagePage() {
     (snapshots || []).map((s) => [s.enterprise_id, s])
   );
 
+  // Fetch LIVE resource counts per enterprise (instead of relying on snapshots)
+  // This ensures we always show current counts, not stale snapshot data
+  const liveResourceCounts = new Map<string, { sites: number; controllers: number; users: number }>();
+
+  // Sites count: sites → projects → enterprise
+  const { data: siteCounts } = await supabase
+    .from("sites")
+    .select("id, project_id, projects!inner(enterprise_id)")
+    .eq("is_active", true);
+
+  // Group sites by enterprise_id
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (siteCounts || []).forEach((site: any) => {
+    const enterpriseId = site.projects?.enterprise_id;
+    if (enterpriseId) {
+      const current = liveResourceCounts.get(enterpriseId) || { sites: 0, controllers: 0, users: 0 };
+      current.sites++;
+      liveResourceCounts.set(enterpriseId, current);
+    }
+  });
+
+  // Controllers count by enterprise
+  const { data: controllerCounts } = await supabase
+    .from("controllers_master")
+    .select("enterprise_id")
+    .eq("is_active", true);
+
+  (controllerCounts || []).forEach((c) => {
+    if (c.enterprise_id) {
+      const current = liveResourceCounts.get(c.enterprise_id) || { sites: 0, controllers: 0, users: 0 };
+      current.controllers++;
+      liveResourceCounts.set(c.enterprise_id, current);
+    }
+  });
+
+  // Users count by enterprise
+  const { data: userCounts } = await supabase
+    .from("users")
+    .select("enterprise_id")
+    .eq("is_active", true);
+
+  (userCounts || []).forEach((u) => {
+    if (u.enterprise_id) {
+      const current = liveResourceCounts.get(u.enterprise_id) || { sites: 0, controllers: 0, users: 0 };
+      current.users++;
+      liveResourceCounts.set(u.enterprise_id, current);
+    }
+  });
+
   // Build enterprise usage data
   const enterpriseUsage = (enterprises || []).map((enterprise) => {
     const snapshot = snapshotsMap.get(enterprise.id) || {};
@@ -129,9 +178,10 @@ export default async function DataUsagePage() {
       control_logs_rows: snapshot.control_logs_rows || 0,
       alarms_bytes: snapshot.alarms_bytes || 0,
       heartbeats_bytes: snapshot.heartbeats_bytes || 0,
-      sites_count: snapshot.sites_count || 0,
-      controllers_count: snapshot.controllers_count || 0,
-      users_count: snapshot.users_count || 0,
+      // Use LIVE counts (always accurate) with fallback to snapshot
+      sites_count: liveResourceCounts.get(enterprise.id)?.sites || snapshot.sites_count || 0,
+      controllers_count: liveResourceCounts.get(enterprise.id)?.controllers || snapshot.controllers_count || 0,
+      users_count: liveResourceCounts.get(enterprise.id)?.users || snapshot.users_count || 0,
       warning_level: warningLevel,
       grace_period_start: enterprise.usage_grace_period_start,
       snapshot_date: snapshot.snapshot_date || null,
