@@ -28,11 +28,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Download, RefreshCw, Plus, Trash2, Settings2, AlertCircle } from "lucide-react";
 import {
-  LineChart,
+  ComposedChart,
   Line,
-  AreaChart,
   Area,
-  BarChart,
   Bar,
   XAxis,
   YAxis,
@@ -85,6 +83,7 @@ interface ChartParameter {
   color: string;
   yAxis: "Y1" | "Y2" | "Y3";
   visible: boolean;
+  chartType: "line" | "area" | "bar"; // Per-parameter chart type
 }
 
 // Reference line configuration
@@ -187,7 +186,6 @@ export function HistoricalDataClient({
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [duration, setDuration] = useState<string>("24h");
-  const [chartType, setChartType] = useState<string>("line");
 
   // Data state
   const [isLoading, setIsLoading] = useState(false);
@@ -279,6 +277,7 @@ export function HistoricalDataClient({
       color: nextColor,
       yAxis: "Y1",
       visible: true,
+      chartType: "line", // Default chart type
     };
 
     setParameters((prev) => [...prev, newParam]);
@@ -446,7 +445,7 @@ export function HistoricalDataClient({
     return Array.from(axes).sort();
   }, [parameters, referenceLines, calculatedFields]);
 
-  // Render chart based on type
+  // Render chart with per-parameter chart types using ComposedChart
   const renderChart = useCallback(() => {
     if (chartData.length === 0) {
       return (
@@ -471,12 +470,6 @@ export function HistoricalDataClient({
     const validParams = parameters.filter(
       (p) => p.deviceId && p.registerName && p.visible
     );
-
-    // Common chart props
-    const commonProps = {
-      data: chartData,
-      margin: { top: 20, right: 80, left: 20, bottom: 20 },
-    };
 
     // Create Y-axes
     const yAxes = usedYAxes.map((axis, index) => {
@@ -518,33 +511,21 @@ export function HistoricalDataClient({
       />
     ));
 
-    // Render based on chart type
-    if (chartType === "area") {
-      return (
-        <ResponsiveContainer width="100%" height={400}>
-          <AreaChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              dataKey="formattedTime"
-              tick={{ fontSize: 11 }}
-              stroke="#6b7280"
-            />
-            {yAxes}
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#1f2937",
-                border: "1px solid #374151",
-                borderRadius: "6px",
-              }}
-              labelStyle={{ color: "#9ca3af" }}
-            />
-            <Legend />
-            {validParams.map((param) => (
+    // Render chart elements based on each parameter's chartType
+    // ComposedChart allows mixing Line, Area, and Bar in the same chart
+    const renderChartElements = () => {
+      return validParams.map((param) => {
+        const dataKey = `${param.deviceId}:${param.registerName}`;
+        const name = `${param.deviceName} - ${param.registerName}`;
+
+        switch (param.chartType) {
+          case "area":
+            return (
               <Area
                 key={param.id}
                 type="monotone"
-                dataKey={`${param.deviceId}:${param.registerName}`}
-                name={`${param.deviceName} - ${param.registerName}`}
+                dataKey={dataKey}
+                name={name}
                 stroke={param.color}
                 fill={param.color}
                 fillOpacity={0.3}
@@ -552,64 +533,42 @@ export function HistoricalDataClient({
                 dot={false}
                 connectNulls
               />
-            ))}
-            {refLines}
-            <Brush
-              dataKey="formattedTime"
-              height={30}
-              stroke="#3b82f6"
-              fill="#1f2937"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      );
-    }
-
-    if (chartType === "bar") {
-      return (
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              dataKey="formattedTime"
-              tick={{ fontSize: 11 }}
-              stroke="#6b7280"
-            />
-            {yAxes}
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#1f2937",
-                border: "1px solid #374151",
-                borderRadius: "6px",
-              }}
-              labelStyle={{ color: "#9ca3af" }}
-            />
-            <Legend />
-            {validParams.map((param) => (
+            );
+          case "bar":
+            return (
               <Bar
                 key={param.id}
-                dataKey={`${param.deviceId}:${param.registerName}`}
-                name={`${param.deviceName} - ${param.registerName}`}
+                dataKey={dataKey}
+                name={name}
                 fill={param.color}
                 yAxisId={param.yAxis}
               />
-            ))}
-            {refLines}
-            <Brush
-              dataKey="formattedTime"
-              height={30}
-              stroke="#3b82f6"
-              fill="#1f2937"
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      );
-    }
+            );
+          case "line":
+          default:
+            return (
+              <Line
+                key={param.id}
+                type="monotone"
+                dataKey={dataKey}
+                name={name}
+                stroke={param.color}
+                yAxisId={param.yAxis}
+                dot={false}
+                strokeWidth={2}
+                connectNulls
+              />
+            );
+        }
+      });
+    };
 
-    // Default: Line chart
     return (
       <ResponsiveContainer width="100%" height={400}>
-        <LineChart {...commonProps}>
+        <ComposedChart
+          data={chartData}
+          margin={{ top: 20, right: 80, left: 20, bottom: 20 }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
           <XAxis
             dataKey="formattedTime"
@@ -626,19 +585,7 @@ export function HistoricalDataClient({
             labelStyle={{ color: "#9ca3af" }}
           />
           <Legend />
-          {validParams.map((param) => (
-            <Line
-              key={param.id}
-              type="monotone"
-              dataKey={`${param.deviceId}:${param.registerName}`}
-              name={`${param.deviceName} - ${param.registerName}`}
-              stroke={param.color}
-              yAxisId={param.yAxis}
-              dot={false}
-              strokeWidth={2}
-              connectNulls
-            />
-          ))}
+          {renderChartElements()}
           {refLines}
           <Brush
             dataKey="formattedTime"
@@ -646,10 +593,10 @@ export function HistoricalDataClient({
             stroke="#3b82f6"
             fill="#1f2937"
           />
-        </LineChart>
+        </ComposedChart>
       </ResponsiveContainer>
     );
-  }, [chartData, chartType, parameters, referenceLines, selectedSiteId, usedYAxes]);
+  }, [chartData, parameters, referenceLines, selectedSiteId, usedYAxes]);
 
   return (
     <div className="space-y-6">
@@ -716,25 +663,6 @@ export function HistoricalDataClient({
                 </SelectTrigger>
                 <SelectContent>
                   {DURATION_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Chart Type Selector */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">
-                Chart Type
-              </label>
-              <Select value={chartType} onValueChange={setChartType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CHART_TYPE_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>
@@ -810,8 +738,9 @@ export function HistoricalDataClient({
             <div className="space-y-3">
               {/* Table Header */}
               <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-2">
-                <div className="col-span-3">Device</div>
-                <div className="col-span-3">Register</div>
+                <div className="col-span-2">Device</div>
+                <div className="col-span-2">Register</div>
+                <div className="col-span-2">Type</div>
                 <div className="col-span-2">Color</div>
                 <div className="col-span-2">Y-Axis</div>
                 <div className="col-span-2">Actions</div>
@@ -1045,10 +974,10 @@ function ParameterRow({
   return (
     <div className="grid grid-cols-12 gap-2 items-center p-2 bg-muted/30 rounded-lg">
       {/* Device Selector */}
-      <div className="col-span-3">
+      <div className="col-span-2">
         <Select value={parameter.deviceId} onValueChange={onDeviceChange}>
           <SelectTrigger className="h-9">
-            <SelectValue placeholder="Select device" />
+            <SelectValue placeholder="Device" />
           </SelectTrigger>
           <SelectContent>
             {devices.map((device) => (
@@ -1061,27 +990,51 @@ function ParameterRow({
       </div>
 
       {/* Register Selector */}
-      <div className="col-span-3">
+      <div className="col-span-2">
         <Select
           value={parameter.registerName}
           onValueChange={(value) => {
             const reg = registers.find((r) => r.name === value);
+            // Set chart type based on preferred_chart_type from register if available
+            const chartType = reg?.preferred_chart_type as "line" | "area" | "bar" | undefined;
             onUpdate({
               registerName: value,
               unit: reg?.unit || "",
+              ...(chartType && { chartType }),
             });
           }}
           disabled={!parameter.deviceId || loadingRegisters}
         >
           <SelectTrigger className="h-9">
             <SelectValue
-              placeholder={loadingRegisters ? "Loading..." : "Select register"}
+              placeholder={loadingRegisters ? "Loading..." : "Register"}
             />
           </SelectTrigger>
           <SelectContent>
             {registers.map((reg) => (
               <SelectItem key={reg.name} value={reg.name}>
                 {reg.name} {reg.unit && `(${reg.unit})`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Chart Type Selector - Per parameter! */}
+      <div className="col-span-2">
+        <Select
+          value={parameter.chartType}
+          onValueChange={(value: "line" | "area" | "bar") =>
+            onUpdate({ chartType: value })
+          }
+        >
+          <SelectTrigger className="h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CHART_TYPE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
               </SelectItem>
             ))}
           </SelectContent>

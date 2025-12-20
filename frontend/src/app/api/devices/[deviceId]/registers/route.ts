@@ -54,13 +54,14 @@ export async function GET(
       );
     }
 
-    // Fetch device with its template
+    // Fetch device with its template AND device-specific registers
     const { data: deviceData, error: deviceError } = await supabase
       .from("project_devices")
       .select(`
         id,
         name,
         site_id,
+        registers,
         device_templates (
           id,
           device_type,
@@ -134,17 +135,29 @@ export async function GET(
       );
     }
 
-    // Parse registers from template
-    // Registers are stored as JSONB in the device_templates table
+    // Parse registers - prioritize device-specific, fall back to template
+    // Device-specific registers are stored in project_devices.registers
+    // Template registers are stored in device_templates.registers
     let registers: RegisterDefinition[] = [];
 
-    if (template.registers) {
+    // Priority 1: Device-specific registers (from project_devices.registers)
+    const deviceRegisters = deviceData.registers as RegisterDefinition[] | Record<string, RegisterDefinition> | null;
+    // Priority 2: Template registers (from device_templates.registers)
+    const templateRegisters = template?.registers;
+
+    // Use device-specific if present and non-empty, otherwise use template
+    const hasDeviceRegisters = deviceRegisters &&
+      (Array.isArray(deviceRegisters) ? deviceRegisters.length > 0 : Object.keys(deviceRegisters).length > 0);
+
+    const sourceRegisters = hasDeviceRegisters ? deviceRegisters : templateRegisters;
+
+    if (sourceRegisters) {
       // Registers can be an array or an object with keys
-      if (Array.isArray(template.registers)) {
-        registers = template.registers;
-      } else if (typeof template.registers === "object") {
+      if (Array.isArray(sourceRegisters)) {
+        registers = sourceRegisters;
+      } else if (typeof sourceRegisters === "object") {
         // If it's an object, convert to array
-        registers = Object.values(template.registers);
+        registers = Object.values(sourceRegisters);
       }
     }
 

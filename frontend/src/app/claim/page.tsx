@@ -1,12 +1,12 @@
 /**
  * Controller Claim Page
  *
- * Allows Enterprise Admins to claim controllers using serial number + passcode.
+ * Allows Enterprise Admins and Configurators to claim controllers using serial number + passcode.
  * Flow:
  * 1. Enter serial number and passcode
  * 2. System validates the passcode matches
  * 3. Controller is assigned to the user's enterprise
- * 4. Controller status changes to "deployed"
+ * 4. Controller status changes to "claimed"
  */
 
 import { redirect } from "next/navigation";
@@ -33,8 +33,8 @@ export default async function ClaimPage() {
     .eq("id", user.id)
     .single();
 
-  // Only enterprise_admin can claim controllers
-  if (!userData || userData.role !== "enterprise_admin") {
+  // Only enterprise_admin or configurator can claim controllers
+  if (!userData || !["enterprise_admin", "configurator"].includes(userData.role || "")) {
     redirect("/");
   }
 

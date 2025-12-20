@@ -119,6 +119,13 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingTemplate, setEditingTemplate] = useState<DeviceTemplate | undefined>();
 
+  // Create enterprise lookup map for displaying names on custom templates
+  const enterpriseNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    enterprises?.forEach(e => map.set(e.id, e.name));
+    return map;
+  }, [enterprises]);
+
   // Permission: Can CREATE templates (add button visibility)
   // - super_admin/admin can create any template
   // - enterprise_admin can create custom templates for their enterprise
@@ -397,6 +404,12 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                             >
                               {template.template_type === "custom" ? "Custom" : "Public"}
                             </Badge>
+                            {/* Show enterprise name for custom templates */}
+                            {template.template_type === "custom" && template.enterprise_id && (
+                              <span className="text-xs text-muted-foreground">
+                                {enterpriseNameMap.get(template.enterprise_id) || "Unknown"}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </CardHeader>

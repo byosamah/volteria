@@ -571,11 +571,11 @@ async def claim_controller(
     The controller must be in 'ready' status to be claimed.
     """
     try:
-        # Only enterprise_admin can claim
-        if current_user.role != "enterprise_admin":
+        # Only enterprise_admin or configurator can claim
+        if current_user.role not in ["enterprise_admin", "configurator"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only enterprise admins can claim controllers"
+                detail="Only enterprise admins and configurators can claim controllers"
             )
 
         # Get user's enterprise_id
