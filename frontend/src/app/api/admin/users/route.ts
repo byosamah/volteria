@@ -71,7 +71,7 @@ export async function GET() {
         enterprise_id,
         avatar_url,
         created_at,
-        enterprises (name)
+        enterprises!users_enterprise_id_fkey (name)
       `)
       .order("created_at", { ascending: false });
 
