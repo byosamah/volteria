@@ -10,6 +10,7 @@
 import { memo } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ProjectStatusBadge } from "@/components/projects/project-status-badge";
 
 // Project type definition
@@ -21,6 +22,7 @@ export interface Project {
   deviceCount: number;       // Non-master devices (inverters, meters, etc.)
   siteCount: number;
   controllerCount: number;   // Master devices (controllers/gateways)
+  enterprises: { id: string; name: string } | null;  // Enterprise the project belongs to
 }
 
 interface ProjectCardProps {
@@ -33,15 +35,21 @@ export const ProjectCard = memo(function ProjectCard({ project }: ProjectCardPro
       <Card className="h-full hover:border-primary/50 transition-colors cursor-pointer">
         <CardHeader>
           <div className="flex items-start justify-between">
-            <div>
+            <div className="space-y-1">
               <CardTitle className="text-lg">{project.name}</CardTitle>
               <CardDescription>
                 {project.location || "No location set"}
               </CardDescription>
+              {/* Enterprise badge */}
+              {project.enterprises && (
+                <Badge variant="outline" className="mt-1 text-xs">
+                  {project.enterprises.name}
+                </Badge>
+              )}
             </div>
             {/* Live status badge and edit button */}
             <div className="flex items-center gap-2">
-              <ProjectStatusBadge projectId={project.id} />
+              <ProjectStatusBadge projectId={project.id} siteCount={project.siteCount} />
               {/* Edit button - links directly to project settings */}
               {/* onClick works here because this is a Client Component */}
               <Link

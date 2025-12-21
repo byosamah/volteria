@@ -22,42 +22,94 @@ export default async function ProjectsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Fetch user profile including avatar and role
-  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null } | null = null;
+  // Fetch user profile including avatar, role, and enterprise
+  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null; enterprise_id: string | null } | null = null;
   if (user?.id) {
     const { data } = await supabase
       .from("users")
-      .select("full_name, avatar_url, role")
+      .select("full_name, avatar_url, role, enterprise_id")
       .eq("id", user.id)
       .single();
     userProfile = data;
   }
 
-  // Fetch all projects
+  // Fetch projects with enterprise data
   // Note: Status is now fetched live by ProjectStatusBadge component
+  // Access control:
+  // - super_admin/backend_admin: see ALL projects
+  // - enterprise_admin: see only projects in their enterprise
+  // - admin/configurator/viewer: see only assigned projects via user_projects
   let projects: Array<{
     id: string;
     name: string;
     location: string | null;
     description: string | null;
     created_at: string;
+    enterprise_id: string | null;
+    enterprises: { id: string; name: string } | null;
   }> = [];
 
   try {
-    const { data, error } = await supabase
+    const userRole = userProfile?.role;
+    const userEnterpriseId = userProfile?.enterprise_id;
+
+    // Build the base query with enterprise join
+    // Using explicit FK syntax to avoid ambiguity
+    let query = supabase
       .from("projects")
       .select(`
         id,
         name,
         location,
         description,
-        created_at
+        created_at,
+        enterprise_id,
+        enterprises!projects_enterprise_id_fkey (id, name)
       `)
-      .eq("is_active", true)
-      .order("name");
+      .eq("is_active", true);
 
-    if (!error && data) {
-      projects = data;
+    // Apply role-based filtering
+    if (userRole === "super_admin" || userRole === "backend_admin") {
+      // Super admin and backend admin see ALL projects - no filter needed
+    } else if (userRole === "enterprise_admin") {
+      // Enterprise admin sees only projects in their enterprise
+      if (userEnterpriseId) {
+        query = query.eq("enterprise_id", userEnterpriseId);
+      } else {
+        // Enterprise admin without enterprise - show nothing
+        query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+      }
+    } else {
+      // admin/configurator/viewer: filter by user_projects assignments
+      // First, get the project IDs this user has access to
+      const { data: userProjectAssignments } = await supabase
+        .from("user_projects")
+        .select("project_id")
+        .eq("user_id", user?.id || "");
+
+      const assignedProjectIds = userProjectAssignments?.map((up) => up.project_id) || [];
+
+      if (assignedProjectIds.length === 0) {
+        // User has no project assignments - return empty
+        projects = [];
+      } else {
+        query = query.in("id", assignedProjectIds);
+      }
+    }
+
+    // Execute query (skip if already set to empty for no assignments)
+    if (!(userRole !== "super_admin" && userRole !== "backend_admin" && userRole !== "enterprise_admin" && projects.length === 0)) {
+      const { data, error } = await query.order("name");
+
+      if (!error && data) {
+        // Transform the Supabase response - enterprises might be an array
+        projects = data.map((p) => ({
+          ...p,
+          enterprises: Array.isArray(p.enterprises)
+            ? p.enterprises[0] || null
+            : p.enterprises || null,
+        }));
+      }
     }
   } catch {
     // Table might not exist yet
@@ -134,12 +186,16 @@ export default async function ProjectsPage() {
     }
   }
 
-  // Combine projects with their counts
+  // Combine projects with their counts and enterprise data
   const projectsWithCounts = projects.map((project) => ({
-    ...project,
+    id: project.id,
+    name: project.name,
+    location: project.location,
+    description: project.description,
     deviceCount: deviceCountMap[project.id] || 0,
     siteCount: siteCountMap[project.id] || 0,
     controllerCount: controllerCountMap[project.id] || 0,
+    enterprises: project.enterprises,
   }));
 
   return (

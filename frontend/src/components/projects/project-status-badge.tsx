@@ -25,9 +25,10 @@ interface ProjectStatusData {
 
 interface ProjectStatusBadgeProps {
   projectId: string;
+  siteCount?: number;  // Total sites (including those without master devices)
 }
 
-export const ProjectStatusBadge = memo(function ProjectStatusBadge({ projectId }: ProjectStatusBadgeProps) {
+export const ProjectStatusBadge = memo(function ProjectStatusBadge({ projectId, siteCount = 0 }: ProjectStatusBadgeProps) {
   const [status, setStatus] = useState<ProjectStatusData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -88,8 +89,20 @@ export const ProjectStatusBadge = memo(function ProjectStatusBadge({ projectId }
     );
   }
 
-  // No status data or no sites
+  // No status data or no sites with master devices
   if (!status || status.total === 0) {
+    // If there are sites but no master devices, show "X sites - No controllers"
+    if (siteCount > 0) {
+      return (
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-yellow-400" />
+          <span className="text-sm text-muted-foreground">
+            {siteCount} site{siteCount === 1 ? "" : "s"} - No controllers
+          </span>
+        </div>
+      );
+    }
+    // No sites at all
     return (
       <div className="flex items-center gap-2">
         <div className="h-2 w-2 rounded-full bg-gray-400" />
