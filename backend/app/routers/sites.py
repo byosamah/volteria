@@ -703,8 +703,10 @@ async def get_site_config(
                 device_config["rated_power_kw"] = float(device["rated_power_kw"])
             if device.get("rated_power_kva"):
                 device_config["rated_power_kva"] = float(device["rated_power_kva"])
-            if device.get("registers"):
-                device_config["registers"] = device["registers"]
+            # Support both new column name (logging_registers) and legacy (registers) for backward compatibility
+            device_registers = device.get("logging_registers") or device.get("registers")
+            if device_registers:
+                device_config["registers"] = device_registers
             if device.get("logging_interval_ms"):
                 device_config["logging_interval_ms"] = device["logging_interval_ms"]
 

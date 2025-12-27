@@ -1,0 +1,11 @@
+{
+  "include": ["app"],
+  "exclude": ["**/node_modules", "**/__pycache__", "**/.*", "**/venv"],
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.11",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportGeneralTypeIssues": true,
+  "reportOptionalMemberAccess": true,
+  "reportUnusedVariable": "warning"
+}

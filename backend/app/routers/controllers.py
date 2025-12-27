@@ -789,6 +789,7 @@ async def get_controller_config(
         site_id = site["id"]
 
         # 4. Get all devices for this site
+        # Query both logging_registers (new) and registers (legacy) for backward compatibility
         devices_result = db.table("project_devices").select("""
             *,
             device_templates:template_id (
@@ -799,6 +800,7 @@ async def get_controller_config(
                 model,
                 rated_power_kw,
                 rated_power_kva,
+                logging_registers,
                 registers
             )
         """).eq("site_id", str(site_id)).eq("enabled", True).execute()
@@ -824,7 +826,8 @@ async def get_controller_config(
                 "rated_power_kw": template.get("rated_power_kw"),
                 "rated_power_kva": template.get("rated_power_kva"),
                 "measurement_type": device.get("measurement_type"),
-                "registers": template.get("registers", [])
+                # Use logging_registers if available, fall back to legacy registers
+                "registers": template.get("logging_registers") or template.get("registers", [])
             }
 
             if device_type == "load_meter":

@@ -96,6 +96,9 @@ class DeviceTemplateCreate(BaseModel):
     rated_power_kva: Optional[float] = None
     registers: list[ModbusRegister] = []
     specifications: dict = {}
+    # Template type and enterprise assignment (for custom templates)
+    template_type: Optional[str] = None  # 'public' or 'custom' (defaults based on role)
+    enterprise_id: Optional[str] = None  # Required for custom templates
 
 
 class DeviceTemplateResponse(BaseModel):
@@ -126,6 +129,13 @@ class DeviceTemplateUpdate(BaseModel):
     template_type: Optional[str] = None
     registers: Optional[list[ModbusRegister]] = None
     specifications: Optional[dict] = None
+
+
+class DeviceTemplateDuplicate(BaseModel):
+    """Duplicate device template request."""
+    new_template_id: str = Field(..., description="Unique ID for the new template")
+    new_name: str = Field(..., description="Name for the new template (must differ from original)")
+    enterprise_id: Optional[str] = Field(None, description="Enterprise to assign (admin only, defaults to user's enterprise)")
 
 
 # ============================================
@@ -210,7 +220,8 @@ def db_row_to_template_response(row: dict) -> DeviceTemplateResponse:
         model=row.get("model", ""),
         rated_power_kw=float(row["rated_power_kw"]) if row.get("rated_power_kw") else None,
         rated_power_kva=float(row["rated_power_kva"]) if row.get("rated_power_kva") else None,
-        registers=row.get("registers", []) or [],
+        # Support both new column name (logging_registers) and legacy (registers) for backward compatibility
+        registers=row.get("logging_registers") or row.get("registers", []) or [],
         specifications=row.get("specifications", {}) or {},
         is_active=row.get("is_active", True)
     )
@@ -315,14 +326,17 @@ async def get_template(
 @router.post("/templates", response_model=DeviceTemplateResponse, status_code=status.HTTP_201_CREATED)
 async def create_template(
     template: DeviceTemplateCreate,
-    current_user: CurrentUser = Depends(require_role(["super_admin", "admin"])),
+    current_user: CurrentUser = Depends(require_role([
+        "super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"
+    ])),
     db: Client = Depends(get_supabase)
 ):
     """
     Create a new device template.
 
-    Only admin and super_admin can create templates.
-    Templates are global (not project-specific).
+    Permissions:
+    - super_admin/backend_admin/admin: Can create public or custom templates
+    - enterprise_admin/configurator: Can only create custom templates for their enterprise
     """
     try:
         # Check if template_id already exists
@@ -331,6 +345,36 @@ async def create_template(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Template with ID '{template.template_id}' already exists"
+            )
+
+        # Determine template_type and enterprise_id based on user role
+        is_high_role = current_user.role in ["super_admin", "backend_admin", "admin"]
+
+        # High roles can choose template_type; lower roles are forced to "custom"
+        resolved_template_type = template.template_type if is_high_role else "custom"
+        if not resolved_template_type:
+            resolved_template_type = "public" if is_high_role else "custom"
+
+        # Determine enterprise_id
+        resolved_enterprise_id = None
+        if resolved_template_type == "custom":
+            if is_high_role:
+                # Admin selects enterprise from request
+                resolved_enterprise_id = template.enterprise_id
+            else:
+                # Enterprise admin/configurator uses their own enterprise
+                resolved_enterprise_id = current_user.enterprise_id
+
+            if not resolved_enterprise_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Enterprise ID is required for custom templates"
+                )
+        elif not is_high_role:
+            # Lower roles cannot create public templates
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins can create public templates"
             )
 
         # Process registers: auto-generate alias if not provided
@@ -351,9 +395,12 @@ async def create_template(
             "model": template.model,
             "rated_power_kw": template.rated_power_kw,
             "rated_power_kva": template.rated_power_kva,
-            "registers": processed_registers,
+            "logging_registers": processed_registers,  # New column name (migration 045)
             "specifications": template.specifications,
-            "is_active": True
+            "is_active": True,
+            "template_type": resolved_template_type,
+            "enterprise_id": resolved_enterprise_id,
+            "created_by": str(current_user.id)
         }
 
         result = db.table("device_templates").insert(insert_data).execute()
@@ -378,14 +425,17 @@ async def create_template(
 async def update_template(
     template_id: str,
     template_update: DeviceTemplateUpdate,
-    current_user: CurrentUser = Depends(require_role(["super_admin", "admin"])),
+    current_user: CurrentUser = Depends(require_role([
+        "super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"
+    ])),
     db: Client = Depends(get_supabase)
 ):
     """
     Update an existing device template.
 
-    Only admin and super_admin can update templates.
-    Only provided fields will be updated.
+    Permissions:
+    - super_admin/backend_admin/admin: Can edit any template
+    - enterprise_admin/configurator: Can only edit custom templates from their enterprise
     """
     try:
         # Find existing template by template_id
@@ -395,6 +445,22 @@ async def update_template(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Template '{template_id}' not found"
             )
+
+        existing_template = existing.data[0]
+        is_high_role = current_user.role in ["super_admin", "backend_admin", "admin"]
+
+        # Enterprise admin/configurator can only edit their enterprise's custom templates
+        if not is_high_role:
+            if existing_template.get("template_type") != "custom":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only edit custom templates"
+                )
+            if existing_template.get("enterprise_id") != current_user.enterprise_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only edit templates from your enterprise"
+                )
 
         # Build update data - only include fields that were provided
         update_data = {}
@@ -411,7 +477,7 @@ async def update_template(
                     if not reg_dict.get("alias"):
                         reg_dict["alias"] = generate_alias(reg_dict["name"])
                     processed_registers.append(reg_dict)
-                update_data["registers"] = processed_registers
+                update_data["logging_registers"] = processed_registers  # New column name (migration 045)
             elif value is not None:
                 update_data[field] = value
 
@@ -435,6 +501,116 @@ async def update_template(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update template: {str(e)}"
+        )
+
+
+@router.post("/templates/{template_id}/duplicate", response_model=DeviceTemplateResponse, status_code=status.HTTP_201_CREATED)
+async def duplicate_template(
+    template_id: str,
+    duplicate_request: DeviceTemplateDuplicate,
+    current_user: CurrentUser = Depends(require_role([
+        "super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"
+    ])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Duplicate an existing device template.
+
+    Creates a custom template based on an existing template.
+    The duplicated template is always a "custom" template assigned to an enterprise.
+
+    Permissions:
+    - super_admin/backend_admin/admin: Can duplicate any template, can assign to any enterprise
+    - enterprise_admin/configurator: Can only duplicate visible templates, assigned to their enterprise
+    """
+    try:
+        # 1. Fetch the source template
+        source_result = db.table("device_templates").select("*").eq("template_id", template_id).execute()
+
+        if not source_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template '{template_id}' not found"
+            )
+
+        source = source_result.data[0]
+
+        # 2. Validate new_name is different from source
+        if duplicate_request.new_name.strip().lower() == source["name"].strip().lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New template name must be different from the original"
+            )
+
+        # 3. Check if new_template_id already exists
+        existing = db.table("device_templates").select("id").eq("template_id", duplicate_request.new_template_id).execute()
+        if existing.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Template with ID '{duplicate_request.new_template_id}' already exists"
+            )
+
+        # 4. Determine the enterprise_id for the new template
+        user_role = current_user.role
+        user_enterprise_id = current_user.enterprise_id
+
+        if duplicate_request.enterprise_id:
+            # Only super_admin/backend_admin/admin can specify a different enterprise
+            if user_role not in ["super_admin", "backend_admin", "admin"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only admins can assign templates to a different enterprise"
+                )
+            target_enterprise_id = duplicate_request.enterprise_id
+        else:
+            # Use user's enterprise
+            if not user_enterprise_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Enterprise ID is required (you don't have an assigned enterprise)"
+                )
+            target_enterprise_id = user_enterprise_id
+
+        # 5. Build the new template data (copy all fields from source)
+        insert_data = {
+            "template_id": duplicate_request.new_template_id,
+            "name": duplicate_request.new_name,
+            "device_type": source.get("device_type"),
+            "operation": source.get("operation"),
+            "brand": source.get("brand"),
+            "model": source.get("model"),
+            "rated_power_kw": source.get("rated_power_kw"),
+            "rated_power_kva": source.get("rated_power_kva"),
+            # Copy all register types
+            "logging_registers": source.get("logging_registers") or source.get("registers") or [],
+            "visualization_registers": source.get("visualization_registers") or [],
+            "alarm_registers": source.get("alarm_registers") or [],
+            "alarm_definitions": source.get("alarm_definitions") or [],
+            "calculated_fields": source.get("calculated_fields") or [],
+            "specifications": source.get("specifications") or {},
+            # Set as custom template for the enterprise
+            "template_type": "custom",
+            "enterprise_id": target_enterprise_id,
+            "created_by": str(current_user.id),
+            "is_active": True
+        }
+
+        # 6. Insert the new template
+        result = db.table("device_templates").insert(insert_data).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create duplicate template"
+            )
+
+        return db_row_to_template_response(result.data[0])
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to duplicate template: {str(e)}"
         )
 
 

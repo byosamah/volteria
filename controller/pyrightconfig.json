@@ -1,0 +1,9 @@
+{
+  "include": ["*.py", "storage"],
+  "exclude": ["**/venv", "**/__pycache__", "**/.*"],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.11",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportUnusedVariable": false
+}

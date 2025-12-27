@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TemplateFormDialog } from "./template-form-dialog";
+import { DuplicateTemplateDialog } from "./duplicate-template-dialog";
+import { Copy } from "lucide-react";
 
 // Device template type
 interface DeviceTemplate {
@@ -44,6 +46,10 @@ const deviceTypeColors: Record<string, string> = {
   load_meter: "bg-blue-100 text-blue-800",
   dg: "bg-slate-100 text-slate-800",
   sensor: "bg-purple-100 text-purple-800",
+  fuel_level_sensor: "bg-orange-100 text-orange-800",
+  temperature_humidity_sensor: "bg-teal-100 text-teal-800",
+  solar_radiation_sensor: "bg-yellow-100 text-yellow-800",
+  wind_sensor: "bg-cyan-100 text-cyan-800",
 };
 
 // Device type labels
@@ -51,7 +57,11 @@ const deviceTypeLabels: Record<string, string> = {
   inverter: "Solar Inverter",
   load_meter: "Energy Meter",
   dg: "Generator Controller",
-  sensor: "Sensor",
+  sensor: "Sensor (Generic)",
+  fuel_level_sensor: "Fuel Level",
+  temperature_humidity_sensor: "Temp & Humidity",
+  solar_radiation_sensor: "Solar Radiation",
+  wind_sensor: "Wind Sensor",
 };
 
 // Device type icons (as components)
@@ -87,6 +97,45 @@ const deviceTypeIcons: Record<string, React.ReactNode> = {
       <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
     </svg>
   ),
+  fuel_level_sensor: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-orange-600">
+      <path d="M3 22h12" />
+      <path d="M4 9h10" />
+      <path d="M4 15h10" />
+      <path d="M6 2v2" />
+      <path d="M12 2v2" />
+      <rect x="2" y="4" width="14" height="18" rx="2" />
+      <path d="M20 2v10c0 1.1-.9 2-2 2" />
+      <path d="M20 6h-2" />
+    </svg>
+  ),
+  temperature_humidity_sensor: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-teal-600">
+      <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+      <path d="M12 9h-1" />
+      <path d="M12 6h-1" />
+    </svg>
+  ),
+  solar_radiation_sensor: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-yellow-600">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v1" />
+      <path d="M12 20v1" />
+      <path d="M3 12h1" />
+      <path d="M20 12h1" />
+      <path d="M5.6 5.6l.7.7" />
+      <path d="M17.7 17.7l.7.7" />
+      <path d="M5.6 18.4l.7-.7" />
+      <path d="M17.7 6.3l.7-.7" />
+    </svg>
+  ),
+  wind_sensor: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-cyan-600">
+      <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" />
+      <path d="M9.6 4.6A2 2 0 1 1 11 8H2" />
+      <path d="M12.6 19.4A2 2 0 1 0 14 16H2" />
+    </svg>
+  ),
 };
 
 // Section background colors
@@ -95,6 +144,10 @@ const sectionBgColors: Record<string, string> = {
   load_meter: "bg-blue-100",
   dg: "bg-slate-100",
   sensor: "bg-purple-100",
+  fuel_level_sensor: "bg-orange-100",
+  temperature_humidity_sensor: "bg-teal-100",
+  solar_radiation_sensor: "bg-yellow-100",
+  wind_sensor: "bg-cyan-100",
 };
 
 // Section titles
@@ -102,7 +155,11 @@ const sectionTitles: Record<string, string> = {
   inverter: "Solar Inverters",
   load_meter: "Energy Meters",
   dg: "Generator Controllers",
-  sensor: "Sensors",
+  sensor: "Sensors (Generic)",
+  fuel_level_sensor: "Fuel Level Sensors",
+  temperature_humidity_sensor: "Temperature & Humidity Sensors",
+  solar_radiation_sensor: "Solar Radiation Sensors",
+  wind_sensor: "Wind Sensors",
 };
 
 export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, enterprises }: DeviceTemplatesListProps) {
@@ -119,6 +176,10 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingTemplate, setEditingTemplate] = useState<DeviceTemplate | undefined>();
 
+  // State for duplicate dialog
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [duplicatingTemplate, setDuplicatingTemplate] = useState<DeviceTemplate | undefined>();
+
   // Create enterprise lookup map for displaying names on custom templates
   const enterpriseNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -127,21 +188,22 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   }, [enterprises]);
 
   // Permission: Can CREATE templates (add button visibility)
-  // - super_admin/admin can create any template
-  // - enterprise_admin can create custom templates for their enterprise
+  // - super_admin/admin can create any template (public or custom)
+  // - enterprise_admin/configurator can create custom templates for their enterprise
   const canCreate = userRole === "super_admin" ||
                     userRole === "admin" ||
-                    userRole === "enterprise_admin";
+                    userRole === "enterprise_admin" ||
+                    userRole === "configurator";
 
   // Permission: Can EDIT a specific template
   // - super_admin/admin can edit all templates
-  // - enterprise_admin can only edit their enterprise's custom templates
+  // - enterprise_admin/configurator can only edit their enterprise's custom templates
   const canEditTemplate = (template: DeviceTemplate): boolean => {
     // Super admin and admin can edit all templates
     if (userRole === "super_admin" || userRole === "admin") return true;
 
-    // Enterprise admin can only edit their enterprise's custom templates
-    if (userRole === "enterprise_admin" &&
+    // Enterprise admin or configurator can only edit their enterprise's custom templates
+    if ((userRole === "enterprise_admin" || userRole === "configurator") &&
         template.template_type === "custom" &&
         template.enterprise_id === userEnterpriseId) {
       return true;
@@ -167,6 +229,17 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   // Handle successful save - refresh the page to get updated data
   const handleTemplateSaved = () => {
     // Refresh the page to get updated templates from server
+    router.refresh();
+  };
+
+  // Open duplicate dialog
+  const handleDuplicateTemplate = (template: DeviceTemplate) => {
+    setDuplicatingTemplate(template);
+    setDuplicateDialogOpen(true);
+  };
+
+  // Handle successful duplicate - refresh the page to get updated data
+  const handleDuplicateSuccess = () => {
     router.refresh();
   };
 
@@ -259,13 +332,17 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="min-h-[44px] px-3 rounded-md border border-input bg-background sm:w-40"
+          className="min-h-[44px] px-3 rounded-md border border-input bg-background sm:w-48"
         >
           <option value="all">All Types</option>
           <option value="inverter">Solar Inverters</option>
           <option value="load_meter">Energy Meters</option>
           <option value="dg">Generator Controllers</option>
-          <option value="sensor">Sensors</option>
+          <option value="sensor">Sensors (Generic)</option>
+          <option value="fuel_level_sensor">Fuel Level Sensors</option>
+          <option value="temperature_humidity_sensor">Temp & Humidity</option>
+          <option value="solar_radiation_sensor">Solar Radiation</option>
+          <option value="wind_sensor">Wind Sensors</option>
         </select>
 
         {/* Brand Filter */}
@@ -363,7 +440,8 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
       ) : (
         <div className="space-y-8">
           {/* Render each device type section */}
-          {(["inverter", "load_meter", "dg", "sensor"] as const).map((type) => {
+          {/* All device types including new sensor subtypes */}
+          {(["inverter", "load_meter", "dg", "sensor", "fuel_level_sensor", "temperature_humidity_sensor", "solar_radiation_sensor", "wind_sensor"] as const).map((type) => {
             const typeTemplates = templatesByType[type];
             if (!typeTemplates || typeTemplates.length === 0) return null;
 
@@ -427,29 +505,45 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                           </div>
                         </div>
 
-                        {/* Edit button - shows on hover/focus if user has permission */}
-                        {canEditTemplate(template) && (
-                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                              onClick={() => handleEditTemplate(template)}
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="h-4 w-4"
+                        {/* Action buttons - show on hover/focus if user has permission */}
+                        {(canCreate || canEditTemplate(template)) && (
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex gap-1">
+                            {/* Duplicate button - visible to users who can create templates */}
+                            {canCreate && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                onClick={() => handleDuplicateTemplate(template)}
+                                title="Duplicate template"
                               >
-                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                                <path d="m15 5 4 4" />
-                              </svg>
-                            </Button>
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {/* Edit button - visible to users who can edit this template */}
+                            {canEditTemplate(template) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                onClick={() => handleEditTemplate(template)}
+                                title="Edit template"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  className="h-4 w-4"
+                                >
+                                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                                  <path d="m15 5 4 4" />
+                                </svg>
+                              </Button>
+                            )}
                           </div>
                         )}
                       </CardContent>
@@ -473,6 +567,19 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
         userEnterpriseId={userEnterpriseId}
         enterprises={enterprises}
       />
+
+      {/* Duplicate Template Dialog */}
+      {duplicatingTemplate && (
+        <DuplicateTemplateDialog
+          template={duplicatingTemplate}
+          enterprises={enterprises}
+          userRole={userRole}
+          userEnterpriseId={userEnterpriseId}
+          open={duplicateDialogOpen}
+          onOpenChange={setDuplicateDialogOpen}
+          onSuccess={handleDuplicateSuccess}
+        />
+      )}
     </div>
   );
 }

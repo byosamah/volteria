@@ -1,17 +1,25 @@
 /**
  * Device Templates Page
  *
- * Shows all available device templates with:
+ * Shows two tabs:
+ * 1. Device Templates - Modbus devices (inverters, meters, DGs)
+ * 2. Master Devices - Controller templates (Raspberry Pi, Gateway, PLC)
+ *
+ * Features:
  * - Search by name, brand, model
  * - Filter by device type
  * - Filter by brand
- * - Edit/Delete actions (admin only)
+ * - Edit/Delete actions (role-based)
+ * - Public/Custom template types for Master Devices
  */
 
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { DeviceTemplatesList } from "@/components/devices/device-templates-list";
+import { MasterDeviceTemplatesList } from "@/components/devices/master-device-templates-list";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { ControllerTemplate } from "@/lib/types";
 
 export default async function DevicesPage() {
   const supabase = await createClient();
@@ -38,8 +46,10 @@ export default async function DevicesPage() {
   }
 
   const userRole = userProfile?.role || undefined;
+  const userEnterpriseId = userProfile?.enterprise_id || null;
 
   // Fetch device templates
+  // Updated to include new columns: logging_registers, visualization_registers, calculated_fields
   let templates: Array<{
     id: string;
     template_id: string;
@@ -49,14 +59,22 @@ export default async function DevicesPage() {
     model: string;
     rated_power_kw: number | null;
     template_type: string | null;
-    enterprise_id: string | null;  // Which enterprise owns custom templates
-    registers: Array<{
+    enterprise_id: string | null;
+    logging_registers: Array<{
       address: number;
       name: string;
       type: string;
       datatype: string;
       access: string;
-      logging_interval?: string;
+      logging_frequency?: number;
+    }> | null;
+    visualization_registers: Array<{
+      address: number;
+      name: string;
+      type: string;
+      datatype: string;
+      access: string;
+      scale?: number;
     }> | null;
     alarm_registers: Array<{
       address: number;
@@ -71,12 +89,25 @@ export default async function DevicesPage() {
         message?: string;
       }>;
     }> | null;
+    calculated_fields: Array<{
+      field_id: string;
+      name: string;
+      storage_mode: "log" | "viz_only";
+    }> | null;
+    registers?: Array<{
+      address: number;
+      name: string;
+      type: string;
+      datatype: string;
+      access: string;
+      logging_interval?: string;
+    }> | null;
   }> = [];
 
   try {
     const { data, error } = await supabase
       .from("device_templates")
-      .select("id, template_id, name, device_type, brand, model, rated_power_kw, template_type, enterprise_id, registers, alarm_registers")
+      .select("id, template_id, name, device_type, brand, model, rated_power_kw, template_type, enterprise_id, logging_registers, visualization_registers, alarm_registers, calculated_fields, registers")
       .order("device_type")
       .order("brand");
 
@@ -88,7 +119,6 @@ export default async function DevicesPage() {
   }
 
   // Fetch enterprises for super admin to select when creating custom templates
-  // Only fetch if user is super_admin or backend_admin
   let enterprises: Array<{ id: string; name: string }> = [];
   const isSuperAdmin = userProfile?.role === "super_admin" || userProfile?.role === "backend_admin";
   if (isSuperAdmin) {
@@ -100,6 +130,35 @@ export default async function DevicesPage() {
     enterprises = enterprisesData || [];
   }
 
+  // Fetch controller templates (Master Devices)
+  // Visibility rules:
+  // - super_admin/backend_admin see all templates
+  // - Others see: public templates + their enterprise's custom templates
+  let controllerTemplates: ControllerTemplate[] = [];
+
+  try {
+    let query = supabase
+      .from("controller_templates")
+      .select("*")
+      .eq("is_active", true)
+      .order("name");
+
+    // Apply visibility filter for non-admin users
+    if (!isSuperAdmin) {
+      // Use RLS or filter manually:
+      // Either template_type = 'public' OR (template_type = 'custom' AND enterprise_id = user's enterprise)
+      query = query.or(`template_type.eq.public,enterprise_id.eq.${userEnterpriseId}`);
+    }
+
+    const { data, error } = await query;
+
+    if (!error && data) {
+      controllerTemplates = data as ControllerTemplate[];
+    }
+  } catch {
+    // Table might not exist yet
+  }
+
   return (
     <DashboardLayout user={{
         email: user?.email,
@@ -109,21 +168,50 @@ export default async function DevicesPage() {
       }}>
       {/* MOBILE-FRIENDLY: Responsive padding */}
       <div className="p-4 md:p-6 space-y-4 md:space-y-6">
-        {/* Header - responsive text sizes */}
+        {/* Header */}
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Device Templates</h1>
           <p className="text-muted-foreground text-sm md:text-base">
-            Supported devices and their Modbus configurations
+            Supported devices and their configurations
           </p>
         </div>
 
-        {/* Device Templates List with search, filter, and admin actions */}
-        <DeviceTemplatesList
-          templates={templates}
-          userRole={userRole}
-          userEnterpriseId={userProfile?.enterprise_id}
-          enterprises={enterprises}
-        />
+        {/* Tabs */}
+        <Tabs defaultValue="device-templates" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-flex">
+            <TabsTrigger value="device-templates" className="gap-2">
+              Device Templates
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
+                {templates.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="master-devices" className="gap-2">
+              Master Devices
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
+                {controllerTemplates.length}
+              </span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Device Templates Tab */}
+          <TabsContent value="device-templates" className="space-y-4">
+            <DeviceTemplatesList
+              templates={templates}
+              userRole={userRole}
+              userEnterpriseId={userEnterpriseId}
+              enterprises={enterprises}
+            />
+          </TabsContent>
+
+          {/* Master Devices Tab */}
+          <TabsContent value="master-devices" className="space-y-4">
+            <MasterDeviceTemplatesList
+              templates={controllerTemplates}
+              userRole={userRole}
+              userEnterpriseId={userEnterpriseId}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

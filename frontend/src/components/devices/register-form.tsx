@@ -19,8 +19,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Trash2, Plus, ChevronDown, ChevronUp } from "lucide-react";
+import { Trash2, Plus, ChevronDown, ChevronUp, X } from "lucide-react";
 import type { AlarmThreshold, AlarmSeverity, ThresholdOperator } from "@/lib/types";
+
+// Import new sub-components for enhanced fields
+import { GroupCombobox } from "./group-combobox";
+import { EnumerationEditor, type EnumerationEntry } from "./enumeration-editor";
+import { BitMaskSelector } from "./bit-mask-selector";
 
 // Modbus register type
 export interface ModbusRegister {
@@ -40,6 +45,16 @@ export interface ModbusRegister {
   max?: number;
   register_role?: string;  // Control logic role (e.g., "solar_active_power")
   thresholds?: AlarmThreshold[];  // Alarm thresholds for alarm registers
+
+  // Additional fields for advanced configuration
+  group?: string;  // Group name for organizing registers
+  values?: Record<string, string>;  // Enumeration: raw value -> display label
+  mask?: {  // Bit mask for extracting specific bits
+    enabled: boolean;
+    hex_value: string;
+    bits: boolean[];
+  };
+  decimals?: number;  // Display precision (0-10)
 }
 
 // Severity options for alarm thresholds
@@ -135,6 +150,10 @@ interface RegisterFormProps {
   onSave: (register: ModbusRegister) => void;
   // Whether this is an alarm register (shows threshold configuration)
   isAlarmRegister?: boolean;
+  // Whether this is a visualization register (hides logging frequency - live only, not stored)
+  isVisualizationRegister?: boolean;
+  // Existing groups from template (for group dropdown)
+  existingGroups?: string[];
 }
 
 export function RegisterForm({
@@ -145,6 +164,8 @@ export function RegisterForm({
   onOpenChange,
   onSave,
   isAlarmRegister = false,
+  isVisualizationRegister = false,
+  existingGroups = [],
 }: RegisterFormProps) {
   // Form state
   const [formData, setFormData] = useState<{
@@ -162,6 +183,9 @@ export function RegisterForm({
     min: string;
     max: string;
     register_role: string;  // Control logic role
+    // New fields
+    group: string;
+    decimals: string;
   }>({
     address: "",
     name: "",
@@ -177,6 +201,9 @@ export function RegisterForm({
     min: "",
     max: "",
     register_role: "none",  // Default: not used in control
+    // New field defaults
+    group: "",
+    decimals: "",
   });
 
   const [errors, setErrors] = useState<string[]>([]);
@@ -184,6 +211,20 @@ export function RegisterForm({
   // Alarm thresholds state (only used when isAlarmRegister is true)
   const [thresholds, setThresholds] = useState<AlarmThreshold[]>([]);
   const [thresholdsExpanded, setThresholdsExpanded] = useState(false);
+
+  // Enumeration state (value-label mappings)
+  const [enumerationValues, setEnumerationValues] = useState<EnumerationEntry[]>([]);
+  const [enumerationDialogOpen, setEnumerationDialogOpen] = useState(false);
+
+  // Bit mask state
+  const [maskEnabled, setMaskEnabled] = useState(false);
+  const [maskHex, setMaskHex] = useState("");
+  const [maskBits, setMaskBits] = useState<boolean[]>(new Array(16).fill(false));
+
+  // Helper to determine bit count based on datatype
+  const getBitCount = (datatype: string): 16 | 32 => {
+    return datatype.includes("32") ? 32 : 16;
+  };
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -205,10 +246,34 @@ export function RegisterForm({
           min: register.min?.toString() || "",
           max: register.max?.toString() || "",
           register_role: register.register_role || "none",
+          // Load new fields
+          group: register.group || "",
+          decimals: register.decimals?.toString() || "",
         });
         // Load existing thresholds if editing an alarm register
         setThresholds(register.thresholds || []);
         setThresholdsExpanded((register.thresholds?.length || 0) > 0);
+        // Load enumeration values (convert Record to array)
+        if (register.values) {
+          setEnumerationValues(
+            Object.entries(register.values).map(([key, label]) => ({
+              key,
+              label: String(label),
+            }))
+          );
+        } else {
+          setEnumerationValues([]);
+        }
+        // Load bit mask state
+        if (register.mask) {
+          setMaskEnabled(register.mask.enabled);
+          setMaskHex(register.mask.hex_value || "");
+          setMaskBits(register.mask.bits || new Array(getBitCount(register.datatype)).fill(false));
+        } else {
+          setMaskEnabled(false);
+          setMaskHex("");
+          setMaskBits(new Array(getBitCount(register.datatype)).fill(false));
+        }
       } else {
         // Adding: reset to empty form
         setFormData({
@@ -226,14 +291,30 @@ export function RegisterForm({
           min: "",
           max: "",
           register_role: "none",
+          // New field defaults
+          group: "",
+          decimals: "",
         });
-        // Reset thresholds when adding new register
-        setThresholds([]);
-        setThresholdsExpanded(false);
+        // For alarm registers: pre-populate with one empty threshold and auto-expand
+        // Alarms REQUIRE at least one threshold, so we start with one to guide the user
+        if (isAlarmRegister) {
+          setThresholds([{ operator: ">" as ThresholdOperator, value: 0, severity: "warning" as AlarmSeverity, message: "" }]);
+          setThresholdsExpanded(true);
+        } else {
+          // Reset thresholds when adding normal register
+          setThresholds([]);
+          setThresholdsExpanded(false);
+        }
+        // Reset enumeration
+        setEnumerationValues([]);
+        // Reset bit mask
+        setMaskEnabled(false);
+        setMaskHex("");
+        setMaskBits(new Array(16).fill(false));
       }
       setErrors([]);
     }
-  }, [open, mode, register]);
+  }, [open, mode, register, isAlarmRegister]);
 
   // Handle input changes
   const handleChange = (
@@ -282,6 +363,11 @@ export function RegisterForm({
       if (isDuplicateName) {
         newErrors.push("A register with this name already exists");
       }
+    }
+
+    // Alarm registers REQUIRE at least one threshold to define when alarms trigger
+    if (isAlarmRegister && thresholds.length === 0) {
+      newErrors.push("At least one threshold is required for alarm registers");
     }
 
     setErrors(newErrors);
@@ -366,6 +452,42 @@ export function RegisterForm({
       const validThresholds = thresholds.filter((t) => t.value !== undefined);
       if (validThresholds.length > 0) {
         newRegister.thresholds = validThresholds;
+      }
+    }
+
+    // Add new fields: group, enumeration, mask, decimals
+    if (formData.group.trim()) {
+      newRegister.group = formData.group.trim();
+    }
+
+    // Add enumeration values (convert array to Record)
+    if (enumerationValues.length > 0) {
+      const validValues = enumerationValues.filter((v) => v.key && v.label);
+      if (validValues.length > 0) {
+        newRegister.values = validValues.reduce(
+          (acc, { key, label }) => {
+            acc[key] = label;
+            return acc;
+          },
+          {} as Record<string, string>
+        );
+      }
+    }
+
+    // Add bit mask if enabled (only for integer types)
+    if (maskEnabled && formData.datatype !== "float32") {
+      newRegister.mask = {
+        enabled: true,
+        hex_value: maskHex,
+        bits: maskBits,
+      };
+    }
+
+    // Add decimals if specified
+    if (formData.decimals) {
+      const dec = parseInt(formData.decimals);
+      if (!isNaN(dec) && dec >= 0 && dec <= 10) {
+        newRegister.decimals = dec;
       }
     }
 
@@ -587,6 +709,91 @@ export function RegisterForm({
             </div>
           </div>
 
+          {/* ========== NEW FIELDS SECTION ========== */}
+
+          {/* Group - Full width */}
+          <div className="space-y-2">
+            <Label>Group</Label>
+            <GroupCombobox
+              value={formData.group}
+              onChange={(value) => setFormData((prev) => ({ ...prev, group: value }))}
+              groups={existingGroups}
+              placeholder="Select or create group..."
+            />
+            <p className="text-xs text-muted-foreground">
+              Organize registers into collapsible groups
+            </p>
+          </div>
+
+          {/* Enumeration and Decimals - side by side */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Enumeration */}
+            <div className="space-y-2">
+              <Label>Enumeration</Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-[44px] flex-1 justify-start"
+                  onClick={() => setEnumerationDialogOpen(true)}
+                >
+                  {enumerationValues.length > 0
+                    ? `${enumerationValues.length} value${enumerationValues.length > 1 ? "s" : ""} defined`
+                    : "Edit Values..."}
+                </Button>
+                {enumerationValues.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEnumerationValues([])}
+                    className="h-10 w-10 text-muted-foreground hover:text-destructive"
+                    title="Clear all values"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Map raw values to labels (e.g., 0=Off, 1=On)
+              </p>
+            </div>
+
+            {/* Decimals */}
+            <div className="space-y-2">
+              <Label htmlFor="decimals">Display Decimals</Label>
+              <Input
+                id="decimals"
+                name="decimals"
+                type="number"
+                min={0}
+                max={10}
+                placeholder="Auto"
+                value={formData.decimals}
+                onChange={handleChange}
+                className="min-h-[44px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                Decimal places for display (0-10)
+              </p>
+            </div>
+          </div>
+
+          {/* Bit Mask - only for integer types (NOT float32) */}
+          {formData.datatype !== "float32" && (
+            <BitMaskSelector
+              enabled={maskEnabled}
+              onEnabledChange={setMaskEnabled}
+              hexValue={maskHex}
+              onHexChange={setMaskHex}
+              bits={maskBits}
+              onBitsChange={setMaskBits}
+              bitCount={getBitCount(formData.datatype)}
+            />
+          )}
+
+          {/* ========== END NEW FIELDS SECTION ========== */}
+
           {/* Unit, Min, Max - in a row */}
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
@@ -630,24 +837,27 @@ export function RegisterForm({
             </div>
           </div>
 
-          {/* Logging Frequency */}
-          <div className="space-y-2">
-            <Label htmlFor="logging_frequency">Logging Frequency</Label>
-            <select
-              id="logging_frequency"
-              name="logging_frequency"
-              value={formData.logging_frequency}
-              onChange={handleChange}
-              className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
-            >
-              {LOGGING_FREQUENCY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-muted-foreground">How often to log this register</p>
-          </div>
+          {/* Logging Frequency - NOT shown for alarm or visualization registers */}
+          {/* Alarm registers are event-based; visualization registers are live-only (not stored) */}
+          {!isAlarmRegister && !isVisualizationRegister && (
+            <div className="space-y-2">
+              <Label htmlFor="logging_frequency">Logging Frequency</Label>
+              <select
+                id="logging_frequency"
+                name="logging_frequency"
+                value={formData.logging_frequency}
+                onChange={handleChange}
+                className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
+              >
+                {LOGGING_FREQUENCY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">How often to log this register</p>
+            </div>
+          )}
 
           {/* Alarm Thresholds Section (only for alarm registers) */}
           {isAlarmRegister && (
@@ -659,7 +869,7 @@ export function RegisterForm({
                 className="flex items-center justify-between w-full text-left"
               >
                 <span className="font-medium text-sm">
-                  Thresholds (optional)
+                  Thresholds <span className="text-red-500">*</span>
                   {thresholds.length > 0 && (
                     <span className="ml-2 text-xs text-muted-foreground">
                       ({thresholds.length} configured)
@@ -677,8 +887,8 @@ export function RegisterForm({
               {thresholdsExpanded && (
                 <div className="space-y-3 border rounded-md p-3 bg-muted/20">
                   {thresholds.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-2">
-                      No thresholds configured. Add one to trigger alarms at specific values.
+                    <p className="text-xs text-red-500 text-center py-2">
+                      At least one threshold is required. Click &quot;Add Threshold&quot; below.
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -734,16 +944,23 @@ export function RegisterForm({
                             ))}
                           </select>
 
-                          {/* Message */}
-                          <Input
-                            type="text"
-                            value={threshold.message || ""}
-                            onChange={(e) =>
-                              updateThreshold(index, "message", e.target.value)
-                            }
-                            className="min-h-[36px] flex-1 min-w-[120px]"
-                            placeholder="Alarm message (optional)"
-                          />
+                          {/* Message (max 30 characters) */}
+                          <div className="flex-1 min-w-[120px] flex items-center gap-1">
+                            <Input
+                              type="text"
+                              value={threshold.message || ""}
+                              onChange={(e) =>
+                                updateThreshold(index, "message", e.target.value)
+                              }
+                              className="min-h-[36px] flex-1"
+                              placeholder="Alarm message"
+                              maxLength={30}
+                            />
+                            {/* Character counter */}
+                            <span className="text-xs text-muted-foreground whitespace-nowrap w-10 text-right">
+                              {(threshold.message || "").length}/30
+                            </span>
+                          </div>
 
                           {/* Delete button */}
                           <Button
@@ -774,8 +991,9 @@ export function RegisterForm({
 
                   {/* Help text */}
                   <p className="text-xs text-muted-foreground">
-                    Thresholds are evaluated in order. Add multiple conditions to trigger
+                    Thresholds define when alarms trigger. Add multiple conditions for
                     different severity levels (e.g., &gt;70 → Warning, &gt;80 → Critical).
+                    Message is limited to 30 characters.
                   </p>
                 </div>
               )}
@@ -797,6 +1015,14 @@ export function RegisterForm({
           </DialogFooter>
         </form>
       </DialogContent>
+
+      {/* Enumeration Editor Dialog (nested) */}
+      <EnumerationEditor
+        open={enumerationDialogOpen}
+        onOpenChange={setEnumerationDialogOpen}
+        values={enumerationValues}
+        onChange={setEnumerationValues}
+      />
     </Dialog>
   );
 }

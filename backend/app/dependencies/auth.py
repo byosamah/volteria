@@ -49,6 +49,7 @@ class CurrentUser(BaseModel):
     role: str  # super_admin, admin, configurator, viewer
     full_name: Optional[str] = None
     is_active: bool = True
+    enterprise_id: Optional[str] = None  # Enterprise the user belongs to
 
 
 # ============================================
@@ -117,9 +118,9 @@ async def get_current_user(
         auth_user_id = auth_response.user.id
 
         # Get additional user data from our users table
-        # This includes role, full_name, is_active, etc.
+        # This includes role, full_name, is_active, enterprise_id, etc.
         user_result = supabase.table("users").select(
-            "id, email, role, full_name, is_active"
+            "id, email, role, full_name, is_active, enterprise_id"
         ).eq("id", str(auth_user_id)).execute()
 
         if not user_result.data:
@@ -145,7 +146,8 @@ async def get_current_user(
             email=user_data["email"],
             role=user_data["role"],
             full_name=user_data.get("full_name"),
-            is_active=user_data.get("is_active", True)
+            is_active=user_data.get("is_active", True),
+            enterprise_id=user_data.get("enterprise_id")
         )
 
     except HTTPException:

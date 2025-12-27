@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import Link from "next/link";
+import type { ControllerTemplate } from "@/lib/types";
 
 // ============================================
 // TYPES
@@ -42,6 +43,17 @@ interface AvailableController {
     name: string;
     manufacturer: string;
   } | null;
+}
+
+// Available controller templates (filtered by visibility)
+interface AvailableTemplate {
+  id: string;
+  template_id: string;
+  name: string;
+  controller_type: string;
+  template_type: "public" | "custom";
+  brand: string | null;
+  model: string | null;
 }
 
 // ============================================
@@ -68,6 +80,11 @@ export default function AddMasterDevicePage({
   const [loadingControllers, setLoadingControllers] = useState(true);
   const [hasExistingController, setHasExistingController] = useState(false);
 
+  // Controller template selection
+  const [templateId, setTemplateId] = useState("");
+  const [availableTemplates, setAvailableTemplates] = useState<AvailableTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+
   // Gateway-specific
   const [gatewayType, setGatewayType] = useState<GatewayType>("netbiter");
   const [netbiterAccountId, setNetbiterAccountId] = useState("");
@@ -82,25 +99,27 @@ export default function AddMasterDevicePage({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load available controllers and check if site already has one
+  // Load available controllers, templates, and check if site already has one
   useEffect(() => {
     async function loadData() {
       setLoadingControllers(true);
+      setLoadingTemplates(true);
       const supabase = createClient();
 
       try {
-        // Get current user's enterprise
+        // Get current user's enterprise and role
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
         const { data: userProfile } = await supabase
           .from("users")
-          .select("enterprise_id")
+          .select("enterprise_id, role")
           .eq("id", user.id)
           .single();
 
         if (!userProfile?.enterprise_id) {
           setAvailableControllers([]);
+          setAvailableTemplates([]);
           return;
         }
 
@@ -140,10 +159,33 @@ export default function AddMasterDevicePage({
         if (controllers) {
           setAvailableControllers(controllers as unknown as AvailableController[]);
         }
+
+        // Fetch available controller templates
+        // Visibility rules:
+        // - super_admin/backend_admin see all templates
+        // - Others see: public templates + their enterprise's custom templates
+        const isSuperAdmin = ["super_admin", "backend_admin"].includes(userProfile.role || "");
+
+        let templatesQuery = supabase
+          .from("controller_templates")
+          .select("id, template_id, name, controller_type, template_type, brand, model")
+          .eq("is_active", true)
+          .order("name");
+
+        if (!isSuperAdmin) {
+          // Filter: public templates OR custom templates from user's enterprise
+          templatesQuery = templatesQuery.or(`template_type.eq.public,enterprise_id.eq.${userProfile.enterprise_id}`);
+        }
+
+        const { data: templates } = await templatesQuery;
+        if (templates) {
+          setAvailableTemplates(templates as AvailableTemplate[]);
+        }
       } catch (err) {
-        console.error("Failed to load controllers:", err);
+        console.error("Failed to load data:", err);
       } finally {
         setLoadingControllers(false);
+        setLoadingTemplates(false);
       }
     }
 
@@ -169,6 +211,9 @@ export default function AddMasterDevicePage({
       if (deviceType === "controller") {
         if (!controllerId) {
           throw new Error("Please select a controller");
+        }
+        if (!templateId) {
+          throw new Error("Please select a controller template");
         }
         if (!ipAddress.trim()) {
           throw new Error("IP address is required for controllers");
@@ -200,6 +245,7 @@ export default function AddMasterDevicePage({
 
       if (deviceType === "controller") {
         insertData.controller_id = controllerId;
+        insertData.controller_template_id = templateId;
       } else {
         insertData.gateway_type = gatewayType;
         if (gatewayType === "netbiter") {
@@ -402,6 +448,63 @@ export default function AddMasterDevicePage({
                     {selectedController && (
                       <p className="text-xs text-muted-foreground">
                         Firmware: {selectedController.firmware_version || "Unknown"}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Select Controller Template */}
+                  <div className="space-y-2">
+                    <Label htmlFor="template">
+                      Controller Template <span className="text-red-500">*</span>
+                    </Label>
+                    <Select
+                      value={templateId}
+                      onValueChange={setTemplateId}
+                      disabled={loadingTemplates}
+                    >
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue placeholder={
+                          loadingTemplates
+                            ? "Loading templates..."
+                            : availableTemplates.length === 0
+                              ? "No available templates"
+                              : "Select a template"
+                        } />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableTemplates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            <div className="flex items-center gap-2">
+                              <span>{template.name}</span>
+                              {/* Public/Custom badge */}
+                              <span className={`
+                                text-xs px-1.5 py-0.5 rounded-full
+                                ${template.template_type === "public"
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-blue-100 text-blue-700"
+                                }
+                              `}>
+                                {template.template_type === "public" ? "Public" : "Custom"}
+                              </span>
+                              {/* Brand/Model info */}
+                              {(template.brand || template.model) && (
+                                <span className="text-muted-foreground text-xs">
+                                  {[template.brand, template.model].filter(Boolean).join(" ")}
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {availableTemplates.length === 0 && !loadingTemplates && (
+                      <p className="text-xs text-amber-600">
+                        No controller templates available. Create one on the Device Templates page.
+                      </p>
+                    )}
+                    {templateId && availableTemplates.find(t => t.id === templateId) && (
+                      <p className="text-xs text-muted-foreground">
+                        Type: {availableTemplates.find(t => t.id === templateId)?.controller_type || "N/A"}
                       </p>
                     )}
                   </div>
@@ -640,7 +743,7 @@ export default function AddMasterDevicePage({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isSubmitting || !name.trim()}
+                  disabled={isSubmitting || !name.trim() || (deviceType === "controller" && (!controllerId || !templateId))}
                   className="min-h-[44px]"
                 >
                   {isSubmitting ? "Adding..." : "Add Device"}

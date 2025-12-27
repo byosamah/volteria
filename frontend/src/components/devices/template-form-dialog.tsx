@@ -14,7 +14,7 @@
  * - Supabase integration
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,10 +27,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { RegisterForm, type ModbusRegister } from "./register-form";
 
-// Device template type
+import type { CalculatedFieldSelection, DeviceType } from "@/lib/types";
+
+// Device template type (local interface with flexible fields for DB operations)
 interface DeviceTemplate {
   id: string;
   template_id: string;
@@ -40,9 +51,61 @@ interface DeviceTemplate {
   model: string;
   rated_power_kw: number | null;
   template_type?: string | null;  // 'public' or 'custom'
-  registers?: ModbusRegister[] | null;  // Modbus registers array
-  alarm_registers?: ModbusRegister[] | null;  // Alarm registers array
+  // Registers for logging AND control (stored in database)
+  logging_registers?: ModbusRegister[] | null;
+  // Registers for visualization only (NOT stored)
+  visualization_registers?: ModbusRegister[] | null;
+  // Alarm registers with thresholds
+  alarm_registers?: ModbusRegister[] | null;
+  // Calculated field selections
+  calculated_fields?: CalculatedFieldSelection[] | null;
+  // Legacy field for backward compatibility
+  registers?: ModbusRegister[] | null;
 }
+
+// Available device types with labels
+const DEVICE_TYPE_OPTIONS: { value: DeviceType; label: string }[] = [
+  { value: "inverter", label: "Solar Inverter" },
+  { value: "load_meter", label: "Energy Meter" },
+  { value: "dg", label: "Generator Controller" },
+  { value: "sensor", label: "Sensor (Generic)" },
+  { value: "fuel_level_sensor", label: "Fuel Level Sensor" },
+  { value: "temperature_humidity_sensor", label: "Temperature & Humidity Sensor" },
+  { value: "solar_radiation_sensor", label: "Solar Radiation Sensor" },
+  { value: "wind_sensor", label: "Wind Sensor" },
+];
+
+// Predefined calculated fields per device type
+const CALCULATED_FIELDS_BY_TYPE: Record<DeviceType, { field_id: string; name: string; unit: string }[]> = {
+  load_meter: [
+    { field_id: "daily_kwh_consumption", name: "Daily kWh Consumption", unit: "kWh" },
+    { field_id: "daily_peak_load", name: "Daily Peak Load", unit: "kW" },
+    { field_id: "daily_avg_load", name: "Daily Average Load", unit: "kW" },
+    { field_id: "daily_phase_imbalance", name: "Daily Phase Imbalance", unit: "%" },
+  ],
+  inverter: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  dg: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  fuel_level_sensor: [
+    { field_id: "daily_level_difference", name: "Daily Level Difference", unit: "L or %" },
+  ],
+  temperature_humidity_sensor: [
+    { field_id: "daily_peak_temp", name: "Daily Peak Temperature", unit: "°C" },
+    { field_id: "daily_avg_temp", name: "Daily Average Temperature", unit: "°C" },
+    { field_id: "daily_peak_humidity", name: "Daily Peak Humidity", unit: "%" },
+    { field_id: "daily_avg_humidity", name: "Daily Average Humidity", unit: "%" },
+  ],
+  solar_radiation_sensor: [],
+  wind_sensor: [],
+  sensor: [],  // Generic sensor has no predefined fields
+};
 
 interface TemplateFormDialogProps {
   // Mode: "create" for new template, "edit" for existing
@@ -86,11 +149,11 @@ export function TemplateFormDialog({
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
 
-  // Enterprise admins can only create custom templates
-  const isEnterpriseAdmin = userRole === "enterprise_admin";
+  // Enterprise admins and configurators can only create custom templates for their enterprise
+  const isEnterpriseOrConfigurator = userRole === "enterprise_admin" || userRole === "configurator";
 
-  // Super admins can create custom templates for any enterprise
-  const isSuperAdmin = userRole === "super_admin" || userRole === "backend_admin";
+  // Super admins and admins can create any template type
+  const isSuperAdmin = userRole === "super_admin" || userRole === "backend_admin" || userRole === "admin";
 
   // State for selected enterprise (for super admin creating custom templates)
   const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string>("");
@@ -106,12 +169,19 @@ export function TemplateFormDialog({
     template_type: "public",  // 'public' or 'custom'
   });
 
-  // Registers state (Modbus registers)
-  const [registers, setRegisters] = useState<ModbusRegister[]>([]);
-  const [registerFormOpen, setRegisterFormOpen] = useState(false);
-  const [registerFormMode, setRegisterFormMode] = useState<"add" | "edit">("add");
-  const [editingRegister, setEditingRegister] = useState<ModbusRegister | undefined>();
-  const [editingRegisterIndex, setEditingRegisterIndex] = useState<number>(-1);
+  // Logging registers state (stored in database AND used by control logic)
+  const [loggingRegisters, setLoggingRegisters] = useState<ModbusRegister[]>([]);
+  const [loggingRegisterFormOpen, setLoggingRegisterFormOpen] = useState(false);
+  const [loggingRegisterFormMode, setLoggingRegisterFormMode] = useState<"add" | "edit">("add");
+  const [editingLoggingRegister, setEditingLoggingRegister] = useState<ModbusRegister | undefined>();
+  const [editingLoggingRegisterIndex, setEditingLoggingRegisterIndex] = useState<number>(-1);
+
+  // Visualization registers state (live display only - NOT stored in database)
+  const [visualizationRegisters, setVisualizationRegisters] = useState<ModbusRegister[]>([]);
+  const [vizRegisterFormOpen, setVizRegisterFormOpen] = useState(false);
+  const [vizRegisterFormMode, setVizRegisterFormMode] = useState<"add" | "edit">("add");
+  const [editingVizRegister, setEditingVizRegister] = useState<ModbusRegister | undefined>();
+  const [editingVizRegisterIndex, setEditingVizRegisterIndex] = useState<number>(-1);
 
   // Alarm registers state (same structure as Modbus registers)
   const [alarmRegisters, setAlarmRegisters] = useState<ModbusRegister[]>([]);
@@ -119,6 +189,32 @@ export function TemplateFormDialog({
   const [alarmRegisterFormMode, setAlarmRegisterFormMode] = useState<"add" | "edit">("add");
   const [editingAlarmRegister, setEditingAlarmRegister] = useState<ModbusRegister | undefined>();
   const [editingAlarmRegisterIndex, setEditingAlarmRegisterIndex] = useState<number>(-1);
+
+  // Calculated fields state (device-type specific derived values)
+  const [calculatedFields, setCalculatedFields] = useState<CalculatedFieldSelection[]>([]);
+
+  // Current active tab in the register sections
+  const [activeTab, setActiveTab] = useState("logging");
+
+  // Extract unique groups from all registers (Logging, Visualization, and Alarm)
+  // This is passed to RegisterForm so users can select from existing groups
+  const existingGroups = useMemo(() => {
+    const groups = new Set<string>();
+    // Collect groups from Logging registers
+    loggingRegisters.forEach((r) => {
+      if (r.group) groups.add(r.group);
+    });
+    // Collect groups from Visualization registers
+    visualizationRegisters.forEach((r) => {
+      if (r.group) groups.add(r.group);
+    });
+    // Collect groups from Alarm registers
+    alarmRegisters.forEach((r) => {
+      if (r.group) groups.add(r.group);
+    });
+    // Return sorted array of unique group names
+    return Array.from(groups).sort();
+  }, [loggingRegisters, visualizationRegisters, alarmRegisters]);
 
   // Reset form when dialog opens with template data
   useEffect(() => {
@@ -134,10 +230,15 @@ export function TemplateFormDialog({
           rated_power_kw: template.rated_power_kw?.toString() || "",
           template_type: template.template_type || "public",
         });
-        // Load registers from template
-        setRegisters(template.registers || []);
+        // Load logging registers from template
+        // Check both new column name and legacy column name for backward compatibility
+        setLoggingRegisters(template.logging_registers || template.registers || []);
+        // Load visualization registers from template
+        setVisualizationRegisters(template.visualization_registers || []);
         // Load alarm registers from template
         setAlarmRegisters(template.alarm_registers || []);
+        // Load calculated fields from template
+        setCalculatedFields(template.calculated_fields || []);
       } else {
         // Creating: reset to empty form
         // Enterprise admins can only create custom templates
@@ -148,45 +249,83 @@ export function TemplateFormDialog({
           brand: "",
           model: "",
           rated_power_kw: "",
-          template_type: isEnterpriseAdmin ? "custom" : "public",
+          template_type: isEnterpriseOrConfigurator ? "custom" : "public",
         });
-        setRegisters([]);
+        setLoggingRegisters([]);
+        setVisualizationRegisters([]);
         setAlarmRegisters([]);
+        setCalculatedFields([]);
       }
+      // Reset to first tab when opening
+      setActiveTab("logging");
     }
-  }, [open, mode, template, isEnterpriseAdmin]);
+  }, [open, mode, template, isEnterpriseOrConfigurator]);
 
-  // Register management functions
-  const handleAddRegister = () => {
-    setRegisterFormMode("add");
-    setEditingRegister(undefined);
-    setEditingRegisterIndex(-1);
-    setRegisterFormOpen(true);
+  // Logging register management functions
+  const handleAddLoggingRegister = () => {
+    setLoggingRegisterFormMode("add");
+    setEditingLoggingRegister(undefined);
+    setEditingLoggingRegisterIndex(-1);
+    setLoggingRegisterFormOpen(true);
   };
 
-  const handleEditRegister = (register: ModbusRegister, index: number) => {
-    setRegisterFormMode("edit");
-    setEditingRegister(register);
-    setEditingRegisterIndex(index);
-    setRegisterFormOpen(true);
+  const handleEditLoggingRegister = (register: ModbusRegister, index: number) => {
+    setLoggingRegisterFormMode("edit");
+    setEditingLoggingRegister(register);
+    setEditingLoggingRegisterIndex(index);
+    setLoggingRegisterFormOpen(true);
   };
 
-  const handleDeleteRegister = (index: number) => {
-    setRegisters((prev) => prev.filter((_, i) => i !== index));
-    toast.success("Register removed");
+  const handleDeleteLoggingRegister = (index: number) => {
+    setLoggingRegisters((prev) => prev.filter((_, i) => i !== index));
+    toast.success("Logging register removed");
   };
 
-  const handleSaveRegister = (register: ModbusRegister) => {
-    if (registerFormMode === "edit" && editingRegisterIndex >= 0) {
+  const handleSaveLoggingRegister = (register: ModbusRegister) => {
+    if (loggingRegisterFormMode === "edit" && editingLoggingRegisterIndex >= 0) {
       // Update existing register
-      setRegisters((prev) =>
-        prev.map((r, i) => (i === editingRegisterIndex ? register : r))
+      setLoggingRegisters((prev) =>
+        prev.map((r, i) => (i === editingLoggingRegisterIndex ? register : r))
       );
-      toast.success("Register updated");
+      toast.success("Logging register updated");
     } else {
       // Add new register
-      setRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
-      toast.success("Register added");
+      setLoggingRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
+      toast.success("Logging register added");
+    }
+  };
+
+  // Visualization register management functions
+  const handleAddVizRegister = () => {
+    setVizRegisterFormMode("add");
+    setEditingVizRegister(undefined);
+    setEditingVizRegisterIndex(-1);
+    setVizRegisterFormOpen(true);
+  };
+
+  const handleEditVizRegister = (register: ModbusRegister, index: number) => {
+    setVizRegisterFormMode("edit");
+    setEditingVizRegister(register);
+    setEditingVizRegisterIndex(index);
+    setVizRegisterFormOpen(true);
+  };
+
+  const handleDeleteVizRegister = (index: number) => {
+    setVisualizationRegisters((prev) => prev.filter((_, i) => i !== index));
+    toast.success("Visualization register removed");
+  };
+
+  const handleSaveVizRegister = (register: ModbusRegister) => {
+    if (vizRegisterFormMode === "edit" && editingVizRegisterIndex >= 0) {
+      // Update existing register
+      setVisualizationRegisters((prev) =>
+        prev.map((r, i) => (i === editingVizRegisterIndex ? register : r))
+      );
+      toast.success("Visualization register updated");
+    } else {
+      // Add new register
+      setVisualizationRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
+      toast.success("Visualization register added");
     }
   };
 
@@ -223,6 +362,35 @@ export function TemplateFormDialog({
       toast.success("Alarm register added");
     }
   };
+
+  // Calculated fields management functions
+  // Toggle a calculated field on/off
+  const handleToggleCalculatedField = (fieldId: string, fieldName: string) => {
+    setCalculatedFields((prev) => {
+      const exists = prev.find((f) => f.field_id === fieldId);
+      if (exists) {
+        // Remove the field if it exists
+        return prev.filter((f) => f.field_id !== fieldId);
+      } else {
+        // Add the field with default storage mode "log"
+        return [...prev, { field_id: fieldId, name: fieldName, storage_mode: "log" as const }];
+      }
+    });
+  };
+
+  // Update storage mode for a calculated field
+  const handleUpdateCalculatedFieldMode = (fieldId: string, mode: "log" | "viz_only") => {
+    setCalculatedFields((prev) =>
+      prev.map((f) =>
+        f.field_id === fieldId ? { ...f, storage_mode: mode } : f
+      )
+    );
+  };
+
+  // Get available calculated fields for the current device type
+  const availableCalculatedFields = useMemo(() => {
+    return CALCULATED_FIELDS_BY_TYPE[formData.device_type as DeviceType] || [];
+  }, [formData.device_type]);
 
   // Handle input changes
   const handleChange = (
@@ -268,13 +436,18 @@ export function TemplateFormDialog({
       }
 
       // Map device_type to operation (required by database)
-      // inverter -> solar, dg -> dg, load_meter -> meter, sensor -> sensor
+      // inverter -> solar, dg -> dg, load_meter -> meter, all sensors -> sensor
       const getOperationFromDeviceType = (deviceType: string): string => {
         switch (deviceType) {
           case "inverter": return "solar";
           case "dg": return "dg";
           case "load_meter": return "meter";
-          case "sensor": return "sensor";
+          case "sensor":
+          case "fuel_level_sensor":
+          case "temperature_humidity_sensor":
+          case "solar_radiation_sensor":
+          case "wind_sensor":
+            return "sensor";
           default: return "meter";
         }
       };
@@ -303,8 +476,11 @@ export function TemplateFormDialog({
           : null,
         template_type: formData.template_type,  // 'public' or 'custom'
         enterprise_id: getEnterpriseId(),
-        registers: registers.length > 0 ? registers : null,  // Include Modbus registers
-        alarm_registers: alarmRegisters.length > 0 ? alarmRegisters : null,  // Include Alarm registers
+        // NEW COLUMN NAMES: logging_registers, visualization_registers, calculated_fields
+        logging_registers: loggingRegisters.length > 0 ? loggingRegisters : null,
+        visualization_registers: visualizationRegisters.length > 0 ? visualizationRegisters : null,
+        alarm_registers: alarmRegisters.length > 0 ? alarmRegisters : null,
+        calculated_fields: calculatedFields.length > 0 ? calculatedFields : null,
       };
 
       if (mode === "edit" && template) {
@@ -419,10 +595,11 @@ export function TemplateFormDialog({
                 className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
                 required
               >
-                <option value="inverter">Solar Inverter</option>
-                <option value="load_meter">Energy Meter</option>
-                <option value="dg">Generator Controller</option>
-                <option value="sensor">Sensor (Temperature, Fuel Level, etc.)</option>
+                {DEVICE_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -438,9 +615,9 @@ export function TemplateFormDialog({
                 onChange={handleChange}
                 className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background disabled:opacity-60 disabled:cursor-not-allowed"
                 required
-                disabled={isEnterpriseAdmin}  // Enterprise admins can only create custom
+                disabled={isEnterpriseOrConfigurator}  // Enterprise admins can only create custom
               >
-                {isEnterpriseAdmin ? (
+                {isEnterpriseOrConfigurator ? (
                   // Enterprise admins can only create custom templates
                   <option value="custom">Custom (enterprise-specific)</option>
                 ) : (
@@ -452,7 +629,7 @@ export function TemplateFormDialog({
                 )}
               </select>
               <p className="text-xs text-muted-foreground">
-                {isEnterpriseAdmin
+                {isEnterpriseOrConfigurator
                   ? "Your templates will only be visible to your enterprise"
                   : "Public templates are available to all users"}
               </p>
@@ -537,204 +714,386 @@ export function TemplateFormDialog({
             </p>
           </div>
 
-          {/* Modbus Registers Section */}
-          <div className="space-y-3 pt-4 border-t">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-base font-semibold">Modbus Registers</Label>
-                <p className="text-xs text-muted-foreground">
-                  Configure Modbus register addresses for this device
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleAddRegister}
-                className="min-h-[36px]"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                Add Register
-              </Button>
-            </div>
+          {/* ═══════════════════════════════════════════════════════════════════
+              TABBED REGISTER SECTIONS
+              4 Tabs: Logging, Visualization, Alarms, Calculated Fields
+              ═══════════════════════════════════════════════════════════════════ */}
+          <div className="pt-4 border-t">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-4 mb-4">
+                <TabsTrigger value="logging" className="text-xs sm:text-sm">
+                  Logging ({loggingRegisters.length})
+                </TabsTrigger>
+                <TabsTrigger value="visualization" className="text-xs sm:text-sm">
+                  Visual ({visualizationRegisters.length})
+                </TabsTrigger>
+                <TabsTrigger value="alarms" className="text-xs sm:text-sm">
+                  Alarms ({alarmRegisters.length})
+                </TabsTrigger>
+                <TabsTrigger value="calculated" className="text-xs sm:text-sm">
+                  Calc ({calculatedFields.length})
+                </TabsTrigger>
+              </TabsList>
 
-            {/* Registers Table */}
-            {registers.length > 0 ? (
-              <div className="border rounded-md overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-medium">Address</th>
-                        <th className="px-3 py-2 text-left font-medium">Name</th>
-                        <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
-                        <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
-                        <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Access</th>
-                        <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Logging</th>
-                        <th className="px-3 py-2 text-right font-medium">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {registers.map((reg, index) => (
-                        <tr key={index} className="hover:bg-muted/30">
-                          <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
-                          <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
-                          <td className="px-3 py-2 hidden sm:table-cell">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                              reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
-                            }`}>
-                              {reg.type}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.access}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
-                            {formatLoggingFrequency(reg.logging_frequency)}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleEditRegister(reg, index)}
-                                className="p-1.5 rounded hover:bg-muted transition-colors"
-                                title="Edit register"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
-                                  <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                  <path d="m15 5 4 4"/>
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteRegister(index)}
-                                className="p-1.5 rounded hover:bg-red-100 transition-colors"
-                                title="Delete register"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-                                  <path d="M3 6h18"/>
-                                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {/* ═══════════════════════════════════════════════════════════════════
+                  TAB 1: LOGGING REGISTERS
+                  Stored in database AND used by control logic
+                  ═══════════════════════════════════════════════════════════════════ */}
+              <TabsContent value="logging" className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-base font-semibold">Logging Registers</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Stored in database <strong>AND</strong> used by control logic.
+                      Add registers needed for control decisions here.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddLoggingRegister}
+                    className="min-h-[36px]"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Add
+                  </Button>
                 </div>
-              </div>
-            ) : (
-              <div className="border rounded-md p-6 text-center text-muted-foreground">
-                <p className="text-sm">No registers configured yet.</p>
-                <p className="text-xs mt-1">Click &quot;Add Register&quot; to define Modbus registers for this device.</p>
-              </div>
-            )}
-          </div>
 
-          {/* Alarm Registers Section */}
-          <div className="space-y-3 pt-4 border-t">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-base font-semibold">Alarm Registers</Label>
-                <p className="text-xs text-muted-foreground">
-                  Configure Modbus register addresses for device alarms
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleAddAlarmRegister}
-                className="min-h-[36px]"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                Add Alarm Register
-              </Button>
-            </div>
+                {loggingRegisters.length > 0 ? (
+                  <div className="border rounded-md overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium">Addr</th>
+                            <th className="px-3 py-2 text-left font-medium">Name</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
+                            <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Log Freq</th>
+                            <th className="px-3 py-2 text-right font-medium">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {loggingRegisters.map((reg, index) => (
+                            <tr key={index} className="hover:bg-muted/30">
+                              <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
+                              <td className="px-3 py-2 hidden sm:table-cell">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                  reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+                                }`}>
+                                  {reg.type}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
+                                {formatLoggingFrequency(reg.logging_frequency)}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditLoggingRegister(reg, index)}
+                                    className="p-1.5 rounded hover:bg-muted transition-colors"
+                                    title="Edit register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
+                                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                      <path d="m15 5 4 4"/>
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteLoggingRegister(index)}
+                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
+                                    title="Delete register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+                                      <path d="M3 6h18"/>
+                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border rounded-md p-6 text-center text-muted-foreground">
+                    <p className="text-sm">No logging registers configured yet.</p>
+                    <p className="text-xs mt-1">Add registers that need to be logged to the database and used in control logic.</p>
+                  </div>
+                )}
+              </TabsContent>
 
-            {/* Alarm Registers Table */}
-            {alarmRegisters.length > 0 ? (
-              <div className="border rounded-md overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-medium">Address</th>
-                        <th className="px-3 py-2 text-left font-medium">Name</th>
-                        <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
-                        <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
-                        <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Thresholds</th>
-                        <th className="px-3 py-2 text-right font-medium">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {alarmRegisters.map((reg, index) => (
-                        <tr key={index} className="hover:bg-muted/30">
-                          <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
-                          <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
-                          <td className="px-3 py-2 hidden sm:table-cell">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                              reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
-                            }`}>
-                              {reg.type}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
-                          <td className="px-3 py-2 hidden md:table-cell">
-                            {reg.thresholds && reg.thresholds.length > 0 ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                {reg.thresholds.length} configured
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">None</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleEditAlarmRegister(reg, index)}
-                                className="p-1.5 rounded hover:bg-muted transition-colors"
-                                title="Edit alarm register"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
-                                  <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                  <path d="m15 5 4 4"/>
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteAlarmRegister(index)}
-                                className="p-1.5 rounded hover:bg-red-100 transition-colors"
-                                title="Delete alarm register"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-                                  <path d="M3 6h18"/>
-                                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {/* ═══════════════════════════════════════════════════════════════════
+                  TAB 2: VISUALIZATION REGISTERS
+                  Read for live display only - NOT stored in database
+                  ═══════════════════════════════════════════════════════════════════ */}
+              <TabsContent value="visualization" className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-base font-semibold">Visualization Registers</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Read for <strong>live display only</strong> - NOT stored in database.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddVizRegister}
+                    className="min-h-[36px]"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Add
+                  </Button>
                 </div>
-              </div>
-            ) : (
-              <div className="border rounded-md p-6 text-center text-muted-foreground">
-                <p className="text-sm">No alarm registers configured yet.</p>
-                <p className="text-xs mt-1">Click &quot;Add Alarm Register&quot; to define alarm registers for this device.</p>
-              </div>
-            )}
+
+                {visualizationRegisters.length > 0 ? (
+                  <div className="border rounded-md overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium">Addr</th>
+                            <th className="px-3 py-2 text-left font-medium">Name</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
+                            <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Scale</th>
+                            <th className="px-3 py-2 text-right font-medium">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {visualizationRegisters.map((reg, index) => (
+                            <tr key={index} className="hover:bg-muted/30">
+                              <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
+                              <td className="px-3 py-2 hidden sm:table-cell">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                  reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+                                }`}>
+                                  {reg.type}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">
+                                {reg.scale || 1}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditVizRegister(reg, index)}
+                                    className="p-1.5 rounded hover:bg-muted transition-colors"
+                                    title="Edit register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
+                                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                      <path d="m15 5 4 4"/>
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteVizRegister(index)}
+                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
+                                    title="Delete register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+                                      <path d="M3 6h18"/>
+                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border rounded-md p-6 text-center text-muted-foreground">
+                    <p className="text-sm">No visualization registers configured yet.</p>
+                    <p className="text-xs mt-1">Add registers for live display that don&apos;t need to be stored in the database.</p>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* ═══════════════════════════════════════════════════════════════════
+                  TAB 3: ALARM REGISTERS
+                  Event-based alarms with threshold conditions
+                  ═══════════════════════════════════════════════════════════════════ */}
+              <TabsContent value="alarms" className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-base font-semibold">Alarm Registers</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Event-based alarms with threshold conditions.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddAlarmRegister}
+                    className="min-h-[36px]"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Add
+                  </Button>
+                </div>
+
+                {alarmRegisters.length > 0 ? (
+                  <div className="border rounded-md overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium">Addr</th>
+                            <th className="px-3 py-2 text-left font-medium">Name</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
+                            <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Thresholds</th>
+                            <th className="px-3 py-2 text-right font-medium">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {alarmRegisters.map((reg, index) => (
+                            <tr key={index} className="hover:bg-muted/30">
+                              <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
+                              <td className="px-3 py-2 hidden sm:table-cell">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                  reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+                                }`}>
+                                  {reg.type}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
+                              <td className="px-3 py-2 hidden md:table-cell">
+                                {reg.thresholds && reg.thresholds.length > 0 ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                    {reg.thresholds.length} configured
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">None</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditAlarmRegister(reg, index)}
+                                    className="p-1.5 rounded hover:bg-muted transition-colors"
+                                    title="Edit alarm register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
+                                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                      <path d="m15 5 4 4"/>
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteAlarmRegister(index)}
+                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
+                                    title="Delete alarm register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+                                      <path d="M3 6h18"/>
+                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border rounded-md p-6 text-center text-muted-foreground">
+                    <p className="text-sm">No alarm registers configured yet.</p>
+                    <p className="text-xs mt-1">Add registers with threshold conditions to trigger alarms.</p>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* ═══════════════════════════════════════════════════════════════════
+                  TAB 4: CALCULATED FIELDS
+                  Device-type specific derived values
+                  ═══════════════════════════════════════════════════════════════════ */}
+              <TabsContent value="calculated" className="space-y-3">
+                <div>
+                  <Label className="text-base font-semibold">Calculated Fields</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Device-type specific derived values. Select which fields to enable for this template.
+                  </p>
+                </div>
+
+                {availableCalculatedFields.length > 0 ? (
+                  <div className="border rounded-md divide-y">
+                    {availableCalculatedFields.map((field) => {
+                      const isSelected = calculatedFields.some((f) => f.field_id === field.field_id);
+                      const selectedField = calculatedFields.find((f) => f.field_id === field.field_id);
+                      return (
+                        <div key={field.field_id} className="flex items-center justify-between p-3 hover:bg-muted/30">
+                          <div className="flex items-center gap-3">
+                            <Checkbox
+                              id={field.field_id}
+                              checked={isSelected}
+                              onCheckedChange={() => handleToggleCalculatedField(field.field_id, field.name)}
+                            />
+                            <label htmlFor={field.field_id} className="text-sm cursor-pointer">
+                              <span className="font-medium">{field.name}</span>
+                              <span className="text-xs text-muted-foreground ml-2">({field.unit})</span>
+                            </label>
+                          </div>
+                          {isSelected && (
+                            <Select
+                              value={selectedField?.storage_mode || "log"}
+                              onValueChange={(value) => handleUpdateCalculatedFieldMode(field.field_id, value as "log" | "viz_only")}
+                            >
+                              <SelectTrigger className="w-[110px] h-8">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="log">Log to DB</SelectItem>
+                                <SelectItem value="viz_only">Viz Only</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="border rounded-md p-6 text-center text-muted-foreground">
+                    <p className="text-sm">No calculated fields available for this device type.</p>
+                    <p className="text-xs mt-1">
+                      Calculated fields are predefined for specific device types like Load Meter, Inverter, and DG.
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </div>
 
           <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">
@@ -763,17 +1122,41 @@ export function TemplateFormDialog({
         </form>
       </DialogContent>
 
-      {/* Register Form Dialog (nested) - for Modbus registers */}
+      {/* ═══════════════════════════════════════════════════════════════════
+          LOGGING REGISTER FORM DIALOG (nested)
+          For registers stored in database AND used by control logic
+          ═══════════════════════════════════════════════════════════════════ */}
       <RegisterForm
-        mode={registerFormMode}
-        register={editingRegister}
-        existingRegisters={registers}
-        open={registerFormOpen}
-        onOpenChange={setRegisterFormOpen}
-        onSave={handleSaveRegister}
+        mode={loggingRegisterFormMode}
+        register={editingLoggingRegister}
+        existingRegisters={loggingRegisters}
+        open={loggingRegisterFormOpen}
+        onOpenChange={setLoggingRegisterFormOpen}
+        onSave={handleSaveLoggingRegister}
+        existingGroups={existingGroups}
       />
 
-      {/* Alarm Register Form Dialog (nested) - for Alarm registers */}
+      {/* ═══════════════════════════════════════════════════════════════════
+          VISUALIZATION REGISTER FORM DIALOG (nested)
+          For registers read live but NOT stored in database
+          The isVisualizationRegister prop hides the "Logging Frequency" field
+          ═══════════════════════════════════════════════════════════════════ */}
+      <RegisterForm
+        mode={vizRegisterFormMode}
+        register={editingVizRegister}
+        existingRegisters={visualizationRegisters}
+        open={vizRegisterFormOpen}
+        onOpenChange={setVizRegisterFormOpen}
+        onSave={handleSaveVizRegister}
+        isVisualizationRegister={true}
+        existingGroups={existingGroups}
+      />
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          ALARM REGISTER FORM DIALOG (nested)
+          For alarm registers with threshold conditions
+          The isAlarmRegister prop shows threshold configuration
+          ═══════════════════════════════════════════════════════════════════ */}
       <RegisterForm
         mode={alarmRegisterFormMode}
         register={editingAlarmRegister}
@@ -782,6 +1165,7 @@ export function TemplateFormDialog({
         onOpenChange={setAlarmRegisterFormOpen}
         onSave={handleSaveAlarmRegister}
         isAlarmRegister={true}
+        existingGroups={existingGroups}
       />
     </Dialog>
   );

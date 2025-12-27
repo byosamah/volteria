@@ -102,9 +102,25 @@ export interface ProjectSummary {
 // DEVICE TYPES
 // ============================================
 
-export type DeviceType = "inverter" | "dg" | "load_meter";
-export type DeviceOperation = "solar" | "dg" | "meter";
+export type DeviceType =
+  | "inverter"
+  | "dg"
+  | "load_meter"
+  | "sensor"  // Generic sensor (backward compatibility)
+  | "fuel_level_sensor"
+  | "temperature_humidity_sensor"
+  | "solar_radiation_sensor"
+  | "wind_sensor";
+
+export type DeviceOperation = "solar" | "dg" | "meter" | "sensor";
 export type Protocol = "tcp" | "rtu_gateway" | "rtu_direct";
+
+// Calculated field selection for templates
+export interface CalculatedFieldSelection {
+  field_id: string;                    // e.g., "daily_kwh_consumption"
+  name: string;                        // Human-readable name
+  storage_mode: "log" | "viz_only";    // Log to DB or live display only
+}
 
 export interface DeviceTemplate {
   id: string;
@@ -116,9 +132,31 @@ export interface DeviceTemplate {
   model: string;
   rated_power_kw: number | null;
   rated_power_kva: number | null;
-  registers: ModbusRegister[];
+  // Registers for logging AND control (stored in database, used by control logic)
+  logging_registers: ModbusRegister[];
+  // Registers for live visualization only (NOT stored in database)
+  visualization_registers: ModbusRegister[];
+  // Alarm registers with thresholds
+  alarm_registers?: AlarmRegister[];
+  // Alarm definitions (structured alarms with conditions)
+  alarm_definitions?: AlarmDefinition[];
+  // Calculated field selections for this template
+  calculated_fields: CalculatedFieldSelection[];
   specifications: Record<string, unknown>;
   is_active: boolean;
+  // Legacy field for backward compatibility (may exist in DB but not used)
+  registers?: ModbusRegister[];
+  // Template type and enterprise fields (for public vs custom templates)
+  template_type?: "public" | "custom";
+  enterprise_id?: string | null;
+  created_by?: string | null;
+}
+
+// Request to duplicate a device template
+export interface DeviceTemplateDuplicateRequest {
+  new_template_id: string;
+  new_name: string;
+  enterprise_id?: string;  // Optional, only super_admin/admin can specify
 }
 
 export interface ModbusRegister {
@@ -314,8 +352,8 @@ export interface ControllerTemplate {
   alarm_definitions: AlarmDefinition[];
   calculated_fields: string[];       // References to calculated_field_definitions
   specifications: Record<string, unknown>;
-  template_type: "master" | "custom";
-  enterprise_id: string | null;      // NULL for master templates
+  template_type: "public" | "custom";
+  enterprise_id: string | null;      // NULL for public templates
   created_by: string | null;
   created_at: string;
   updated_at: string;
