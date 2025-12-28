@@ -212,9 +212,7 @@ export default function AddMasterDevicePage({
         if (!controllerId) {
           throw new Error("Please select a controller");
         }
-        if (!templateId) {
-          throw new Error("Please select a controller template");
-        }
+        // Template is optional - users can add a device without a template
         if (!ipAddress.trim()) {
           throw new Error("IP address is required for controllers");
         }
@@ -455,7 +453,7 @@ export default function AddMasterDevicePage({
                   {/* Select Controller Template */}
                   <div className="space-y-2">
                     <Label htmlFor="template">
-                      Controller Template <span className="text-red-500">*</span>
+                      Controller Template (optional)
                     </Label>
                     <Select
                       value={templateId}
@@ -743,7 +741,7 @@ export default function AddMasterDevicePage({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isSubmitting || !name.trim() || (deviceType === "controller" && (!controllerId || !templateId))}
+                  disabled={isSubmitting || !name.trim() || (deviceType === "controller" && !controllerId)}
                   className="min-h-[44px]"
                 >
                   {isSubmitting ? "Adding..." : "Add Device"}

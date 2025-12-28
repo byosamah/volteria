@@ -45,20 +45,21 @@ import { MasterDeviceTemplateForm } from "./master-device-template-form";
 // =============================================================================
 
 // Calculated fields that can be enabled per template (all daily aggregations)
+// Names include "Power" for kW fields and "Energy" for kWh fields
 export const CONTROLLER_CALCULATED_FIELDS = [
-  { field_id: "daily_total_load_kwh", name: "Daily Total Load Consumption", unit: "kWh", category: "load" },
-  { field_id: "daily_total_solar_kwh", name: "Daily Total Solar Production", unit: "kWh", category: "solar" },
-  { field_id: "daily_total_dg_kwh", name: "Daily Total Generator Production", unit: "kWh", category: "generator" },
-  { field_id: "daily_load_peak_kw", name: "Daily Peak Load", unit: "kW", category: "load" },
-  { field_id: "daily_load_avg_kw", name: "Daily Average Load", unit: "kW", category: "load" },
-  { field_id: "daily_solar_peak_kw", name: "Daily Solar Peak Production", unit: "kW", category: "solar" },
-  { field_id: "daily_solar_avg_kw", name: "Daily Solar Average Production", unit: "kW", category: "solar" },
-  { field_id: "daily_dg_peak_kw", name: "Daily Generator Peak", unit: "kW", category: "generator" },
-  { field_id: "daily_dg_avg_kw", name: "Daily Generator Average", unit: "kW", category: "generator" },
-  { field_id: "daily_dg_min_kw", name: "Daily Generator Minimum", unit: "kW", category: "generator" },
+  { field_id: "daily_total_load_kwh", name: "Daily Total Load Energy (kWh)", unit: "kWh", category: "load" },
+  { field_id: "daily_total_solar_kwh", name: "Daily Total Solar Energy (kWh)", unit: "kWh", category: "solar" },
+  { field_id: "daily_total_dg_kwh", name: "Daily Total Generator Energy (kWh)", unit: "kWh", category: "generator" },
+  { field_id: "daily_load_peak_kw", name: "Daily Peak Load Power (kW)", unit: "kW", category: "load" },
+  { field_id: "daily_load_avg_kw", name: "Daily Average Load Power (kW)", unit: "kW", category: "load" },
+  { field_id: "daily_solar_peak_kw", name: "Daily Peak Solar Power (kW)", unit: "kW", category: "solar" },
+  { field_id: "daily_solar_avg_kw", name: "Daily Average Solar Power (kW)", unit: "kW", category: "solar" },
+  { field_id: "daily_dg_peak_kw", name: "Daily Peak Total Generator Power (kW)", unit: "kW", category: "generator" },
+  { field_id: "daily_dg_avg_kw", name: "Daily Average Total Generator Power (kW)", unit: "kW", category: "generator" },
+  { field_id: "daily_dg_min_kw", name: "Daily Minimum Total Generator Power (kW)", unit: "kW", category: "generator" },
 ];
 
-// Controller readings (Raspberry Pi health metrics)
+// Controller readings (system health metrics)
 export const CONTROLLER_READINGS = [
   { field_id: "cpu_temp_celsius", name: "CPU Temperature", unit: "°C", source: "device_info" as const },
   { field_id: "cpu_usage_pct", name: "CPU Usage", unit: "%", source: "device_info" as const },
@@ -81,7 +82,7 @@ interface MasterDeviceTemplatesListProps {
 
 // Controller type labels and colors
 const controllerTypeLabels: Record<string, string> = {
-  raspberry_pi: "Raspberry Pi",
+  raspberry_pi: "Controller",
   gateway: "Gateway",
   plc: "PLC",
 };

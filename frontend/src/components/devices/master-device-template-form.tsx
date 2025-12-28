@@ -49,6 +49,32 @@ interface MasterDeviceTemplateFormProps {
   onSuccess: (template: ControllerTemplate) => void;
 }
 
+// Hardware option from approved_hardware table
+interface HardwareOption {
+  id: string;
+  name: string;
+  brand: string;
+  model: string;
+  hardware_type: string;
+  is_active: boolean;
+}
+
+// Enterprise option for custom templates
+interface EnterpriseOption {
+  id: string;
+  name: string;
+}
+
+// =============================================================================
+// HELPER: Generate unique numeric template ID
+// Uses timestamp + random digits for uniqueness
+// =============================================================================
+function generateNumericTemplateId(): string {
+  const timestamp = Date.now().toString().slice(-8); // Last 8 digits of timestamp
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+  return `${timestamp}${random}`;
+}
+
 // Storage mode for calculated fields and readings
 type StorageMode = "log" | "viz_only";
 
@@ -60,18 +86,15 @@ interface FieldSelection {
   enabled: boolean;
 }
 
-// Controller type for form data
-type ControllerTypeValue = "raspberry_pi" | "gateway" | "plc";
-
 // Form data interface
+// Note: template_id is auto-generated for new templates
+// Note: brand and model are read-only (auto-populated from hardware)
 interface FormData {
-  template_id: string;
   name: string;
   description: string;
-  controller_type: ControllerTypeValue;
-  brand: string;
-  model: string;
+  hardware_id: string; // ID from approved_hardware table
   template_type: "public" | "custom";
+  enterprise_id: string; // For custom templates
 }
 
 // =============================================================================
@@ -80,6 +103,13 @@ interface FormData {
 
 // Check if user can create PUBLIC templates
 function canCreatePublicTemplate(role?: string): boolean {
+  if (!role) return false;
+  return ["super_admin", "backend_admin"].includes(role);
+}
+
+// Check if user can change enterprise selection
+// Only super_admin and backend_admin can change it; others see it auto-selected
+function canChangeEnterprise(role?: string): boolean {
   if (!role) return false;
   return ["super_admin", "backend_admin"].includes(role);
 }
@@ -99,15 +129,25 @@ export function MasterDeviceTemplateForm({
   const isEditing = !!template;
 
   // Form state
+  // Note: template_id is auto-generated, brand/model are read-only from hardware
   const [formData, setFormData] = useState<FormData>({
-    template_id: "",
     name: "",
     description: "",
-    controller_type: "raspberry_pi",
-    brand: "Raspberry Pi",
-    model: "Pi 5",
+    hardware_id: "",
     template_type: canCreatePublicTemplate(userRole) ? "public" : "custom",
+    enterprise_id: userEnterpriseId || "",
   });
+
+  // Hardware options from approved_hardware table
+  const [hardwareOptions, setHardwareOptions] = useState<HardwareOption[]>([]);
+  const [isLoadingHardware, setIsLoadingHardware] = useState(false);
+
+  // Enterprise options for custom templates
+  const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseOption[]>([]);
+  const [isLoadingEnterprises, setIsLoadingEnterprises] = useState(false);
+
+  // Get selected hardware details (for displaying brand/model)
+  const selectedHardware = hardwareOptions.find((h) => h.id === formData.hardware_id);
 
   // Calculated fields selection
   const [calculatedFields, setCalculatedFields] = useState<FieldSelection[]>(
@@ -131,19 +171,71 @@ export function MasterDeviceTemplateForm({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Fetch hardware options when dialog opens
+  useEffect(() => {
+    if (!open) return;
+
+    const fetchHardwareOptions = async () => {
+      setIsLoadingHardware(true);
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("approved_hardware")
+          .select("id, name, brand, model, hardware_type, is_active")
+          .order("name");
+
+        if (error) throw error;
+        setHardwareOptions(data || []);
+      } catch (error) {
+        console.error("Error fetching hardware options:", error);
+        toast.error("Failed to load hardware options");
+      } finally {
+        setIsLoadingHardware(false);
+      }
+    };
+
+    fetchHardwareOptions();
+  }, [open]);
+
+  // Fetch enterprise options when dialog opens (for custom templates)
+  useEffect(() => {
+    if (!open) return;
+
+    const fetchEnterpriseOptions = async () => {
+      setIsLoadingEnterprises(true);
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("enterprises")
+          .select("id, name")
+          .order("name");
+
+        if (error) throw error;
+        setEnterpriseOptions(data || []);
+      } catch (error) {
+        console.error("Error fetching enterprise options:", error);
+        toast.error("Failed to load enterprise options");
+      } finally {
+        setIsLoadingEnterprises(false);
+      }
+    };
+
+    fetchEnterpriseOptions();
+  }, [open]);
+
   // Reset form when dialog opens or template changes
   useEffect(() => {
     if (open) {
       if (template) {
         // Edit mode - populate with existing data
+        // Note: template_id is kept from original template (not editable)
+        // Note: brand/model are read from hardware selection, not stored in form
         setFormData({
-          template_id: template.template_id,
           name: template.name,
           description: template.description || "",
-          controller_type: template.controller_type,
-          brand: template.brand || "",
-          model: template.model || "",
+          hardware_id: template.hardware_type_id || "",
           template_type: template.template_type,
+          enterprise_id: template.enterprise_id || "",
         });
 
         // Parse calculated fields from template
@@ -212,14 +304,14 @@ export function MasterDeviceTemplateForm({
         );
       } else {
         // Create mode - reset to defaults
+        // Note: template_id will be auto-generated on submit
+        // Note: brand/model will be auto-populated from hardware selection
         setFormData({
-          template_id: "",
           name: "",
           description: "",
-          controller_type: "raspberry_pi",
-          brand: "Raspberry Pi",
-          model: "Pi 5",
+          hardware_id: "",
           template_type: canCreatePublicTemplate(userRole) ? "public" : "custom",
+          enterprise_id: userEnterpriseId || "",
         });
         setCalculatedFields(
           CONTROLLER_CALCULATED_FIELDS.map((field) => ({
@@ -239,17 +331,29 @@ export function MasterDeviceTemplateForm({
         );
       }
     }
-  }, [open, template, userRole]);
+  }, [open, template, userRole, userEnterpriseId]);
 
   // Handle form submission
   const handleSubmit = async () => {
     // Validation
-    if (!formData.template_id.trim()) {
-      toast.error("Template ID is required");
-      return;
-    }
     if (!formData.name.trim()) {
       toast.error("Name is required");
+      return;
+    }
+    if (!formData.hardware_id) {
+      toast.error("Please select a hardware type");
+      return;
+    }
+    // For custom templates, enterprise is required
+    if (formData.template_type === "custom" && !formData.enterprise_id) {
+      toast.error("Please select an enterprise for custom templates");
+      return;
+    }
+
+    // Get selected hardware details for brand/model
+    const hardware = hardwareOptions.find((h) => h.id === formData.hardware_id);
+    if (!hardware) {
+      toast.error("Invalid hardware selection");
       return;
     }
 
@@ -287,18 +391,32 @@ export function MasterDeviceTemplateForm({
           };
         });
 
+      // Generate template_id for new templates, keep existing for edits
+      const templateId = isEditing && template
+        ? template.template_id
+        : generateNumericTemplateId();
+
+      // Derive controller_type from hardware_type
+      // Map hardware types to controller types
+      const controllerType = hardware.hardware_type === "plc"
+        ? "plc"
+        : hardware.hardware_type === "gateway"
+        ? "gateway"
+        : "raspberry_pi"; // Default for controller variants
+
       // Prepare template data
       const templateData = {
-        template_id: formData.template_id.trim(),
+        template_id: templateId,
         name: formData.name.trim(),
         description: formData.description.trim() || null,
-        controller_type: formData.controller_type,
-        brand: formData.brand.trim() || null,
-        model: formData.model.trim() || null,
+        controller_type: controllerType,
+        hardware_type_id: formData.hardware_id, // Link to approved_hardware table
+        brand: hardware.brand, // Auto-populated from hardware
+        model: hardware.model, // Auto-populated from hardware
         template_type: formData.template_type,
-        // For custom templates, set enterprise_id
+        // For custom templates, set enterprise_id from form
         enterprise_id:
-          formData.template_type === "custom" ? userEnterpriseId : null,
+          formData.template_type === "custom" ? formData.enterprise_id : null,
         // Set created_by for new templates
         created_by: isEditing ? template?.created_by : user?.id,
         registers: selectedRegisters,
@@ -401,34 +519,18 @@ export function MasterDeviceTemplateForm({
               Basic Information
             </h3>
 
-            <div className="grid grid-cols-2 gap-4">
-              {/* Template ID */}
-              <div className="space-y-2">
-                <Label htmlFor="template_id">Template ID *</Label>
-                <Input
-                  id="template_id"
-                  placeholder="e.g., rpi5_custom"
-                  value={formData.template_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, template_id: e.target.value })
-                  }
-                  disabled={isEditing}
-                  className="font-mono"
-                />
-              </div>
-
-              {/* Name */}
-              <div className="space-y-2">
-                <Label htmlFor="name">Name *</Label>
-                <Input
-                  id="name"
-                  placeholder="e.g., Raspberry Pi 5 Custom"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
-              </div>
+            {/* Row 1: Name */}
+            <div className="space-y-2">
+              <Label htmlFor="name">Name *</Label>
+              <Input
+                id="name"
+                placeholder="e.g., Controller X"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
             </div>
 
+            {/* Row 2: Template Type + Enterprise (for custom) */}
             <div className="grid grid-cols-2 gap-4">
               {/* Template Type - only for super_admin/backend_admin */}
               <div className="space-y-2">
@@ -469,47 +571,96 @@ export function MasterDeviceTemplateForm({
                 )}
               </div>
 
-              {/* Controller Type */}
-              <div className="space-y-2">
-                <Label htmlFor="controller_type">Controller Type *</Label>
-                <Select
-                  value={formData.controller_type}
-                  onValueChange={(value: ControllerTypeValue) =>
-                    setFormData({ ...formData, controller_type: value })
-                  }
-                >
-                  <SelectTrigger id="controller_type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="raspberry_pi">Raspberry Pi</SelectItem>
-                    <SelectItem value="gateway">Gateway</SelectItem>
-                    <SelectItem value="plc">PLC</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Enterprise - shown when template_type is "custom" */}
+              {formData.template_type === "custom" && (
+                <div className="space-y-2">
+                  <Label htmlFor="enterprise_id">Enterprise *</Label>
+                  {canChangeEnterprise(userRole) ? (
+                    // Super admin / backend admin can select any enterprise
+                    <Select
+                      value={formData.enterprise_id}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, enterprise_id: value })
+                      }
+                      disabled={isLoadingEnterprises}
+                    >
+                      <SelectTrigger id="enterprise_id">
+                        <SelectValue placeholder={isLoadingEnterprises ? "Loading..." : "Select enterprise"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {enterpriseOptions.map((enterprise) => (
+                          <SelectItem key={enterprise.id} value={enterprise.id}>
+                            {enterprise.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    // Enterprise users see their enterprise (read-only)
+                    <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/50">
+                      <span className="text-sm">
+                        {enterpriseOptions.find((e) => e.id === formData.enterprise_id)?.name || "Your Enterprise"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
+            {/* Row 3: Hardware ID */}
+            <div className="space-y-2">
+              <Label htmlFor="hardware_id">Hardware *</Label>
+              <Select
+                value={formData.hardware_id}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, hardware_id: value })
+                }
+                disabled={isLoadingHardware}
+              >
+                <SelectTrigger id="hardware_id">
+                  <SelectValue placeholder={isLoadingHardware ? "Loading..." : "Select hardware"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {hardwareOptions.map((hardware) => (
+                    <SelectItem key={hardware.id} value={hardware.id}>
+                      <span className="flex items-center gap-2">
+                        {hardware.name}
+                        {!hardware.is_active && (
+                          <span className="text-xs text-muted-foreground">(inactive)</span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select the hardware type for this controller template
+              </p>
+            </div>
+
+            {/* Row 4: Brand & Model (read-only, auto-populated from hardware) */}
             <div className="grid grid-cols-2 gap-4">
-              {/* Brand */}
+              {/* Brand - Read-only */}
               <div className="space-y-2">
                 <Label htmlFor="brand">Brand</Label>
                 <Input
                   id="brand"
-                  placeholder="e.g., Raspberry Pi"
-                  value={formData.brand}
-                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  value={selectedHardware?.brand || ""}
+                  disabled
+                  className="bg-muted/50"
+                  placeholder={formData.hardware_id ? "" : "Select hardware first"}
                 />
               </div>
 
-              {/* Model */}
+              {/* Model - Read-only */}
               <div className="space-y-2">
                 <Label htmlFor="model">Model</Label>
                 <Input
                   id="model"
-                  placeholder="e.g., Pi 5"
-                  value={formData.model}
-                  onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                  value={selectedHardware?.model || ""}
+                  disabled
+                  className="bg-muted/50"
+                  placeholder={formData.hardware_id ? "" : "Select hardware first"}
                 />
               </div>
             </div>
@@ -598,7 +749,7 @@ export function MasterDeviceTemplateForm({
               </span>
             </div>
             <p className="text-sm text-muted-foreground">
-              Raspberry Pi health metrics (read from system).
+              Controller health metrics (read from system).
             </p>
 
             <div className="border rounded-lg divide-y">

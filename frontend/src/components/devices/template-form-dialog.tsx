@@ -94,7 +94,9 @@ const CALCULATED_FIELDS_BY_TYPE: Record<DeviceType, { field_id: string; name: st
     { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
   ],
   fuel_level_sensor: [
-    { field_id: "daily_level_difference", name: "Daily Level Difference", unit: "L or %" },
+    { field_id: "daily_fuel_level_difference_l", name: "Daily Fuel Level Difference (L)", unit: "L" },
+    { field_id: "daily_fuel_level_difference_gal", name: "Daily Fuel Level Difference (Imperial gallons)", unit: "gal" },
+    { field_id: "daily_fuel_level_difference_pct", name: "Daily Fuel Level Difference (%)", unit: "%" },
   ],
   temperature_humidity_sensor: [
     { field_id: "daily_peak_temp", name: "Daily Peak Temperature", unit: "°C" },
@@ -106,6 +108,17 @@ const CALCULATED_FIELDS_BY_TYPE: Record<DeviceType, { field_id: string; name: st
   wind_sensor: [],
   sensor: [],  // Generic sensor has no predefined fields
 };
+
+/**
+ * Generate a unique template ID from brand and model
+ * Format: {brand}_{model}_{random4} (e.g., sungrow_sg150ktl_m_a7x2)
+ */
+function generateTemplateId(brand: string, model: string): string {
+  const sanitize = (str: string) =>
+    str.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const random = Math.random().toString(36).substring(2, 6);
+  return `${sanitize(brand)}_${sanitize(model)}_${random}`;
+}
 
 interface TemplateFormDialogProps {
   // Mode: "create" for new template, "edit" for existing
@@ -158,9 +171,8 @@ export function TemplateFormDialog({
   // State for selected enterprise (for super admin creating custom templates)
   const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string>("");
 
-  // Form state
+  // Form state (template_id is auto-generated from brand + model)
   const [formData, setFormData] = useState({
-    template_id: "",
     name: "",
     device_type: "inverter",
     brand: "",
@@ -222,7 +234,6 @@ export function TemplateFormDialog({
       if (mode === "edit" && template) {
         // Editing: populate form with existing data
         setFormData({
-          template_id: template.template_id,
           name: template.name,
           device_type: template.device_type,
           brand: template.brand,
@@ -243,7 +254,6 @@ export function TemplateFormDialog({
         // Creating: reset to empty form
         // Enterprise admins can only create custom templates
         setFormData({
-          template_id: "",
           name: "",
           device_type: "inverter",
           brand: "",
@@ -407,11 +417,6 @@ export function TemplateFormDialog({
 
     try {
       // Validate required fields
-      if (!formData.template_id.trim()) {
-        toast.error("Template ID is required");
-        setLoading(false);
-        return;
-      }
       if (!formData.name.trim()) {
         toast.error("Template name is required");
         setLoading(false);
@@ -464,8 +469,13 @@ export function TemplateFormDialog({
 
       // Prepare data for Supabase
       // For custom templates, set enterprise_id based on user role
+      // Auto-generate template_id for new templates, keep existing for edits
+      const templateId = mode === "edit" && template
+        ? template.template_id
+        : generateTemplateId(formData.brand, formData.model);
+
       const templateData = {
-        template_id: formData.template_id.trim(),
+        template_id: templateId,
         name: formData.name.trim(),
         device_type: formData.device_type,
         operation: getOperationFromDeviceType(formData.device_type),  // Required: solar/dg/meter
@@ -546,25 +556,6 @@ export function TemplateFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
-          {/* Template ID */}
-          <div className="space-y-2">
-            <Label htmlFor="template_id">
-              Template ID <span className="text-red-500">*</span>
-            </Label>
-            <Input
-              id="template_id"
-              name="template_id"
-              placeholder="e.g., sungrow_sg150ktl_m"
-              value={formData.template_id}
-              onChange={handleChange}
-              className="min-h-[44px]"
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              Unique identifier (lowercase, underscores)
-            </p>
-          </div>
-
           {/* Template Name */}
           <div className="space-y-2">
             <Label htmlFor="name">

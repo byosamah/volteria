@@ -181,12 +181,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
     setLoading(true);
 
     try {
-      // Validate required fields
-      if (!selectedTemplateId) {
-        toast.error("Please select a device template");
-        setLoading(false);
-        return;
-      }
+      // Template is optional - users can add a device without a template
 
       if (!formData.name.trim()) {
         toast.error("Device name is required");
@@ -297,7 +292,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
       <div className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="template">
-            Device Template <span className="text-red-500">*</span>
+            Device Template (optional)
           </Label>
           {/* MOBILE-FRIENDLY: 44px touch target */}
           <select
@@ -305,7 +300,6 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
             value={selectedTemplateId}
             onChange={handleTemplateChange}
             className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
-            required
           >
             <option value="">Select a template...</option>
             {Object.entries(templatesByType).map(([type, items]) => (
