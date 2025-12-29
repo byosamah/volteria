@@ -525,22 +525,32 @@ async def wait_for_valid_config(local_config: dict, current_config: dict) -> dic
             # Check for updated config from cloud
             cloud_response = await fetch_cloud_config(local_config)
 
-            if cloud_response and cloud_response.get("status") == "assigned":
-                site_config = cloud_response.get("site", {})
-                new_config = merge_configs(local_config, site_config)
+            if cloud_response:
+                response_status = cloud_response.get("status")
 
-                # Check if new config is valid
-                new_errors = get_validation_errors(new_config)
-                if not new_errors:
-                    logger.info("Configuration is now valid!")
+                # Handle "unassigned" status - controller was removed from site
+                # Return None to signal that we need to go back to wait_for_assignment
+                if response_status == "unassigned":
+                    logger.info("Controller was unassigned from site. Returning to assignment wait...")
                     await cloud_sync.close()
-                    return new_config
-                else:
-                    # Update error message if errors changed
-                    new_error_msg = "; ".join(new_errors)
-                    if new_error_msg != error_msg:
-                        error_msg = new_error_msg
-                        logger.info(f"Config errors updated: {error_msg}")
+                    return None  # Signal to main loop to restart config fetch
+
+                if response_status == "assigned":
+                    site_config = cloud_response.get("site", {})
+                    new_config = merge_configs(local_config, site_config)
+
+                    # Check if new config is valid
+                    new_errors = get_validation_errors(new_config)
+                    if not new_errors:
+                        logger.info("Configuration is now valid!")
+                        await cloud_sync.close()
+                        return new_config
+                    else:
+                        # Update error message if errors changed
+                        new_error_msg = "; ".join(new_errors)
+                        if new_error_msg != error_msg:
+                            error_msg = new_error_msg
+                            logger.info(f"Config errors updated: {error_msg}")
 
             # Still invalid, wait and retry
             logger.info("Config still invalid, waiting for fix...")
@@ -570,36 +580,49 @@ async def main_async(local_config: dict, skip_cloud: bool = False):
     is_minimal = "devices" not in local_config or not local_config.get("devices")
 
     if is_minimal and not skip_cloud:
-        # Fetch configuration from cloud
-        cloud_response = await fetch_cloud_config(local_config)
+        # Loop to handle controller becoming unassigned during config wait
+        # This allows the controller to transition back to wait_for_assignment
+        # if it gets removed from a site while waiting for valid config
+        while True:
+            # Fetch configuration from cloud
+            cloud_response = await fetch_cloud_config(local_config)
 
-        if not cloud_response:
-            logger.error("Failed to fetch configuration from cloud")
-            logger.error("Check your internet connection and controller ID")
-            sys.exit(1)
+            if not cloud_response:
+                logger.error("Failed to fetch configuration from cloud")
+                logger.error("Check your internet connection and controller ID")
+                sys.exit(1)
 
-        status = cloud_response.get("status")
+            status = cloud_response.get("status")
 
-        if status == "assigned":
-            # Controller is assigned to a site - merge configs
-            site_config = cloud_response.get("site", {})
-            config = merge_configs(local_config, site_config)
-            logger.info(f"Loaded config for site: {site_config.get('name')}")
+            if status == "assigned":
+                # Controller is assigned to a site - merge configs
+                site_config = cloud_response.get("site", {})
+                config = merge_configs(local_config, site_config)
+                logger.info(f"Loaded config for site: {site_config.get('name')}")
 
-        elif status == "unassigned":
-            # Controller not assigned yet - wait for assignment
-            config = await wait_for_assignment(local_config)
+            elif status == "unassigned":
+                # Controller not assigned yet - wait for assignment
+                config = await wait_for_assignment(local_config)
 
-        elif status == "error":
-            logger.error(f"Cloud config error: {cloud_response.get('message')}")
-            sys.exit(1)
+            elif status == "error":
+                logger.error(f"Cloud config error: {cloud_response.get('message')}")
+                sys.exit(1)
 
-        # Validate the merged configuration
-        if not validate_full_config(config):
-            logger.error("Configuration validation failed")
-            # Instead of exiting, wait for valid config while sending heartbeats
-            # This ensures controller shows "online" even with config errors
-            config = await wait_for_valid_config(local_config, config)
+            # Validate the merged configuration
+            if not validate_full_config(config):
+                logger.error("Configuration validation failed")
+                # Instead of exiting, wait for valid config while sending heartbeats
+                # This ensures controller shows "online" even with config errors
+                config = await wait_for_valid_config(local_config, config)
+
+                # If wait_for_valid_config returns None, controller was unassigned
+                # Restart the config fetch loop
+                if config is None:
+                    logger.info("Restarting config fetch after unassignment...")
+                    continue
+
+            # Config is valid, break out of the loop
+            break
 
         # Print summary of loaded config
         print_config_summary(config)
