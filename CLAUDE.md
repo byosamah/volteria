@@ -289,6 +289,10 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | 42 | `042_data_retention.sql` | Data retention policies |
 | 43 | `043_site_dashboards.sql` | Site dashboards + widgets |
 | 44 | `044_sensor_device_type.sql` | Sensor device type |
+| 45 | `045_visualization_registers.sql` | Visualization register config |
+| 46 | `046_controller_template_types.sql` | Controller template types |
+| 47 | `047_reseed_device_templates.sql` | Reseed device templates |
+| 48 | `048_fix_heartbeat_site_fk.sql` | Fix FK constraints for site/project deletion |
 
 ### Core Tables
 | Table | Purpose | RLS |
@@ -479,11 +483,13 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 3. **Offline Operation**: Controller works fully independently without internet. Data buffers locally and syncs on reconnect.
 
-4. **Database Migrations**: Always run migrations in order (001 through 044). See `database/migrations/` folder.
+4. **Database Migrations**: Always run migrations in order (001 through 048). See `database/migrations/` folder.
 
 5. **httpx Version**: Backend requires `httpx==0.24.1` (newer versions break Supabase compatibility).
 
-6. **Invite Flow**: User invites use URL fragments (`#access_token=...`), handled specially by the login page.
+6. **Controller Heartbeats**: Heartbeats are tied to `controller_id`, NOT to sites/projects. Controllers show online/offline status independently of site assignment. Deleting a site/project sets `site_id`/`project_id` to NULL but preserves heartbeat history.
+
+7. **Invite Flow**: User invites use URL fragments (`#access_token=...`), handled specially by the login page.
 - NEVER EVER OVER ENGINEERING
 - NEVER EVER HARDCODING
 - NEVER EVER FALLBACK SYSTEM
