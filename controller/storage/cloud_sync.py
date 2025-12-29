@@ -481,8 +481,9 @@ class CloudSync:
             "metadata": metadata
         }
 
-        # Include controller_id if valid (for pre-assignment detection)
-        if self._heartbeat_enabled:
+        # ALWAYS include controller_id if valid - this ensures the controller
+        # appears in the master controller list regardless of site assignment
+        if self.controller_id and is_valid_uuid(self.controller_id):
             payload["controller_id"] = self.controller_id
 
         # Include site_id only if valid UUID (otherwise Supabase will reject it)
