@@ -243,7 +243,11 @@ export default function AddMasterDevicePage({
 
       if (deviceType === "controller") {
         insertData.controller_id = controllerId;
-        insertData.controller_template_id = templateId;
+        // Only include controller_template_id if a template is selected
+        // (empty string would fail foreign key constraint)
+        if (templateId) {
+          insertData.controller_template_id = templateId;
+        }
       } else {
         insertData.gateway_type = gatewayType;
         if (gatewayType === "netbiter") {

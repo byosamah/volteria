@@ -50,6 +50,7 @@ export default async function DevicesPage() {
 
   // Fetch device templates
   // Updated to include new columns: logging_registers, visualization_registers, calculated_fields
+  // Only fetch active templates (is_active = true)
   let templates: Array<{
     id: string;
     template_id: string;
@@ -105,30 +106,45 @@ export default async function DevicesPage() {
   }> = [];
 
   try {
+    // Query all templates first, then filter in code to handle NULL is_active properly
+    // Note: .neq("is_active", false) doesn't include NULL values in SQL
     const { data, error } = await supabase
       .from("device_templates")
-      .select("id, template_id, name, device_type, brand, model, rated_power_kw, template_type, enterprise_id, logging_registers, visualization_registers, alarm_registers, calculated_fields, registers")
+      .select("id, template_id, name, device_type, brand, model, rated_power_kw, template_type, enterprise_id, logging_registers, visualization_registers, alarm_registers, calculated_fields, registers, is_active")
       .order("device_type")
       .order("brand");
 
-    if (!error && data) {
-      templates = data;
+    if (error) {
+      // Log the error for debugging
+      console.error("[DevicesPage] Error fetching device templates:", error.message, error.code, error.details);
+    } else {
+      console.log("[DevicesPage] Fetched device templates count (raw):", data?.length || 0);
     }
-  } catch {
-    // Table might not exist yet
+
+    if (data) {
+      // Filter out inactive templates (is_active = false)
+      // Keep templates where is_active is true OR null/undefined (default active)
+      templates = data.filter(t => (t as { is_active?: boolean }).is_active !== false);
+      console.log("[DevicesPage] Active templates count:", templates.length);
+    }
+  } catch (err) {
+    // Log any unexpected errors
+    console.error("[DevicesPage] Unexpected error fetching device templates:", err);
   }
 
-  // Fetch enterprises for super admin to select when creating custom templates
+  // Fetch enterprises for:
+  // 1. Super admin to select when creating custom templates
+  // 2. All users to display enterprise names on custom templates
   let enterprises: Array<{ id: string; name: string }> = [];
   const isSuperAdmin = userProfile?.role === "super_admin" || userProfile?.role === "backend_admin";
-  if (isSuperAdmin) {
-    const { data: enterprisesData } = await supabase
-      .from("enterprises")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name");
-    enterprises = enterprisesData || [];
-  }
+
+  // Fetch all active enterprises for name display
+  const { data: enterprisesData } = await supabase
+    .from("enterprises")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("name");
+  enterprises = enterprisesData || [];
 
   // Fetch controller templates (Master Devices)
   // Visibility rules:
@@ -209,6 +225,7 @@ export default async function DevicesPage() {
               templates={controllerTemplates}
               userRole={userRole}
               userEnterpriseId={userEnterpriseId}
+              enterprises={enterprises}
             />
           </TabsContent>
         </Tabs>

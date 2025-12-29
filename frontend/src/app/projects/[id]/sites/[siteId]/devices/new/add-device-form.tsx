@@ -229,7 +229,9 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
       const { error } = await supabase.from("project_devices").insert({
         project_id: projectId,
         site_id: siteId,  // Link device to specific site
-        template_id: selectedTemplateId,
+        // Only include template_id if a template is selected
+        // (empty string would fail foreign key constraint)
+        template_id: selectedTemplateId || null,
         name: formData.name.trim(),
         measurement_type: formData.measurement_type,  // What this device measures for control logic
         protocol: formData.protocol,

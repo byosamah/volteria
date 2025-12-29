@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +48,8 @@ interface MasterDeviceTemplateFormProps {
   userRole?: string;
   userEnterpriseId?: string | null;
   onSuccess: (template: ControllerTemplate) => void;
+  /** When true, creates a new template from the passed template data (copy) */
+  isDuplicating?: boolean;
 }
 
 // Hardware option from approved_hardware table
@@ -95,6 +98,7 @@ interface FormData {
   hardware_id: string; // ID from approved_hardware table
   template_type: "public" | "custom";
   enterprise_id: string; // For custom templates
+  is_active: boolean; // Only super_admin can toggle this
 }
 
 // =============================================================================
@@ -114,6 +118,13 @@ function canChangeEnterprise(role?: string): boolean {
   return ["super_admin", "backend_admin"].includes(role);
 }
 
+// Check if user can toggle template active status
+// Only super_admin can activate/deactivate templates
+function canToggleActiveStatus(role?: string): boolean {
+  if (!role) return false;
+  return role === "super_admin";
+}
+
 // =============================================================================
 // COMPONENT
 // =============================================================================
@@ -125,8 +136,11 @@ export function MasterDeviceTemplateForm({
   userRole,
   userEnterpriseId,
   onSuccess,
+  isDuplicating = false,
 }: MasterDeviceTemplateFormProps) {
-  const isEditing = !!template;
+  // Edit mode: template exists AND not duplicating
+  // Duplicate mode: template exists AND isDuplicating (creates new record)
+  const isEditing = !!template && !isDuplicating;
 
   // Form state
   // Note: template_id is auto-generated, brand/model are read-only from hardware
@@ -136,6 +150,7 @@ export function MasterDeviceTemplateForm({
     hardware_id: "",
     template_type: canCreatePublicTemplate(userRole) ? "public" : "custom",
     enterprise_id: userEnterpriseId || "",
+    is_active: true, // New templates are active by default
   });
 
   // Hardware options from approved_hardware table
@@ -227,15 +242,29 @@ export function MasterDeviceTemplateForm({
   useEffect(() => {
     if (open) {
       if (template) {
-        // Edit mode - populate with existing data
-        // Note: template_id is kept from original template (not editable)
-        // Note: brand/model are read from hardware selection, not stored in form
+        // Edit or Duplicate mode - populate with existing data
+        // When duplicating: add " (Copy)" to name, force custom type for non-admins
+        const isDupe = isDuplicating;
+
+        // Determine template type and enterprise for duplicate
+        let newTemplateType = template.template_type;
+        let newEnterpriseId = template.enterprise_id || "";
+
+        if (isDupe) {
+          // Non-admin users always create custom templates assigned to their enterprise
+          if (!canCreatePublicTemplate(userRole)) {
+            newTemplateType = "custom";
+            newEnterpriseId = userEnterpriseId || "";
+          }
+        }
+
         setFormData({
-          name: template.name,
+          name: isDupe ? `${template.name} (Copy)` : template.name,
           description: template.description || "",
           hardware_id: template.hardware_type_id || "",
-          template_type: template.template_type,
-          enterprise_id: template.enterprise_id || "",
+          template_type: newTemplateType,
+          enterprise_id: newEnterpriseId,
+          is_active: isDupe ? true : template.is_active ?? true, // Duplicates are always active
         });
 
         // Parse calculated fields from template
@@ -312,6 +341,7 @@ export function MasterDeviceTemplateForm({
           hardware_id: "",
           template_type: canCreatePublicTemplate(userRole) ? "public" : "custom",
           enterprise_id: userEnterpriseId || "",
+          is_active: true, // New templates are active by default
         });
         setCalculatedFields(
           CONTROLLER_CALCULATED_FIELDS.map((field) => ({
@@ -331,7 +361,7 @@ export function MasterDeviceTemplateForm({
         );
       }
     }
-  }, [open, template, userRole, userEnterpriseId]);
+  }, [open, template, isDuplicating, userRole, userEnterpriseId]);
 
   // Handle form submission
   const handleSubmit = async () => {
@@ -422,7 +452,7 @@ export function MasterDeviceTemplateForm({
         registers: selectedRegisters,
         calculated_fields: selectedCalculatedFields,
         alarm_definitions: template?.alarm_definitions || [],
-        is_active: true,
+        is_active: formData.is_active,
       };
 
       if (isEditing && template) {
@@ -505,10 +535,16 @@ export function MasterDeviceTemplateForm({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEditing ? "Edit Master Device Template" : "Create Master Device Template"}
+            {isEditing
+              ? "Edit Master Device Template"
+              : isDuplicating
+              ? "Duplicate Master Device Template"
+              : "Create Master Device Template"}
           </DialogTitle>
           <DialogDescription>
-            Configure a controller template with calculated fields and health metrics.
+            {isDuplicating
+              ? "Create a copy of this template. You can modify the details below."
+              : "Configure a controller template with calculated fields and health metrics."}
           </DialogDescription>
         </DialogHeader>
 
@@ -607,7 +643,29 @@ export function MasterDeviceTemplateForm({
               )}
             </div>
 
-            {/* Row 3: Hardware ID */}
+            {/* Row 3: Active Status Toggle - Only for super_admin when editing */}
+            {isEditing && canToggleActiveStatus(userRole) && (
+              <div className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="is_active" className="text-base font-medium">
+                    Template Active
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Inactive templates won&apos;t appear when adding to new devices.
+                    Existing devices using this template will not be affected.
+                  </p>
+                </div>
+                <Switch
+                  id="is_active"
+                  checked={formData.is_active}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, is_active: checked })
+                  }
+                />
+              </div>
+            )}
+
+            {/* Row 4: Hardware ID */}
             <div className="space-y-2">
               <Label htmlFor="hardware_id">Hardware *</Label>
               <Select
@@ -814,6 +872,8 @@ export function MasterDeviceTemplateForm({
               ? "Saving..."
               : isEditing
               ? "Save Changes"
+              : isDuplicating
+              ? "Create Copy"
               : "Create Template"}
           </Button>
         </DialogFooter>

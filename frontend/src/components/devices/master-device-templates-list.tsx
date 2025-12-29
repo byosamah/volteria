@@ -12,7 +12,7 @@
  * - Stats showing readings and calculated fields count
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,6 +78,15 @@ interface MasterDeviceTemplatesListProps {
   templates: ControllerTemplate[];
   userRole?: string;
   userEnterpriseId?: string | null;
+  enterprises?: Array<{ id: string; name: string }>; // For displaying enterprise names on custom templates
+}
+
+// Template usage info - which sites/projects are using this template
+interface TemplateUsageInfo {
+  site_id: string;
+  site_name: string;
+  project_id: string;
+  project_name: string;
 }
 
 // Controller type labels and colors
@@ -165,9 +174,17 @@ export function MasterDeviceTemplatesList({
   templates: initialTemplates,
   userRole,
   userEnterpriseId,
+  enterprises,
 }: MasterDeviceTemplatesListProps) {
   const router = useRouter();
   const [templates, setTemplates] = useState(initialTemplates);
+
+  // Create enterprise lookup map for displaying names on custom templates
+  const enterpriseNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    enterprises?.forEach(e => map.set(e.id, e.name));
+    return map;
+  }, [enterprises]);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -177,8 +194,17 @@ export function MasterDeviceTemplatesList({
   // Dialog state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<ControllerTemplate | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [deleteTemplate, setDeleteTemplate] = useState<ControllerTemplate | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Usage warning state
+  const [templateUsage, setTemplateUsage] = useState<TemplateUsageInfo[]>([]);
+  const [showEditWarning, setShowEditWarning] = useState(false);
+  const [pendingEditTemplate, setPendingEditTemplate] = useState<ControllerTemplate | null>(null);
+  const [showDeleteBlocked, setShowDeleteBlocked] = useState(false);
+  const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<ControllerTemplate | null>(null);
+  const [isCheckingUsage, setIsCheckingUsage] = useState(false);
 
   // Apply filters
   const filteredTemplates = templates.filter((template) => {
@@ -224,6 +250,48 @@ export function MasterDeviceTemplatesList({
     router.refresh();
   };
 
+  // Check if template is in use by any site
+  const checkTemplateUsage = async (templateId: string): Promise<TemplateUsageInfo[]> => {
+    const supabase = createClient();
+
+    // Query site_master_devices joined with sites and projects
+    const { data, error } = await supabase
+      .from("site_master_devices")
+      .select(`
+        site_id,
+        sites!inner (
+          id,
+          name,
+          project_id,
+          projects!inner (
+            id,
+            name
+          )
+        )
+      `)
+      .eq("controller_template_id", templateId);
+
+    if (error) {
+      console.error("Error checking template usage:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Transform the data into TemplateUsageInfo format
+    return data.map((item) => {
+      const site = item.sites as unknown as { id: string; name: string; project_id: string; projects: { id: string; name: string } };
+      return {
+        site_id: site.id,
+        site_name: site.name,
+        project_id: site.projects.id,
+        project_name: site.projects.name,
+      };
+    });
+  };
+
   // Handle template delete
   const handleDelete = async () => {
     if (!deleteTemplate) return;
@@ -250,9 +318,74 @@ export function MasterDeviceTemplatesList({
     }
   };
 
-  // Open edit dialog
-  const handleEdit = (template: ControllerTemplate) => {
+  // Open edit dialog - check usage first and show warning if in use
+  const handleEdit = async (template: ControllerTemplate) => {
+    setIsCheckingUsage(true);
+    try {
+      const usage = await checkTemplateUsage(template.id);
+
+      if (usage.length > 0) {
+        // Template is in use - show warning dialog
+        setTemplateUsage(usage);
+        setPendingEditTemplate(template);
+        setShowEditWarning(true);
+      } else {
+        // Template not in use - open edit directly
+        setEditingTemplate(template);
+        setIsDuplicating(false);
+        setIsFormOpen(true);
+      }
+    } catch (error) {
+      console.error("Error checking template usage:", error);
+      // If check fails, still allow editing
+      setEditingTemplate(template);
+      setIsDuplicating(false);
+      setIsFormOpen(true);
+    } finally {
+      setIsCheckingUsage(false);
+    }
+  };
+
+  // Confirm edit after accepting warning
+  const handleConfirmEdit = () => {
+    if (pendingEditTemplate) {
+      setEditingTemplate(pendingEditTemplate);
+      setIsDuplicating(false);
+      setIsFormOpen(true);
+    }
+    setShowEditWarning(false);
+    setPendingEditTemplate(null);
+    setTemplateUsage([]);
+  };
+
+  // Check usage before delete - block if in use
+  const handleDeleteClick = async (template: ControllerTemplate) => {
+    setIsCheckingUsage(true);
+    try {
+      const usage = await checkTemplateUsage(template.id);
+
+      if (usage.length > 0) {
+        // Template is in use - block deletion and show info
+        setTemplateUsage(usage);
+        setPendingDeleteTemplate(template);
+        setShowDeleteBlocked(true);
+      } else {
+        // Template not in use - show normal delete confirmation
+        setDeleteTemplate(template);
+      }
+    } catch (error) {
+      console.error("Error checking template usage:", error);
+      // If check fails, still show delete confirmation
+      setDeleteTemplate(template);
+    } finally {
+      setIsCheckingUsage(false);
+    }
+  };
+
+  // Open duplicate dialog (creates a copy of the template)
+  const handleDuplicate = (template: ControllerTemplate) => {
     setEditingTemplate(template);
+    setIsDuplicating(true);
     setIsFormOpen(true);
   };
 
@@ -395,6 +528,13 @@ export function MasterDeviceTemplatesList({
                       >
                         {controllerTypeLabels[template.controller_type] || template.controller_type}
                       </Badge>
+
+                      {/* Enterprise name for custom templates */}
+                      {template.template_type === "custom" && template.enterprise_id && (
+                        <span className="text-xs text-muted-foreground">
+                          {enterpriseNameMap.get(template.enterprise_id) || "Unknown"}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -420,10 +560,9 @@ export function MasterDeviceTemplatesList({
                         strokeLinejoin="round"
                         className="h-4 w-4"
                       >
-                        <path d="M3 3v18h18" />
-                        <path d="m19 9-5 5-4-4-3 3" />
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
                       </svg>
-                      {stats.readingsCount} readings
+                      {stats.readingsCount} Device Health
                     </span>
                     <span className="flex items-center gap-1">
                       <svg
@@ -436,10 +575,10 @@ export function MasterDeviceTemplatesList({
                         strokeLinejoin="round"
                         className="h-4 w-4"
                       >
-                        <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        <path d="M3 3v18h18" />
+                        <path d="m19 9-5 5-4-4-3 3" />
                       </svg>
-                      {stats.calculatedCount} fields
+                      {stats.calculatedCount} Calculated Fields
                     </span>
                   </div>
 
@@ -451,6 +590,18 @@ export function MasterDeviceTemplatesList({
 
                     {/* Action Buttons */}
                     <div className="flex gap-2">
+                      {/* Duplicate button - available to all users who can create templates */}
+                      {canCreateTemplate(userRole) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDuplicate(template)}
+                          className="h-8 px-3"
+                          title="Create a copy of this template"
+                        >
+                          Duplicate
+                        </Button>
+                      )}
                       {canEdit && (
                         <Button
                           variant="ghost"
@@ -465,10 +616,11 @@ export function MasterDeviceTemplatesList({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setDeleteTemplate(template)}
+                          onClick={() => handleDeleteClick(template)}
+                          disabled={isCheckingUsage}
                           className="h-8 px-3 text-destructive hover:text-destructive"
                         >
-                          Delete
+                          {isCheckingUsage ? "Checking..." : "Delete"}
                         </Button>
                       )}
                     </div>
@@ -480,17 +632,21 @@ export function MasterDeviceTemplatesList({
         </div>
       )}
 
-      {/* Create/Edit Dialog */}
+      {/* Create/Edit/Duplicate Dialog */}
       <MasterDeviceTemplateForm
         open={isFormOpen}
         onOpenChange={(open) => {
           setIsFormOpen(open);
-          if (!open) setEditingTemplate(null);
+          if (!open) {
+            setEditingTemplate(null);
+            setIsDuplicating(false);
+          }
         }}
         template={editingTemplate}
         userRole={userRole}
         userEnterpriseId={userEnterpriseId}
-        onSuccess={editingTemplate ? handleTemplateUpdated : handleTemplateCreated}
+        isDuplicating={isDuplicating}
+        onSuccess={editingTemplate && !isDuplicating ? handleTemplateUpdated : handleTemplateCreated}
       />
 
       {/* Delete Confirmation Dialog */}
@@ -512,6 +668,120 @@ export function MasterDeviceTemplatesList({
             >
               {isDeleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Warning Dialog - shown when template is in use */}
+      <AlertDialog open={showEditWarning} onOpenChange={(open) => {
+        if (!open) {
+          setShowEditWarning(false);
+          setPendingEditTemplate(null);
+          setTemplateUsage([]);
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 text-yellow-500"
+              >
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              Template In Use
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  &quot;{pendingEditTemplate?.name}&quot; is currently in use by the following sites.
+                  Changes will affect all sites using this template.
+                </p>
+                <div className="rounded-md border p-3 bg-muted/50 max-h-40 overflow-y-auto">
+                  <ul className="space-y-1">
+                    {templateUsage.map((usage, index) => (
+                      <li key={index} className="text-sm">
+                        <span className="font-medium">{usage.project_name}</span>
+                        <span className="text-muted-foreground"> → </span>
+                        <span>{usage.site_name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Do you want to proceed with editing this template?
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmEdit}>
+              Edit Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Blocked Dialog - shown when trying to delete template in use */}
+      <AlertDialog open={showDeleteBlocked} onOpenChange={(open) => {
+        if (!open) {
+          setShowDeleteBlocked(false);
+          setPendingDeleteTemplate(null);
+          setTemplateUsage([]);
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+              </svg>
+              Cannot Delete Template
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  &quot;{pendingDeleteTemplate?.name}&quot; cannot be deleted because it is currently in use.
+                </p>
+                <div className="rounded-md border p-3 bg-muted/50 max-h-40 overflow-y-auto">
+                  <p className="text-sm font-medium mb-2">Used by:</p>
+                  <ul className="space-y-1">
+                    {templateUsage.map((usage, index) => (
+                      <li key={index} className="text-sm">
+                        <span className="font-medium">{usage.project_name}</span>
+                        <span className="text-muted-foreground"> → </span>
+                        <span>{usage.site_name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  To delete this template, first remove it from the sites listed above.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>Understood</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

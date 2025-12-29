@@ -293,6 +293,8 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | 46 | `046_controller_template_types.sql` | Controller template types |
 | 47 | `047_reseed_device_templates.sql` | Reseed device templates |
 | 48 | `048_fix_heartbeat_site_fk.sql` | Fix FK constraints for site/project deletion |
+| 49 | `049_add_controller_template_to_master_devices.sql` | Add controller_template_id to site_master_devices |
+| 50 | `050_project_devices_registers.sql` | Add registers, alarm_registers columns + make template_id nullable |
 
 ### Core Tables
 | Table | Purpose | RLS |
