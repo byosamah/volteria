@@ -39,9 +39,9 @@ export function NewProjectForm({
 
   // Form state
   const [loading, setLoading] = useState(false);
-  // Selected enterprise - defaults to user's enterprise for non-admins
+  // Selected enterprise - non-admins use their enterprise, admins must select
   const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string | null>(
-    canSelectEnterprise ? (enterprises[0]?.id || null) : userEnterpriseId
+    canSelectEnterprise ? null : userEnterpriseId
   );
   const [formData, setFormData] = useState({
     name: "",
@@ -66,6 +66,13 @@ export function NewProjectForm({
       // Validate required fields
       if (!formData.name.trim()) {
         toast.error("Project name is required");
+        setLoading(false);
+        return;
+      }
+
+      // Enterprise is required for all projects
+      if (!selectedEnterpriseId) {
+        toast.error("Please select an enterprise");
         setLoading(false);
         return;
       }
@@ -104,7 +111,9 @@ export function NewProjectForm({
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Enterprise Selection - only editable by super/backend admin */}
       <div className="space-y-2">
-        <Label htmlFor="enterprise">Enterprise</Label>
+        <Label htmlFor="enterprise">
+          Enterprise <span className="text-red-500">*</span>
+        </Label>
         {canSelectEnterprise ? (
           // Super Admin / Backend Admin can select any enterprise
           <select
@@ -112,8 +121,9 @@ export function NewProjectForm({
             value={selectedEnterpriseId || ""}
             onChange={(e) => setSelectedEnterpriseId(e.target.value || null)}
             className="w-full h-10 px-3 rounded-md border border-input bg-background min-h-[44px]"
+            required
           >
-            <option value="">No enterprise</option>
+            <option value="">Select an enterprise...</option>
             {enterprises.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.name}
@@ -128,7 +138,7 @@ export function NewProjectForm({
         )}
         <p className="text-xs text-muted-foreground">
           {canSelectEnterprise
-            ? "Select which enterprise this project belongs to"
+            ? "Every project must belong to an enterprise"
             : "Projects are created under your enterprise"}
         </p>
       </div>

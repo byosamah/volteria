@@ -48,8 +48,9 @@ interface SiteStatusResponse {
   };
 }
 
-// 1-minute threshold for online detection (same as controller master list)
-const ONLINE_THRESHOLD_MS = 1 * 60 * 1000;
+// 1-minute threshold for online detection
+// Note: Controllers send heartbeats every 30 seconds
+const ONLINE_THRESHOLD_MS = 60 * 1000;
 
 export async function GET(
   request: Request,

@@ -68,6 +68,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
     contact_email: "",
     city: "",
     country: "",
+    subscription_plan: "starter",
   });
 
   // Filter enterprises by search
@@ -124,6 +125,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
           contact_email: formData.contact_email.trim() || null,
           city: formData.city.trim() || null,
           country: formData.country.trim() || null,
+          subscription_plan: formData.subscription_plan,
           is_active: true,
         })
         .select()
@@ -149,6 +151,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
         contact_email: "",
         city: "",
         country: "",
+        subscription_plan: "starter",
       });
       router.refresh();
     } catch (err) {
@@ -441,7 +444,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
                       <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
                       <circle cx="12" cy="12" r="3" />
                     </svg>
-                    View
+                    View & Edit
                   </Button>
                   <Button
                     variant="outline"
@@ -553,6 +556,26 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
                 onChange={handleChange}
                 className="min-h-[44px]"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="subscription_plan">
+                Subscription Plan <span className="text-red-500">*</span>
+              </Label>
+              <select
+                id="subscription_plan"
+                value={formData.subscription_plan}
+                onChange={(e) => setFormData((prev) => ({ ...prev, subscription_plan: e.target.value }))}
+                className="w-full h-10 px-3 rounded-md border border-input bg-background min-h-[44px]"
+                required
+              >
+                <option value="starter">Starter</option>
+                <option value="advanced">Advanced</option>
+                <option value="pro">Pro</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Select the subscription tier for this enterprise
+              </p>
             </div>
 
             <DialogFooter className="flex-col gap-2 sm:flex-row pt-4">

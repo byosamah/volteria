@@ -47,10 +47,11 @@ export default async function DevicesPage() {
 
   const userRole = userProfile?.role || undefined;
   const userEnterpriseId = userProfile?.enterprise_id || null;
+  const isSuperAdmin = userProfile?.role === "super_admin" || userProfile?.role === "backend_admin";
 
   // Fetch device templates
   // Updated to include new columns: logging_registers, visualization_registers, calculated_fields
-  // Only fetch active templates (is_active = true)
+  // Show all templates (active and inactive) but filter inactive when adding new devices
   let templates: Array<{
     id: string;
     template_id: string;
@@ -61,6 +62,7 @@ export default async function DevicesPage() {
     rated_power_kw: number | null;
     template_type: string | null;
     enterprise_id: string | null;
+    is_active?: boolean;
     logging_registers: Array<{
       address: number;
       name: string;
@@ -106,13 +108,25 @@ export default async function DevicesPage() {
   }> = [];
 
   try {
-    // Query all templates first, then filter in code to handle NULL is_active properly
-    // Note: .neq("is_active", false) doesn't include NULL values in SQL
-    const { data, error } = await supabase
+    // Query templates with visibility filtering
+    // - Super admin/backend admin see all templates
+    // - Enterprise users see: public templates + their enterprise's custom templates
+    let query = supabase
       .from("device_templates")
       .select("id, template_id, name, device_type, brand, model, rated_power_kw, template_type, enterprise_id, logging_registers, visualization_registers, alarm_registers, calculated_fields, registers, is_active")
       .order("device_type")
       .order("brand");
+
+    // Apply visibility filter for non-super admin users
+    if (!isSuperAdmin && userEnterpriseId) {
+      // Enterprise users see: public templates OR their enterprise's custom templates
+      query = query.or(`template_type.eq.public,template_type.is.null,enterprise_id.eq.${userEnterpriseId}`);
+    } else if (!isSuperAdmin && !userEnterpriseId) {
+      // Users without enterprise only see public templates
+      query = query.or("template_type.eq.public,template_type.is.null");
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       // Log the error for debugging
@@ -122,10 +136,10 @@ export default async function DevicesPage() {
     }
 
     if (data) {
-      // Filter out inactive templates (is_active = false)
-      // Keep templates where is_active is true OR null/undefined (default active)
-      templates = data.filter(t => (t as { is_active?: boolean }).is_active !== false);
-      console.log("[DevicesPage] Active templates count:", templates.length);
+      // Show all templates (including inactive) so users can manage them
+      // Inactive templates will show "Inactive" badge and won't appear in add device pages
+      templates = data;
+      console.log("[DevicesPage] Templates count:", templates.length);
     }
   } catch (err) {
     // Log any unexpected errors
@@ -136,7 +150,6 @@ export default async function DevicesPage() {
   // 1. Super admin to select when creating custom templates
   // 2. All users to display enterprise names on custom templates
   let enterprises: Array<{ id: string; name: string }> = [];
-  const isSuperAdmin = userProfile?.role === "super_admin" || userProfile?.role === "backend_admin";
 
   // Fetch all active enterprises for name display
   const { data: enterprisesData } = await supabase

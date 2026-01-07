@@ -55,9 +55,10 @@ interface Controller {
 }
 
 // Helper to determine if controller is online (heartbeat within last 1 minute)
+// Note: Controllers send heartbeats every 30 seconds
 const isControllerOnline = (lastHeartbeat: string | null): boolean => {
   if (!lastHeartbeat) return false;
-  const oneMinuteAgo = Date.now() - 1 * 60 * 1000;
+  const oneMinuteAgo = Date.now() - 60 * 1000;
   return new Date(lastHeartbeat).getTime() > oneMinuteAgo;
 };
 

@@ -42,6 +42,17 @@ interface DeviceTemplate {
   rated_power_kw: number | null;
   template_type?: string | null; // 'public' or 'custom'
   enterprise_id?: string | null; // Which enterprise owns custom templates
+  is_active?: boolean; // Whether template is active
+}
+
+// Template usage info - which sites/projects are using this template
+interface TemplateUsageInfo {
+  device_id: string;
+  device_name: string;
+  site_id: string;
+  site_name: string;
+  project_id: string;
+  project_name: string;
 }
 
 interface DeviceTemplatesListProps {
@@ -196,6 +207,11 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   const [deletingTemplate, setDeletingTemplate] = useState<DeviceTemplate | undefined>();
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // State for usage check / delete blocked dialog
+  const [templateUsage, setTemplateUsage] = useState<TemplateUsageInfo[]>([]);
+  const [showDeleteBlocked, setShowDeleteBlocked] = useState(false);
+  const [isCheckingUsage, setIsCheckingUsage] = useState(false);
+
   // Create enterprise lookup map for displaying names on custom templates
   const enterpriseNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -259,10 +275,76 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
     router.refresh();
   };
 
-  // Open delete confirmation dialog
-  const handleDeleteTemplate = (template: DeviceTemplate) => {
-    setDeletingTemplate(template);
-    setDeleteDialogOpen(true);
+  // Check if template is in use by any device in sites
+  const checkTemplateUsage = async (templateId: string): Promise<TemplateUsageInfo[]> => {
+    const supabase = createClient();
+
+    // Query project_devices joined with sites and projects
+    const { data, error } = await supabase
+      .from("project_devices")
+      .select(`
+        id,
+        name,
+        site_id,
+        sites!inner (
+          id,
+          name,
+          project_id,
+          projects!inner (
+            id,
+            name
+          )
+        )
+      `)
+      .eq("template_id", templateId);
+
+    if (error) {
+      console.error("Error checking template usage:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Transform the data into TemplateUsageInfo format
+    return data.map((item) => {
+      const site = item.sites as unknown as { id: string; name: string; project_id: string; projects: { id: string; name: string } };
+      return {
+        device_id: item.id,
+        device_name: item.name,
+        site_id: site.id,
+        site_name: site.name,
+        project_id: site.projects.id,
+        project_name: site.projects.name,
+      };
+    });
+  };
+
+  // Open delete confirmation dialog - check usage first
+  const handleDeleteTemplate = async (template: DeviceTemplate) => {
+    setIsCheckingUsage(true);
+    try {
+      const usage = await checkTemplateUsage(template.template_id);
+
+      if (usage.length > 0) {
+        // Template is in use - block deletion and show info
+        setTemplateUsage(usage);
+        setDeletingTemplate(template);
+        setShowDeleteBlocked(true);
+      } else {
+        // Template not in use - show normal delete confirmation
+        setDeletingTemplate(template);
+        setDeleteDialogOpen(true);
+      }
+    } catch (error) {
+      console.error("Error checking template usage:", error);
+      // If check fails, still show delete confirmation
+      setDeletingTemplate(template);
+      setDeleteDialogOpen(true);
+    } finally {
+      setIsCheckingUsage(false);
+    }
   };
 
   // Handle template delete
@@ -576,8 +658,8 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
 
                         {/* Active Status + Action Buttons */}
                         <div className="flex items-center justify-between">
-                          <Badge variant="default">
-                            Active
+                          <Badge variant={template.is_active !== false ? "default" : "secondary"}>
+                            {template.is_active !== false ? "Active" : "Inactive"}
                           </Badge>
 
                           {/* Action Buttons */}
@@ -611,9 +693,10 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleDeleteTemplate(template)}
+                                disabled={isCheckingUsage}
                                 className="h-8 px-3 text-destructive hover:text-destructive"
                               >
-                                Delete
+                                {isCheckingUsage ? "Checking..." : "Delete"}
                               </Button>
                             )}
                           </div>
@@ -672,6 +755,63 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
             >
               {isDeleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Blocked Dialog - shown when trying to delete template in use */}
+      <AlertDialog open={showDeleteBlocked} onOpenChange={(open) => {
+        if (!open) {
+          setShowDeleteBlocked(false);
+          setDeletingTemplate(undefined);
+          setTemplateUsage([]);
+        }
+      }}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+              </svg>
+              Cannot Delete Template
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  &quot;{deletingTemplate?.name}&quot; cannot be deleted because it is currently in use by {templateUsage.length} device{templateUsage.length !== 1 ? "s" : ""}.
+                </p>
+                <div className="rounded-md border p-3 bg-muted/50 max-h-48 overflow-y-auto">
+                  <p className="text-sm font-medium mb-2">Used by:</p>
+                  <ul className="space-y-1">
+                    {templateUsage.map((usage, index) => (
+                      <li key={index} className="text-sm">
+                        <span className="font-medium">{usage.device_name}</span>
+                        <span className="text-muted-foreground"> in </span>
+                        <span>{usage.project_name}</span>
+                        <span className="text-muted-foreground"> → </span>
+                        <span>{usage.site_name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  To delete this template, first remove the devices listed above from their sites.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>Understood</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

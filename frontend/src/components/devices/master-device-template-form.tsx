@@ -643,16 +643,17 @@ export function MasterDeviceTemplateForm({
               )}
             </div>
 
-            {/* Row 3: Active Status Toggle - Only for super_admin when editing */}
-            {isEditing && canToggleActiveStatus(userRole) && (
+            {/* Row 3: Active Status Toggle - shown when editing */}
+            {isEditing && (
               <div className="flex items-center justify-between rounded-lg border p-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="is_active" className="text-base font-medium">
-                    Template Active
+                    Active Status
                   </Label>
                   <p className="text-sm text-muted-foreground">
-                    Inactive templates won&apos;t appear when adding to new devices.
-                    Existing devices using this template will not be affected.
+                    {formData.is_active
+                      ? "Template is active and can be used for new devices"
+                      : "Template is inactive and won't appear when adding new devices"}
                   </p>
                 </div>
                 <Switch

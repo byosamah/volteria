@@ -48,40 +48,94 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Fetch user profile including avatar and role
-  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null } | null = null;
+  // Fetch user profile including avatar, role, and enterprise_id
+  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null; enterprise_id: string | null } | null = null;
   if (user?.id) {
     const { data } = await supabase
       .from("users")
-      .select("full_name, avatar_url, role")
+      .select("full_name, avatar_url, role, enterprise_id")
       .eq("id", user.id)
       .single();
 
     userProfile = data;
   }
 
+  const userRole = userProfile?.role || "viewer";
+  const userEnterpriseId = userProfile?.enterprise_id;
+  const isAdmin = ["super_admin", "backend_admin", "admin"].includes(userRole);
+  const isEnterpriseAdmin = userRole === "enterprise_admin";
+
+  // Build project query based on user role
+  // - Admins see all projects
+  // - Enterprise admins see all projects in their enterprise
+  // - Configurators/viewers see only assigned projects
+  let projectsQuery = supabase
+    .from("projects")
+    .select("id, name, location")
+    .eq("is_active", true)
+    .order("name")
+    .limit(6);
+
+  if (!isAdmin) {
+    if (isEnterpriseAdmin && userEnterpriseId) {
+      // Enterprise admin: see all projects in their enterprise
+      projectsQuery = projectsQuery.eq("enterprise_id", userEnterpriseId);
+    } else if (user?.id) {
+      // Configurator/viewer: see only assigned projects
+      const { data: assignedProjects } = await supabase
+        .from("user_projects")
+        .select("project_id")
+        .eq("user_id", user.id);
+
+      const projectIds = assignedProjects?.map(p => p.project_id) || [];
+      if (projectIds.length > 0) {
+        projectsQuery = projectsQuery.in("id", projectIds);
+      } else {
+        // No assigned projects - return empty
+        projectsQuery = projectsQuery.eq("id", "00000000-0000-0000-0000-000000000000");
+      }
+    }
+  }
+
+  // Build sites query based on same access rules
+  let sitesQuery = supabase
+    .from("sites")
+    .select("*", { count: "exact", head: true })
+    .eq("is_active", true);
+
+  if (!isAdmin) {
+    if (isEnterpriseAdmin && userEnterpriseId) {
+      // Enterprise admin: count sites from their enterprise's projects
+      sitesQuery = sitesQuery.in(
+        "project_id",
+        supabase.from("projects").select("id").eq("enterprise_id", userEnterpriseId)
+      );
+    } else if (user?.id) {
+      // Configurator/viewer: count sites from assigned projects only
+      const { data: assignedProjects } = await supabase
+        .from("user_projects")
+        .select("project_id")
+        .eq("user_id", user.id);
+
+      const projectIds = assignedProjects?.map(p => p.project_id) || [];
+      if (projectIds.length > 0) {
+        sitesQuery = sitesQuery.in("project_id", projectIds);
+      } else {
+        sitesQuery = sitesQuery.eq("project_id", "00000000-0000-0000-0000-000000000000");
+      }
+    }
+  }
+
   // Fetch projects, sites, and alarms in parallel for better performance
   // Note: Status is now fetched live by ProjectStatusBadge component
   const [projectsResult, sitesResult, alarmsResult] = await Promise.all([
-    // Fetch projects - wrap in Promise.resolve to convert PromiseLike to Promise
-    Promise.resolve(
-      supabase
-        .from("projects")
-        .select("id, name, location")
-        .eq("is_active", true)
-        .order("name")
-        .limit(6)
-    ).then(({ data, error }) => ({ data, error })),
+    // Fetch projects with access filtering applied above
+    Promise.resolve(projectsQuery).then(({ data, error }) => ({ data, error })),
 
-    // Fetch total site count
-    Promise.resolve(
-      supabase
-        .from("sites")
-        .select("*", { count: "exact", head: true })
-        .eq("is_active", true)
-    ).then(({ count, error }) => ({ count, error })),
+    // Fetch total site count with access filtering
+    Promise.resolve(sitesQuery).then(({ count, error }) => ({ count, error })),
 
-    // Fetch recent alarms
+    // Fetch recent alarms (TODO: also filter by project access)
     Promise.resolve(
       supabase
         .from("alarms")

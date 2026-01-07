@@ -135,7 +135,8 @@ class DeviceTemplateDuplicate(BaseModel):
     """Duplicate device template request."""
     new_template_id: str = Field(..., description="Unique ID for the new template")
     new_name: str = Field(..., description="Name for the new template (must differ from original)")
-    enterprise_id: Optional[str] = Field(None, description="Enterprise to assign (admin only, defaults to user's enterprise)")
+    template_type: Optional[str] = Field(None, description="Template type: 'public' or 'custom' (super_admin/backend_admin only)")
+    enterprise_id: Optional[str] = Field(None, description="Enterprise to assign (required for custom templates)")
 
 
 # ============================================
@@ -550,26 +551,40 @@ async def duplicate_template(
                 detail=f"Template with ID '{duplicate_request.new_template_id}' already exists"
             )
 
-        # 4. Determine the enterprise_id for the new template
+        # 4. Determine template_type and enterprise_id
         user_role = current_user.role
         user_enterprise_id = current_user.enterprise_id
+        is_high_role = user_role in ["super_admin", "backend_admin"]
 
-        if duplicate_request.enterprise_id:
-            # Only super_admin/backend_admin/admin can specify a different enterprise
-            if user_role not in ["super_admin", "backend_admin", "admin"]:
+        # Determine template_type (only super_admin/backend_admin can create public)
+        if duplicate_request.template_type == "public":
+            if not is_high_role:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only admins can assign templates to a different enterprise"
+                    detail="Only super_admin and backend_admin can create public templates"
                 )
-            target_enterprise_id = duplicate_request.enterprise_id
+            resolved_template_type = "public"
+            target_enterprise_id = None  # Public templates have no enterprise
         else:
-            # Use user's enterprise
-            if not user_enterprise_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Enterprise ID is required (you don't have an assigned enterprise)"
-                )
-            target_enterprise_id = user_enterprise_id
+            # Custom template (default for all users)
+            resolved_template_type = "custom"
+
+            if duplicate_request.enterprise_id:
+                # Only admins can specify a different enterprise
+                if user_role not in ["super_admin", "backend_admin", "admin"]:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Only admins can assign templates to a different enterprise"
+                    )
+                target_enterprise_id = duplicate_request.enterprise_id
+            else:
+                # Use user's enterprise
+                if not user_enterprise_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Enterprise ID is required for custom templates"
+                    )
+                target_enterprise_id = user_enterprise_id
 
         # 5. Build the new template data (copy all fields from source)
         insert_data = {
@@ -585,11 +600,9 @@ async def duplicate_template(
             "logging_registers": source.get("logging_registers") or source.get("registers") or [],
             "visualization_registers": source.get("visualization_registers") or [],
             "alarm_registers": source.get("alarm_registers") or [],
-            "alarm_definitions": source.get("alarm_definitions") or [],
-            "calculated_fields": source.get("calculated_fields") or [],
             "specifications": source.get("specifications") or {},
-            # Set as custom template for the enterprise
-            "template_type": "custom",
+            # Set template type and enterprise
+            "template_type": resolved_template_type,
             "enterprise_id": target_enterprise_id,
             "created_by": str(current_user.id),
             "is_active": True

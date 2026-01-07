@@ -27,16 +27,19 @@ export default async function AddDeviceToSitePage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Fetch user profile including avatar and role
-  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null } | null = null;
+  // Fetch user profile including avatar, role, and enterprise_id
+  let userProfile: { full_name: string | null; avatar_url: string | null; role: string | null; enterprise_id: string | null } | null = null;
   if (user?.id) {
     const { data } = await supabase
       .from("users")
-      .select("full_name, avatar_url, role")
+      .select("full_name, avatar_url, role, enterprise_id")
       .eq("id", user.id)
       .single();
     userProfile = data;
   }
+
+  const isSuperAdmin = userProfile?.role === "super_admin" || userProfile?.role === "backend_admin";
+  const userEnterpriseId = userProfile?.enterprise_id || null;
 
   // Fetch project
   const { data: project, error: projectError } = await supabase
@@ -63,6 +66,7 @@ export default async function AddDeviceToSitePage({
 
   // Fetch device templates (including registers for copying to device)
   // Uses logging_registers (new column name from migration 045), with registers as fallback
+  // Visibility: super admin sees all, enterprise users see public + their enterprise's custom templates
   let templates: Array<{
     id: string;
     template_id: string;
@@ -77,14 +81,27 @@ export default async function AddDeviceToSitePage({
   }> = [];
 
   try {
-    const { data } = await supabase
+    let query = supabase
       .from("device_templates")
       .select("id, template_id, name, device_type, brand, model, rated_power_kw, logging_registers, registers, alarm_registers")
       .order("device_type")
       .order("brand");
 
+    // Apply visibility filter for non-super admin users
+    if (!isSuperAdmin && userEnterpriseId) {
+      // Enterprise users see: public templates OR their enterprise's custom templates
+      query = query.or(`template_type.eq.public,template_type.is.null,enterprise_id.eq.${userEnterpriseId}`);
+    } else if (!isSuperAdmin && !userEnterpriseId) {
+      // Users without enterprise only see public templates
+      query = query.or("template_type.eq.public,template_type.is.null");
+    }
+
+    const { data } = await query;
+
     if (data) {
-      templates = data;
+      // Filter out inactive templates (is_active = false)
+      // Keep templates where is_active is true OR null/undefined (default active)
+      templates = data.filter(t => (t as { is_active?: boolean }).is_active !== false);
     }
   } catch {
     // Ignore errors

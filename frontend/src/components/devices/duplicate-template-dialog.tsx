@@ -4,14 +4,14 @@
  * Duplicate Template Dialog
  *
  * Dialog for duplicating a device template.
- * Creates a new custom template based on an existing template.
+ * Creates a new template (public or custom) based on an existing template.
  *
  * Features:
- * - Pre-fills template_id with "{original}_copy" suffix
+ * - Auto-generates unique template_id
  * - Pre-fills name with "Copy of {original name}"
  * - Forces user to change the name (validation)
- * - Enterprise selector for super_admin/admin
- * - Always creates a "custom" template
+ * - Super admin/backend admin can choose Public or Custom
+ * - Enterprise selector for custom templates
  */
 
 import { useState, useEffect } from "react";
@@ -57,16 +57,14 @@ interface DuplicateTemplateDialogProps {
   onSuccess: () => void;
 }
 
-// Generate a suggested template_id from the original
-function generateSuggestedId(originalId: string): string {
-  // If it already ends with _copy or _copy_N, increment
-  const copyMatch = originalId.match(/^(.+)_copy(_(\d+))?$/);
-  if (copyMatch) {
-    const base = copyMatch[1];
-    const currentNum = copyMatch[3] ? parseInt(copyMatch[3]) : 1;
-    return `${base}_copy_${currentNum + 1}`;
-  }
-  return `${originalId}_copy`;
+// Generate a unique template_id with random suffix (same pattern as creating new templates)
+function generateUniqueId(brand: string, model: string): string {
+  const base = `${brand}_${model}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const randomSuffix = Math.random().toString(36).substring(2, 6);
+  return `${base}_${randomSuffix}`;
 }
 
 export function DuplicateTemplateDialog({
@@ -81,24 +79,27 @@ export function DuplicateTemplateDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form state
-  const [newTemplateId, setNewTemplateId] = useState("");
   const [newName, setNewName] = useState("");
+  const [templateType, setTemplateType] = useState<"public" | "custom">("custom");
   const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string | undefined>(undefined);
 
   // Validation errors
   const [errors, setErrors] = useState<{
-    templateId?: string;
     name?: string;
+    enterprise?: string;
   }>({});
 
-  // Can this user select an enterprise?
+  // Can this user create public templates? (super_admin/backend_admin only)
+  const canCreatePublic = ["super_admin", "backend_admin"].includes(userRole);
+
+  // Can this user select an enterprise? (admins)
   const canSelectEnterprise = ["super_admin", "backend_admin", "admin"].includes(userRole);
 
   // Reset form when dialog opens with new template
   useEffect(() => {
     if (open && template) {
-      setNewTemplateId(generateSuggestedId(template.template_id));
       setNewName(`Copy of ${template.name}`);
+      setTemplateType("custom");
       setSelectedEnterpriseId(undefined);
       setErrors({});
     }
@@ -108,18 +109,16 @@ export function DuplicateTemplateDialog({
   function validateForm(): boolean {
     const newErrors: typeof errors = {};
 
-    // Validate template_id format (lowercase, underscores, no special chars)
-    if (!newTemplateId.trim()) {
-      newErrors.templateId = "Template ID is required";
-    } else if (!/^[a-z][a-z0-9_]*$/.test(newTemplateId)) {
-      newErrors.templateId = "Must start with letter, only lowercase letters, numbers, and underscores";
-    }
-
     // Validate name is different from original
     if (!newName.trim()) {
       newErrors.name = "Name is required";
     } else if (newName.trim().toLowerCase() === template.name.toLowerCase()) {
       newErrors.name = "Name must be different from the original";
+    }
+
+    // Validate enterprise is selected for custom templates (if user can select enterprise)
+    if (templateType === "custom" && canSelectEnterprise && !selectedEnterpriseId && !userEnterpriseId) {
+      newErrors.enterprise = "Enterprise is required for custom templates";
     }
 
     setErrors(newErrors);
@@ -142,18 +141,27 @@ export function DuplicateTemplateDialog({
         return;
       }
 
+      // Auto-generate unique template ID
+      const generatedTemplateId = generateUniqueId(template.brand, template.model);
+
       // Build request body
       const requestBody: {
         new_template_id: string;
         new_name: string;
+        template_type?: string;
         enterprise_id?: string;
       } = {
-        new_template_id: newTemplateId.trim(),
+        new_template_id: generatedTemplateId,
         new_name: newName.trim(),
       };
 
-      // Only include enterprise_id if admin selected one
-      if (canSelectEnterprise && selectedEnterpriseId) {
+      // Include template_type if user can create public templates
+      if (canCreatePublic) {
+        requestBody.template_type = templateType;
+      }
+
+      // Include enterprise_id for custom templates
+      if (templateType === "custom" && canSelectEnterprise && selectedEnterpriseId) {
         requestBody.enterprise_id = selectedEnterpriseId;
       }
 
@@ -175,7 +183,8 @@ export function DuplicateTemplateDialog({
 
         // Handle specific error codes
         if (response.status === 409) {
-          setErrors({ templateId: "Template ID already exists" });
+          // Template ID collision - retry with new ID
+          toast.error("ID collision, please try again");
           return;
         } else if (response.status === 400) {
           // Name validation error from server
@@ -210,7 +219,7 @@ export function DuplicateTemplateDialog({
             Duplicate Template
           </DialogTitle>
           <DialogDescription>
-            Create a copy of <strong>{template.name}</strong> as a custom template for your enterprise.
+            Create a copy of <strong>{template.name}</strong>.
           </DialogDescription>
         </DialogHeader>
 
@@ -237,29 +246,6 @@ export function DuplicateTemplateDialog({
             </div>
           </div>
 
-          {/* New Template ID */}
-          <div className="space-y-2">
-            <Label htmlFor="new-template-id">
-              New Template ID <span className="text-red-500">*</span>
-            </Label>
-            <Input
-              id="new-template-id"
-              value={newTemplateId}
-              onChange={(e) => {
-                setNewTemplateId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"));
-                setErrors((prev) => ({ ...prev, templateId: undefined }));
-              }}
-              placeholder="e.g., sungrow_150kw_custom"
-              className={errors.templateId ? "border-red-500" : ""}
-            />
-            {errors.templateId && (
-              <p className="text-sm text-red-500">{errors.templateId}</p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Unique identifier. Lowercase letters, numbers, and underscores only.
-            </p>
-          </div>
-
           {/* New Name */}
           <div className="space-y-2">
             <Label htmlFor="new-name">
@@ -283,18 +269,58 @@ export function DuplicateTemplateDialog({
             </p>
           </div>
 
-          {/* Enterprise Selector (admin only) */}
-          {canSelectEnterprise && enterprises.length > 0 && (
+          {/* Template Type Selector (super_admin/backend_admin only) */}
+          {canCreatePublic && (
+            <div className="space-y-2">
+              <Label htmlFor="template-type">
+                Template Type <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={templateType}
+                onValueChange={(value) => {
+                  setTemplateType(value as "public" | "custom");
+                  // Clear enterprise error if switching to public
+                  if (value === "public") {
+                    setErrors((prev) => ({ ...prev, enterprise: undefined }));
+                  }
+                }}
+              >
+                <SelectTrigger id="template-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">
+                    <span className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-green-500" />
+                      Public - Available to all users
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="custom">
+                    <span className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-blue-500" />
+                      Custom - Enterprise-specific
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Enterprise Selector (shown for custom templates when user can select) */}
+          {templateType === "custom" && canSelectEnterprise && enterprises.length > 0 && (
             <div className="space-y-2">
               <Label htmlFor="enterprise">
-                Assign to Enterprise
+                Assign to Enterprise <span className="text-red-500">*</span>
               </Label>
               <Select
                 value={selectedEnterpriseId || ""}
-                onValueChange={setSelectedEnterpriseId}
+                onValueChange={(value) => {
+                  setSelectedEnterpriseId(value);
+                  setErrors((prev) => ({ ...prev, enterprise: undefined }));
+                }}
               >
-                <SelectTrigger id="enterprise">
-                  <SelectValue placeholder="Use my enterprise (default)" />
+                <SelectTrigger id="enterprise" className={errors.enterprise ? "border-red-500" : ""}>
+                  <SelectValue placeholder="Select an enterprise" />
                 </SelectTrigger>
                 <SelectContent>
                   {enterprises.map((enterprise) => (
@@ -304,9 +330,9 @@ export function DuplicateTemplateDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Optional. Leave empty to use your own enterprise.
-              </p>
+              {errors.enterprise && (
+                <p className="text-sm text-red-500">{errors.enterprise}</p>
+              )}
             </div>
           )}
 

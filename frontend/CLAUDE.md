@@ -209,7 +209,7 @@ Live connection status for all registered controllers:
 - **Connection Column**: First column showing online/offline status
 - **Visual Indicators**: Green pulsing dot (online), red dot (offline)
 - **Refresh Button**: Manual refresh with spinning animation feedback
-- **Offline Threshold**: 1 minute (controller marked offline if no heartbeat in 1 min)
+- **Offline Threshold**: 1 minute (controller marked offline if no heartbeat in 1 min, heartbeats sent every 30 sec)
 - **API Route**: `GET /api/controllers/heartbeats` returns latest heartbeat timestamp per controller_id
 
 ## Components Structure

@@ -3,15 +3,14 @@
 /**
  * ProjectCard Component (Client Component)
  *
- * Displays a single project card with live status and edit button.
- * Must be a Client Component because it uses onClick handlers and live polling.
+ * Displays a single project card with edit button.
+ * Must be a Client Component because it uses onClick handlers.
  */
 
 import { memo } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ProjectStatusBadge } from "@/components/projects/project-status-badge";
 
 // Project type definition
 export interface Project {
@@ -47,27 +46,23 @@ export const ProjectCard = memo(function ProjectCard({ project }: ProjectCardPro
                 </Badge>
               )}
             </div>
-            {/* Live status badge and edit button */}
-            <div className="flex items-center gap-2">
-              <ProjectStatusBadge projectId={project.id} siteCount={project.siteCount} />
-              {/* Edit button - links directly to project settings */}
-              {/* onClick works here because this is a Client Component */}
-              <Link
-                href={`/projects/${project.id}/settings`}
-                onClick={(e) => e.stopPropagation()}
-                className="p-1.5 rounded-md hover:bg-muted transition-colors"
-                title="Edit project"
-                aria-label={`Edit project ${project.name}`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  className="h-4 w-4 text-muted-foreground"
-                  aria-hidden="true">
-                  <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                  <path d="m15 5 4 4"/>
-                </svg>
-              </Link>
-            </div>
+            {/* Edit button - links directly to project settings */}
+            {/* onClick works here because this is a Client Component */}
+            <Link
+              href={`/projects/${project.id}/settings`}
+              onClick={(e) => e.stopPropagation()}
+              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              title="Edit project"
+              aria-label={`Edit project ${project.name}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className="h-4 w-4 text-muted-foreground"
+                aria-hidden="true">
+                <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                <path d="m15 5 4 4"/>
+              </svg>
+            </Link>
           </div>
         </CardHeader>
         <CardContent>

@@ -97,7 +97,8 @@ export async function GET(
     }
 
     // Step 3: Determine if online (heartbeat within last 1 minute)
-    const oneMinuteAgo = Date.now() - 1 * 60 * 1000;
+    // Note: Controllers send heartbeats every 30 seconds
+    const oneMinuteAgo = Date.now() - 60 * 1000;
     const isOnline = new Date(heartbeat.timestamp).getTime() > oneMinuteAgo;
 
     // Step 4: Extract CPU temperature from metadata if available

@@ -170,22 +170,11 @@ export default async function ControllersPage() {
   // Determine if user can claim/edit (enterprise_admin, configurator, or super_admin)
   const canEdit = ["super_admin", "enterprise_admin", "configurator"].includes(userProfile.role || "");
 
-  // Count "ready" controllers available to claim (not yet assigned to any enterprise)
-  // Only super_admin needs this - enterprise admins see status summary instead
-  let readyToClaimCount = 0;
-  if (isSuperAdmin) {
-    const { count } = await supabase
-      .from("controllers")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "ready")
-      .is("enterprise_id", null);
-
-    readyToClaimCount = count || 0;
-  }
-
-  // Count controllers by deployment status (for enterprise admin summary)
+  // Count controllers by status
+  const totalCount = controllers.length;
   const deployedCount = controllers.filter((c) => c.status === "deployed").length;
-  const readyToDeployCount = controllers.filter((c) => c.status === "claimed").length;
+  const claimedCount = controllers.filter((c) => c.status === "claimed").length;
+  const readyCount = controllers.filter((c) => c.status === "ready").length;
 
   return (
     <DashboardLayout
@@ -210,59 +199,128 @@ export default async function ControllersPage() {
           </div>
         </div>
 
-        {/* Ready to Claim Card - only shown to super_admin */}
-        {isSuperAdmin && readyToClaimCount > 0 && (
-          <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
-            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                {/* Icon */}
-                <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-5 w-5 text-green-600 dark:text-green-400"
-                  >
-                    <rect width="20" height="14" x="2" y="3" rx="2" />
-                    <line x1="8" x2="16" y1="21" y2="21" />
-                    <line x1="12" x2="12" y1="17" y2="21" />
-                  </svg>
-                </div>
-                {/* Text */}
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-green-900 dark:text-green-100">
-                      {readyToClaimCount} Controller{readyToClaimCount !== 1 ? "s" : ""} Ready to Claim
-                    </span>
-                    <Badge className="bg-green-600 hover:bg-green-700">New</Badge>
+        {/* Status Summary Card - for super_admin */}
+        {isSuperAdmin && (
+          <Card className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30">
+            <CardContent className="p-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                {/* Stats */}
+                <div className="flex flex-wrap gap-6 sm:gap-8">
+                  {/* Total Units */}
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-5 w-5 text-slate-600 dark:text-slate-400"
+                      >
+                        <rect width="20" height="14" x="2" y="3" rx="2" />
+                        <line x1="8" x2="16" y1="21" y2="21" />
+                        <line x1="12" x2="12" y1="17" y2="21" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-slate-700 dark:text-slate-300">{totalCount}</p>
+                      <p className="text-sm text-muted-foreground">Total Units</p>
+                    </div>
                   </div>
-                  <p className="text-sm text-green-700 dark:text-green-300">
-                    Controllers are ready and waiting for you to claim them
-                  </p>
+
+                  {/* Ready */}
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-900 flex items-center justify-center flex-shrink-0">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-5 w-5 text-amber-600 dark:text-amber-400"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{readyCount}</p>
+                      <p className="text-sm text-muted-foreground">Ready</p>
+                    </div>
+                  </div>
+
+                  {/* Claimed */}
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-5 w-5 text-blue-600 dark:text-blue-400"
+                      >
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{claimedCount}</p>
+                      <p className="text-sm text-muted-foreground">Claimed</p>
+                    </div>
+                  </div>
+
+                  {/* Deployed */}
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-5 w-5 text-green-600 dark:text-green-400"
+                      >
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-green-700 dark:text-green-400">{deployedCount}</p>
+                      <p className="text-sm text-muted-foreground">Deployed</p>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Claim Controller Button */}
+                <Button asChild className="bg-green-600 hover:bg-green-700 min-h-[44px] w-full sm:w-auto">
+                  <Link href="/claim">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4 mr-2"
+                    >
+                      <path d="M12 5v14" />
+                      <path d="M5 12h14" />
+                    </svg>
+                    Claim Controller
+                  </Link>
+                </Button>
               </div>
-              {/* Claim Button */}
-              <Button asChild className="bg-green-600 hover:bg-green-700 min-h-[44px] w-full sm:w-auto">
-                <Link href="/claim">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-4 w-4 mr-2"
-                  >
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
-                  Claim Controller
-                </Link>
-              </Button>
             </CardContent>
           </Card>
         )}
@@ -296,7 +354,7 @@ export default async function ControllersPage() {
                     </div>
                   </div>
 
-                  {/* Ready to Deploy count */}
+                  {/* Claimed count */}
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
                       <svg
@@ -309,13 +367,15 @@ export default async function ControllersPage() {
                         strokeLinejoin="round"
                         className="h-5 w-5 text-blue-600 dark:text-blue-400"
                       >
-                        <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                       </svg>
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{readyToDeployCount}</p>
-                      <p className="text-sm text-muted-foreground">Ready to Deploy</p>
+                      <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{claimedCount}</p>
+                      <p className="text-sm text-muted-foreground">Claimed</p>
                     </div>
                   </div>
                 </div>

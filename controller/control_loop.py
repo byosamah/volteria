@@ -406,7 +406,7 @@ class ControlLoop:
 
         # Heartbeat tracking
         self._last_heartbeat = time.time()
-        self._heartbeat_interval = 300  # 5 minutes
+        self._heartbeat_interval = 30  # 30 seconds for real-time status
 
         # Startup time for uptime calculation
         self._start_time = time.time()

@@ -20,7 +20,7 @@
 - **Hardware**: Raspberry Pi 5 with NVMe SSD (SOL564-NVME16-128)
 - **Cloud Database**: Supabase (PostgreSQL)
 - **Cloud Hosting**: DigitalOcean Droplet
-- **Heartbeat**: Controller sends status every 5 minutes; frontend marks offline after 1 minute without heartbeat
+- **Heartbeat**: Controller sends status every 30 seconds; frontend marks offline after 1 minute without heartbeat
 
 ## Approved Hardware Types
 | Hardware ID | Description | Storage |
@@ -295,6 +295,8 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | 48 | `048_fix_heartbeat_site_fk.sql` | Fix FK constraints for site/project deletion |
 | 49 | `049_add_controller_template_to_master_devices.sql` | Add controller_template_id to site_master_devices |
 | 50 | `050_project_devices_registers.sql` | Add registers, alarm_registers columns + make template_id nullable |
+| 51 | `051_fix_device_templates_rls.sql` | Fix RLS policies for device_templates + add sensor subtypes to constraint |
+| 52 | `052_enterprise_subscription_plan.sql` | Add subscription_plan column to enterprises (starter, advanced, pro) |
 
 ### Core Tables
 | Table | Purpose | RLS |

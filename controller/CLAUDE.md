@@ -63,7 +63,7 @@ Every 1 second (configurable):
 6. Verify command was accepted (read-back)
 7. Log to local SQLite database
 
-Every 5 minutes:
+Every 30 seconds:
 8. Send heartbeat to cloud
 
 Every 5 seconds:
@@ -187,10 +187,10 @@ Located at `data/controller.db`
 - Uploads in batches of 100 records
 - Retry with exponential backoff (1s, 2s, 4s)
 - Marks records as synced after successful upload
-- Heartbeat every 5 minutes
+- Heartbeat every 30 seconds
 
 ## Heartbeat & Status
-- Controller sends **heartbeat signal every 5 minutes** to cloud
+- Controller sends **heartbeat signal every 30 seconds** to cloud
 - Status is automatically determined:
   - `online` - Heartbeat received (green signal)
   - `offline` - Heartbeat missed (triggers alarm)

@@ -36,9 +36,9 @@ export default async function ProjectsPage() {
   // Fetch projects with enterprise data
   // Note: Status is now fetched live by ProjectStatusBadge component
   // Access control:
-  // - super_admin/backend_admin: see ALL projects
+  // - super_admin/backend_admin/admin: see ALL projects
   // - enterprise_admin: see only projects in their enterprise
-  // - admin/configurator/viewer: see only assigned projects via user_projects
+  // - configurator/viewer: see only assigned projects via user_projects
   let projects: Array<{
     id: string;
     name: string;
@@ -69,8 +69,8 @@ export default async function ProjectsPage() {
       .eq("is_active", true);
 
     // Apply role-based filtering
-    if (userRole === "super_admin" || userRole === "backend_admin") {
-      // Super admin and backend admin see ALL projects - no filter needed
+    if (userRole === "super_admin" || userRole === "backend_admin" || userRole === "admin") {
+      // Super admin, backend admin, and admin see ALL projects - no filter needed
     } else if (userRole === "enterprise_admin") {
       // Enterprise admin sees only projects in their enterprise
       if (userEnterpriseId) {
@@ -80,7 +80,7 @@ export default async function ProjectsPage() {
         query = query.eq("id", "00000000-0000-0000-0000-000000000000");
       }
     } else {
-      // admin/configurator/viewer: filter by user_projects assignments
+      // configurator/viewer: filter by user_projects assignments
       // First, get the project IDs this user has access to
       const { data: userProjectAssignments } = await supabase
         .from("user_projects")
@@ -98,7 +98,7 @@ export default async function ProjectsPage() {
     }
 
     // Execute query (skip if already set to empty for no assignments)
-    if (!(userRole !== "super_admin" && userRole !== "backend_admin" && userRole !== "enterprise_admin" && projects.length === 0)) {
+    if (!(userRole !== "super_admin" && userRole !== "backend_admin" && userRole !== "admin" && userRole !== "enterprise_admin" && projects.length === 0)) {
       const { data, error } = await query.order("name");
 
       if (!error && data) {

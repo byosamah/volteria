@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\Hp\\\\volteria\\\\frontend && npm run dev\")",
+      "Bash(powershell -Command:*)",
+      "Bash(npx tsc:*)",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\Hp\\\\volteria\\\\frontend && npm run build 2>&1\")",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\Hp\\\\volteria\\\\frontend && npm run lint 2>&1\")",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\Hp\\\\volteria\\\\frontend && npm run lint\")",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Update device template cards to match master device template style\n\n- Show template_id as mono subtitle instead of brand/model\n- Move brand/model to card content area\n- Add visible action buttons at bottom \\(Duplicate, Edit, Delete\\)\n- Add Active badge at bottom left\n- Add delete confirmation dialog\n- Match badge colors and layout with master device templates\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(sshpass -p '@1996SolaR' ssh root@159.223.224.203 \"cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build\")",
+      "Bash(ssh:*)",
+      "Bash(scp:*)"
+    ]
+  }
+}

@@ -74,6 +74,7 @@ interface Enterprise {
   address: string | null;
   city: string | null;
   country: string | null;
+  subscription_plan: string | null;
   is_active: boolean;
   created_at: string;
   settings: EnterpriseSettings | null;
@@ -156,6 +157,7 @@ export function EnterpriseDetailTabs({
     address: enterprise.address || "",
     city: enterprise.city || "",
     country: enterprise.country || "",
+    subscription_plan: enterprise.subscription_plan || "starter",
     is_active: enterprise.is_active,
   });
 
@@ -219,6 +221,7 @@ export function EnterpriseDetailTabs({
           address: formData.address.trim() || null,
           city: formData.city.trim() || null,
           country: formData.country.trim() || null,
+          subscription_plan: formData.subscription_plan,
           is_active: formData.is_active,
           // Include enterprise-specific settings in JSONB field
           settings: enterpriseSettings,
@@ -393,15 +396,21 @@ export function EnterpriseDetailTabs({
     }
   };
 
-  // Get status badge variant for controllers
+  // Get status badge variant for controllers - matches My Controllers page styling
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "deployed":
-        return <Badge className="bg-green-500">Deployed</Badge>;
+        return <Badge className="bg-green-100 text-green-800">Deployed</Badge>;
+      case "claimed":
+        return <Badge className="bg-blue-100 text-blue-800">Claimed</Badge>;
       case "ready":
-        return <Badge className="bg-yellow-500">Ready</Badge>;
+        return <Badge className="bg-yellow-100 text-yellow-800">Ready</Badge>;
+      case "deactivated":
+        return <Badge className="bg-amber-100 text-amber-800">Deactivated</Badge>;
+      case "eol":
+        return <Badge className="bg-red-100 text-red-800">EOL</Badge>;
       default:
-        return <Badge variant="secondary">Draft</Badge>;
+        return <Badge className="bg-gray-100 text-gray-800">Draft</Badge>;
     }
   };
 
@@ -724,6 +733,27 @@ export function EnterpriseDetailTabs({
                     className="min-h-[44px]"
                   />
                 </div>
+              </div>
+
+              {/* Subscription Plan */}
+              <div className="space-y-2">
+                <Label htmlFor="subscription_plan">
+                  Subscription Plan <span className="text-red-500">*</span>
+                </Label>
+                <select
+                  id="subscription_plan"
+                  value={formData.subscription_plan}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, subscription_plan: e.target.value }))}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background min-h-[44px]"
+                  required
+                >
+                  <option value="starter">Starter</option>
+                  <option value="advanced">Advanced</option>
+                  <option value="pro">Pro</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  The subscription tier determines feature access and limits
+                </p>
               </div>
 
               {/* Active status toggle */}

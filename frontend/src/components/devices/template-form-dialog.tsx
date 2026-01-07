@@ -36,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { RegisterForm, type ModbusRegister } from "./register-form";
 
@@ -51,6 +52,8 @@ interface DeviceTemplate {
   model: string;
   rated_power_kw: number | null;
   template_type?: string | null;  // 'public' or 'custom'
+  enterprise_id?: string | null;  // Enterprise ID for custom templates
+  is_active?: boolean;  // Whether template is active and can be used for new devices
   // Registers for logging AND control (stored in database)
   logging_registers?: ModbusRegister[] | null;
   // Registers for visualization only (NOT stored)
@@ -179,6 +182,7 @@ export function TemplateFormDialog({
     model: "",
     rated_power_kw: "",
     template_type: "public",  // 'public' or 'custom'
+    is_active: true,  // Active by default
   });
 
   // Logging registers state (stored in database AND used by control logic)
@@ -240,7 +244,10 @@ export function TemplateFormDialog({
           model: template.model,
           rated_power_kw: template.rated_power_kw?.toString() || "",
           template_type: template.template_type || "public",
+          is_active: template.is_active !== false,  // Default to true if undefined
         });
+        // Set enterprise ID for custom templates
+        setSelectedEnterpriseId(template.enterprise_id || "");
         // Load logging registers from template
         // Check both new column name and legacy column name for backward compatibility
         setLoggingRegisters(template.logging_registers || template.registers || []);
@@ -260,7 +267,10 @@ export function TemplateFormDialog({
           model: "",
           rated_power_kw: "",
           template_type: isEnterpriseOrConfigurator ? "custom" : "public",
+          is_active: true,  // New templates are active by default
         });
+        // Reset enterprise selection for new templates
+        setSelectedEnterpriseId("");
         setLoggingRegisters([]);
         setVisualizationRegisters([]);
         setAlarmRegisters([]);
@@ -486,6 +496,7 @@ export function TemplateFormDialog({
           : null,
         template_type: formData.template_type,  // 'public' or 'custom'
         enterprise_id: getEnterpriseId(),
+        is_active: formData.is_active,  // Active status for new device selection
         // NEW COLUMN NAMES: logging_registers, visualization_registers, calculated_fields
         logging_registers: loggingRegisters.length > 0 ? loggingRegisters : null,
         visualization_registers: visualizationRegisters.length > 0 ? visualizationRegisters : null,
@@ -705,6 +716,29 @@ export function TemplateFormDialog({
             </p>
           </div>
 
+          {/* Active Status Toggle - only shown in edit mode */}
+          {mode === "edit" && (
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="is_active" className="text-base font-medium">
+                  Active Status
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  {formData.is_active
+                    ? "Template is active and can be used for new devices"
+                    : "Template is inactive and won't appear when adding new devices"}
+                </p>
+              </div>
+              <Switch
+                id="is_active"
+                checked={formData.is_active}
+                onCheckedChange={(checked) =>
+                  setFormData((prev) => ({ ...prev, is_active: checked }))
+                }
+              />
+            </div>
+          )}
+
           {/* ═══════════════════════════════════════════════════════════════════
               TABBED REGISTER SECTIONS
               4 Tabs: Logging, Visualization, Alarms, Calculated Fields
@@ -735,8 +769,7 @@ export function TemplateFormDialog({
                   <div>
                     <Label className="text-base font-semibold">Logging Registers</Label>
                     <p className="text-xs text-muted-foreground">
-                      Stored in database <strong>AND</strong> used by control logic.
-                      Add registers needed for control decisions here.
+                      Stored in database, used by control logic, and available for <strong>live value reading</strong>.
                     </p>
                   </div>
                   <Button
@@ -820,7 +853,7 @@ export function TemplateFormDialog({
                 ) : (
                   <div className="border rounded-md p-6 text-center text-muted-foreground">
                     <p className="text-sm">No logging registers configured yet.</p>
-                    <p className="text-xs mt-1">Add registers that need to be logged to the database and used in control logic.</p>
+                    <p className="text-xs mt-1">Add registers for logging, control logic, and live value reading.</p>
                   </div>
                 )}
               </TabsContent>
@@ -834,7 +867,7 @@ export function TemplateFormDialog({
                   <div>
                     <Label className="text-base font-semibold">Visualization Registers</Label>
                     <p className="text-xs text-muted-foreground">
-                      Read for <strong>live display only</strong> - NOT stored in database.
+                      Additional registers for <strong>live value reading only</strong> - not logged to database.
                     </p>
                   </div>
                   <Button
@@ -918,7 +951,7 @@ export function TemplateFormDialog({
                 ) : (
                   <div className="border rounded-md p-6 text-center text-muted-foreground">
                     <p className="text-sm">No visualization registers configured yet.</p>
-                    <p className="text-xs mt-1">Add registers for live display that don&apos;t need to be stored in the database.</p>
+                    <p className="text-xs mt-1">Add additional registers for live value reading that don&apos;t need to be logged.</p>
                   </div>
                 )}
               </TabsContent>
