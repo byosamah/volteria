@@ -12,13 +12,24 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import { TemplateFormDialog } from "./template-form-dialog";
 import { DuplicateTemplateDialog } from "./duplicate-template-dialog";
-import { Copy } from "lucide-react";
 
 // Device template type
 interface DeviceTemplate {
@@ -180,6 +191,11 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
   const [duplicatingTemplate, setDuplicatingTemplate] = useState<DeviceTemplate | undefined>();
 
+  // State for delete dialog
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingTemplate, setDeletingTemplate] = useState<DeviceTemplate | undefined>();
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Create enterprise lookup map for displaying names on custom templates
   const enterpriseNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -241,6 +257,38 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   // Handle successful duplicate - refresh the page to get updated data
   const handleDuplicateSuccess = () => {
     router.refresh();
+  };
+
+  // Open delete confirmation dialog
+  const handleDeleteTemplate = (template: DeviceTemplate) => {
+    setDeletingTemplate(template);
+    setDeleteDialogOpen(true);
+  };
+
+  // Handle template delete
+  const handleConfirmDelete = async () => {
+    if (!deletingTemplate) return;
+
+    setIsDeleting(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("device_templates")
+        .delete()
+        .eq("id", deletingTemplate.id);
+
+      if (error) throw error;
+
+      toast.success("Template deleted successfully");
+      router.refresh();
+    } catch (error) {
+      console.error("Error deleting template:", error);
+      toast.error("Failed to delete template");
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+      setDeletingTemplate(undefined);
+    }
   };
 
   // Get unique brands from templates
@@ -458,26 +506,33 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {typeTemplates.map((template) => (
-                    <Card key={template.id} className="group relative">
-                      <CardHeader>
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <CardTitle className="text-lg">{template.name}</CardTitle>
-                            <CardDescription>
-                              {template.brand} {template.model}
+                    <Card key={template.id} className="relative">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            {/* Template Name */}
+                            <CardTitle className="text-base truncate">
+                              {template.name}
+                            </CardTitle>
+                            {/* Template ID */}
+                            <CardDescription className="font-mono text-xs mt-0.5">
+                              {template.template_id}
                             </CardDescription>
                           </div>
-                          <div className="flex flex-col items-end gap-1">
+
+                          {/* Badges */}
+                          <div className="flex flex-col gap-1 items-end shrink-0">
+                            {/* Device Type Badge */}
                             <Badge className={deviceTypeColors[template.device_type]}>
                               {deviceTypeLabels[template.device_type] || template.device_type}
                             </Badge>
                             {/* Template type badge - Public (green) or Custom (blue) */}
                             <Badge
-                              variant="outline"
+                              variant="secondary"
                               className={
                                 template.template_type === "custom"
-                                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                                  : "bg-green-50 text-green-700 border-green-200"
+                                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                                  : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
                               }
                             >
                               {template.template_type === "custom" ? "Custom" : "Public"}
@@ -491,33 +546,52 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent>
-                        <div className="text-sm space-y-1">
+
+                      <CardContent className="pt-0">
+                        {/* Brand & Model */}
+                        <p className="text-sm text-muted-foreground mb-3">
+                          {template.brand} {template.model}
+                        </p>
+
+                        {/* Stats */}
+                        <div className="flex gap-4 text-sm text-muted-foreground mb-4">
                           {template.rated_power_kw && (
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Rated Power</span>
-                              <span className="font-medium">{template.rated_power_kw} kW</span>
-                            </div>
+                            <span className="flex items-center gap-1">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-4 w-4"
+                              >
+                                <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+                              </svg>
+                              {template.rated_power_kw} kW
+                            </span>
                           )}
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Template ID</span>
-                            <span className="font-mono text-xs">{template.template_id}</span>
-                          </div>
                         </div>
 
-                        {/* Action buttons - show on hover/focus if user has permission */}
-                        {(canCreate || canEditTemplate(template)) && (
-                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex gap-1">
+                        {/* Active Status + Action Buttons */}
+                        <div className="flex items-center justify-between">
+                          <Badge variant="default">
+                            Active
+                          </Badge>
+
+                          {/* Action Buttons */}
+                          <div className="flex gap-2">
                             {/* Duplicate button - visible to users who can create templates */}
                             {canCreate && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 w-8 p-0"
                                 onClick={() => handleDuplicateTemplate(template)}
-                                title="Duplicate template"
+                                className="h-8 px-3"
+                                title="Create a copy of this template"
                               >
-                                <Copy className="h-4 w-4" />
+                                Duplicate
                               </Button>
                             )}
                             {/* Edit button - visible to users who can edit this template */}
@@ -525,27 +599,25 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 w-8 p-0"
                                 onClick={() => handleEditTemplate(template)}
-                                title="Edit template"
+                                className="h-8 px-3"
                               >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className="h-4 w-4"
-                                >
-                                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                                  <path d="m15 5 4 4" />
-                                </svg>
+                                Edit
+                              </Button>
+                            )}
+                            {/* Delete button - visible to users who can edit this template */}
+                            {canEditTemplate(template) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteTemplate(template)}
+                                className="h-8 px-3 text-destructive hover:text-destructive"
+                              >
+                                Delete
                               </Button>
                             )}
                           </div>
-                        )}
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
@@ -580,6 +652,29 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
           onSuccess={handleDuplicateSuccess}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => !open && setDeleteDialogOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Template</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{deletingTemplate?.name}&quot;? This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
