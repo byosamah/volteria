@@ -590,42 +590,41 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                   {typeTemplates.map((template) => (
                     <Card key={template.id} className="relative">
                       <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex flex-wrap items-start gap-2">
                             {/* Template Name */}
-                            <CardTitle className="text-base truncate">
+                            <CardTitle className="text-base break-words flex-1 min-w-0">
                               {template.name}
                             </CardTitle>
-                            {/* Template ID */}
-                            <CardDescription className="font-mono text-xs mt-0.5">
-                              {template.template_id}
-                            </CardDescription>
+                            {/* Badges */}
+                            <div className="flex flex-wrap gap-1 items-center">
+                              {/* Device Type Badge */}
+                              <Badge className={deviceTypeColors[template.device_type]}>
+                                {deviceTypeLabels[template.device_type] || template.device_type}
+                              </Badge>
+                              {/* Template type badge - Public (green) or Custom (blue) */}
+                              <Badge
+                                variant="secondary"
+                                className={
+                                  template.template_type === "custom"
+                                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                                    : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                }
+                              >
+                                {template.template_type === "custom" ? "Custom" : "Public"}
+                              </Badge>
+                              {/* Show enterprise name for custom templates */}
+                              {template.template_type === "custom" && template.enterprise_id && (
+                                <span className="text-xs text-muted-foreground">
+                                  {enterpriseNameMap.get(template.enterprise_id) || "Unknown"}
+                                </span>
+                              )}
+                            </div>
                           </div>
-
-                          {/* Badges */}
-                          <div className="flex flex-col gap-1 items-end shrink-0">
-                            {/* Device Type Badge */}
-                            <Badge className={deviceTypeColors[template.device_type]}>
-                              {deviceTypeLabels[template.device_type] || template.device_type}
-                            </Badge>
-                            {/* Template type badge - Public (green) or Custom (blue) */}
-                            <Badge
-                              variant="secondary"
-                              className={
-                                template.template_type === "custom"
-                                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                                  : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                              }
-                            >
-                              {template.template_type === "custom" ? "Custom" : "Public"}
-                            </Badge>
-                            {/* Show enterprise name for custom templates */}
-                            {template.template_type === "custom" && template.enterprise_id && (
-                              <span className="text-xs text-muted-foreground">
-                                {enterpriseNameMap.get(template.enterprise_id) || "Unknown"}
-                              </span>
-                            )}
-                          </div>
+                          {/* Template ID */}
+                          <CardDescription className="font-mono text-xs">
+                            {template.template_id}
+                          </CardDescription>
                         </div>
                       </CardHeader>
 
@@ -657,20 +656,20 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                         </div>
 
                         {/* Active Status + Action Buttons */}
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <Badge variant={template.is_active !== false ? "default" : "secondary"}>
                             {template.is_active !== false ? "Active" : "Inactive"}
                           </Badge>
 
                           {/* Action Buttons */}
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-1 sm:gap-2">
                             {/* Duplicate button - visible to users who can create templates */}
                             {canCreate && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleDuplicateTemplate(template)}
-                                className="h-8 px-3"
+                                className="h-8 px-2 sm:px-3 text-sm"
                                 title="Create a copy of this template"
                               >
                                 Duplicate
@@ -682,7 +681,7 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleEditTemplate(template)}
-                                className="h-8 px-3"
+                                className="h-8 px-2 sm:px-3 text-sm"
                               >
                                 Edit
                               </Button>
@@ -694,7 +693,7 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
                                 size="sm"
                                 onClick={() => handleDeleteTemplate(template)}
                                 disabled={isCheckingUsage}
-                                className="h-8 px-3 text-destructive hover:text-destructive"
+                                className="h-8 px-2 sm:px-3 text-sm text-destructive hover:text-destructive"
                               >
                                 {isCheckingUsage ? "Checking..." : "Delete"}
                               </Button>

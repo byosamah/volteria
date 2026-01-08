@@ -30,40 +30,6 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 
-// Enterprise settings schema
-interface EnterpriseSettings {
-  defaults: {
-    dg_reserve_kw: number;
-    control_interval_ms: number;
-  };
-  features: {
-    remote_control_enabled: boolean;
-    data_export_enabled: boolean;
-    api_access_enabled: boolean;
-  };
-  notifications: {
-    email_alerts: boolean;
-    alert_threshold_pct: number;
-  };
-}
-
-// Default settings for new enterprises
-const DEFAULT_ENTERPRISE_SETTINGS: EnterpriseSettings = {
-  defaults: {
-    dg_reserve_kw: 0,
-    control_interval_ms: 1000,
-  },
-  features: {
-    remote_control_enabled: true,
-    data_export_enabled: true,
-    api_access_enabled: false,
-  },
-  notifications: {
-    email_alerts: true,
-    alert_threshold_pct: 80,
-  },
-};
-
 // Types for the component props
 interface Enterprise {
   id: string;
@@ -77,7 +43,6 @@ interface Enterprise {
   subscription_plan: string | null;
   is_active: boolean;
   created_at: string;
-  settings: EnterpriseSettings | null;
 }
 
 interface Controller {
@@ -161,49 +126,12 @@ export function EnterpriseDetailTabs({
     is_active: enterprise.is_active,
   });
 
-  // Enterprise-specific settings (stored in JSONB `settings` field)
-  const [enterpriseSettings, setEnterpriseSettings] = useState<EnterpriseSettings>(() => {
-    // Merge existing settings with defaults to ensure all fields exist
-    // Type assertion for the JSONB settings field
-    const existing = (enterprise.settings || {}) as Partial<EnterpriseSettings>;
-    return {
-      defaults: {
-        dg_reserve_kw: existing.defaults?.dg_reserve_kw ?? DEFAULT_ENTERPRISE_SETTINGS.defaults.dg_reserve_kw,
-        control_interval_ms: existing.defaults?.control_interval_ms ?? DEFAULT_ENTERPRISE_SETTINGS.defaults.control_interval_ms,
-      },
-      features: {
-        remote_control_enabled: existing.features?.remote_control_enabled ?? DEFAULT_ENTERPRISE_SETTINGS.features.remote_control_enabled,
-        data_export_enabled: existing.features?.data_export_enabled ?? DEFAULT_ENTERPRISE_SETTINGS.features.data_export_enabled,
-        api_access_enabled: existing.features?.api_access_enabled ?? DEFAULT_ENTERPRISE_SETTINGS.features.api_access_enabled,
-      },
-      notifications: {
-        email_alerts: existing.notifications?.email_alerts ?? DEFAULT_ENTERPRISE_SETTINGS.notifications.email_alerts,
-        alert_threshold_pct: existing.notifications?.alert_threshold_pct ?? DEFAULT_ENTERPRISE_SETTINGS.notifications.alert_threshold_pct,
-      },
-    };
-  });
-
   // Handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
-    }));
-  };
-
-  // Handle enterprise settings changes
-  const handleSettingsChange = (
-    category: keyof EnterpriseSettings,
-    field: string,
-    value: number | boolean
-  ) => {
-    setEnterpriseSettings((prev) => ({
-      ...prev,
-      [category]: {
-        ...prev[category],
-        [field]: value,
-      },
     }));
   };
 
@@ -223,8 +151,6 @@ export function EnterpriseDetailTabs({
           country: formData.country.trim() || null,
           subscription_plan: formData.subscription_plan,
           is_active: formData.is_active,
-          // Include enterprise-specific settings in JSONB field
-          settings: enterpriseSettings,
         })
         .eq("id", enterprise.id);
 
@@ -783,212 +709,6 @@ export function EnterpriseDetailTabs({
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
-
-        {/* Enterprise System Settings */}
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle>System Settings</CardTitle>
-            <CardDescription>
-              Configure default values and feature access for this enterprise.
-              These settings apply to all projects and sites within the enterprise.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Default Site Values */}
-            <div className="space-y-4">
-              <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                Default Site Values
-              </h4>
-              <p className="text-sm text-muted-foreground">
-                These values will be used as defaults when creating new sites.
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="dg_reserve_kw">Default DG Reserve (kW)</Label>
-                  <Input
-                    id="dg_reserve_kw"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={enterpriseSettings.defaults.dg_reserve_kw}
-                    onChange={(e) =>
-                      handleSettingsChange("defaults", "dg_reserve_kw", Number(e.target.value))
-                    }
-                    className="min-h-[44px]"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Minimum power the DG should maintain
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="control_interval_ms">Control Interval (ms)</Label>
-                  <Input
-                    id="control_interval_ms"
-                    type="number"
-                    min="100"
-                    max="10000"
-                    step="100"
-                    value={enterpriseSettings.defaults.control_interval_ms}
-                    onChange={(e) =>
-                      handleSettingsChange("defaults", "control_interval_ms", Number(e.target.value))
-                    }
-                    className="min-h-[44px]"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    How often the control loop runs (1000 = 1 second)
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Feature Toggles */}
-            <div className="space-y-4 border-t pt-6">
-              <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                Feature Access
-              </h4>
-              <p className="text-sm text-muted-foreground">
-                Control which features are available to this enterprise.
-              </p>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 border rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="remote_control_enabled"
-                    checked={enterpriseSettings.features.remote_control_enabled}
-                    onChange={(e) =>
-                      handleSettingsChange("features", "remote_control_enabled", e.target.checked)
-                    }
-                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <div className="flex-1">
-                    <Label htmlFor="remote_control_enabled" className="cursor-pointer">
-                      Remote Control
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Allow users to remotely control site settings and devices
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 border rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="data_export_enabled"
-                    checked={enterpriseSettings.features.data_export_enabled}
-                    onChange={(e) =>
-                      handleSettingsChange("features", "data_export_enabled", e.target.checked)
-                    }
-                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <div className="flex-1">
-                    <Label htmlFor="data_export_enabled" className="cursor-pointer">
-                      Data Export
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Allow users to export control logs and reports
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 border rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="api_access_enabled"
-                    checked={enterpriseSettings.features.api_access_enabled}
-                    onChange={(e) =>
-                      handleSettingsChange("features", "api_access_enabled", e.target.checked)
-                    }
-                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <div className="flex-1">
-                    <Label htmlFor="api_access_enabled" className="cursor-pointer">
-                      API Access
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Allow programmatic access to data via REST API
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Notification Settings */}
-            <div className="space-y-4 border-t pt-6">
-              <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                Notifications
-              </h4>
-              <p className="text-sm text-muted-foreground">
-                Configure alert thresholds and notification preferences.
-              </p>
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 p-3 border rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="email_alerts"
-                    checked={enterpriseSettings.notifications.email_alerts}
-                    onChange={(e) =>
-                      handleSettingsChange("notifications", "email_alerts", e.target.checked)
-                    }
-                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <div className="flex-1">
-                    <Label htmlFor="email_alerts" className="cursor-pointer">
-                      Email Alerts
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Send email notifications for critical alarms
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="alert_threshold_pct">
-                    Alert Threshold ({enterpriseSettings.notifications.alert_threshold_pct}%)
-                  </Label>
-                  <input
-                    id="alert_threshold_pct"
-                    type="range"
-                    min="50"
-                    max="100"
-                    step="5"
-                    value={enterpriseSettings.notifications.alert_threshold_pct}
-                    onChange={(e) =>
-                      handleSettingsChange("notifications", "alert_threshold_pct", Number(e.target.value))
-                    }
-                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Send alert when DG load exceeds this percentage of capacity
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Save System Settings Button */}
-            <div className="flex justify-end pt-4 border-t">
-              <Button
-                onClick={async () => {
-                  setSaving(true);
-                  try {
-                    const { error } = await supabase
-                      .from("enterprises")
-                      .update({ settings: enterpriseSettings })
-                      .eq("id", enterprise.id);
-                    if (error) throw error;
-                    toast.success("System settings saved");
-                    router.refresh();
-                  } catch (err) {
-                    console.error(err);
-                    toast.error("Failed to save settings");
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-                disabled={saving}
-                className="min-h-[44px]"
-              >
-                {saving ? "Saving..." : "Save System Settings"}
-              </Button>
-            </div>
           </CardContent>
         </Card>
 
