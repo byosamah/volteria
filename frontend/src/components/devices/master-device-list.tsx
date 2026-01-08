@@ -16,12 +16,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// Helper to determine if controller is online (heartbeat within last 1 minute)
+// Helper to determine if controller is online (heartbeat within last 90 seconds)
 // Note: Controllers send heartbeats every 30 seconds
+// Using 90 seconds (instead of 60) provides buffer for network latency and clock skew
+// This means a controller must miss 2+ heartbeats before showing offline
 const isControllerOnline = (lastHeartbeat: string | null): boolean => {
   if (!lastHeartbeat) return false;
-  const oneMinuteAgo = Date.now() - 60 * 1000;
-  return new Date(lastHeartbeat).getTime() > oneMinuteAgo;
+  const thresholdMs = 90 * 1000; // 90 seconds
+  return Date.now() - new Date(lastHeartbeat).getTime() < thresholdMs;
 };
 
 // Helper to format time since last heartbeat
@@ -126,17 +128,49 @@ export function MasterDeviceList({
   const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
   const [isPolling, setIsPolling] = useState(false);
 
-  // Fetch heartbeats from API
+  // Fetch heartbeats from API with retry logic and merge to prevent false offline flickers
   const fetchHeartbeats = useCallback(async () => {
-    try {
-      const res = await fetch("/api/controllers/heartbeats");
-      if (res.ok) {
-        const data = await res.json();
-        setHeartbeats(data);
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch("/api/controllers/heartbeats");
+        if (res.ok) {
+          const data = await res.json();
+          // Only update if we got valid data (not an error object)
+          if (!data.error && typeof data === "object") {
+            // Merge new heartbeats with existing ones to prevent false offline flickers
+            // Only update a timestamp if it's newer than what we have
+            setHeartbeats((prev) => {
+              const merged = { ...prev };
+              for (const [controllerId, timestamp] of Object.entries(data)) {
+                const newTime = new Date(timestamp as string).getTime();
+                const existingTime = prev[controllerId] ? new Date(prev[controllerId]).getTime() : 0;
+                // Only update if new timestamp is more recent (or we didn't have one)
+                if (newTime >= existingTime) {
+                  merged[controllerId] = timestamp as string;
+                }
+              }
+              return merged;
+            });
+          }
+          return; // Success, exit
+        }
+        // Non-OK response, will retry
+        lastError = new Error(`HTTP ${res.status}`);
+      } catch (error) {
+        lastError = error as Error;
       }
-    } catch (error) {
-      console.error("Failed to fetch heartbeats:", error);
+
+      // Wait 1 second before retry (except on last attempt)
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     }
+
+    // All retries failed - keep existing heartbeat data (don't clear it)
+    console.error("Failed to fetch heartbeats after retries:", lastError);
   }, []);
 
   // Smart polling effect - polls every 30s when tab is visible

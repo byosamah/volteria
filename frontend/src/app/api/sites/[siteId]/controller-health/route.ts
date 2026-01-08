@@ -96,10 +96,11 @@ export async function GET(
       return NextResponse.json({ error: "No heartbeat data available" }, { status: 404 });
     }
 
-    // Step 3: Determine if online (heartbeat within last 1 minute)
+    // Step 3: Determine if online (heartbeat within last 90 seconds)
     // Note: Controllers send heartbeats every 30 seconds
-    const oneMinuteAgo = Date.now() - 60 * 1000;
-    const isOnline = new Date(heartbeat.timestamp).getTime() > oneMinuteAgo;
+    // Using 90 seconds provides buffer for network latency and clock skew
+    const thresholdMs = 90 * 1000;
+    const isOnline = Date.now() - new Date(heartbeat.timestamp).getTime() < thresholdMs;
 
     // Step 4: Extract CPU temperature from metadata if available
     const metadata = heartbeat.metadata as { cpu_temp_celsius?: number } | null;

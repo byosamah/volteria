@@ -17,9 +17,10 @@ interface ProjectStatusResponse {
   total: number;    // Total number of sites
 }
 
-// 1-minute threshold for online detection
+// 90-second threshold for online detection
 // Note: Controllers send heartbeats every 30 seconds
-const ONLINE_THRESHOLD_MS = 60 * 1000;
+// Using 90 seconds provides buffer for network latency and clock skew
+const ONLINE_THRESHOLD_MS = 90 * 1000;
 
 export async function GET(
   request: Request,
