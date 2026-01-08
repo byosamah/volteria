@@ -12,15 +12,19 @@ export async function GET() {
   try {
     const supabase = await createClient();
 
-    // Fetch all heartbeats ordered by timestamp (newest first)
+    // Fetch recent heartbeats ordered by timestamp (newest first)
+    // Limit to 500 records - enough to cover all controllers with recent activity
+    // This prevents slow queries when the table has many historical records
     const { data: heartbeatData, error } = await supabase
       .from("controller_heartbeats")
       .select("controller_id, timestamp")
       .not("controller_id", "is", null)
-      .order("timestamp", { ascending: false });
+      .order("timestamp", { ascending: false })
+      .limit(500);
 
     if (error) {
-      return NextResponse.json({});
+      console.error("Heartbeats query error:", error);
+      return NextResponse.json({ error: "Failed to fetch heartbeats" }, { status: 500 });
     }
 
     if (!heartbeatData) {

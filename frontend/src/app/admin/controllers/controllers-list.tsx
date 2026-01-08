@@ -85,6 +85,7 @@ interface HardwareType {
 interface ControllersListProps {
   controllers: Controller[];
   hardwareTypes: HardwareType[];
+  initialHeartbeats?: Record<string, string>;
 }
 
 // Status badge colors
@@ -99,7 +100,7 @@ const statusColors: Record<string, string> = {
   eol: "bg-red-100 text-red-800",
 };
 
-export function ControllersList({ controllers: initialControllers, hardwareTypes }: ControllersListProps) {
+export function ControllersList({ controllers: initialControllers, hardwareTypes, initialHeartbeats = {} }: ControllersListProps) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -144,26 +145,46 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
   });
 
   // Heartbeat polling state - for auto-updating connection status
-  const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
+  // Initialize with server-side data so we have correct status on first render
+  const [heartbeats, setHeartbeats] = useState<Record<string, string>>(initialHeartbeats);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Fetch heartbeats from API
+  // Fetch heartbeats from API with retry logic for transient failures
   const fetchHeartbeats = useCallback(async () => {
     setIsRefreshing(true);
-    try {
-      const res = await fetch("/api/controllers/heartbeats");
-      if (res.ok) {
-        const data = await res.json();
-        setHeartbeats(data);
-        setLastUpdated(new Date());
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch("/api/controllers/heartbeats");
+        if (res.ok) {
+          const data = await res.json();
+          // Only update if we got valid data (not an error object)
+          if (!data.error) {
+            setHeartbeats(data);
+            setLastUpdated(new Date());
+          }
+          setIsRefreshing(false);
+          return; // Success, exit
+        }
+        // Non-OK response, will retry
+        lastError = new Error(`HTTP ${res.status}`);
+      } catch (error) {
+        lastError = error as Error;
       }
-    } catch (error) {
-      console.error("Failed to fetch heartbeats:", error);
-    } finally {
-      setIsRefreshing(false);
+
+      // Wait 1 second before retry (except on last attempt)
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     }
+
+    // All retries failed - keep existing heartbeat data (don't clear it)
+    console.error("Failed to fetch heartbeats after retries:", lastError);
+    setIsRefreshing(false);
   }, []);
 
   // Smart polling effect - polls every 30s when tab is visible

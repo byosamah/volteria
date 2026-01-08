@@ -113,12 +113,14 @@ export default async function ControllersPage() {
   // Fetch latest heartbeat for each controller DIRECTLY from controller_heartbeats table
   // Controllers send heartbeats with their controller_id, even before being assigned to a site
   // This allows showing online/offline status for ALL controllers in the master list
+  let initialHeartbeats: Record<string, string> = {};
   try {
     const { data: heartbeatData } = await supabase
       .from("controller_heartbeats")
       .select("controller_id, timestamp")
       .not("controller_id", "is", null)
-      .order("timestamp", { ascending: false });
+      .order("timestamp", { ascending: false })
+      .limit(500);
 
     if (heartbeatData) {
       // Build a map of controller_id -> latest heartbeat timestamp
@@ -137,6 +139,9 @@ export default async function ControllersPage() {
         ...c,
         last_heartbeat: heartbeatMap.get(c.id) || null,
       }));
+
+      // Store heartbeat map for passing to client component
+      initialHeartbeats = Object.fromEntries(heartbeatMap);
     }
   } catch {
     // Heartbeat tables might not exist yet
@@ -232,7 +237,7 @@ export default async function ControllersPage() {
         </div>
 
         {/* Controllers List */}
-        <ControllersList controllers={controllers} hardwareTypes={hardwareTypes} />
+        <ControllersList controllers={controllers} hardwareTypes={hardwareTypes} initialHeartbeats={initialHeartbeats} />
       </div>
     </DashboardLayout>
   );
