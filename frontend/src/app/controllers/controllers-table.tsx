@@ -150,43 +150,68 @@ export function ControllersTable({
   const [selectedController, setSelectedController] = useState<Controller | null>(null);
   const [newFirmwareVersion, setNewFirmwareVersion] = useState("");
 
+  // Initialize heartbeats from the server-rendered controller data
+  // This prevents flickers on initial load by using the data we already have
+  const initialHeartbeats = controllers.reduce((acc, c) => {
+    if (c.last_heartbeat) {
+      acc[c.id] = c.last_heartbeat;
+    }
+    return acc;
+  }, {} as Record<string, string>);
+
   // Heartbeat polling state - for auto-updating connection status
-  const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
+  const [heartbeats, setHeartbeats] = useState<Record<string, string>>(initialHeartbeats);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Fetch heartbeats from API with merge logic to prevent false offline flickers
+  // Fetch heartbeats from API with retry logic and merge to prevent false offline flickers
   const fetchHeartbeats = useCallback(async () => {
     setIsRefreshing(true);
-    try {
-      const res = await fetch("/api/controllers/heartbeats");
-      if (res.ok) {
-        const data = await res.json();
-        // Only update if we got valid data (not an error object)
-        if (!data.error && typeof data === "object") {
-          // Merge new heartbeats with existing ones to prevent false offline flickers
-          // Only update a timestamp if it's newer than what we have
-          setHeartbeats((prev) => {
-            const merged = { ...prev };
-            for (const [controllerId, timestamp] of Object.entries(data)) {
-              const newTime = new Date(timestamp as string).getTime();
-              const existingTime = prev[controllerId] ? new Date(prev[controllerId]).getTime() : 0;
-              // Only update if new timestamp is more recent (or we didn't have one)
-              if (newTime >= existingTime) {
-                merged[controllerId] = timestamp as string;
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch("/api/controllers/heartbeats");
+        if (res.ok) {
+          const data = await res.json();
+          // Only update if we got valid data (not an error object)
+          if (!data.error && typeof data === "object") {
+            // Merge new heartbeats with existing ones to prevent false offline flickers
+            // Only update a timestamp if it's newer than what we have
+            setHeartbeats((prev) => {
+              const merged = { ...prev };
+              for (const [controllerId, timestamp] of Object.entries(data)) {
+                const newTime = new Date(timestamp as string).getTime();
+                const existingTime = prev[controllerId] ? new Date(prev[controllerId]).getTime() : 0;
+                // Only update if new timestamp is more recent (or we didn't have one)
+                if (newTime >= existingTime) {
+                  merged[controllerId] = timestamp as string;
+                }
               }
-            }
-            return merged;
-          });
-          setLastUpdated(new Date());
+              return merged;
+            });
+            setLastUpdated(new Date());
+          }
+          setIsRefreshing(false);
+          return; // Success, exit
         }
+        // Non-OK response, will retry
+        lastError = new Error(`HTTP ${res.status}`);
+      } catch (error) {
+        lastError = error as Error;
       }
-    } catch (error) {
-      console.error("Failed to fetch heartbeats:", error);
-    } finally {
-      setIsRefreshing(false);
+
+      // Wait 1 second before retry (except on last attempt)
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     }
+
+    // All retries failed - keep existing heartbeat data (don't clear it)
+    console.error("Failed to fetch heartbeats after retries:", lastError);
+    setIsRefreshing(false);
   }, []);
 
   // Smart polling effect - polls every 30s when tab is visible
