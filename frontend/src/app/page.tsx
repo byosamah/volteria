@@ -106,10 +106,18 @@ export default async function DashboardPage() {
   if (!isAdmin) {
     if (isEnterpriseAdmin && userEnterpriseId) {
       // Enterprise admin: count sites from their enterprise's projects
-      sitesQuery = sitesQuery.in(
-        "project_id",
-        supabase.from("projects").select("id").eq("enterprise_id", userEnterpriseId)
-      );
+      // First fetch project IDs, then use in query
+      const { data: enterpriseProjects } = await supabase
+        .from("projects")
+        .select("id")
+        .eq("enterprise_id", userEnterpriseId);
+
+      const enterpriseProjectIds = enterpriseProjects?.map(p => p.id) || [];
+      if (enterpriseProjectIds.length > 0) {
+        sitesQuery = sitesQuery.in("project_id", enterpriseProjectIds);
+      } else {
+        sitesQuery = sitesQuery.eq("project_id", "00000000-0000-0000-0000-000000000000");
+      }
     } else if (user?.id) {
       // Configurator/viewer: count sites from assigned projects only
       const { data: assignedProjects } = await supabase
