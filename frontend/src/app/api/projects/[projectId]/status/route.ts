@@ -56,22 +56,19 @@ export async function GET(
     const siteIds = sites.map((s) => s.id);
 
     // Step 2: Get all master devices for these sites
+    // Note: Only select fields that exist - gateways table may not be implemented
     const { data: masterDevices, error: masterError } = await supabase
       .from("site_master_devices")
       .select(`
         id,
         site_id,
         device_type,
-        controller_id,
-        gateway_id,
-        gateways (
-          id,
-          is_online
-        )
+        controller_id
       `)
       .in("site_id", siteIds);
 
     if (masterError) {
+      console.error("Master devices query error:", masterError);
       return NextResponse.json(
         { error: "Failed to fetch master devices" },
         { status: 500 }
@@ -141,17 +138,9 @@ export async function GET(
           // No heartbeat ever - offline
           offlineCount++;
         }
-      } else if (masterDevice.device_type === "gateway" && masterDevice.gateway_id) {
-        // Check is_online field for gateway
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const gatewayData = masterDevice.gateways as any;
-        if (gatewayData?.is_online) {
-          onlineCount++;
-        } else {
-          offlineCount++;
-        }
       } else {
-        // Unknown device type - count as offline
+        // Gateway or unknown device type - count as offline for now
+        // Gateway support can be added when gateways table is implemented
         offlineCount++;
       }
     }

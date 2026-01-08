@@ -306,16 +306,22 @@ export function MobileSidebar({ user }: MobileSidebarProps) {
       <SheetContent side="left" className="w-[280px] p-0 flex flex-col">
         {/* Header with logo */}
         <SheetHeader className="p-4 pb-0">
-          <SheetTitle className="flex items-center gap-2">
-            <Image
-              src="/logo.svg"
-              alt="Volteria"
-              width={140}
-              height={35}
-              className="h-9 w-auto"
-            />
+          <SheetTitle asChild>
+            <Link
+              href="/"
+              onClick={handleLinkClick}
+              className="flex flex-col items-start hover:opacity-80 transition-opacity"
+            >
+              <Image
+                src="/logo.svg"
+                alt="Volteria"
+                width={140}
+                height={35}
+                className="h-9 w-auto"
+              />
+              <span className="text-sm text-muted-foreground font-normal">Energy Management</span>
+            </Link>
           </SheetTitle>
-          <p className="text-sm text-muted-foreground">Energy Management</p>
         </SheetHeader>
 
         <Separator className="my-4" />

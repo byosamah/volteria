@@ -296,7 +296,7 @@ export function Sidebar({ user }: SidebarProps) {
     <div className="sticky top-0 flex h-screen w-64 flex-col border-r bg-card">
       {/* Logo */}
       <div className="flex h-24 items-center pl-5 pr-4 border-b">
-        <div className="flex flex-col">
+        <Link href="/" className="flex flex-col hover:opacity-80 transition-opacity">
           <Image
             src="/logo.svg"
             alt="Logo"
@@ -307,7 +307,7 @@ export function Sidebar({ user }: SidebarProps) {
           <span className="text-[13px] text-muted-foreground tracking-wide">
             Energy Management
           </span>
-        </div>
+        </Link>
       </div>
 
       {/* Navigation */}

@@ -163,8 +163,21 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
         if (res.ok) {
           const data = await res.json();
           // Only update if we got valid data (not an error object)
-          if (!data.error) {
-            setHeartbeats(data);
+          if (!data.error && typeof data === "object") {
+            // Merge new heartbeats with existing ones to prevent false offline flickers
+            // Only update a timestamp if it's newer than what we have
+            setHeartbeats((prev) => {
+              const merged = { ...prev };
+              for (const [controllerId, timestamp] of Object.entries(data)) {
+                const newTime = new Date(timestamp as string).getTime();
+                const existingTime = prev[controllerId] ? new Date(prev[controllerId]).getTime() : 0;
+                // Only update if new timestamp is more recent (or we didn't have one)
+                if (newTime >= existingTime) {
+                  merged[controllerId] = timestamp as string;
+                }
+              }
+              return merged;
+            });
             setLastUpdated(new Date());
           }
           setIsRefreshing(false);

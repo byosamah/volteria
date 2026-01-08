@@ -620,6 +620,29 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         </Card>
       )}
 
+      {/* Render any other device types not explicitly handled above */}
+      {Object.entries(devicesByType)
+        .filter(([type]) => !["load_meter", "inverter", "dg", "sensor"].includes(type))
+        .map(([type, typeDevices]) => (
+          <Card key={type}>
+            <CardHeader>
+              <CardTitle className="text-lg">
+                {typeConfigs[type]?.title || (type === "unknown" ? "Other Devices" : type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))}
+              </CardTitle>
+              <CardDescription>
+                {typeConfigs[type]?.description || "Devices in this category"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {typeDevices.map((device) => (
+                  <DeviceCard key={device.id} device={device} />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+
       {/* No devices message */}
       {devices.length === 0 && (
         <Card>
