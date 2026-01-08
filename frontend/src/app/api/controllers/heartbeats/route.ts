@@ -3,14 +3,28 @@
  *
  * Returns the latest heartbeat timestamp for each controller.
  * Used by the Controller Master List to poll for connection status updates.
+ *
+ * Uses service key to bypass RLS since:
+ * 1. Heartbeat data is not sensitive (just timestamps)
+ * 2. This is a polling endpoint that needs to be reliable
+ * 3. The page itself is already protected by auth middleware
  */
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
-    const supabase = await createClient();
+    // Use service key to bypass RLS for reliable polling
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing Supabase credentials");
+      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Fetch recent heartbeats ordered by timestamp (newest first)
     // Limit to 500 records - enough to cover all controllers with recent activity
