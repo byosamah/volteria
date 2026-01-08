@@ -14,12 +14,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// Helper to determine if controller is online (heartbeat within last 1 minute)
+// Helper to determine if controller is online (heartbeat within last 90 seconds)
 // Note: Controllers send heartbeats every 30 seconds
+// Using 90 seconds (instead of 60) provides buffer for network latency and clock skew
+// This means a controller must miss 2+ heartbeats before showing offline
 const isControllerOnline = (lastHeartbeat: string | null): boolean => {
   if (!lastHeartbeat) return false;
-  const oneMinuteAgo = Date.now() - 60 * 1000;
-  return new Date(lastHeartbeat).getTime() > oneMinuteAgo;
+  const thresholdMs = 90 * 1000; // 90 seconds
+  return Date.now() - new Date(lastHeartbeat).getTime() < thresholdMs;
 };
 
 // Helper to format time since last heartbeat

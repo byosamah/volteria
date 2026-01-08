@@ -12,7 +12,13 @@
       "Bash(git push:*)",
       "Bash(sshpass -p '@1996SolaR' ssh root@159.223.224.203 \"cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build\")",
       "Bash(ssh:*)",
-      "Bash(scp:*)"
+      "Bash(scp:*)",
+      "Bash(tar:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Fix TypeScript error in dashboard sites query\n\n- Fetch enterprise project IDs first before using in .in\\(\\) query\n- Fixes build error: PostgrestFilterBuilder is not assignable to readonly any[]\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(git reset:*)",
+      "Bash(sshpass -p '@1996SolaR' ssh -o StrictHostKeyChecking=no root@159.223.224.203 \"cd /opt/solar-diesel-controller && git pull\")",
+      "WebFetch(domain:volteria.org)"
     ]
   }
 }
