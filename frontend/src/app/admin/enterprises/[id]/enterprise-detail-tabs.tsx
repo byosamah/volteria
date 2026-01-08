@@ -748,7 +748,7 @@ export function EnterpriseDetailTabs({
                   required
                 >
                   <option value="starter">Starter</option>
-                  <option value="advanced">Advanced</option>
+                  <option value="advanced">Advance</option>
                   <option value="pro">Pro</option>
                 </select>
                 <p className="text-xs text-muted-foreground">

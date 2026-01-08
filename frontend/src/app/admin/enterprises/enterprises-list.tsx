@@ -110,12 +110,6 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
         return;
       }
 
-      if (!formData.enterprise_id.trim()) {
-        toast.error("Enterprise ID is required");
-        setLoading(false);
-        return;
-      }
-
       // Create enterprise
       const { data, error } = await supabase
         .from("enterprises")
@@ -502,24 +496,6 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="enterprise_id">
-                Enterprise ID <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="enterprise_id"
-                name="enterprise_id"
-                placeholder="e.g., acme-corporation"
-                value={formData.enterprise_id}
-                onChange={handleChange}
-                className="min-h-[44px] font-mono"
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                Unique identifier (auto-generated from name)
-              </p>
-            </div>
-
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="city">City</Label>
@@ -570,7 +546,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
                 required
               >
                 <option value="starter">Starter</option>
-                <option value="advanced">Advanced</option>
+                <option value="advanced">Advance</option>
                 <option value="pro">Pro</option>
               </select>
               <p className="text-xs text-muted-foreground">

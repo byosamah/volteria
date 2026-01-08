@@ -431,8 +431,8 @@ export function ControllersTable({
           </Button>
         </div>
 
-        {/* Claim button - only for super_admin (enterprise admins use separate claim flow) */}
-        {isSuperAdmin && (
+        {/* Claim button - available to users with edit permission */}
+        {canEdit && (
           <Dialog open={claimOpen} onOpenChange={setClaimOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -667,7 +667,7 @@ export function ControllersTable({
                     <p className="text-muted-foreground">Claimed</p>
                     <p>{formatDate(controller.claimed_at)}</p>
                   </div>
-                  {isSuperAdmin && (
+                  {canEdit && (
                     <div>
                       <p className="text-muted-foreground">Enterprise</p>
                       <p>{controller.enterprises?.name || "Unclaimed"}</p>
@@ -757,7 +757,7 @@ export function ControllersTable({
                         <span className="text-muted-foreground">Unknown</span>
                       )}
                     </TableCell>
-                    {isSuperAdmin && (
+                    {canEdit && (
                       <TableCell>
                         {controller.enterprises?.name || (
                           <span className="text-muted-foreground">Unclaimed</span>

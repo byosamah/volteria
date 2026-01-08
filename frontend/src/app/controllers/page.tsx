@@ -10,11 +10,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { redirect } from "next/navigation";
 import { ControllersTable } from "./controllers-table";
-import Link from "next/link";
 
 export default async function ControllersPage() {
   const supabase = await createClient();
@@ -300,26 +297,6 @@ export default async function ControllersPage() {
                     </div>
                   </div>
                 </div>
-
-                {/* Claim Controller Button */}
-                <Button asChild className="bg-green-600 hover:bg-green-700 min-h-[44px] w-full sm:w-auto">
-                  <Link href="/claim">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-4 w-4 mr-2"
-                    >
-                      <path d="M12 5v14" />
-                      <path d="M5 12h14" />
-                    </svg>
-                    Claim Controller
-                  </Link>
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -379,26 +356,6 @@ export default async function ControllersPage() {
                     </div>
                   </div>
                 </div>
-
-                {/* Claim Controller Button */}
-                <Button asChild className="bg-blue-600 hover:bg-blue-700 min-h-[44px] w-full sm:w-auto">
-                  <Link href="/claim">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-4 w-4 mr-2"
-                    >
-                      <path d="M12 5v14" />
-                      <path d="M5 12h14" />
-                    </svg>
-                    Claim Controller
-                  </Link>
-                </Button>
               </div>
             </CardContent>
           </Card>
