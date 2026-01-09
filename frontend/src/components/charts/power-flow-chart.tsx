@@ -188,32 +188,27 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
               );
 
-              // Add start point (beginning of time range)
-              const rangeStart = startTime.getTime();
-              const firstHeartbeatTime = new Date(sortedHeartbeats[0].timestamp).getTime();
+              // Start tracking from the first heartbeat, NOT from the range start
+              // This prevents counting "no data" periods as "offline"
 
-              // If first heartbeat is after range start, mark initial period as offline
-              if (firstHeartbeatTime - rangeStart > OFFLINE_THRESHOLD_SECONDS * 1000) {
-                statusData.push({
-                  timestamp: startTime.toISOString(),
-                  time: formatTime(startTime.toISOString()),
-                  status: 0,
-                  isOnline: false,
-                  gapSeconds: Math.floor((firstHeartbeatTime - rangeStart) / 1000),
-                });
-                totalOfflineMs += (firstHeartbeatTime - rangeStart);
-                offlineEvents++;
-              }
+              // Add initial online point at first heartbeat
+              statusData.push({
+                timestamp: sortedHeartbeats[0].timestamp,
+                time: formatTime(sortedHeartbeats[0].timestamp),
+                status: 1,
+                isOnline: true,
+                gapSeconds: 0,
+              });
 
-              // Process each heartbeat
-              for (let i = 0; i < sortedHeartbeats.length; i++) {
+              // Process each heartbeat starting from the second one
+              for (let i = 1; i < sortedHeartbeats.length; i++) {
                 const hb = sortedHeartbeats[i];
                 const currentTime = new Date(hb.timestamp).getTime();
-                const prevTime = i > 0 ? new Date(sortedHeartbeats[i - 1].timestamp).getTime() : rangeStart;
+                const prevTime = new Date(sortedHeartbeats[i - 1].timestamp).getTime();
                 const gapSeconds = (currentTime - prevTime) / 1000;
 
                 // If gap is > threshold, there was an offline period
-                if (i > 0 && gapSeconds > OFFLINE_THRESHOLD_SECONDS) {
+                if (gapSeconds > OFFLINE_THRESHOLD_SECONDS) {
                   // Add offline point at the gap start (after previous heartbeat + threshold)
                   const offlineStartTime = prevTime + OFFLINE_THRESHOLD_SECONDS * 1000;
                   statusData.push({
@@ -224,8 +219,15 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     gapSeconds: Math.floor(gapSeconds),
                   });
 
+                  // Only count the actual offline duration (from threshold to reconnection)
                   totalOfflineMs += (currentTime - offlineStartTime);
                   offlineEvents++;
+
+                  // Online time for previous interval is just the threshold
+                  totalOnlineMs += OFFLINE_THRESHOLD_SECONDS * 1000;
+                } else {
+                  // Normal heartbeat interval - count as online time
+                  totalOnlineMs += gapSeconds * 1000;
                 }
 
                 // Add online point at heartbeat time
@@ -236,28 +238,32 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   isOnline: true,
                   gapSeconds: Math.floor(gapSeconds),
                 });
-
-                // Calculate online time (capped at threshold)
-                totalOnlineMs += Math.min(gapSeconds * 1000, OFFLINE_THRESHOLD_SECONDS * 1000);
               }
 
               // Check if currently offline (last heartbeat was > threshold ago)
               const lastHeartbeatTime = new Date(sortedHeartbeats[sortedHeartbeats.length - 1].timestamp).getTime();
               const now = Date.now();
-              if (now - lastHeartbeatTime > OFFLINE_THRESHOLD_SECONDS * 1000) {
+              const timeSinceLastHeartbeat = now - lastHeartbeatTime;
+
+              if (timeSinceLastHeartbeat > OFFLINE_THRESHOLD_SECONDS * 1000) {
+                // Controller is currently offline
                 const offlineStartTime = lastHeartbeatTime + OFFLINE_THRESHOLD_SECONDS * 1000;
                 statusData.push({
                   timestamp: new Date(offlineStartTime).toISOString(),
                   time: formatTime(new Date(offlineStartTime).toISOString()),
                   status: 0,
                   isOnline: false,
-                  gapSeconds: Math.floor((now - lastHeartbeatTime) / 1000),
+                  gapSeconds: Math.floor(timeSinceLastHeartbeat / 1000),
                 });
                 totalOfflineMs += (now - offlineStartTime);
+                totalOnlineMs += OFFLINE_THRESHOLD_SECONDS * 1000; // Last online period before going offline
                 offlineEvents++;
+              } else {
+                // Still online - add time since last heartbeat as online
+                totalOnlineMs += timeSinceLastHeartbeat;
               }
 
-              // Calculate stats
+              // Calculate stats based on actual monitoring period (from first heartbeat to now)
               const totalMs = totalOnlineMs + totalOfflineMs;
               const uptimePct = totalMs > 0 ? (totalOnlineMs / totalMs) * 100 : 100;
 
