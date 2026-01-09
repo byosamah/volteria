@@ -77,25 +77,54 @@ export async function GET(
     // - 6 hours = ~720 points
     // - 24 hours = ~2880 points
     // - 7 days = ~20160 points
-    // Scale the limit based on requested hours to ensure we get enough data
-    // Formula: hours * 150 (allows for ~2.5 heartbeats/min with some buffer)
-    // Cap at 25000 to prevent excessive data transfer
-    const dataLimit = Math.min(clampedHours * 150, 25000);
+    //
+    // Supabase has a default 1000-row limit per request. For longer time ranges,
+    // we need to use pagination to fetch all data.
+    const PAGE_SIZE = 1000;
+    const maxPages = Math.ceil((clampedHours * 150) / PAGE_SIZE); // ~2.5 heartbeats/min
 
-    // We fetch in descending order (newest first) to get the most recent data,
-    // then reverse on the client side.
-    const { data: heartbeats, error: heartbeatError } = await supabase
-      .from("controller_heartbeats")
-      .select("timestamp, cpu_usage_pct, memory_usage_pct, disk_usage_pct, metadata")
-      .eq("controller_id", controllerId)
-      .gte("timestamp", startTime.toISOString())
-      .order("timestamp", { ascending: false })
-      .limit(dataLimit);
+    // Fetch heartbeats in pages to bypass Supabase's 1000-row limit
+    // We fetch in ascending order (oldest first) and paginate forward
+    let allHeartbeats: {
+      timestamp: string;
+      cpu_usage_pct: number | null;
+      memory_usage_pct: number | null;
+      disk_usage_pct: number | null;
+      metadata: unknown;
+    }[] = [];
 
-    if (heartbeatError) {
-      console.error("Failed to fetch heartbeats:", heartbeatError);
-      return NextResponse.json({ error: "Failed to fetch heartbeats" }, { status: 500 });
+    for (let page = 0; page < maxPages; page++) {
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      const { data: pageData, error: pageError } = await supabase
+        .from("controller_heartbeats")
+        .select("timestamp, cpu_usage_pct, memory_usage_pct, disk_usage_pct, metadata")
+        .eq("controller_id", controllerId)
+        .gte("timestamp", startTime.toISOString())
+        .order("timestamp", { ascending: true })
+        .range(from, to);
+
+      if (pageError) {
+        console.error(`Failed to fetch heartbeats page ${page}:`, pageError);
+        return NextResponse.json({ error: "Failed to fetch heartbeats" }, { status: 500 });
+      }
+
+      if (!pageData || pageData.length === 0) {
+        // No more data
+        break;
+      }
+
+      allHeartbeats = allHeartbeats.concat(pageData);
+
+      // If we got less than PAGE_SIZE, we've reached the end
+      if (pageData.length < PAGE_SIZE) {
+        break;
+      }
     }
+
+    // Reverse to get newest first (for consistency with previous behavior)
+    const heartbeats = allHeartbeats.reverse();
 
     // Step 4: Transform data for the chart
     const dataPoints: HeartbeatDataPoint[] = (heartbeats || []).map((hb) => ({
