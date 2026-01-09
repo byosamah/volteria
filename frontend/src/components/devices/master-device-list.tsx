@@ -280,6 +280,20 @@ export function MasterDeviceList({
   const [editModbusSlaveTimeout, setEditModbusSlaveTimeout] = useState("1000");
   const [editModbusWriteFunction, setEditModbusWriteFunction] = useState("auto");
 
+  // Edit form state - Controller template selection
+  const [editTemplateId, setEditTemplateId] = useState<string>("");
+  const [availableTemplates, setAvailableTemplates] = useState<{
+    id: string;
+    template_id: string;
+    name: string;
+    controller_type: string;
+    template_type: "public" | "custom";
+    brand: string | null;
+    model: string | null;
+    calculated_fields: string[] | null;
+  }[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+
   // Edit form state - Calculated fields (for controllers)
   const [editSelectedCalculatedFields, setEditSelectedCalculatedFields] = useState<string[]>([]);
   const [availableCalculatedFields, setAvailableCalculatedFields] = useState<CalculatedFieldDef[]>([]);
@@ -322,47 +336,106 @@ export function MasterDeviceList({
       setEditModbusSlaveTimeout(device.modbus_slave_timeout?.toString() || "1000");
       setEditModbusWriteFunction(device.modbus_write_function || "auto");
 
-      // Load calculated fields from controller template
+      // Set current template and reset calculated fields
+      setEditTemplateId(device.controller_template_id || "");
+      setAvailableCalculatedFields([]);
       const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
       setEditSelectedCalculatedFields(existingFieldIds);
-      setAvailableCalculatedFields([]);
 
-      // Fetch available calculated fields from the controller template
-      if (device.controller_template_id) {
-        setLoadingCalculatedFields(true);
-        try {
-          const supabase = createClient();
+      // Load available templates
+      setLoadingTemplates(true);
+      try {
+        const supabase = createClient();
 
-          // First get the template's calculated_fields array
-          const { data: template } = await supabase
-            .from("controller_templates")
-            .select("calculated_fields")
-            .eq("id", device.controller_template_id)
+        // Get current user's enterprise and role
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: userProfile } = await supabase
+            .from("users")
+            .select("enterprise_id, role")
+            .eq("id", user.id)
             .single();
 
-          const templateFieldIds = template?.calculated_fields || [];
+          if (userProfile?.enterprise_id) {
+            const isSuperAdmin = ["super_admin", "backend_admin"].includes(userProfile.role || "");
 
-          if (templateFieldIds.length > 0) {
-            // Fetch the field definitions for these IDs
-            const { data: fieldDefs } = await supabase
-              .from("calculated_field_definitions")
-              .select("field_id, name, description, unit, calculation_type, time_window")
-              .in("field_id", templateFieldIds);
+            let templatesQuery = supabase
+              .from("controller_templates")
+              .select("id, template_id, name, controller_type, template_type, brand, model, calculated_fields")
+              .eq("is_active", true)
+              .order("name");
 
-            if (fieldDefs) {
-              setAvailableCalculatedFields(fieldDefs);
-              // If no existing selection, pre-select all fields from template
-              if (existingFieldIds.length === 0) {
-                setEditSelectedCalculatedFields(fieldDefs.map(f => f.field_id));
-              }
+            if (!isSuperAdmin) {
+              templatesQuery = templatesQuery.or(`template_type.eq.public,enterprise_id.eq.${userProfile.enterprise_id}`);
+            }
+
+            const { data: templates } = await templatesQuery;
+            if (templates) {
+              setAvailableTemplates(templates as typeof availableTemplates);
             }
           }
-        } catch (err) {
-          console.error("Failed to load calculated fields from template:", err);
-        } finally {
-          setLoadingCalculatedFields(false);
         }
+      } catch (err) {
+        console.error("Failed to load templates:", err);
+      } finally {
+        setLoadingTemplates(false);
       }
+
+      // Load calculated fields from the current template if one is set
+      if (device.controller_template_id) {
+        await loadCalculatedFieldsForTemplate(device.controller_template_id, existingFieldIds);
+      }
+    }
+  };
+
+  // Helper to load calculated fields for a template
+  const loadCalculatedFieldsForTemplate = async (templateId: string, existingFieldIds: string[] = []) => {
+    setLoadingCalculatedFields(true);
+    try {
+      const supabase = createClient();
+
+      // First get the template's calculated_fields array
+      const { data: template } = await supabase
+        .from("controller_templates")
+        .select("calculated_fields")
+        .eq("id", templateId)
+        .single();
+
+      const templateFieldIds = template?.calculated_fields || [];
+
+      if (templateFieldIds.length > 0) {
+        // Fetch the field definitions for these IDs
+        const { data: fieldDefs } = await supabase
+          .from("calculated_field_definitions")
+          .select("field_id, name, description, unit, calculation_type, time_window")
+          .in("field_id", templateFieldIds);
+
+        if (fieldDefs) {
+          setAvailableCalculatedFields(fieldDefs);
+          // If no existing selection, pre-select all fields from template
+          if (existingFieldIds.length === 0) {
+            setEditSelectedCalculatedFields(fieldDefs.map(f => f.field_id));
+          }
+        }
+      } else {
+        setAvailableCalculatedFields([]);
+      }
+    } catch (err) {
+      console.error("Failed to load calculated fields from template:", err);
+    } finally {
+      setLoadingCalculatedFields(false);
+    }
+  };
+
+  // Handle template change in edit dialog
+  const handleEditTemplateChange = async (newTemplateId: string) => {
+    setEditTemplateId(newTemplateId);
+    setEditSelectedCalculatedFields([]); // Reset selections when template changes
+
+    if (newTemplateId) {
+      await loadCalculatedFieldsForTemplate(newTemplateId);
+    } else {
+      setAvailableCalculatedFields([]);
     }
   };
 
@@ -383,6 +456,9 @@ export function MasterDeviceList({
 
       // Add controller-specific fields (Modbus settings)
       if (editingDevice.device_type === "controller") {
+        // Controller template (can be null if not selected)
+        updateData.controller_template_id = editTemplateId || null;
+
         updateData.modbus_physical = editModbusPhysical;
         updateData.modbus_baud_rate = parseInt(editModbusBaudRate);
         updateData.modbus_parity = editModbusParity;
@@ -788,11 +864,56 @@ export function MasterDeviceList({
               />
             </div>
 
-            {/* Controller-specific fields - Modbus Settings */}
+            {/* Controller-specific fields - Template & Modbus Settings */}
             {editingDevice?.device_type === "controller" && (
               <>
-                {/* Modbus Settings Section */}
+                {/* Controller Template Section */}
                 <div className="border-t pt-4 mt-2">
+                  <h4 className="font-medium text-sm mb-4">Controller Template</h4>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Template (optional)</Label>
+                  <Select
+                    value={editTemplateId}
+                    onValueChange={handleEditTemplateChange}
+                    disabled={loadingTemplates}
+                  >
+                    <SelectTrigger className="min-h-[44px]">
+                      <SelectValue placeholder={
+                        loadingTemplates
+                          ? "Loading templates..."
+                          : availableTemplates.length === 0
+                            ? "No templates available"
+                            : "Select a template"
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableTemplates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{template.name}</span>
+                            <span className={`
+                              text-xs px-1.5 py-0.5 rounded-full
+                              ${template.template_type === "public"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-blue-100 text-blue-700"
+                              }
+                            `}>
+                              {template.template_type === "public" ? "Public" : "Custom"}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Select a template to configure calculated fields for this controller
+                  </p>
+                </div>
+
+                {/* Modbus Settings Section */}
+                <div className="border-t pt-4 mt-4">
                   <h4 className="font-medium text-sm mb-4">Modbus Settings</h4>
                 </div>
 
@@ -920,8 +1041,8 @@ export function MasterDeviceList({
                   </div>
                 </div>
 
-                {/* Calculated Fields Section */}
-                {availableCalculatedFields.length > 0 && (
+                {/* Calculated Fields Section - show when template selected */}
+                {(editTemplateId && (loadingCalculatedFields || availableCalculatedFields.length > 0)) && (
                   <>
                     <div className="border-t pt-4 mt-4">
                       <h4 className="font-medium text-sm mb-1">Calculated Fields</h4>
@@ -931,7 +1052,11 @@ export function MasterDeviceList({
                     </div>
 
                     {loadingCalculatedFields ? (
-                      <div className="text-sm text-muted-foreground">Loading fields...</div>
+                      <div className="text-sm text-muted-foreground py-2">Loading fields...</div>
+                    ) : availableCalculatedFields.length === 0 ? (
+                      <div className="text-sm text-muted-foreground py-2">
+                        This template has no calculated fields configured.
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         {availableCalculatedFields.map((field) => (
