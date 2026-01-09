@@ -94,8 +94,11 @@ export async function GET(
     }[] = [];
 
     for (let page = 0; page < maxPages; page++) {
+      // Supabase range() is inclusive on both ends in JS client
+      // Use a range that will definitely hit the 1000-row server limit
+      // This ensures we get exactly 1000 rows per page until the last page
       const from = page * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
+      const to = from + PAGE_SIZE; // Request PAGE_SIZE+1 rows, server caps at 1000
 
       const { data: pageData, error: pageError } = await supabase
         .from("controller_heartbeats")
@@ -117,7 +120,8 @@ export async function GET(
 
       allHeartbeats = allHeartbeats.concat(pageData);
 
-      // If we got less than PAGE_SIZE, we've reached the end
+      // If we got less than 1000 rows, we've reached the end
+      // (Supabase caps at 1000 rows per request regardless of range)
       if (pageData.length < PAGE_SIZE) {
         break;
       }
