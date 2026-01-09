@@ -28,7 +28,8 @@
       "Bash(powershell.exe -Command \"& { if \\(Test-Path ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd''\\) { & ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' --version } elseif \\(Test-Path ''C:\\\\Program Files \\(x86\\)\\\\nodejs\\\\npm.cmd''\\) { & ''C:\\\\Program Files \\(x86\\)\\\\nodejs\\\\npm.cmd'' --version } else { Write-Host ''Node.js not found in common locations'' } }\")",
       "Bash(powershell.exe -Command \"& { Set-Location ''C:\\\\Users\\\\Hp\\\\volteria\\\\frontend''; if \\(Test-Path ''.\\\\node_modules\\\\.bin\\\\next.cmd''\\) { & ''.\\\\node_modules\\\\.bin\\\\next.cmd'' build } else { Write-Host ''next not found in node_modules'' } }\")",
       "Bash(powershell.exe -Command \"Test-Path ''C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\src\\\\components\\\\sites\\\\template-sync-status.tsx''\")",
-      "Bash(powershell.exe -Command \"Test-Path ''C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\src\\\\app\\\\api\\\\sites\\\\[siteId]\\\\template-sync-status\\\\route.ts''; Test-Path ''C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\src\\\\app\\\\api\\\\sites\\\\[siteId]\\\\sync-templates\\\\route.ts''\")"
+      "Bash(powershell.exe -Command \"Test-Path ''C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\src\\\\app\\\\api\\\\sites\\\\[siteId]\\\\template-sync-status\\\\route.ts''; Test-Path ''C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\src\\\\app\\\\api\\\\sites\\\\[siteId]\\\\sync-templates\\\\route.ts''\")",
+      "Bash(npx supabase:*)"
     ]
   }
 }

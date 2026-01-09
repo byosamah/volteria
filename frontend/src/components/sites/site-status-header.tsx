@@ -15,7 +15,7 @@
  * - Push Sync button when sync is needed
  */
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -126,7 +126,7 @@ function ControlLogicStatus({
   lastError: string | null;
   activeAlarms: number;
 }) {
-  const statusConfig = {
+  const statusConfig: Record<string, { icon: React.ReactNode; label: string; color: string; dotColor: string }> = {
     running: {
       icon: <Cpu className="h-3.5 w-3.5 text-green-600" />,
       label: "Running",
@@ -153,7 +153,8 @@ function ControlLogicStatus({
     },
   };
 
-  const config = statusConfig[status];
+  // Fallback to 'unknown' for any unexpected status values
+  const config = statusConfig[status] || statusConfig.unknown;
 
   return (
     <TooltipProvider>
@@ -209,7 +210,7 @@ function ConfigSyncStatus({
   onPushSync: () => void;
   isSyncing: boolean;
 }) {
-  const statusConfig = {
+  const statusConfig: Record<string, { icon: React.ReactNode; label: string; color: string; dotColor: string }> = {
     synced: {
       icon: <Check className="h-3.5 w-3.5 text-green-600" />,
       label: "Synced",
@@ -230,7 +231,8 @@ function ConfigSyncStatus({
     },
   };
 
-  const config = statusConfig[status];
+  // Fallback to 'never_synced' for any unexpected status values
+  const config = statusConfig[status] || statusConfig.never_synced;
 
   // Format pending changes for display
   const pendingText = pendingChanges
