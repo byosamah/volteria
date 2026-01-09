@@ -771,3 +771,189 @@ async def sync_site_config(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to sync config: {str(e)}"
         )
+
+
+# ============================================
+# TEMPLATE SYNC ENDPOINTS
+# ============================================
+
+@router.get("/{site_id}/template-sync-status")
+async def get_template_sync_status(
+    site_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Get template sync status for all devices in a site.
+
+    Returns:
+    - last_config_update: Most recent template update across all templates used by devices
+    - last_sync: Oldest sync timestamp across all devices (shows when site was fully synced)
+    - needs_sync: True if any device's template was updated after last sync
+    - devices: List of devices with their individual sync status
+    """
+    try:
+        # Get all devices in the site with their template info
+        devices_result = db.table("project_devices").select(
+            "id, name, template_id, template_synced_at"
+        ).eq("site_id", str(site_id)).eq("enabled", True).execute()
+
+        if not devices_result.data:
+            return {
+                "last_config_update": None,
+                "last_sync": None,
+                "needs_sync": False,
+                "devices": [],
+                "total_devices": 0,
+                "devices_needing_sync": 0
+            }
+
+        # Get all unique template IDs
+        template_ids = list(set(
+            d["template_id"] for d in devices_result.data
+            if d.get("template_id")
+        ))
+
+        # Fetch template update timestamps
+        templates_map = {}
+        if template_ids:
+            templates_result = db.table("device_templates").select(
+                "id, updated_at, name"
+            ).in_("id", template_ids).execute()
+
+            templates_map = {
+                t["id"]: t for t in templates_result.data
+            } if templates_result.data else {}
+
+        # Build device sync status list
+        devices_status = []
+        last_config_update = None
+        last_sync = None
+        devices_needing_sync = 0
+
+        for device in devices_result.data:
+            template_id = device.get("template_id")
+            template = templates_map.get(template_id) if template_id else None
+
+            device_sync_at = device.get("template_synced_at")
+            template_updated_at = template.get("updated_at") if template else None
+
+            # Determine if this device needs sync
+            device_needs_sync = False
+            if template_id and template_updated_at:
+                if not device_sync_at:
+                    device_needs_sync = True
+                elif device_sync_at < template_updated_at:
+                    device_needs_sync = True
+
+            if device_needs_sync:
+                devices_needing_sync += 1
+
+            # Track global timestamps
+            if template_updated_at:
+                if not last_config_update or template_updated_at > last_config_update:
+                    last_config_update = template_updated_at
+
+            if device_sync_at:
+                if not last_sync or device_sync_at < last_sync:
+                    last_sync = device_sync_at
+
+            devices_status.append({
+                "id": device["id"],
+                "name": device["name"],
+                "template_id": template_id,
+                "template_name": template.get("name") if template else None,
+                "template_synced_at": device_sync_at,
+                "template_updated_at": template_updated_at,
+                "needs_sync": device_needs_sync
+            })
+
+        return {
+            "last_config_update": last_config_update,
+            "last_sync": last_sync,
+            "needs_sync": devices_needing_sync > 0,
+            "devices": devices_status,
+            "total_devices": len(devices_result.data),
+            "devices_needing_sync": devices_needing_sync
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get sync status: {str(e)}"
+        )
+
+
+@router.post("/{site_id}/sync-templates")
+async def sync_site_templates(
+    site_id: UUID,
+    current_user: CurrentUser = Depends(require_role(["super_admin", "admin", "enterprise_admin", "configurator"])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Sync all devices in a site from their templates.
+
+    Copies registers, visualization_registers, alarm_registers, and calculated_fields
+    from each device's template to the device. This overwrites any local device changes.
+
+    Returns count of synced devices and timestamp.
+    """
+    try:
+        # Get all devices in site that have a template_id
+        devices_result = db.table("project_devices").select(
+            "id, template_id"
+        ).eq("site_id", str(site_id)).eq("enabled", True).not_.is_("template_id", "null").execute()
+
+        if not devices_result.data:
+            return {
+                "synced_devices": 0,
+                "synced_at": datetime.utcnow().isoformat(),
+                "message": "No devices with templates found in this site"
+            }
+
+        synced_count = 0
+        errors = []
+
+        for device in devices_result.data:
+            try:
+                # Get template data
+                template_result = db.table("device_templates").select(
+                    "logging_registers, visualization_registers, alarm_registers, calculated_fields, registers"
+                ).eq("id", device["template_id"]).single().execute()
+
+                if template_result.data:
+                    template = template_result.data
+
+                    # Update device with template data
+                    # Use logging_registers if available, fall back to registers for backward compatibility
+                    logging_regs = template.get("logging_registers") or template.get("registers") or []
+
+                    db.table("project_devices").update({
+                        "registers": logging_regs,
+                        "visualization_registers": template.get("visualization_registers") or [],
+                        "alarm_registers": template.get("alarm_registers") or [],
+                        "calculated_fields": template.get("calculated_fields") or [],
+                        "template_synced_at": datetime.utcnow().isoformat()
+                    }).eq("id", device["id"]).execute()
+
+                    synced_count += 1
+            except Exception as device_error:
+                errors.append({
+                    "device_id": device["id"],
+                    "error": str(device_error)
+                })
+
+        result = {
+            "synced_devices": synced_count,
+            "synced_at": datetime.utcnow().isoformat(),
+            "total_devices": len(devices_result.data)
+        }
+
+        if errors:
+            result["errors"] = errors
+
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync templates: {str(e)}"
+        )

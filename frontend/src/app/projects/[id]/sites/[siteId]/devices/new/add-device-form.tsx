@@ -29,8 +29,11 @@ interface DeviceTemplate {
   brand: string;
   model: string;
   rated_power_kw: number | null;
-  registers: unknown[] | null;  // Modbus registers to copy to device
+  registers: unknown[] | null;  // Logging registers to copy to device
+  logging_registers: unknown[] | null;  // Alternative field name for logging registers
+  visualization_registers: unknown[] | null;  // Visualization registers (live display only)
   alarm_registers: unknown[] | null;  // Alarm registers to copy to device
+  calculated_fields: unknown[] | null;  // Calculated fields for derived values
 }
 
 interface AddDeviceFormProps {
@@ -225,7 +228,10 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
       }
 
       // Create device in Supabase - includes site_id
-      // Copy registers from template so device has its own independent copy
+      // Copy all register types and fields from template so device has its own independent copy
+      // Use logging_registers if available, otherwise fall back to registers
+      const loggingRegisters = selectedTemplate?.logging_registers || selectedTemplate?.registers || [];
+
       const { error } = await supabase.from("project_devices").insert({
         project_id: projectId,
         site_id: siteId,  // Link device to specific site
@@ -243,10 +249,16 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
         baudrate: formData.protocol === "rtu_direct" ? formData.baudrate : null,
         slave_id: formData.slave_id,
         rated_power_kw: formData.rated_power_kw ? parseFloat(formData.rated_power_kw as string) : null,
-        // Copy registers from template - device can edit these independently
-        registers: selectedTemplate?.registers || [],
+        // Copy logging registers from template - device can edit these independently
+        registers: loggingRegisters,
+        // Copy visualization registers from template - for live display only
+        visualization_registers: selectedTemplate?.visualization_registers || [],
         // Copy alarm registers from template - device can edit these independently
         alarm_registers: selectedTemplate?.alarm_registers || [],
+        // Copy calculated fields from template - device can edit these independently
+        calculated_fields: selectedTemplate?.calculated_fields || [],
+        // Mark as synced on creation (if template is selected)
+        template_synced_at: selectedTemplateId ? new Date().toISOString() : null,
         // Default logging interval (1 second)
         logging_interval_ms: 1000,
         enabled: true,

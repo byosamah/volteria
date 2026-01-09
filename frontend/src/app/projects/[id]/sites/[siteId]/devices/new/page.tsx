@@ -64,7 +64,7 @@ export default async function AddDeviceToSitePage({
     notFound();
   }
 
-  // Fetch device templates (including registers for copying to device)
+  // Fetch device templates (including all register types for copying to device)
   // Uses logging_registers (new column name from migration 045), with registers as fallback
   // Visibility: super admin sees all, enterprise users see public + their enterprise's custom templates
   let templates: Array<{
@@ -77,13 +77,15 @@ export default async function AddDeviceToSitePage({
     rated_power_kw: number | null;
     logging_registers: unknown[] | null;
     registers: unknown[] | null;  // Legacy column, for backward compatibility
+    visualization_registers: unknown[] | null;  // For live display only
     alarm_registers: unknown[] | null;
+    calculated_fields: unknown[] | null;  // Calculated/derived fields
   }> = [];
 
   try {
     let query = supabase
       .from("device_templates")
-      .select("id, template_id, name, device_type, brand, model, rated_power_kw, logging_registers, registers, alarm_registers")
+      .select("id, template_id, name, device_type, brand, model, rated_power_kw, logging_registers, registers, visualization_registers, alarm_registers, calculated_fields")
       .order("device_type")
       .order("brand");
 

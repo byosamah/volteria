@@ -27,6 +27,7 @@ import { SafeModeStatus } from "@/components/sites/safe-mode-status";
 import { DeviceHealthCard } from "@/components/sites/device-health-card";
 import { ControllerHealthCard } from "@/components/sites/controller-health-card";
 import { SiteTestButton } from "@/components/sites/site-test-button";
+import { TemplateSyncStatus } from "@/components/sites/template-sync-status";
 import type { ModbusRegister } from "@/components/devices/register-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -42,7 +43,7 @@ const PowerFlowChart = dynamic(
     loading: () => (
       <Card>
         <CardHeader>
-          <CardTitle>Power Flow</CardTitle>
+          <CardTitle>Connection Status</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-64 animate-pulse bg-muted rounded-lg flex items-center justify-center">
@@ -523,7 +524,7 @@ export default async function SiteDetailPage({
           </Card>
         </div>
 
-        {/* Power Flow Chart - Historical Data Visualization */}
+        {/* Connection Status & System Charts - Historical Data Visualization */}
         <PowerFlowChart projectId={projectId} siteId={siteId} />
 
         {/* Status Cards Row - Safe Mode, Device Health, and Controller Health */}
@@ -565,6 +566,9 @@ export default async function SiteDetailPage({
               masterDevices={masterDevices}
               userRole={userProfile?.role || undefined}
             />
+
+            {/* Template Sync Status - shows sync status between device templates and devices */}
+            <TemplateSyncStatus siteId={siteId} />
 
             {/* Regular Devices (Load Meters, Inverters, DG Controllers) */}
             <DeviceList

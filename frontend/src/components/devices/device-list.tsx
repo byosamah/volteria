@@ -79,6 +79,13 @@ const measurementTypes = [
   { value: "fuel", label: "Fuel", description: "Fuel consumption or level" },
 ];
 
+// Calculated field selection for devices
+interface CalculatedFieldSelection {
+  field_id: string;
+  name: string;
+  storage_mode: "log" | "viz_only";
+}
+
 // Device type
 interface Device {
   id: string;
@@ -100,8 +107,15 @@ interface Device {
   last_seen: string | null;
   // Device-specific registers (copied from template, can be customized)
   registers: ModbusRegister[] | null;
+  // Device-specific visualization registers (live display only, not logged to DB)
+  visualization_registers: ModbusRegister[] | null;
   // Device-specific alarm registers (copied from template, can be customized)
   alarm_registers: ModbusRegister[] | null;
+  // Calculated fields for this device
+  calculated_fields: CalculatedFieldSelection[] | null;
+  // Template sync timestamp
+  template_id: string | null;
+  template_synced_at: string | null;
   // Logging interval in milliseconds
   logging_interval_ms: number | null;
   device_templates: {
@@ -198,6 +212,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   const [editingAlarmRegister, setEditingAlarmRegister] = useState<ModbusRegister | undefined>();
   const [editingAlarmRegisterIndex, setEditingAlarmRegisterIndex] = useState<number>(-1);
 
+  // Edit form state - Visualization Registers tab
+  const [editVisualizationRegisters, setEditVisualizationRegisters] = useState<ModbusRegister[]>([]);
+  const [vizRegisterFormOpen, setVizRegisterFormOpen] = useState(false);
+  const [vizRegisterFormMode, setVizRegisterFormMode] = useState<"add" | "edit">("add");
+  const [editingVizRegister, setEditingVizRegister] = useState<ModbusRegister | undefined>();
+  const [editingVizRegisterIndex, setEditingVizRegisterIndex] = useState<number>(-1);
+
+  // Edit form state - Calculated Fields tab
+  const [editCalculatedFields, setEditCalculatedFields] = useState<CalculatedFieldSelection[]>([]);
+
   // Open edit dialog
   const openEditDialog = (device: Device) => {
     setEditDevice(device);
@@ -215,10 +239,14 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     // RTU Direct fields
     setEditSerialPort(device.serial_port || "");
     setEditBaudrate(device.baudrate || 9600);
-    // Registers tab - load from device
+    // Logging Registers tab - load from device
     setEditRegisters(device.registers || []);
+    // Visualization Registers tab - load from device
+    setEditVisualizationRegisters(device.visualization_registers || []);
     // Alarm Registers tab - load from device
     setEditAlarmRegisters(device.alarm_registers || []);
+    // Calculated Fields tab - load from device
+    setEditCalculatedFields(device.calculated_fields || []);
   };
 
   // Register management functions for editing
@@ -289,6 +317,60 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     }
   };
 
+  // Visualization Register management functions
+  const handleAddVizRegister = () => {
+    setVizRegisterFormMode("add");
+    setEditingVizRegister(undefined);
+    setEditingVizRegisterIndex(-1);
+    setVizRegisterFormOpen(true);
+  };
+
+  const handleEditVizRegister = (register: ModbusRegister, index: number) => {
+    setVizRegisterFormMode("edit");
+    setEditingVizRegister(register);
+    setEditingVizRegisterIndex(index);
+    setVizRegisterFormOpen(true);
+  };
+
+  const handleDeleteVizRegister = (index: number) => {
+    setEditVisualizationRegisters((prev) => prev.filter((_, i) => i !== index));
+    toast.success("Visualization register removed");
+  };
+
+  const handleSaveVizRegister = (register: ModbusRegister) => {
+    if (vizRegisterFormMode === "edit" && editingVizRegisterIndex >= 0) {
+      // Update existing visualization register
+      setEditVisualizationRegisters((prev) =>
+        prev.map((r, i) => (i === editingVizRegisterIndex ? register : r))
+      );
+      toast.success("Visualization register updated");
+    } else {
+      // Add new visualization register (sorted by address)
+      setEditVisualizationRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
+      toast.success("Visualization register added");
+    }
+  };
+
+  // Calculated field management functions
+  const handleToggleCalculatedField = (fieldId: string, fieldName: string) => {
+    setEditCalculatedFields((prev) => {
+      const existing = prev.find((f) => f.field_id === fieldId);
+      if (existing) {
+        // Remove field
+        return prev.filter((f) => f.field_id !== fieldId);
+      } else {
+        // Add field
+        return [...prev, { field_id: fieldId, name: fieldName, storage_mode: "log" as const }];
+      }
+    });
+  };
+
+  const handleChangeFieldStorageMode = (fieldId: string, mode: "log" | "viz_only") => {
+    setEditCalculatedFields((prev) =>
+      prev.map((f) => (f.field_id === fieldId ? { ...f, storage_mode: mode } : f))
+    );
+  };
+
   // Check for Modbus address conflicts when editing
   // Uses editProtocol (the selected protocol) to check conflicts with other devices
   const checkEditConflicts = async (): Promise<string | null> => {
@@ -354,7 +436,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       measurement_type: editMeasurementType || null,
       slave_id: editSlaveId,
       registers: editRegisters.length > 0 ? editRegisters : null,
+      visualization_registers: editVisualizationRegisters.length > 0 ? editVisualizationRegisters : null,
       alarm_registers: editAlarmRegisters.length > 0 ? editAlarmRegisters : null,
+      calculated_fields: editCalculatedFields.length > 0 ? editCalculatedFields : null,
       // Clear all protocol-specific fields first, then set the right ones
       ip_address: null,
       port: null,
@@ -443,7 +527,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     inverter: { title: "Solar Inverters", description: "PV power conversion" },
     dg: { title: "Power Generators", description: "Generator controllers" },
     sensor: { title: "Sensors", description: "Temperature, fuel level, and monitoring devices" },
-    unknown: { title: "Other Devices", description: "Uncategorized devices" },
+    unknown: { title: "Slave Devices", description: "Measurement Devices (Meters, Inverters, Sensors, ...)" },
   };
 
   // Device card component - MOBILE-FRIENDLY with 44px touch targets
@@ -627,7 +711,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
           <Card key={type}>
             <CardHeader>
               <CardTitle className="text-lg">
-                {typeConfigs[type]?.title || (type === "unknown" ? "Other Devices" : type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))}
+                {typeConfigs[type]?.title || (type === "unknown" ? "Slave Devices" : type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))}
               </CardTitle>
               <CardDescription>
                 {typeConfigs[type]?.description || "Devices in this category"}
@@ -698,13 +782,15 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
             )}
           </DialogHeader>
 
-          {/* Tabbed Interface - Connection, Registers, and Alarm Registers */}
-          {/* Logging frequency is now set per-register, not per-device */}
+          {/* Tabbed Interface - 5 tabs: Connection, Logging, Visualization, Alarms, Calculated */}
+          {/* Matches device template structure for easy sync */}
           <Tabs defaultValue="connection" className="w-full">
-            <TabsList className="w-full grid grid-cols-3">
-              <TabsTrigger value="connection">Connection</TabsTrigger>
-              <TabsTrigger value="registers">Registers</TabsTrigger>
-              <TabsTrigger value="alarm-registers">Alarms</TabsTrigger>
+            <TabsList className="w-full grid grid-cols-5">
+              <TabsTrigger value="connection" className="text-xs sm:text-sm">Connection</TabsTrigger>
+              <TabsTrigger value="logging" className="text-xs sm:text-sm">Logging</TabsTrigger>
+              <TabsTrigger value="visualization" className="text-xs sm:text-sm">Visualization</TabsTrigger>
+              <TabsTrigger value="alarms" className="text-xs sm:text-sm">Alarms</TabsTrigger>
+              <TabsTrigger value="calculated" className="text-xs sm:text-sm">Calculated</TabsTrigger>
             </TabsList>
 
             {/* Connection Tab */}
@@ -864,13 +950,13 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
               )}
             </TabsContent>
 
-            {/* Registers Tab */}
-            <TabsContent value="registers" className="space-y-4 py-4">
+            {/* Logging Tab - Registers stored in DB */}
+            <TabsContent value="logging" className="space-y-4 py-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium">Modbus Registers</p>
+                  <p className="text-sm font-medium">Logging Registers</p>
                   <p className="text-xs text-muted-foreground">
-                    Device-specific registers (changes don&apos;t affect template)
+                    Registers stored in database for historical data and control logic
                   </p>
                 </div>
                 <Button
@@ -962,8 +1048,104 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
               )}
             </TabsContent>
 
-            {/* Alarm Registers Tab */}
-            <TabsContent value="alarm-registers" className="space-y-4 py-4">
+            {/* Visualization Tab - Registers for live display only */}
+            <TabsContent value="visualization" className="space-y-4 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Visualization Registers</p>
+                  <p className="text-xs text-muted-foreground">
+                    Registers for live display only (not stored in database)
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddVizRegister}
+                  className="min-h-[36px]"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Add Register
+                </Button>
+              </div>
+
+              {/* Visualization Registers Table */}
+              {editVisualizationRegisters.length > 0 ? (
+                <div className="border rounded-md overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium">Addr</th>
+                          <th className="px-3 py-2 text-left font-medium">Name</th>
+                          <th className="px-3 py-2 text-left font-medium">Type</th>
+                          <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Datatype</th>
+                          <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Unit</th>
+                          <th className="px-3 py-2 text-right font-medium">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {editVisualizationRegisters.map((reg, index) => (
+                          <tr key={index} className="hover:bg-muted/30">
+                            <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
+                            <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
+                            <td className="px-3 py-2">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+                              }`}>
+                                {reg.type}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{reg.unit || "-"}</td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditVizRegister(reg, index)}
+                                  className="p-1.5 rounded hover:bg-muted transition-colors"
+                                  title="Edit register"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
+                                    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                    <path d="m15 5 4 4"/>
+                                  </svg>
+                                </button>
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteVizRegister(index)}
+                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
+                                    title="Delete register"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+                                      <path d="M3 6h18"/>
+                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="border rounded-md p-6 text-center text-muted-foreground">
+                  <p className="text-sm">No visualization registers configured.</p>
+                  <p className="text-xs mt-1">These registers are for live display only and are not stored in the database.</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Alarms Tab */}
+            <TabsContent value="alarms" className="space-y-4 py-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium">Alarm Registers</p>
@@ -1059,6 +1241,75 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 </div>
               )}
             </TabsContent>
+
+            {/* Calculated Tab - Derived values */}
+            <TabsContent value="calculated" className="space-y-4 py-4">
+              <div>
+                <p className="text-sm font-medium">Calculated Fields</p>
+                <p className="text-xs text-muted-foreground">
+                  Select calculated fields for this device. These are derived from register values.
+                </p>
+              </div>
+
+              {/* Calculated fields list */}
+              <div className="space-y-2">
+                {editCalculatedFields.length > 0 ? (
+                  <>
+                    {editCalculatedFields.map((field) => (
+                      <div
+                        key={field.field_id}
+                        className="flex items-center justify-between p-3 rounded-lg border bg-primary/5"
+                      >
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCalculatedField(field.field_id, field.name)}
+                            className="p-1 rounded hover:bg-red-100 transition-colors"
+                            title="Remove field"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
+                              <line x1="18" y1="6" x2="6" y2="18"/>
+                              <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                          </button>
+                          <div>
+                            <p className="text-sm font-medium">{field.name}</p>
+                            <p className="text-xs text-muted-foreground">{field.field_id}</p>
+                          </div>
+                        </div>
+                        <select
+                          value={field.storage_mode}
+                          onChange={(e) => handleChangeFieldStorageMode(field.field_id, e.target.value as "log" | "viz_only")}
+                          className="text-xs px-2 py-1 rounded border bg-background"
+                        >
+                          <option value="log">Log to DB</option>
+                          <option value="viz_only">Viz Only</option>
+                        </select>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="border rounded-md p-6 text-center text-muted-foreground">
+                    <p className="text-sm">No calculated fields selected.</p>
+                    <p className="text-xs mt-1">Calculated fields will be synced from the device template when you synchronize.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Info about template sync */}
+              {editDevice?.template_id && (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                  <p>
+                    This device is linked to a template. Use the &quot;Synchronize configuration&quot; button on the site page to sync calculated fields from the template.
+                  </p>
+                  {editDevice.template_synced_at && (
+                    <p className="mt-1">
+                      Last synced: {new Date(editDevice.template_synced_at).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
 
           <DialogFooter className="flex-col gap-2 sm:flex-row">
@@ -1090,6 +1341,17 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         open={alarmRegisterFormOpen}
         onOpenChange={setAlarmRegisterFormOpen}
         onSave={handleSaveAlarmRegister}
+      />
+
+      {/* Visualization Register Form Dialog (nested) - for adding/editing visualization registers */}
+      <RegisterForm
+        mode={vizRegisterFormMode}
+        register={editingVizRegister}
+        existingRegisters={editVisualizationRegisters}
+        open={vizRegisterFormOpen}
+        onOpenChange={setVizRegisterFormOpen}
+        onSave={handleSaveVizRegister}
+        isVisualizationRegister={true}
       />
 
       {/* Delete Confirmation Dialog - MOBILE-FRIENDLY & COMPACT */}

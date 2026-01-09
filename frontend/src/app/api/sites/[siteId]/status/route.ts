@@ -13,13 +13,6 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { SupabaseClient } from "@supabase/supabase-js";
 
-// Gateway data shape from joined query
-interface GatewayData {
-  id: string;
-  name: string | null;
-  is_online: boolean | null;
-}
-
 // Response interface for the unified site status
 interface SiteStatusResponse {
   connection: {
@@ -83,21 +76,18 @@ export async function GET(
     }
 
     // Step 2: Get the site's master device (controller or gateway)
+    // Note: Gateways are stored inline in site_master_devices (no separate table)
     const { data: masterDevice, error: masterError } = await supabase
       .from("site_master_devices")
       .select(`
         id,
         device_type,
         controller_id,
-        gateway_id,
+        is_online,
+        name,
         controllers (
           id,
           serial_number
-        ),
-        gateways (
-          id,
-          name,
-          is_online
         )
       `)
       .eq("site_id", siteId)
@@ -158,16 +148,11 @@ export async function GET(
           activeAlarms: heartbeat.active_alarms_count || 0,
         };
       }
-    } else if (masterDevice?.device_type === "gateway" && masterDevice.gateway_id) {
+    } else if (masterDevice?.device_type === "gateway") {
       response.connection.type = "gateway";
 
-      // For gateways, use the is_online field from the gateways table
-      // Supabase returns array for joins, get first element if exists
-      const gatewaysArray = masterDevice.gateways as unknown as GatewayData[] | null;
-      const gatewayData = gatewaysArray?.[0] ?? null;
-      if (gatewayData) {
-        response.connection.status = gatewayData.is_online ? "online" : "offline";
-      }
+      // For gateways, use the is_online field from site_master_devices directly
+      response.connection.status = masterDevice.is_online ? "online" : "offline";
 
       // Control logic is not applicable for gateways (stays null)
     }

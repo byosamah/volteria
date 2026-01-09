@@ -4,14 +4,14 @@
  * Power Flow Chart Component
  *
  * Multi-view chart component with three chart types:
- * - Power Flow: Load, Solar Output, DG Power over time
+ * - Connection Status: Online/offline history derived from heartbeat gaps
  * - System Health: CPU, Memory, Disk, Temperature from controller heartbeats
  * - Control Status: Solar limit %, safe mode events
  *
  * Supports multiple time ranges: 1h, 6h, 24h, 7d.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,10 +28,10 @@ import {
   Area,
   AreaChart,
 } from "recharts";
-import { Zap, Activity, Gauge } from "lucide-react";
+import { Wifi, Activity, Gauge } from "lucide-react";
 
 // Chart type options
-type ChartType = "power" | "system" | "control";
+type ChartType = "connection" | "system" | "control";
 
 // Time range options for the chart
 const TIME_RANGES = [
@@ -42,13 +42,12 @@ const TIME_RANGES = [
 ] as const;
 
 // Chart data point types
-interface PowerDataPoint {
+interface ConnectionStatusPoint {
   timestamp: string;
   time: string; // Formatted time for display
-  load_kw: number;
-  solar_kw: number;
-  dg_kw: number;
-  solar_limit_pct: number;
+  status: 0 | 1; // 0 = offline, 1 = online
+  isOnline: boolean;
+  gapSeconds?: number; // Gap since last heartbeat (for tooltip)
 }
 
 // System health data from controller heartbeats
@@ -71,11 +70,9 @@ interface ControlStatusPoint {
 
 // Chart color constants - consistent across all chart types
 const CHART_COLORS = {
-  // Power metrics
-  load: "#3b82f6",      // Blue
-  solar: "#eab308",     // Yellow
-  dg: "#1f2937",        // Dark gray
-  subload: "#93c5fd",   // Light blue (future use)
+  // Connection status
+  online: "#22c55e",    // Green
+  offline: "#ef4444",   // Red
   // System metrics
   cpu: "#f97316",       // Orange
   memory: "#a855f7",    // Purple
@@ -85,6 +82,9 @@ const CHART_COLORS = {
   solarLimit: "#eab308", // Yellow
   safeMode: "#ef4444",   // Red
 };
+
+// Threshold for considering controller offline (in seconds)
+const OFFLINE_THRESHOLD_SECONDS = 90;
 
 // Helper: Downsample data for chart performance (pure function, no deps)
 // Moved outside component to prevent recreation on every render
@@ -100,13 +100,21 @@ interface PowerFlowChartProps {
 
 // Wrapped with React.memo to prevent re-renders when props don't change
 export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }: PowerFlowChartProps) {
-  // Chart type state
-  const [chartType, setChartType] = useState<ChartType>("power");
+  // Chart type state - default to connection status
+  const [chartType, setChartType] = useState<ChartType>("connection");
 
   // Data states for each chart type
-  const [powerData, setPowerData] = useState<PowerDataPoint[]>([]);
+  const [connectionData, setConnectionData] = useState<ConnectionStatusPoint[]>([]);
   const [systemData, setSystemData] = useState<SystemHealthPoint[]>([]);
   const [controlData, setControlData] = useState<ControlStatusPoint[]>([]);
+
+  // Stats for connection status
+  const [connectionStats, setConnectionStats] = useState<{
+    uptimePct: number;
+    totalOnlineMinutes: number;
+    totalOfflineMinutes: number;
+    offlineEvents: number;
+  } | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [selectedRange, setSelectedRange] = useState(24); // Default: 24 hours
@@ -115,9 +123,6 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   // Track if tab is visible (for pausing/resuming polling)
   const [isTabVisible, setIsTabVisible] = useState(true);
-
-  // Alias for backward compatibility with existing code
-  const data = powerData;
 
   // Helper: Format time based on selected range (memoized to prevent recreation)
   const formatTime = useCallback((timestamp: string) => {
@@ -157,29 +162,122 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
       startTime.setHours(startTime.getHours() - selectedRange);
 
       // Fetch data based on chart type
-      if (chartType === "power") {
-        // Fetch power flow data from control_logs
-        const { data: logs, error } = await supabase
-          .from("control_logs")
-          .select("timestamp, total_load_kw, solar_output_kw, dg_power_kw, solar_limit_pct, safe_mode_active")
-          .eq("site_id", siteId)
-          .gte("timestamp", startTime.toISOString())
-          .order("timestamp", { ascending: true })
-          .limit(500);
+      if (chartType === "connection") {
+        // Fetch heartbeat timestamps to derive connection status
+        try {
+          const response = await fetch(`/api/sites/${siteId}/heartbeats?hours=${selectedRange}`);
+          if (response.ok) {
+            const result = await response.json();
+            interface RawHeartbeat {
+              timestamp: string;
+            }
+            const heartbeats: RawHeartbeat[] = result.data || [];
 
-        if (error) {
-          console.error("Error fetching power data:", error);
-          setPowerData([]);
-        } else if (logs) {
-          const chartData: PowerDataPoint[] = downsample(logs).map((log) => ({
-            timestamp: log.timestamp,
-            time: formatTime(log.timestamp),
-            load_kw: log.total_load_kw || 0,
-            solar_kw: log.solar_output_kw || 0,
-            dg_kw: log.dg_power_kw || 0,
-            solar_limit_pct: log.solar_limit_pct || 0,
-          }));
-          setPowerData(chartData);
+            if (heartbeats.length === 0) {
+              setConnectionData([]);
+              setConnectionStats(null);
+            } else {
+              // Calculate connection status from heartbeat gaps
+              const statusData: ConnectionStatusPoint[] = [];
+              let totalOnlineMs = 0;
+              let totalOfflineMs = 0;
+              let offlineEvents = 0;
+
+              // Sort by timestamp
+              const sortedHeartbeats = [...heartbeats].sort(
+                (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              );
+
+              // Add start point (beginning of time range)
+              const rangeStart = startTime.getTime();
+              const firstHeartbeatTime = new Date(sortedHeartbeats[0].timestamp).getTime();
+
+              // If first heartbeat is after range start, mark initial period as offline
+              if (firstHeartbeatTime - rangeStart > OFFLINE_THRESHOLD_SECONDS * 1000) {
+                statusData.push({
+                  timestamp: startTime.toISOString(),
+                  time: formatTime(startTime.toISOString()),
+                  status: 0,
+                  isOnline: false,
+                  gapSeconds: Math.floor((firstHeartbeatTime - rangeStart) / 1000),
+                });
+                totalOfflineMs += (firstHeartbeatTime - rangeStart);
+                offlineEvents++;
+              }
+
+              // Process each heartbeat
+              for (let i = 0; i < sortedHeartbeats.length; i++) {
+                const hb = sortedHeartbeats[i];
+                const currentTime = new Date(hb.timestamp).getTime();
+                const prevTime = i > 0 ? new Date(sortedHeartbeats[i - 1].timestamp).getTime() : rangeStart;
+                const gapSeconds = (currentTime - prevTime) / 1000;
+
+                // If gap is > threshold, there was an offline period
+                if (i > 0 && gapSeconds > OFFLINE_THRESHOLD_SECONDS) {
+                  // Add offline point at the gap start (after previous heartbeat + threshold)
+                  const offlineStartTime = prevTime + OFFLINE_THRESHOLD_SECONDS * 1000;
+                  statusData.push({
+                    timestamp: new Date(offlineStartTime).toISOString(),
+                    time: formatTime(new Date(offlineStartTime).toISOString()),
+                    status: 0,
+                    isOnline: false,
+                    gapSeconds: Math.floor(gapSeconds),
+                  });
+
+                  totalOfflineMs += (currentTime - offlineStartTime);
+                  offlineEvents++;
+                }
+
+                // Add online point at heartbeat time
+                statusData.push({
+                  timestamp: hb.timestamp,
+                  time: formatTime(hb.timestamp),
+                  status: 1,
+                  isOnline: true,
+                  gapSeconds: Math.floor(gapSeconds),
+                });
+
+                // Calculate online time (capped at threshold)
+                totalOnlineMs += Math.min(gapSeconds * 1000, OFFLINE_THRESHOLD_SECONDS * 1000);
+              }
+
+              // Check if currently offline (last heartbeat was > threshold ago)
+              const lastHeartbeatTime = new Date(sortedHeartbeats[sortedHeartbeats.length - 1].timestamp).getTime();
+              const now = Date.now();
+              if (now - lastHeartbeatTime > OFFLINE_THRESHOLD_SECONDS * 1000) {
+                const offlineStartTime = lastHeartbeatTime + OFFLINE_THRESHOLD_SECONDS * 1000;
+                statusData.push({
+                  timestamp: new Date(offlineStartTime).toISOString(),
+                  time: formatTime(new Date(offlineStartTime).toISOString()),
+                  status: 0,
+                  isOnline: false,
+                  gapSeconds: Math.floor((now - lastHeartbeatTime) / 1000),
+                });
+                totalOfflineMs += (now - offlineStartTime);
+                offlineEvents++;
+              }
+
+              // Calculate stats
+              const totalMs = totalOnlineMs + totalOfflineMs;
+              const uptimePct = totalMs > 0 ? (totalOnlineMs / totalMs) * 100 : 100;
+
+              setConnectionData(downsample(statusData, 200));
+              setConnectionStats({
+                uptimePct,
+                totalOnlineMinutes: Math.floor(totalOnlineMs / 60000),
+                totalOfflineMinutes: Math.floor(totalOfflineMs / 60000),
+                offlineEvents,
+              });
+            }
+          } else {
+            console.error("Error fetching heartbeats:", response.statusText);
+            setConnectionData([]);
+            setConnectionStats(null);
+          }
+        } catch (err) {
+          console.error("Error fetching connection status:", err);
+          setConnectionData([]);
+          setConnectionStats(null);
         }
 
       } else if (chartType === "system") {
@@ -267,32 +365,11 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
     };
   }, [siteId, selectedRange, chartType, isTabVisible]);
 
-  // Custom tooltip for the chart
-  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; name: string; color: string }>; label?: string }) => {
-    if (!active || !payload || !payload.length) return null;
-
-    return (
-      <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
-        <p className="font-medium mb-2">{label}</p>
-        {payload.map((entry, index) => (
-          <div key={index} className="flex items-center gap-2">
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: entry.color }}
-            />
-            <span className="text-muted-foreground">{entry.name}:</span>
-            <span className="font-medium">{entry.value.toFixed(1)} kW</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
   // Get chart title and description based on type
   const getChartInfo = () => {
     switch (chartType) {
-      case "power":
-        return { title: "Power Flow", description: "Load, Solar, and DG power over time" };
+      case "connection":
+        return { title: "Connection Status", description: "Controller online/offline history" };
       case "system":
         return { title: "System Health", description: "CPU, Memory, Disk usage and temperature" };
       case "control":
@@ -330,10 +407,10 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
           {/* Chart Type Tabs */}
           <Tabs value={chartType} onValueChange={(v) => setChartType(v as ChartType)}>
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="power" className="flex items-center gap-1.5">
-                <Zap className="h-4 w-4" />
-                <span className="hidden sm:inline">Power Flow</span>
-                <span className="sm:hidden">Power</span>
+              <TabsTrigger value="connection" className="flex items-center gap-1.5">
+                <Wifi className="h-4 w-4" />
+                <span className="hidden sm:inline">Connection</span>
+                <span className="sm:hidden">Conn</span>
               </TabsTrigger>
               <TabsTrigger value="system" className="flex items-center gap-1.5">
                 <Activity className="h-4 w-4" />
@@ -358,71 +435,108 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
         ) : (
           // Render chart based on type
           <div className="h-[300px]">
-            {chartType === "power" && (
-              // Power Flow Chart
-              powerData.length === 0 ? (
+            {chartType === "connection" && (
+              // Connection Status Chart
+              connectionData.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-muted-foreground">
                   <div className="text-center">
-                    <Zap className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>No power data available for this time range</p>
+                    <Wifi className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No connection data available for this time range</p>
+                    <p className="text-sm mt-1">Heartbeats will appear here when controller connects</p>
                   </div>
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={powerData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis
-                      dataKey="time"
-                      tick={{ fontSize: 12 }}
-                      tickLine={false}
-                      axisLine={false}
-                      className="text-muted-foreground"
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12 }}
-                      tickLine={false}
-                      axisLine={false}
-                      className="text-muted-foreground"
-                      tickFormatter={(value) => `${value}`}
-                      label={{ value: "kW", angle: -90, position: "insideLeft", style: { fontSize: 12 } }}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend
-                      wrapperStyle={{ paddingTop: "10px" }}
-                      formatter={(value) => <span className="text-sm">{value}</span>}
-                    />
-                    {/* Load - Blue */}
-                    <Line
-                      type="monotone"
-                      dataKey="load_kw"
-                      name="Load"
-                      stroke={CHART_COLORS.load}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                    />
-                    {/* Solar - Yellow */}
-                    <Line
-                      type="monotone"
-                      dataKey="solar_kw"
-                      name="Solar"
-                      stroke={CHART_COLORS.solar}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                    />
-                    {/* DG - Dark Gray */}
-                    <Line
-                      type="monotone"
-                      dataKey="dg_kw"
-                      name="DG"
-                      stroke={CHART_COLORS.dg}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="h-full flex flex-col">
+                  {/* Stats row */}
+                  {connectionStats && (
+                    <div className="flex flex-wrap gap-4 mb-4 text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-green-500" />
+                        <span className="text-muted-foreground">Uptime:</span>
+                        <span className="font-medium">{connectionStats.uptimePct.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Online:</span>
+                        <span className="font-medium">{connectionStats.totalOnlineMinutes}m</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-red-500" />
+                        <span className="text-muted-foreground">Offline:</span>
+                        <span className="font-medium">{connectionStats.totalOfflineMinutes}m</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Disconnections:</span>
+                        <span className="font-medium">{connectionStats.offlineEvents}</span>
+                      </div>
+                    </div>
+                  )}
+                  {/* Chart */}
+                  <div className="flex-1">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={connectionData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                        <defs>
+                          <linearGradient id="connectionGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={CHART_COLORS.online} stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor={CHART_COLORS.online} stopOpacity={0.1}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fontSize: 12 }}
+                          tickLine={false}
+                          axisLine={false}
+                          className="text-muted-foreground"
+                        />
+                        <YAxis
+                          tick={{ fontSize: 12 }}
+                          tickLine={false}
+                          axisLine={false}
+                          className="text-muted-foreground"
+                          domain={[0, 1]}
+                          ticks={[0, 1]}
+                          tickFormatter={(value) => value === 1 ? "Online" : "Offline"}
+                        />
+                        <Tooltip
+                          content={({ active, payload, label }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const point = payload[0].payload as ConnectionStatusPoint;
+                            return (
+                              <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
+                                <p className="font-medium mb-2">{label}</p>
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`w-3 h-3 rounded-full ${point.isOnline ? 'bg-green-500' : 'bg-red-500'}`}
+                                  />
+                                  <span className="font-medium">
+                                    {point.isOnline ? 'Online' : 'Offline'}
+                                  </span>
+                                </div>
+                                {point.gapSeconds !== undefined && point.gapSeconds > 0 && (
+                                  <p className="text-muted-foreground mt-1">
+                                    {point.isOnline
+                                      ? `Heartbeat received`
+                                      : `Gap: ${Math.floor(point.gapSeconds / 60)}m ${point.gapSeconds % 60}s`
+                                    }
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }}
+                        />
+                        <Area
+                          type="stepAfter"
+                          dataKey="status"
+                          stroke={CHART_COLORS.online}
+                          fill="url(#connectionGradient)"
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, fill: CHART_COLORS.online }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               )
             )}
 
@@ -438,7 +552,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={systemData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <LineChart data={systemData} margin={{ top: 5, right: 50, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       dataKey="time"
@@ -447,7 +561,9 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       axisLine={false}
                       className="text-muted-foreground"
                     />
+                    {/* Left Y-Axis: Percentage (CPU, Memory, Disk) */}
                     <YAxis
+                      yAxisId="pct"
                       tick={{ fontSize: 12 }}
                       tickLine={false}
                       axisLine={false}
@@ -456,6 +572,20 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       domain={[0, 100]}
                       label={{ value: "%", angle: -90, position: "insideLeft", style: { fontSize: 12 } }}
                     />
+                    {/* Right Y-Axis: Temperature (°C) */}
+                    {systemData.some(d => d.temp_celsius !== null) && (
+                      <YAxis
+                        yAxisId="temp"
+                        orientation="right"
+                        tick={{ fontSize: 12 }}
+                        tickLine={false}
+                        axisLine={false}
+                        className="text-muted-foreground"
+                        tickFormatter={(value) => `${value}°C`}
+                        domain={[0, 100]}
+                        label={{ value: "°C", angle: 90, position: "insideRight", style: { fontSize: 12 } }}
+                      />
+                    )}
                     <Tooltip
                       content={({ active, payload, label }) => {
                         if (!active || !payload || !payload.length) return null;
@@ -493,6 +623,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       strokeWidth={2}
                       dot={false}
                       activeDot={{ r: 4 }}
+                      yAxisId="pct"
                     />
                     {/* Memory Usage - Purple */}
                     <Line
@@ -503,6 +634,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       strokeWidth={2}
                       dot={false}
                       activeDot={{ r: 4 }}
+                      yAxisId="pct"
                     />
                     {/* Disk Usage - Blue */}
                     <Line
@@ -513,6 +645,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       strokeWidth={2}
                       dot={false}
                       activeDot={{ r: 4 }}
+                      yAxisId="pct"
                     />
                     {/* Temperature - Red (if available) */}
                     {systemData.some(d => d.temp_celsius !== null) && (

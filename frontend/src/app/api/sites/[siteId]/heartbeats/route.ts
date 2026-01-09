@@ -2,8 +2,9 @@
  * API Route: Historical Heartbeats
  *
  * Returns historical heartbeat data for a site's controller.
- * Used by the PowerFlowChart's System Health view to display
- * CPU, memory, disk, and temperature metrics over time.
+ * Used by the PowerFlowChart component for:
+ * - Connection Status view: Derive online/offline status from heartbeat gaps
+ * - System Health view: Display CPU, memory, disk, and temperature metrics
  *
  * GET /api/sites/[siteId]/heartbeats?hours=24
  */
