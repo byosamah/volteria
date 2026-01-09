@@ -273,6 +273,7 @@ export default async function SiteDetailPage({
     ip_address: string | null;
     port: number | null;
     controller_id: string | null;
+    controller_template_id: string | null;
     controllers: {
       serial_number: string;
       firmware_version: string | null;
@@ -281,6 +282,15 @@ export default async function SiteDetailPage({
         manufacturer: string;
       } | null;
     } | null;
+    modbus_physical: string | null;
+    modbus_baud_rate: number | null;
+    modbus_parity: string | null;
+    modbus_stop_bits: number | null;
+    modbus_frame_type: string | null;
+    modbus_extra_delay: number | null;
+    modbus_slave_timeout: number | null;
+    modbus_write_function: string | null;
+    calculated_fields: { field_id: string; enabled: boolean; storage_mode: string }[] | null;
     gateway_type: "netbiter" | "other" | null;
     netbiter_account_id: string | null;
     netbiter_username: string | null;
@@ -302,6 +312,7 @@ export default async function SiteDetailPage({
         ip_address,
         port,
         controller_id,
+        controller_template_id,
         controllers (
           serial_number,
           firmware_version,
@@ -310,6 +321,15 @@ export default async function SiteDetailPage({
             manufacturer
           )
         ),
+        modbus_physical,
+        modbus_baud_rate,
+        modbus_parity,
+        modbus_stop_bits,
+        modbus_frame_type,
+        modbus_extra_delay,
+        modbus_slave_timeout,
+        modbus_write_function,
+        calculated_fields,
         gateway_type,
         netbiter_account_id,
         netbiter_username,

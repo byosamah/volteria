@@ -86,6 +86,7 @@ interface MasterDevice {
   port: number | null;
   // Controller fields
   controller_id: string | null;
+  controller_template_id?: string | null;
   controllers?: {
     serial_number: string;
     firmware_version: string | null;
@@ -321,30 +322,46 @@ export function MasterDeviceList({
       setEditModbusSlaveTimeout(device.modbus_slave_timeout?.toString() || "1000");
       setEditModbusWriteFunction(device.modbus_write_function || "auto");
 
-      // Load calculated fields from existing selection
+      // Load calculated fields from controller template
       const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
       setEditSelectedCalculatedFields(existingFieldIds);
+      setAvailableCalculatedFields([]);
 
-      // Load available calculated field definitions if there are any
-      if (existingFieldIds.length > 0) {
+      // Fetch available calculated fields from the controller template
+      if (device.controller_template_id) {
         setLoadingCalculatedFields(true);
         try {
           const supabase = createClient();
-          const { data: fieldDefs } = await supabase
-            .from("calculated_field_definitions")
-            .select("field_id, name, description, unit, calculation_type, time_window")
-            .in("field_id", existingFieldIds);
 
-          if (fieldDefs) {
-            setAvailableCalculatedFields(fieldDefs);
+          // First get the template's calculated_fields array
+          const { data: template } = await supabase
+            .from("controller_templates")
+            .select("calculated_fields")
+            .eq("id", device.controller_template_id)
+            .single();
+
+          const templateFieldIds = template?.calculated_fields || [];
+
+          if (templateFieldIds.length > 0) {
+            // Fetch the field definitions for these IDs
+            const { data: fieldDefs } = await supabase
+              .from("calculated_field_definitions")
+              .select("field_id, name, description, unit, calculation_type, time_window")
+              .in("field_id", templateFieldIds);
+
+            if (fieldDefs) {
+              setAvailableCalculatedFields(fieldDefs);
+              // If no existing selection, pre-select all fields from template
+              if (existingFieldIds.length === 0) {
+                setEditSelectedCalculatedFields(fieldDefs.map(f => f.field_id));
+              }
+            }
           }
         } catch (err) {
-          console.error("Failed to load calculated fields:", err);
+          console.error("Failed to load calculated fields from template:", err);
         } finally {
           setLoadingCalculatedFields(false);
         }
-      } else {
-        setAvailableCalculatedFields([]);
       }
     }
   };

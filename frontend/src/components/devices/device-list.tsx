@@ -637,16 +637,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
   return (
     <>
-      {/* Energy Meters */}
-      {devicesByType["load_meter"] && devicesByType["load_meter"].length > 0 && (
+      {/* Load Meters */}
+      {devicesByType["load"] && devicesByType["load"].length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.load_meter.title}</CardTitle>
-            <CardDescription>{typeConfigs.load_meter.description}</CardDescription>
+            <CardTitle className="text-lg">{typeConfigs.load.title}</CardTitle>
+            <CardDescription>{typeConfigs.load.description}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {devicesByType["load_meter"].map((device) => (
+              {devicesByType["load"].map((device) => (
                 <DeviceCard key={device.id} device={device} />
               ))}
             </div>
@@ -654,16 +654,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         </Card>
       )}
 
-      {/* Inverters */}
-      {devicesByType["inverter"] && devicesByType["inverter"].length > 0 && (
+      {/* Sub-load Meters */}
+      {devicesByType["sub_load"] && devicesByType["sub_load"].length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.inverter.title}</CardTitle>
-            <CardDescription>{typeConfigs.inverter.description}</CardDescription>
+            <CardTitle className="text-lg">{typeConfigs.sub_load.title}</CardTitle>
+            <CardDescription>{typeConfigs.sub_load.description}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {devicesByType["inverter"].map((device) => (
+              {devicesByType["sub_load"].map((device) => (
                 <DeviceCard key={device.id} device={device} />
               ))}
             </div>
@@ -671,16 +671,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         </Card>
       )}
 
-      {/* DG Controllers */}
-      {devicesByType["dg"] && devicesByType["dg"].length > 0 && (
+      {/* Solar Inverters */}
+      {devicesByType["solar"] && devicesByType["solar"].length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.dg.title}</CardTitle>
-            <CardDescription>{typeConfigs.dg.description}</CardDescription>
+            <CardTitle className="text-lg">{typeConfigs.solar.title}</CardTitle>
+            <CardDescription>{typeConfigs.solar.description}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {devicesByType["dg"].map((device) => (
+              {devicesByType["solar"].map((device) => (
                 <DeviceCard key={device.id} device={device} />
               ))}
             </div>
@@ -688,16 +688,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         </Card>
       )}
 
-      {/* Sensors */}
-      {devicesByType["sensor"] && devicesByType["sensor"].length > 0 && (
+      {/* Generators */}
+      {devicesByType["generator"] && devicesByType["generator"].length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.sensor.title}</CardTitle>
-            <CardDescription>{typeConfigs.sensor.description}</CardDescription>
+            <CardTitle className="text-lg">{typeConfigs.generator.title}</CardTitle>
+            <CardDescription>{typeConfigs.generator.description}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {devicesByType["sensor"].map((device) => (
+              {devicesByType["generator"].map((device) => (
                 <DeviceCard key={device.id} device={device} />
               ))}
             </div>
@@ -705,7 +705,24 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         </Card>
       )}
 
-      {/* Render any other device types not explicitly handled above */}
+      {/* Fuel Sensors */}
+      {devicesByType["fuel"] && devicesByType["fuel"].length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">{typeConfigs.fuel.title}</CardTitle>
+            <CardDescription>{typeConfigs.fuel.description}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {devicesByType["fuel"].map((device) => (
+                <DeviceCard key={device.id} device={device} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Render any other device types not explicitly handled above (including "unknown") */}
       {Object.entries(devicesByType)
         .filter(([type]) => !["load", "sub_load", "solar", "generator", "fuel"].includes(type))
         .map(([type, typeDevices]) => (
