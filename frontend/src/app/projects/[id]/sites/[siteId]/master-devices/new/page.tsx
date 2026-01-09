@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import Link from "next/link";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import type { ControllerTemplate } from "@/lib/types";
 
 // ============================================
@@ -54,6 +56,17 @@ interface AvailableTemplate {
   template_type: "public" | "custom";
   brand: string | null;
   model: string | null;
+  calculated_fields?: string[] | null;
+}
+
+// Calculated field definition
+interface CalculatedFieldDef {
+  field_id: string;
+  name: string;
+  description: string | null;
+  unit: string | null;
+  calculation_type: string;
+  time_window: string | null;
 }
 
 // ============================================
@@ -84,6 +97,21 @@ export default function AddMasterDevicePage({
   const [templateId, setTemplateId] = useState("");
   const [availableTemplates, setAvailableTemplates] = useState<AvailableTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
+
+  // Modbus settings (for controllers)
+  const [modbusPhysical, setModbusPhysical] = useState("RS-485");
+  const [modbusBaudRate, setModbusBaudRate] = useState("9600");
+  const [modbusParity, setModbusParity] = useState("none");
+  const [modbusStopBits, setModbusStopBits] = useState("1");
+  const [modbusFrameType, setModbusFrameType] = useState("RTU");
+  const [modbusExtraDelay, setModbusExtraDelay] = useState("0");
+  const [modbusSlaveTimeout, setModbusSlaveTimeout] = useState("1000");
+  const [modbusWriteFunction, setModbusWriteFunction] = useState("auto");
+
+  // Calculated fields
+  const [selectedCalculatedFields, setSelectedCalculatedFields] = useState<string[]>([]);
+  const [availableCalculatedFields, setAvailableCalculatedFields] = useState<CalculatedFieldDef[]>([]);
+  const [loadingCalculatedFields, setLoadingCalculatedFields] = useState(false);
 
   // Gateway-specific
   const [gatewayType, setGatewayType] = useState<GatewayType>("netbiter");
@@ -168,7 +196,7 @@ export default function AddMasterDevicePage({
 
         let templatesQuery = supabase
           .from("controller_templates")
-          .select("id, template_id, name, controller_type, template_type, brand, model")
+          .select("id, template_id, name, controller_type, template_type, brand, model, calculated_fields")
           .eq("is_active", true)
           .order("name");
 
@@ -191,6 +219,50 @@ export default function AddMasterDevicePage({
 
     loadData();
   }, [siteId]);
+
+  // Fetch calculated field definitions when template changes
+  useEffect(() => {
+    async function loadCalculatedFields() {
+      if (!templateId) {
+        setAvailableCalculatedFields([]);
+        setSelectedCalculatedFields([]);
+        return;
+      }
+
+      setLoadingCalculatedFields(true);
+      const supabase = createClient();
+
+      try {
+        // Get the selected template's calculated fields array
+        const selectedTemplate = availableTemplates.find(t => t.id === templateId);
+        const templateFieldIds = selectedTemplate?.calculated_fields || [];
+
+        if (templateFieldIds.length === 0) {
+          setAvailableCalculatedFields([]);
+          setSelectedCalculatedFields([]);
+          return;
+        }
+
+        // Fetch the field definitions for these IDs
+        const { data: fieldDefs } = await supabase
+          .from("calculated_field_definitions")
+          .select("field_id, name, description, unit, calculation_type, time_window")
+          .in("field_id", templateFieldIds);
+
+        if (fieldDefs) {
+          setAvailableCalculatedFields(fieldDefs);
+          // Pre-select all fields by default
+          setSelectedCalculatedFields(fieldDefs.map(f => f.field_id));
+        }
+      } catch (err) {
+        console.error("Failed to load calculated fields:", err);
+      } finally {
+        setLoadingCalculatedFields(false);
+      }
+    }
+
+    loadCalculatedFields();
+  }, [templateId, availableTemplates]);
 
   // Handle form submission
   async function handleSubmit(e: React.FormEvent) {
@@ -248,6 +320,23 @@ export default function AddMasterDevicePage({
         if (templateId) {
           insertData.controller_template_id = templateId;
         }
+
+        // Add Modbus settings
+        insertData.modbus_physical = modbusPhysical;
+        insertData.modbus_baud_rate = parseInt(modbusBaudRate);
+        insertData.modbus_parity = modbusParity;
+        insertData.modbus_stop_bits = parseInt(modbusStopBits);
+        insertData.modbus_frame_type = modbusFrameType;
+        insertData.modbus_extra_delay = parseInt(modbusExtraDelay);
+        insertData.modbus_slave_timeout = parseInt(modbusSlaveTimeout);
+        insertData.modbus_write_function = modbusWriteFunction;
+
+        // Add calculated fields selection
+        insertData.calculated_fields = selectedCalculatedFields.map(id => ({
+          field_id: id,
+          enabled: true,
+          storage_mode: "log"
+        }));
       } else {
         insertData.gateway_type = gatewayType;
         if (gatewayType === "netbiter") {
@@ -556,6 +645,194 @@ export default function AddMasterDevicePage({
                       required
                     />
                   </div>
+
+                  {/* Modbus Settings Section */}
+                  <div className="space-y-4 border-t pt-6">
+                    <h4 className="font-medium">Modbus Settings</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Physical */}
+                      <div className="space-y-2">
+                        <Label>Physical</Label>
+                        <Select value={modbusPhysical} onValueChange={setModbusPhysical}>
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="RS-485">RS-485</SelectItem>
+                            <SelectItem value="RS-232">RS-232</SelectItem>
+                            <SelectItem value="TCP">TCP</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Baud Rate */}
+                      <div className="space-y-2">
+                        <Label>Baud Rate</Label>
+                        <Select value={modbusBaudRate} onValueChange={setModbusBaudRate}>
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="9600">9600 bps</SelectItem>
+                            <SelectItem value="19200">19200 bps</SelectItem>
+                            <SelectItem value="38400">38400 bps</SelectItem>
+                            <SelectItem value="57600">57600 bps</SelectItem>
+                            <SelectItem value="115200">115200 bps</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Parity */}
+                      <div className="space-y-2">
+                        <Label>Parity</Label>
+                        <Select value={modbusParity} onValueChange={setModbusParity}>
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            <SelectItem value="even">Even</SelectItem>
+                            <SelectItem value="odd">Odd</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Stop Bits */}
+                      <div className="space-y-2">
+                        <Label>Stop Bits</Label>
+                        <Select value={modbusStopBits} onValueChange={setModbusStopBits}>
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">1</SelectItem>
+                            <SelectItem value="2">2</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Frame Type */}
+                      <div className="space-y-2">
+                        <Label>Frame Type</Label>
+                        <Select value={modbusFrameType} onValueChange={setModbusFrameType}>
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="RTU">RTU</SelectItem>
+                            <SelectItem value="ASCII">ASCII</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Extra Delay */}
+                      <div className="space-y-2">
+                        <Label>Extra Delay</Label>
+                        <Select value={modbusExtraDelay} onValueChange={setModbusExtraDelay}>
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0">None</SelectItem>
+                            <SelectItem value="10">10 ms</SelectItem>
+                            <SelectItem value="50">50 ms</SelectItem>
+                            <SelectItem value="100">100 ms</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Slave Timeout */}
+                      <div className="space-y-2">
+                        <Label>Slave Timeout</Label>
+                        <Select value={modbusSlaveTimeout} onValueChange={setModbusSlaveTimeout}>
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="500">500 ms</SelectItem>
+                            <SelectItem value="1000">1000 ms</SelectItem>
+                            <SelectItem value="2000">2000 ms</SelectItem>
+                            <SelectItem value="5000">5000 ms</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Write Function */}
+                      <div className="space-y-2">
+                        <Label>Write Function</Label>
+                        <Select value={modbusWriteFunction} onValueChange={setModbusWriteFunction}>
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">Auto</SelectItem>
+                            <SelectItem value="single">Single (FC6)</SelectItem>
+                            <SelectItem value="multiple">Multiple (FC16)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Calculated Fields Section */}
+                  {templateId && availableCalculatedFields.length > 0 && (
+                    <div className="space-y-4 border-t pt-6">
+                      <div className="space-y-1">
+                        <h4 className="font-medium">Calculated Fields</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Select which calculated fields to enable for this controller
+                        </p>
+                      </div>
+
+                      {loadingCalculatedFields ? (
+                        <div className="text-sm text-muted-foreground">Loading fields...</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {availableCalculatedFields.map((field) => (
+                            <div
+                              key={field.field_id}
+                              className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20"
+                            >
+                              <Checkbox
+                                id={field.field_id}
+                                checked={selectedCalculatedFields.includes(field.field_id)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setSelectedCalculatedFields([...selectedCalculatedFields, field.field_id]);
+                                  } else {
+                                    setSelectedCalculatedFields(selectedCalculatedFields.filter(id => id !== field.field_id));
+                                  }
+                                }}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <label
+                                  htmlFor={field.field_id}
+                                  className="font-medium text-sm cursor-pointer"
+                                >
+                                  {field.name}
+                                </label>
+                                {field.description && (
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {field.description}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {field.unit && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {field.unit}
+                                  </Badge>
+                                )}
+                                <Badge variant="secondary" className="text-xs">
+                                  {field.calculation_type}
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

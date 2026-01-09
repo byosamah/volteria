@@ -44,6 +44,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -86,6 +94,16 @@ interface MasterDevice {
       manufacturer: string;
     } | null;
   } | null;
+  // Modbus settings (for controllers)
+  modbus_physical?: string | null;
+  modbus_baud_rate?: number | null;
+  modbus_parity?: string | null;
+  modbus_stop_bits?: number | null;
+  modbus_frame_type?: string | null;
+  modbus_extra_delay?: number | null;
+  modbus_slave_timeout?: number | null;
+  modbus_write_function?: string | null;
+  calculated_fields?: { field_id: string; enabled: boolean; storage_mode: string }[] | null;
   // Gateway fields
   gateway_type: "netbiter" | "other" | null;
   netbiter_account_id: string | null;
@@ -96,6 +114,16 @@ interface MasterDevice {
   is_online: boolean;
   last_seen: string | null;
   last_error: string | null;
+}
+
+// Calculated field definition
+interface CalculatedFieldDef {
+  field_id: string;
+  name: string;
+  description: string | null;
+  unit: string | null;
+  calculation_type: string;
+  time_window: string | null;
 }
 
 interface MasterDeviceListProps {
@@ -241,11 +269,26 @@ export function MasterDeviceList({
   const [passwordModified, setPasswordModified] = useState(false);
   const [secretModified, setSecretModified] = useState(false);
 
+  // Edit form state - Modbus settings (for controllers)
+  const [editModbusPhysical, setEditModbusPhysical] = useState("RS-485");
+  const [editModbusBaudRate, setEditModbusBaudRate] = useState("9600");
+  const [editModbusParity, setEditModbusParity] = useState("none");
+  const [editModbusStopBits, setEditModbusStopBits] = useState("1");
+  const [editModbusFrameType, setEditModbusFrameType] = useState("RTU");
+  const [editModbusExtraDelay, setEditModbusExtraDelay] = useState("0");
+  const [editModbusSlaveTimeout, setEditModbusSlaveTimeout] = useState("1000");
+  const [editModbusWriteFunction, setEditModbusWriteFunction] = useState("auto");
+
+  // Edit form state - Calculated fields (for controllers)
+  const [editSelectedCalculatedFields, setEditSelectedCalculatedFields] = useState<string[]>([]);
+  const [availableCalculatedFields, setAvailableCalculatedFields] = useState<CalculatedFieldDef[]>([]);
+  const [loadingCalculatedFields, setLoadingCalculatedFields] = useState(false);
+
   // Check if site already has a controller
   const hasController = devices.some((d) => d.device_type === "controller");
 
   // Open edit dialog
-  const handleEdit = (device: MasterDevice) => {
+  const handleEdit = async (device: MasterDevice) => {
     setEditingDevice(device);
 
     // Basic fields
@@ -266,6 +309,44 @@ export function MasterDeviceList({
     // Reset modification flags
     setPasswordModified(false);
     setSecretModified(false);
+
+    // Controller-specific fields (Modbus settings)
+    if (device.device_type === "controller") {
+      setEditModbusPhysical(device.modbus_physical || "RS-485");
+      setEditModbusBaudRate(device.modbus_baud_rate?.toString() || "9600");
+      setEditModbusParity(device.modbus_parity || "none");
+      setEditModbusStopBits(device.modbus_stop_bits?.toString() || "1");
+      setEditModbusFrameType(device.modbus_frame_type || "RTU");
+      setEditModbusExtraDelay(device.modbus_extra_delay?.toString() || "0");
+      setEditModbusSlaveTimeout(device.modbus_slave_timeout?.toString() || "1000");
+      setEditModbusWriteFunction(device.modbus_write_function || "auto");
+
+      // Load calculated fields from existing selection
+      const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
+      setEditSelectedCalculatedFields(existingFieldIds);
+
+      // Load available calculated field definitions if there are any
+      if (existingFieldIds.length > 0) {
+        setLoadingCalculatedFields(true);
+        try {
+          const supabase = createClient();
+          const { data: fieldDefs } = await supabase
+            .from("calculated_field_definitions")
+            .select("field_id, name, description, unit, calculation_type, time_window")
+            .in("field_id", existingFieldIds);
+
+          if (fieldDefs) {
+            setAvailableCalculatedFields(fieldDefs);
+          }
+        } catch (err) {
+          console.error("Failed to load calculated fields:", err);
+        } finally {
+          setLoadingCalculatedFields(false);
+        }
+      } else {
+        setAvailableCalculatedFields([]);
+      }
+    }
   };
 
   // Save edit
@@ -282,6 +363,25 @@ export function MasterDeviceList({
         ip_address: editIpAddress.trim() || null,
         port: editPort ? parseInt(editPort) : null,
       };
+
+      // Add controller-specific fields (Modbus settings)
+      if (editingDevice.device_type === "controller") {
+        updateData.modbus_physical = editModbusPhysical;
+        updateData.modbus_baud_rate = parseInt(editModbusBaudRate);
+        updateData.modbus_parity = editModbusParity;
+        updateData.modbus_stop_bits = parseInt(editModbusStopBits);
+        updateData.modbus_frame_type = editModbusFrameType;
+        updateData.modbus_extra_delay = parseInt(editModbusExtraDelay);
+        updateData.modbus_slave_timeout = parseInt(editModbusSlaveTimeout);
+        updateData.modbus_write_function = editModbusWriteFunction;
+
+        // Add calculated fields selection
+        updateData.calculated_fields = editSelectedCalculatedFields.map(id => ({
+          field_id: id,
+          enabled: true,
+          storage_mode: "log"
+        }));
+      }
 
       // Add gateway-specific fields if this is a gateway device
       if (editingDevice.device_type === "gateway") {
@@ -629,7 +729,7 @@ export function MasterDeviceList({
 
       {/* Edit Dialog */}
       <Dialog open={!!editingDevice} onOpenChange={() => setEditingDevice(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Master Device</DialogTitle>
             <DialogDescription>
@@ -670,6 +770,200 @@ export function MasterDeviceList({
                 className="min-h-[44px]"
               />
             </div>
+
+            {/* Controller-specific fields - Modbus Settings */}
+            {editingDevice?.device_type === "controller" && (
+              <>
+                {/* Modbus Settings Section */}
+                <div className="border-t pt-4 mt-2">
+                  <h4 className="font-medium text-sm mb-4">Modbus Settings</h4>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Physical */}
+                  <div className="space-y-2">
+                    <Label>Physical</Label>
+                    <Select value={editModbusPhysical} onValueChange={setEditModbusPhysical}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="RS-485">RS-485</SelectItem>
+                        <SelectItem value="RS-232">RS-232</SelectItem>
+                        <SelectItem value="TCP">TCP</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Baud Rate */}
+                  <div className="space-y-2">
+                    <Label>Baud Rate</Label>
+                    <Select value={editModbusBaudRate} onValueChange={setEditModbusBaudRate}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="9600">9600 bps</SelectItem>
+                        <SelectItem value="19200">19200 bps</SelectItem>
+                        <SelectItem value="38400">38400 bps</SelectItem>
+                        <SelectItem value="57600">57600 bps</SelectItem>
+                        <SelectItem value="115200">115200 bps</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Parity */}
+                  <div className="space-y-2">
+                    <Label>Parity</Label>
+                    <Select value={editModbusParity} onValueChange={setEditModbusParity}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="even">Even</SelectItem>
+                        <SelectItem value="odd">Odd</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Stop Bits */}
+                  <div className="space-y-2">
+                    <Label>Stop Bits</Label>
+                    <Select value={editModbusStopBits} onValueChange={setEditModbusStopBits}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1</SelectItem>
+                        <SelectItem value="2">2</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Frame Type */}
+                  <div className="space-y-2">
+                    <Label>Frame Type</Label>
+                    <Select value={editModbusFrameType} onValueChange={setEditModbusFrameType}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="RTU">RTU</SelectItem>
+                        <SelectItem value="ASCII">ASCII</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Extra Delay */}
+                  <div className="space-y-2">
+                    <Label>Extra Delay</Label>
+                    <Select value={editModbusExtraDelay} onValueChange={setEditModbusExtraDelay}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">None</SelectItem>
+                        <SelectItem value="10">10 ms</SelectItem>
+                        <SelectItem value="50">50 ms</SelectItem>
+                        <SelectItem value="100">100 ms</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Slave Timeout */}
+                  <div className="space-y-2">
+                    <Label>Slave Timeout</Label>
+                    <Select value={editModbusSlaveTimeout} onValueChange={setEditModbusSlaveTimeout}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="500">500 ms</SelectItem>
+                        <SelectItem value="1000">1000 ms</SelectItem>
+                        <SelectItem value="2000">2000 ms</SelectItem>
+                        <SelectItem value="5000">5000 ms</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Write Function */}
+                  <div className="space-y-2">
+                    <Label>Write Function</Label>
+                    <Select value={editModbusWriteFunction} onValueChange={setEditModbusWriteFunction}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">Auto</SelectItem>
+                        <SelectItem value="single">Single (FC6)</SelectItem>
+                        <SelectItem value="multiple">Multiple (FC16)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Calculated Fields Section */}
+                {availableCalculatedFields.length > 0 && (
+                  <>
+                    <div className="border-t pt-4 mt-4">
+                      <h4 className="font-medium text-sm mb-1">Calculated Fields</h4>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        Enable or disable calculated fields for this controller
+                      </p>
+                    </div>
+
+                    {loadingCalculatedFields ? (
+                      <div className="text-sm text-muted-foreground">Loading fields...</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {availableCalculatedFields.map((field) => (
+                          <div
+                            key={field.field_id}
+                            className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20"
+                          >
+                            <Checkbox
+                              id={`edit-${field.field_id}`}
+                              checked={editSelectedCalculatedFields.includes(field.field_id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setEditSelectedCalculatedFields([...editSelectedCalculatedFields, field.field_id]);
+                                } else {
+                                  setEditSelectedCalculatedFields(editSelectedCalculatedFields.filter(id => id !== field.field_id));
+                                }
+                              }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <label
+                                htmlFor={`edit-${field.field_id}`}
+                                className="font-medium text-sm cursor-pointer"
+                              >
+                                {field.name}
+                              </label>
+                              {field.description && (
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {field.description}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {field.unit && (
+                                <Badge variant="outline" className="text-xs">
+                                  {field.unit}
+                                </Badge>
+                              )}
+                              <Badge variant="secondary" className="text-xs">
+                                {field.calculation_type}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
 
             {/* Gateway-specific fields - only shown for gateway devices */}
             {editingDevice?.device_type === "gateway" && (

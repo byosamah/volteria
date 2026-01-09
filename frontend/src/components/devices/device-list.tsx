@@ -510,10 +510,10 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     setDeleteDevice(null);
   };
 
-  // Group devices by type
+  // Group devices by measurement type (what the device measures)
   const devicesByType = devices.reduce(
     (acc, device) => {
-      const type = device.device_templates?.device_type || "unknown";
+      const type = device.measurement_type || "unknown";
       if (!acc[type]) acc[type] = [];
       acc[type].push(device);
       return acc;
@@ -521,13 +521,14 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     {} as Record<string, Device[]>
   );
 
-  // Type configurations
+  // Type configurations for measurement types
   const typeConfigs: Record<string, { title: string; description: string }> = {
-    load_meter: { title: "Energy Meters", description: "Power measurement devices" },
-    inverter: { title: "Solar Inverters", description: "PV power conversion" },
-    dg: { title: "Power Generators", description: "Generator controllers" },
-    sensor: { title: "Sensors", description: "Temperature, fuel level, and monitoring devices" },
-    unknown: { title: "Slave Devices", description: "Measurement Devices (Meters, Inverters, Sensors, ...)" },
+    load: { title: "Load Meters", description: "Main load measurement devices" },
+    sub_load: { title: "Sub-load Meters", description: "Secondary load measurement" },
+    solar: { title: "Solar Inverters", description: "PV power conversion" },
+    generator: { title: "Power Generators", description: "Generator controllers" },
+    fuel: { title: "Fuel Sensors", description: "Fuel level monitoring" },
+    unknown: { title: "Other Devices", description: "Devices without measurement type" },
   };
 
   // Device card component - MOBILE-FRIENDLY with 44px touch targets
@@ -706,12 +707,12 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
       {/* Render any other device types not explicitly handled above */}
       {Object.entries(devicesByType)
-        .filter(([type]) => !["load_meter", "inverter", "dg", "sensor"].includes(type))
+        .filter(([type]) => !["load", "sub_load", "solar", "generator", "fuel"].includes(type))
         .map(([type, typeDevices]) => (
           <Card key={type}>
             <CardHeader>
               <CardTitle className="text-lg">
-                {typeConfigs[type]?.title || (type === "unknown" ? "Slave Devices" : type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))}
+                {typeConfigs[type]?.title || (type === "unknown" ? "Other Devices" : type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))}
               </CardTitle>
               <CardDescription>
                 {typeConfigs[type]?.description || "Devices in this category"}
