@@ -184,7 +184,7 @@ export default async function SiteDetailPage({
     registers: ModbusRegister[] | null;
     visualization_registers: ModbusRegister[] | null;
     alarm_registers: ModbusRegister[] | null;
-    calculated_fields: Array<{ field_id: string; name: string; storage_mode: string }> | null;
+    calculated_fields: Array<{ field_id: string; name: string; storage_mode: "log" | "viz_only" }> | null;
     template_id: string | null;
     template_synced_at: string | null;
     logging_interval_ms: number | null;
