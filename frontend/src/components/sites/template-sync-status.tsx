@@ -36,7 +36,7 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
   const [syncing, setSyncing] = useState(false);
 
   // Format date for display
-  const formatDate = (dateStr: string | null) => {
+  const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return "Never";
     const date = new Date(dateStr);
     return date.toLocaleString([], {
