@@ -70,6 +70,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -280,21 +281,8 @@ export function MasterDeviceList({
   const [editModbusSlaveTimeout, setEditModbusSlaveTimeout] = useState("1000");
   const [editModbusWriteFunction, setEditModbusWriteFunction] = useState("auto");
 
-  // Edit form state - Controller template selection
-  const [editTemplateId, setEditTemplateId] = useState<string>("");
-  const [availableTemplates, setAvailableTemplates] = useState<{
-    id: string;
-    template_id: string;
-    name: string;
-    controller_type: string;
-    template_type: "public" | "custom";
-    brand: string | null;
-    model: string | null;
-    calculated_fields: string[] | null;
-  }[]>([]);
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
-
   // Edit form state - Calculated fields (for controllers)
+  // These are loaded directly from calculated_field_definitions with scope='controller'
   const [editSelectedCalculatedFields, setEditSelectedCalculatedFields] = useState<string[]>([]);
   const [availableCalculatedFields, setAvailableCalculatedFields] = useState<CalculatedFieldDef[]>([]);
   const [loadingCalculatedFields, setLoadingCalculatedFields] = useState(false);
@@ -336,106 +324,33 @@ export function MasterDeviceList({
       setEditModbusSlaveTimeout(device.modbus_slave_timeout?.toString() || "1000");
       setEditModbusWriteFunction(device.modbus_write_function || "auto");
 
-      // Set current template and reset calculated fields
-      setEditTemplateId(device.controller_template_id || "");
-      setAvailableCalculatedFields([]);
+      // Load existing calculated fields selection
       const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
       setEditSelectedCalculatedFields(existingFieldIds);
 
-      // Load available templates
-      setLoadingTemplates(true);
+      // Load ALL controller-scope calculated fields from the database
+      setLoadingCalculatedFields(true);
       try {
         const supabase = createClient();
-
-        // Get current user's enterprise and role
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: userProfile } = await supabase
-            .from("users")
-            .select("enterprise_id, role")
-            .eq("id", user.id)
-            .single();
-
-          if (userProfile?.enterprise_id) {
-            const isSuperAdmin = ["super_admin", "backend_admin"].includes(userProfile.role || "");
-
-            let templatesQuery = supabase
-              .from("controller_templates")
-              .select("id, template_id, name, controller_type, template_type, brand, model, calculated_fields")
-              .eq("is_active", true)
-              .order("name");
-
-            if (!isSuperAdmin) {
-              templatesQuery = templatesQuery.or(`template_type.eq.public,enterprise_id.eq.${userProfile.enterprise_id}`);
-            }
-
-            const { data: templates } = await templatesQuery;
-            if (templates) {
-              setAvailableTemplates(templates as typeof availableTemplates);
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load templates:", err);
-      } finally {
-        setLoadingTemplates(false);
-      }
-
-      // Load calculated fields from the current template if one is set
-      if (device.controller_template_id) {
-        await loadCalculatedFieldsForTemplate(device.controller_template_id, existingFieldIds);
-      }
-    }
-  };
-
-  // Helper to load calculated fields for a template
-  const loadCalculatedFieldsForTemplate = async (templateId: string, existingFieldIds: string[] = []) => {
-    setLoadingCalculatedFields(true);
-    try {
-      const supabase = createClient();
-
-      // First get the template's calculated_fields array
-      const { data: template } = await supabase
-        .from("controller_templates")
-        .select("calculated_fields")
-        .eq("id", templateId)
-        .single();
-
-      const templateFieldIds = template?.calculated_fields || [];
-
-      if (templateFieldIds.length > 0) {
-        // Fetch the field definitions for these IDs
         const { data: fieldDefs } = await supabase
           .from("calculated_field_definitions")
           .select("field_id, name, description, unit, calculation_type, time_window")
-          .in("field_id", templateFieldIds);
+          .eq("scope", "controller")
+          .eq("is_active", true)
+          .order("name");
 
         if (fieldDefs) {
           setAvailableCalculatedFields(fieldDefs);
-          // If no existing selection, pre-select all fields from template
+          // If device has no existing selection, pre-select all fields by default
           if (existingFieldIds.length === 0) {
             setEditSelectedCalculatedFields(fieldDefs.map(f => f.field_id));
           }
         }
-      } else {
-        setAvailableCalculatedFields([]);
+      } catch (err) {
+        console.error("Failed to load calculated fields:", err);
+      } finally {
+        setLoadingCalculatedFields(false);
       }
-    } catch (err) {
-      console.error("Failed to load calculated fields from template:", err);
-    } finally {
-      setLoadingCalculatedFields(false);
-    }
-  };
-
-  // Handle template change in edit dialog
-  const handleEditTemplateChange = async (newTemplateId: string) => {
-    setEditTemplateId(newTemplateId);
-    setEditSelectedCalculatedFields([]); // Reset selections when template changes
-
-    if (newTemplateId) {
-      await loadCalculatedFieldsForTemplate(newTemplateId);
-    } else {
-      setAvailableCalculatedFields([]);
     }
   };
 
@@ -456,9 +371,6 @@ export function MasterDeviceList({
 
       // Add controller-specific fields (Modbus settings)
       if (editingDevice.device_type === "controller") {
-        // Controller template (can be null if not selected)
-        updateData.controller_template_id = editTemplateId || null;
-
         updateData.modbus_physical = editModbusPhysical;
         updateData.modbus_baud_rate = parseInt(editModbusBaudRate);
         updateData.modbus_parity = editModbusParity;
@@ -822,474 +734,461 @@ export function MasterDeviceList({
 
       {/* Edit Dialog */}
       <Dialog open={!!editingDevice} onOpenChange={() => setEditingDevice(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Edit Master Device</DialogTitle>
+            <DialogTitle>Edit Device: {editingDevice?.name}</DialogTitle>
             <DialogDescription>
-              Update the device name and connection settings
+              {editingDevice?.device_type === "controller" ? "Controller" : "Gateway"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input
-                id="edit-name"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                className="min-h-[44px]"
-              />
-            </div>
+          {/* Controller uses tabs (Connection + Calculated), Gateway uses simple form */}
+          {editingDevice?.device_type === "controller" ? (
+            <Tabs defaultValue="connection" className="w-full">
+              <TabsList className="w-full grid grid-cols-2">
+                <TabsTrigger value="connection" className="text-xs sm:text-sm">Connection</TabsTrigger>
+                <TabsTrigger value="calculated" className="text-xs sm:text-sm">Calculated</TabsTrigger>
+              </TabsList>
 
-            <div className="space-y-2">
-              <Label htmlFor="edit-ip">IP Address</Label>
-              <Input
-                id="edit-ip"
-                value={editIpAddress}
-                onChange={(e) => setEditIpAddress(e.target.value)}
-                placeholder="e.g., 192.168.1.100"
-                className="min-h-[44px]"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-port">Port</Label>
-              <Input
-                id="edit-port"
-                type="number"
-                value={editPort}
-                onChange={(e) => setEditPort(e.target.value)}
-                placeholder="e.g., 502"
-                className="min-h-[44px]"
-              />
-            </div>
-
-            {/* Controller-specific fields - Template & Modbus Settings */}
-            {editingDevice?.device_type === "controller" && (
-              <>
-                {/* Controller Template Section */}
-                <div className="border-t pt-4 mt-2">
-                  <h4 className="font-medium text-sm mb-4">Controller Template</h4>
+              {/* Connection Tab */}
+              <TabsContent value="connection" className="space-y-4 py-4">
+                {/* Device Name */}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">Device Name</Label>
+                  <Input
+                    id="edit-name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="min-h-[44px]"
+                  />
                 </div>
 
+                {/* IP Address */}
                 <div className="space-y-2">
-                  <Label>Template (optional)</Label>
-                  <Select
-                    value={editTemplateId}
-                    onValueChange={handleEditTemplateChange}
-                    disabled={loadingTemplates}
-                  >
-                    <SelectTrigger className="min-h-[44px]">
-                      <SelectValue placeholder={
-                        loadingTemplates
-                          ? "Loading templates..."
-                          : availableTemplates.length === 0
-                            ? "No templates available"
-                            : "Select a template"
-                      } />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableTemplates.map((template) => (
-                        <SelectItem key={template.id} value={template.id}>
-                          <div className="flex items-center gap-2">
-                            <span>{template.name}</span>
-                            <span className={`
-                              text-xs px-1.5 py-0.5 rounded-full
-                              ${template.template_type === "public"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-blue-100 text-blue-700"
-                              }
-                            `}>
-                              {template.template_type === "public" ? "Public" : "Custom"}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Select a template to configure calculated fields for this controller
+                  <Label htmlFor="edit-ip">IP Address</Label>
+                  <Input
+                    id="edit-ip"
+                    value={editIpAddress}
+                    onChange={(e) => setEditIpAddress(e.target.value)}
+                    placeholder="e.g., 192.168.1.100"
+                    className="min-h-[44px]"
+                  />
+                </div>
+
+                {/* Port */}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-port">Port</Label>
+                  <Input
+                    id="edit-port"
+                    type="number"
+                    value={editPort}
+                    onChange={(e) => setEditPort(e.target.value)}
+                    placeholder="e.g., 502"
+                    className="min-h-[44px]"
+                  />
+                </div>
+
+                {/* Modbus Settings */}
+                <div className="pt-2">
+                  <p className="text-sm font-medium mb-3">Modbus Settings</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Physical */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Physical</Label>
+                      <Select value={editModbusPhysical} onValueChange={setEditModbusPhysical}>
+                        <SelectTrigger className="min-h-[40px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="RS-485">RS-485</SelectItem>
+                          <SelectItem value="RS-232">RS-232</SelectItem>
+                          <SelectItem value="TCP">TCP</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Baud Rate */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Baud Rate</Label>
+                      <Select value={editModbusBaudRate} onValueChange={setEditModbusBaudRate}>
+                        <SelectTrigger className="min-h-[40px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="9600">9600 bps</SelectItem>
+                          <SelectItem value="19200">19200 bps</SelectItem>
+                          <SelectItem value="38400">38400 bps</SelectItem>
+                          <SelectItem value="57600">57600 bps</SelectItem>
+                          <SelectItem value="115200">115200 bps</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Parity */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Parity</Label>
+                      <Select value={editModbusParity} onValueChange={setEditModbusParity}>
+                        <SelectTrigger className="min-h-[40px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="even">Even</SelectItem>
+                          <SelectItem value="odd">Odd</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Stop Bits */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Stop Bits</Label>
+                      <Select value={editModbusStopBits} onValueChange={setEditModbusStopBits}>
+                        <SelectTrigger className="min-h-[40px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1</SelectItem>
+                          <SelectItem value="2">2</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Frame Type */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Frame Type</Label>
+                      <Select value={editModbusFrameType} onValueChange={setEditModbusFrameType}>
+                        <SelectTrigger className="min-h-[40px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="RTU">RTU</SelectItem>
+                          <SelectItem value="ASCII">ASCII</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Extra Delay */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Extra Delay</Label>
+                      <Select value={editModbusExtraDelay} onValueChange={setEditModbusExtraDelay}>
+                        <SelectTrigger className="min-h-[40px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">None</SelectItem>
+                          <SelectItem value="10">10 ms</SelectItem>
+                          <SelectItem value="50">50 ms</SelectItem>
+                          <SelectItem value="100">100 ms</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Slave Timeout */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Slave Timeout</Label>
+                      <Select value={editModbusSlaveTimeout} onValueChange={setEditModbusSlaveTimeout}>
+                        <SelectTrigger className="min-h-[40px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="500">500 ms</SelectItem>
+                          <SelectItem value="1000">1000 ms</SelectItem>
+                          <SelectItem value="2000">2000 ms</SelectItem>
+                          <SelectItem value="5000">5000 ms</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Write Function */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Write Function</Label>
+                      <Select value={editModbusWriteFunction} onValueChange={setEditModbusWriteFunction}>
+                        <SelectTrigger className="min-h-[40px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto</SelectItem>
+                          <SelectItem value="single">Single (FC6)</SelectItem>
+                          <SelectItem value="multiple">Multiple (FC16)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Calculated Tab */}
+              <TabsContent value="calculated" className="space-y-4 py-4">
+                <div>
+                  <p className="text-sm font-medium">Calculated Fields</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Select which aggregations to calculate for this controller
                   </p>
                 </div>
 
-                {/* Modbus Settings Section */}
-                <div className="border-t pt-4 mt-4">
-                  <h4 className="font-medium text-sm mb-4">Modbus Settings</h4>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Physical */}
-                  <div className="space-y-2">
-                    <Label>Physical</Label>
-                    <Select value={editModbusPhysical} onValueChange={setEditModbusPhysical}>
-                      <SelectTrigger className="min-h-[44px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="RS-485">RS-485</SelectItem>
-                        <SelectItem value="RS-232">RS-232</SelectItem>
-                        <SelectItem value="TCP">TCP</SelectItem>
-                      </SelectContent>
-                    </Select>
+                {loadingCalculatedFields ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
                   </div>
-
-                  {/* Baud Rate */}
-                  <div className="space-y-2">
-                    <Label>Baud Rate</Label>
-                    <Select value={editModbusBaudRate} onValueChange={setEditModbusBaudRate}>
-                      <SelectTrigger className="min-h-[44px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="9600">9600 bps</SelectItem>
-                        <SelectItem value="19200">19200 bps</SelectItem>
-                        <SelectItem value="38400">38400 bps</SelectItem>
-                        <SelectItem value="57600">57600 bps</SelectItem>
-                        <SelectItem value="115200">115200 bps</SelectItem>
-                      </SelectContent>
-                    </Select>
+                ) : availableCalculatedFields.length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-4 text-center">
+                    No calculated fields available.
                   </div>
-
-                  {/* Parity */}
+                ) : (
                   <div className="space-y-2">
-                    <Label>Parity</Label>
-                    <Select value={editModbusParity} onValueChange={setEditModbusParity}>
-                      <SelectTrigger className="min-h-[44px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="even">Even</SelectItem>
-                        <SelectItem value="odd">Odd</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Stop Bits */}
-                  <div className="space-y-2">
-                    <Label>Stop Bits</Label>
-                    <Select value={editModbusStopBits} onValueChange={setEditModbusStopBits}>
-                      <SelectTrigger className="min-h-[44px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1</SelectItem>
-                        <SelectItem value="2">2</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Frame Type */}
-                  <div className="space-y-2">
-                    <Label>Frame Type</Label>
-                    <Select value={editModbusFrameType} onValueChange={setEditModbusFrameType}>
-                      <SelectTrigger className="min-h-[44px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="RTU">RTU</SelectItem>
-                        <SelectItem value="ASCII">ASCII</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Extra Delay */}
-                  <div className="space-y-2">
-                    <Label>Extra Delay</Label>
-                    <Select value={editModbusExtraDelay} onValueChange={setEditModbusExtraDelay}>
-                      <SelectTrigger className="min-h-[44px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="0">None</SelectItem>
-                        <SelectItem value="10">10 ms</SelectItem>
-                        <SelectItem value="50">50 ms</SelectItem>
-                        <SelectItem value="100">100 ms</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Slave Timeout */}
-                  <div className="space-y-2">
-                    <Label>Slave Timeout</Label>
-                    <Select value={editModbusSlaveTimeout} onValueChange={setEditModbusSlaveTimeout}>
-                      <SelectTrigger className="min-h-[44px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="500">500 ms</SelectItem>
-                        <SelectItem value="1000">1000 ms</SelectItem>
-                        <SelectItem value="2000">2000 ms</SelectItem>
-                        <SelectItem value="5000">5000 ms</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Write Function */}
-                  <div className="space-y-2">
-                    <Label>Write Function</Label>
-                    <Select value={editModbusWriteFunction} onValueChange={setEditModbusWriteFunction}>
-                      <SelectTrigger className="min-h-[44px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="auto">Auto</SelectItem>
-                        <SelectItem value="single">Single (FC6)</SelectItem>
-                        <SelectItem value="multiple">Multiple (FC16)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Calculated Fields Section - show when template selected */}
-                {(editTemplateId && (loadingCalculatedFields || availableCalculatedFields.length > 0)) && (
-                  <>
-                    <div className="border-t pt-4 mt-4">
-                      <h4 className="font-medium text-sm mb-1">Calculated Fields</h4>
-                      <p className="text-xs text-muted-foreground mb-4">
-                        Enable or disable calculated fields for this controller
-                      </p>
-                    </div>
-
-                    {loadingCalculatedFields ? (
-                      <div className="text-sm text-muted-foreground py-2">Loading fields...</div>
-                    ) : availableCalculatedFields.length === 0 ? (
-                      <div className="text-sm text-muted-foreground py-2">
-                        This template has no calculated fields configured.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {availableCalculatedFields.map((field) => (
-                          <div
-                            key={field.field_id}
-                            className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20"
+                    {availableCalculatedFields.map((field) => (
+                      <div
+                        key={field.field_id}
+                        className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20"
+                      >
+                        <Checkbox
+                          id={`edit-${field.field_id}`}
+                          checked={editSelectedCalculatedFields.includes(field.field_id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setEditSelectedCalculatedFields([...editSelectedCalculatedFields, field.field_id]);
+                            } else {
+                              setEditSelectedCalculatedFields(editSelectedCalculatedFields.filter(id => id !== field.field_id));
+                            }
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <label
+                            htmlFor={`edit-${field.field_id}`}
+                            className="font-medium text-sm cursor-pointer"
                           >
-                            <Checkbox
-                              id={`edit-${field.field_id}`}
-                              checked={editSelectedCalculatedFields.includes(field.field_id)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setEditSelectedCalculatedFields([...editSelectedCalculatedFields, field.field_id]);
-                                } else {
-                                  setEditSelectedCalculatedFields(editSelectedCalculatedFields.filter(id => id !== field.field_id));
-                                }
-                              }}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <label
-                                htmlFor={`edit-${field.field_id}`}
-                                className="font-medium text-sm cursor-pointer"
-                              >
-                                {field.name}
-                              </label>
-                              {field.description && (
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {field.description}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {field.unit && (
-                                <Badge variant="outline" className="text-xs">
-                                  {field.unit}
-                                </Badge>
-                              )}
-                              <Badge variant="secondary" className="text-xs">
-                                {field.calculation_type}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-
-            {/* Gateway-specific fields - only shown for gateway devices */}
-            {editingDevice?.device_type === "gateway" && (
-              <>
-                {/* Section divider */}
-                <div className="border-t pt-4 mt-2">
-                  <h4 className="font-medium text-sm mb-4">Gateway Configuration</h4>
-                </div>
-
-                {/* Gateway Type Selector */}
-                <div className="space-y-2">
-                  <Label>Gateway Type</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* Netbiter option */}
-                    <button
-                      type="button"
-                      onClick={() => setEditGatewayType("netbiter")}
-                      className={`p-3 rounded-lg border-2 text-left transition-all ${
-                        editGatewayType === "netbiter"
-                          ? "border-primary bg-primary/5"
-                          : "border-muted hover:border-muted-foreground/50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                            editGatewayType === "netbiter"
-                              ? "border-primary"
-                              : "border-muted-foreground/50"
-                          }`}
-                        >
-                          {editGatewayType === "netbiter" && (
-                            <div className="w-2 h-2 rounded-full bg-primary" />
+                            {field.name}
+                          </label>
+                          {field.description && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {field.description}
+                            </p>
                           )}
                         </div>
-                        <span className="font-medium text-sm">Netbiter</span>
-                      </div>
-                    </button>
-
-                    {/* Other option */}
-                    <button
-                      type="button"
-                      onClick={() => setEditGatewayType("other")}
-                      className={`p-3 rounded-lg border-2 text-left transition-all ${
-                        editGatewayType === "other"
-                          ? "border-primary bg-primary/5"
-                          : "border-muted hover:border-muted-foreground/50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                            editGatewayType === "other"
-                              ? "border-primary"
-                              : "border-muted-foreground/50"
-                          }`}
-                        >
-                          {editGatewayType === "other" && (
-                            <div className="w-2 h-2 rounded-full bg-primary" />
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {field.unit && (
+                            <Badge variant="outline" className="text-xs">
+                              {field.unit}
+                            </Badge>
                           )}
+                          <Badge variant="secondary" className="text-xs">
+                            {field.calculation_type}
+                          </Badge>
                         </div>
-                        <span className="font-medium text-sm">Other</span>
                       </div>
-                    </button>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          ) : (
+            /* Gateway form */
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Name</Label>
+                <Input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="min-h-[44px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-ip">IP Address</Label>
+                <Input
+                  id="edit-ip"
+                  value={editIpAddress}
+                  onChange={(e) => setEditIpAddress(e.target.value)}
+                  placeholder="e.g., 192.168.1.100"
+                  className="min-h-[44px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-port">Port</Label>
+                <Input
+                  id="edit-port"
+                  type="number"
+                  value={editPort}
+                  onChange={(e) => setEditPort(e.target.value)}
+                  placeholder="e.g., 502"
+                  className="min-h-[44px]"
+                />
+              </div>
+
+              {/* Gateway Type Selector */}
+              <div className="space-y-2 pt-2">
+                <Label>Gateway Type</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditGatewayType("netbiter")}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${
+                      editGatewayType === "netbiter"
+                        ? "border-primary bg-primary/5"
+                        : "border-muted hover:border-muted-foreground/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          editGatewayType === "netbiter"
+                            ? "border-primary"
+                            : "border-muted-foreground/50"
+                        }`}
+                      >
+                        {editGatewayType === "netbiter" && (
+                          <div className="w-2 h-2 rounded-full bg-primary" />
+                        )}
+                      </div>
+                      <span className="font-medium text-sm">Netbiter</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditGatewayType("other")}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${
+                      editGatewayType === "other"
+                        ? "border-primary bg-primary/5"
+                        : "border-muted hover:border-muted-foreground/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          editGatewayType === "other"
+                            ? "border-primary"
+                            : "border-muted-foreground/50"
+                        }`}
+                      >
+                        {editGatewayType === "other" && (
+                          <div className="w-2 h-2 rounded-full bg-primary" />
+                        )}
+                      </div>
+                      <span className="font-medium text-sm">Other</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Netbiter Credentials */}
+              {editGatewayType === "netbiter" && (
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-netbiter-account">Account ID</Label>
+                    <Input
+                      id="edit-netbiter-account"
+                      value={editNetbiterAccountId}
+                      onChange={(e) => setEditNetbiterAccountId(e.target.value)}
+                      placeholder="Enter your Netbiter account ID"
+                      className="min-h-[44px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-netbiter-username">Username</Label>
+                    <Input
+                      id="edit-netbiter-username"
+                      value={editNetbiterUsername}
+                      onChange={(e) => setEditNetbiterUsername(e.target.value)}
+                      placeholder="API username"
+                      className="min-h-[44px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-netbiter-password">
+                      Password
+                      <span className="text-xs text-muted-foreground ml-2">
+                        (leave empty to keep current)
+                      </span>
+                    </Label>
+                    <Input
+                      id="edit-netbiter-password"
+                      type="password"
+                      value={editNetbiterPassword}
+                      onChange={(e) => {
+                        setEditNetbiterPassword(e.target.value);
+                        setPasswordModified(true);
+                      }}
+                      placeholder="Enter new password to change"
+                      className="min-h-[44px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-netbiter-system">
+                      System ID
+                      <span className="text-xs text-muted-foreground ml-2">
+                        (optional)
+                      </span>
+                    </Label>
+                    <Input
+                      id="edit-netbiter-system"
+                      value={editNetbiterSystemId}
+                      onChange={(e) => setEditNetbiterSystemId(e.target.value)}
+                      placeholder="Netbiter system/device ID"
+                      className="min-h-[44px]"
+                    />
                   </div>
                 </div>
+              )}
 
-                {/* Netbiter Credentials */}
-                {editGatewayType === "netbiter" && (
-                  <div className="space-y-4 pt-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-netbiter-account">Account ID</Label>
-                      <Input
-                        id="edit-netbiter-account"
-                        value={editNetbiterAccountId}
-                        onChange={(e) => setEditNetbiterAccountId(e.target.value)}
-                        placeholder="Enter your Netbiter account ID"
-                        className="min-h-[44px]"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-netbiter-username">Username</Label>
-                      <Input
-                        id="edit-netbiter-username"
-                        value={editNetbiterUsername}
-                        onChange={(e) => setEditNetbiterUsername(e.target.value)}
-                        placeholder="API username"
-                        className="min-h-[44px]"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-netbiter-password">
-                        Password
-                        <span className="text-xs text-muted-foreground ml-2">
-                          (leave empty to keep current)
-                        </span>
-                      </Label>
-                      <Input
-                        id="edit-netbiter-password"
-                        type="password"
-                        value={editNetbiterPassword}
-                        onChange={(e) => {
-                          setEditNetbiterPassword(e.target.value);
-                          setPasswordModified(true);
-                        }}
-                        placeholder="Enter new password to change"
-                        className="min-h-[44px]"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-netbiter-system">
-                        System ID
-                        <span className="text-xs text-muted-foreground ml-2">
-                          (optional)
-                        </span>
-                      </Label>
-                      <Input
-                        id="edit-netbiter-system"
-                        value={editNetbiterSystemId}
-                        onChange={(e) => setEditNetbiterSystemId(e.target.value)}
-                        placeholder="Netbiter system/device ID"
-                        className="min-h-[44px]"
-                      />
-                    </div>
+              {/* Other Gateway Credentials */}
+              {editGatewayType === "other" && (
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-api-url">API URL</Label>
+                    <Input
+                      id="edit-api-url"
+                      value={editGatewayApiUrl}
+                      onChange={(e) => setEditGatewayApiUrl(e.target.value)}
+                      placeholder="https://api.example.com"
+                      className="min-h-[44px]"
+                    />
                   </div>
-                )}
 
-                {/* Other Gateway Credentials */}
-                {editGatewayType === "other" && (
-                  <div className="space-y-4 pt-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-api-url">API URL</Label>
-                      <Input
-                        id="edit-api-url"
-                        value={editGatewayApiUrl}
-                        onChange={(e) => setEditGatewayApiUrl(e.target.value)}
-                        placeholder="https://api.example.com"
-                        className="min-h-[44px]"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-api-key">
-                        API Key
-                        <span className="text-xs text-muted-foreground ml-2">
-                          (leave empty to keep current)
-                        </span>
-                      </Label>
-                      <Input
-                        id="edit-api-key"
-                        value={editGatewayApiKey}
-                        onChange={(e) => setEditGatewayApiKey(e.target.value)}
-                        placeholder="Enter new API key to change"
-                        className="min-h-[44px]"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-api-secret">
-                        API Secret
-                        <span className="text-xs text-muted-foreground ml-2">
-                          (leave empty to keep current)
-                        </span>
-                      </Label>
-                      <Input
-                        id="edit-api-secret"
-                        type="password"
-                        value={editGatewayApiSecret}
-                        onChange={(e) => {
-                          setEditGatewayApiSecret(e.target.value);
-                          setSecretModified(true);
-                        }}
-                        placeholder="Enter new API secret to change"
-                        className="min-h-[44px]"
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-api-key">
+                      API Key
+                      <span className="text-xs text-muted-foreground ml-2">
+                        (leave empty to keep current)
+                      </span>
+                    </Label>
+                    <Input
+                      id="edit-api-key"
+                      value={editGatewayApiKey}
+                      onChange={(e) => setEditGatewayApiKey(e.target.value)}
+                      placeholder="Enter new API key to change"
+                      className="min-h-[44px]"
+                    />
                   </div>
-                )}
-              </>
-            )}
-          </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-api-secret">
+                      API Secret
+                      <span className="text-xs text-muted-foreground ml-2">
+                        (leave empty to keep current)
+                      </span>
+                    </Label>
+                    <Input
+                      id="edit-api-secret"
+                      type="password"
+                      value={editGatewayApiSecret}
+                      onChange={(e) => {
+                        setEditGatewayApiSecret(e.target.value);
+                        setSecretModified(true);
+                      }}
+                      placeholder="Enter new API secret to change"
+                      className="min-h-[44px]"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <DialogFooter>
             <Button
