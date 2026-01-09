@@ -734,7 +734,7 @@ export function MasterDeviceList({
 
       {/* Edit Dialog */}
       <Dialog open={!!editingDevice} onOpenChange={() => setEditingDevice(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Edit Device: {editingDevice?.name}</DialogTitle>
             <DialogDescription>
@@ -937,9 +937,10 @@ export function MasterDeviceList({
                 ) : (
                   <div className="space-y-2">
                     {availableCalculatedFields.map((field) => (
-                      <div
+                      <label
                         key={field.field_id}
-                        className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20"
+                        htmlFor={`edit-${field.field_id}`}
+                        className="flex items-start gap-3 p-3 rounded-lg border bg-muted/20 cursor-pointer hover:bg-muted/30 transition-colors"
                       >
                         <Checkbox
                           id={`edit-${field.field_id}`}
@@ -951,31 +952,24 @@ export function MasterDeviceList({
                               setEditSelectedCalculatedFields(editSelectedCalculatedFields.filter(id => id !== field.field_id));
                             }
                           }}
+                          className="mt-0.5"
                         />
                         <div className="flex-1 min-w-0">
-                          <label
-                            htmlFor={`edit-${field.field_id}`}
-                            className="font-medium text-sm cursor-pointer"
-                          >
-                            {field.name}
-                          </label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{field.name}</span>
+                            {field.unit && (
+                              <Badge variant="outline" className="text-xs">
+                                {field.unit}
+                              </Badge>
+                            )}
+                          </div>
                           {field.description && (
-                            <p className="text-xs text-muted-foreground truncate">
+                            <p className="text-xs text-muted-foreground mt-1">
                               {field.description}
                             </p>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {field.unit && (
-                            <Badge variant="outline" className="text-xs">
-                              {field.unit}
-                            </Badge>
-                          )}
-                          <Badge variant="secondary" className="text-xs">
-                            {field.calculation_type}
-                          </Badge>
-                        </div>
-                      </div>
+                      </label>
                     ))}
                   </div>
                 )}
