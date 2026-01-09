@@ -182,7 +182,11 @@ export default async function SiteDetailPage({
     is_online: boolean;
     last_seen: string | null;
     registers: ModbusRegister[] | null;
+    visualization_registers: ModbusRegister[] | null;
     alarm_registers: ModbusRegister[] | null;
+    calculated_fields: Array<{ field_id: string; name: string; storage_mode: string }> | null;
+    template_id: string | null;
+    template_synced_at: string | null;
     logging_interval_ms: number | null;
     device_templates: {
       name: string;
@@ -210,7 +214,11 @@ export default async function SiteDetailPage({
         is_online,
         last_seen,
         registers,
+        visualization_registers,
         alarm_registers,
+        calculated_fields,
+        template_id,
+        template_synced_at,
         logging_interval_ms,
         device_templates (
           name,
