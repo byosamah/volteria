@@ -84,7 +84,13 @@ const CHART_COLORS = {
 };
 
 // Threshold for considering controller offline (in seconds)
-const OFFLINE_THRESHOLD_SECONDS = 90;
+// Controllers send heartbeats every 30 seconds, so 120s = 4 missed heartbeats
+// This provides tolerance for network latency and timing variations
+const OFFLINE_THRESHOLD_SECONDS = 120;
+
+// Minimum offline duration (in seconds) to count as a "disconnection"
+// Brief gaps (< 30s) are likely timing variations, not real disconnections
+const MIN_DISCONNECTION_SECONDS = 30;
 
 // Helper: Downsample data for chart performance (pure function, no deps)
 // Moved outside component to prevent recreation on every render
@@ -212,22 +218,28 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
 
                 // If gap is > threshold, there was an offline period
                 if (gapSeconds > OFFLINE_THRESHOLD_SECONDS) {
-                  // Add offline point at the gap start (after previous heartbeat + threshold)
+                  // Calculate actual offline duration
                   const offlineStartTime = prevTime + OFFLINE_THRESHOLD_SECONDS * 1000;
-                  statusData.push({
-                    timestamp: new Date(offlineStartTime).toISOString(),
-                    time: formatTime(new Date(offlineStartTime).toISOString()),
-                    status: 0,
-                    isOnline: false,
-                    gapSeconds: Math.floor(gapSeconds),
-                  });
+                  const offlineDurationMs = currentTime - offlineStartTime;
+                  const offlineDurationSeconds = offlineDurationMs / 1000;
 
-                  // Only count the actual offline duration (from threshold to reconnection)
-                  totalOfflineMs += (currentTime - offlineStartTime);
-                  offlineEvents++;
-
-                  // Online time for previous interval is just the threshold
-                  totalOnlineMs += OFFLINE_THRESHOLD_SECONDS * 1000;
+                  // Only add offline point and count as disconnection if significant
+                  if (offlineDurationSeconds >= MIN_DISCONNECTION_SECONDS) {
+                    statusData.push({
+                      timestamp: new Date(offlineStartTime).toISOString(),
+                      time: formatTime(new Date(offlineStartTime).toISOString()),
+                      status: 0,
+                      isOnline: false,
+                      gapSeconds: Math.floor(gapSeconds),
+                    });
+                    totalOfflineMs += offlineDurationMs;
+                    offlineEvents++;
+                    // Online time for previous interval is just the threshold
+                    totalOnlineMs += OFFLINE_THRESHOLD_SECONDS * 1000;
+                  } else {
+                    // Brief gap - treat as continuous online (count full gap as online)
+                    totalOnlineMs += gapSeconds * 1000;
+                  }
                 } else {
                   // Normal heartbeat interval - count as online time
                   totalOnlineMs += gapSeconds * 1000;
@@ -249,18 +261,28 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
               const timeSinceLastHeartbeat = now - lastHeartbeatTime;
 
               if (timeSinceLastHeartbeat > OFFLINE_THRESHOLD_SECONDS * 1000) {
-                // Controller is currently offline
+                // Calculate offline duration
                 const offlineStartTime = lastHeartbeatTime + OFFLINE_THRESHOLD_SECONDS * 1000;
-                statusData.push({
-                  timestamp: new Date(offlineStartTime).toISOString(),
-                  time: formatTime(new Date(offlineStartTime).toISOString()),
-                  status: 0,
-                  isOnline: false,
-                  gapSeconds: Math.floor(timeSinceLastHeartbeat / 1000),
-                });
-                totalOfflineMs += (now - offlineStartTime);
-                totalOnlineMs += OFFLINE_THRESHOLD_SECONDS * 1000; // Last online period before going offline
-                offlineEvents++;
+                const offlineDurationMs = now - offlineStartTime;
+                const offlineDurationSeconds = offlineDurationMs / 1000;
+
+                // Only count as disconnection if significant duration
+                if (offlineDurationSeconds >= MIN_DISCONNECTION_SECONDS) {
+                  // Controller is currently offline
+                  statusData.push({
+                    timestamp: new Date(offlineStartTime).toISOString(),
+                    time: formatTime(new Date(offlineStartTime).toISOString()),
+                    status: 0,
+                    isOnline: false,
+                    gapSeconds: Math.floor(timeSinceLastHeartbeat / 1000),
+                  });
+                  totalOfflineMs += offlineDurationMs;
+                  totalOnlineMs += OFFLINE_THRESHOLD_SECONDS * 1000;
+                  offlineEvents++;
+                } else {
+                  // Brief gap - treat as still online
+                  totalOnlineMs += timeSinceLastHeartbeat;
+                }
               } else {
                 // Still online - add time since last heartbeat as online
                 totalOnlineMs += timeSinceLastHeartbeat;
