@@ -127,11 +127,14 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   // Helper: Format time based on selected range (memoized to prevent recreation)
   const formatTime = useCallback((timestamp: string) => {
     const date = new Date(timestamp);
-    if (selectedRange <= 1) {
+    if (selectedRange <= 6) {
+      // For 1h and 6h: show just time (same day)
       return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     } else if (selectedRange <= 24) {
-      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      // For 24h: show day and time since data spans multiple days
+      return date.toLocaleDateString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
     } else {
+      // For 7d: show date and time
       return date.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit" });
     }
   }, [selectedRange]);
