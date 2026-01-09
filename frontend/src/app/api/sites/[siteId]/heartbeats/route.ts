@@ -77,15 +77,20 @@ export async function GET(
     // - 6 hours = ~720 points
     // - 24 hours = ~2880 points
     // - 7 days = ~20160 points
+    // Scale the limit based on requested hours to ensure we get enough data
+    // Formula: hours * 150 (allows for ~2.5 heartbeats/min with some buffer)
+    // Cap at 25000 to prevent excessive data transfer
+    const dataLimit = Math.min(clampedHours * 150, 25000);
+
     // We fetch in descending order (newest first) to get the most recent data,
-    // then reverse on the client side. Limit to 1000 points max.
+    // then reverse on the client side.
     const { data: heartbeats, error: heartbeatError } = await supabase
       .from("controller_heartbeats")
       .select("timestamp, cpu_usage_pct, memory_usage_pct, disk_usage_pct, metadata")
       .eq("controller_id", controllerId)
       .gte("timestamp", startTime.toISOString())
       .order("timestamp", { ascending: false })
-      .limit(1000);
+      .limit(dataLimit);
 
     if (heartbeatError) {
       console.error("Failed to fetch heartbeats:", heartbeatError);
