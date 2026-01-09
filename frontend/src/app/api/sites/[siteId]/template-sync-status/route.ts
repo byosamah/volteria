@@ -59,7 +59,11 @@ export async function GET(
     let devicesNeedingSync = 0;
 
     for (const device of devices) {
-      const template = device.device_templates as { id: string; updated_at: string } | null;
+      // Handle Supabase join which can return array or single object
+      const templateData = device.device_templates;
+      const template = Array.isArray(templateData)
+        ? (templateData[0] as { id: string; updated_at: string } | undefined)
+        : (templateData as { id: string; updated_at: string } | null);
 
       if (template?.updated_at) {
         const templateUpdated = new Date(template.updated_at);
