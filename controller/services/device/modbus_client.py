@@ -1,0 +1,381 @@
+"""
+Async Modbus Client
+
+Wrapper around pymodbus for async Modbus TCP and RTU gateway communication.
+"""
+
+import asyncio
+import struct
+from typing import Any
+from dataclasses import dataclass
+
+from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.exceptions import ModbusException
+
+from common.config import RegisterDataType
+from common.exceptions import CommunicationError, WriteError
+from common.logging_setup import get_service_logger
+
+logger = get_service_logger("device.modbus")
+
+
+@dataclass
+class ReadResult:
+    """Result of a register read operation"""
+    success: bool
+    value: float | int | None = None
+    raw_registers: list[int] | None = None
+    error: str | None = None
+
+
+class ModbusClient:
+    """
+    Async Modbus TCP client with support for various data types.
+
+    Handles:
+    - Modbus TCP connections
+    - RTU over TCP (gateway mode)
+    - Various register data types (uint16, int16, uint32, int32, float32)
+    - Big-endian and little-endian byte ordering
+    """
+
+    def __init__(
+        self,
+        host: str,
+        port: int = 502,
+        timeout: float = 3.0,
+    ):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+        self._client: AsyncModbusTcpClient | None = None
+        self._lock = asyncio.Lock()
+        self._connected = False
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected and self._client is not None
+
+    async def connect(self) -> bool:
+        """Establish connection to Modbus device"""
+        async with self._lock:
+            if self._connected:
+                return True
+
+            try:
+                self._client = AsyncModbusTcpClient(
+                    host=self.host,
+                    port=self.port,
+                    timeout=self.timeout,
+                )
+
+                await self._client.connect()
+                self._connected = self._client.connected
+
+                if self._connected:
+                    logger.debug(
+                        f"Connected to Modbus device at {self.host}:{self.port}"
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to connect to Modbus device at {self.host}:{self.port}"
+                    )
+
+                return self._connected
+
+            except Exception as e:
+                logger.error(f"Connection error to {self.host}:{self.port}: {e}")
+                self._connected = False
+                return False
+
+    async def disconnect(self) -> None:
+        """Close connection"""
+        async with self._lock:
+            if self._client:
+                self._client.close()
+                self._client = None
+            self._connected = False
+            logger.debug(f"Disconnected from {self.host}:{self.port}")
+
+    async def read_holding_registers(
+        self,
+        address: int,
+        count: int,
+        slave_id: int = 1,
+        datatype: RegisterDataType = RegisterDataType.UINT16,
+        scale: float = 1.0,
+    ) -> ReadResult:
+        """
+        Read holding registers with data type conversion.
+
+        Args:
+            address: Starting register address
+            count: Number of registers to read
+            slave_id: Modbus slave ID
+            datatype: Data type for conversion
+            scale: Scale factor to apply
+
+        Returns:
+            ReadResult with converted value
+        """
+        if not await self._ensure_connected():
+            return ReadResult(
+                success=False,
+                error=f"Not connected to {self.host}:{self.port}",
+            )
+
+        try:
+            response = await self._client.read_holding_registers(
+                address=address,
+                count=count,
+                slave=slave_id,
+            )
+
+            if response.isError():
+                return ReadResult(
+                    success=False,
+                    error=f"Modbus error: {response}",
+                )
+
+            # Convert to value based on datatype
+            value = self._convert_registers(response.registers, datatype)
+            scaled_value = value * scale if value is not None else None
+
+            return ReadResult(
+                success=True,
+                value=scaled_value,
+                raw_registers=list(response.registers),
+            )
+
+        except ModbusException as e:
+            return ReadResult(success=False, error=f"Modbus exception: {e}")
+        except asyncio.TimeoutError:
+            return ReadResult(success=False, error="Read timeout")
+        except Exception as e:
+            return ReadResult(success=False, error=str(e))
+
+    async def read_input_registers(
+        self,
+        address: int,
+        count: int,
+        slave_id: int = 1,
+        datatype: RegisterDataType = RegisterDataType.UINT16,
+        scale: float = 1.0,
+    ) -> ReadResult:
+        """Read input registers with data type conversion"""
+        if not await self._ensure_connected():
+            return ReadResult(
+                success=False,
+                error=f"Not connected to {self.host}:{self.port}",
+            )
+
+        try:
+            response = await self._client.read_input_registers(
+                address=address,
+                count=count,
+                slave=slave_id,
+            )
+
+            if response.isError():
+                return ReadResult(
+                    success=False,
+                    error=f"Modbus error: {response}",
+                )
+
+            value = self._convert_registers(response.registers, datatype)
+            scaled_value = value * scale if value is not None else None
+
+            return ReadResult(
+                success=True,
+                value=scaled_value,
+                raw_registers=list(response.registers),
+            )
+
+        except ModbusException as e:
+            return ReadResult(success=False, error=f"Modbus exception: {e}")
+        except asyncio.TimeoutError:
+            return ReadResult(success=False, error="Read timeout")
+        except Exception as e:
+            return ReadResult(success=False, error=str(e))
+
+    async def write_register(
+        self,
+        address: int,
+        value: int,
+        slave_id: int = 1,
+    ) -> bool:
+        """
+        Write a single holding register.
+
+        Args:
+            address: Register address
+            value: Value to write (16-bit integer)
+            slave_id: Modbus slave ID
+
+        Returns:
+            True if write successful
+        """
+        if not await self._ensure_connected():
+            raise CommunicationError(
+                f"Not connected to {self.host}:{self.port}",
+                host=self.host,
+                port=self.port,
+            )
+
+        try:
+            response = await self._client.write_register(
+                address=address,
+                value=value,
+                slave=slave_id,
+            )
+
+            if response.isError():
+                raise WriteError(
+                    f"Write failed: {response}",
+                    register=address,
+                    value=value,
+                )
+
+            logger.debug(
+                f"Write successful: {self.host}:{self.port} slave={slave_id} "
+                f"reg={address} value={value}"
+            )
+            return True
+
+        except ModbusException as e:
+            raise WriteError(
+                f"Modbus exception: {e}",
+                register=address,
+                value=value,
+            )
+
+    async def write_multiple_registers(
+        self,
+        address: int,
+        values: list[int],
+        slave_id: int = 1,
+    ) -> bool:
+        """
+        Write multiple holding registers.
+
+        Args:
+            address: Starting register address
+            values: List of 16-bit integer values
+            slave_id: Modbus slave ID
+
+        Returns:
+            True if write successful
+        """
+        if not await self._ensure_connected():
+            raise CommunicationError(
+                f"Not connected to {self.host}:{self.port}",
+                host=self.host,
+                port=self.port,
+            )
+
+        try:
+            response = await self._client.write_registers(
+                address=address,
+                values=values,
+                slave=slave_id,
+            )
+
+            if response.isError():
+                raise WriteError(
+                    f"Write failed: {response}",
+                    register=address,
+                    value=values[0] if values else None,
+                )
+
+            return True
+
+        except ModbusException as e:
+            raise WriteError(
+                f"Modbus exception: {e}",
+                register=address,
+                value=values[0] if values else None,
+            )
+
+    async def _ensure_connected(self) -> bool:
+        """Ensure connection is established"""
+        if not self._connected:
+            return await self.connect()
+
+        # Check if still connected
+        if self._client and not self._client.connected:
+            self._connected = False
+            return await self.connect()
+
+        return True
+
+    def _convert_registers(
+        self,
+        registers: list[int],
+        datatype: RegisterDataType,
+    ) -> float | int | None:
+        """Convert raw registers to typed value"""
+        if not registers:
+            return None
+
+        try:
+            if datatype == RegisterDataType.UINT16:
+                return registers[0]
+
+            elif datatype == RegisterDataType.INT16:
+                value = registers[0]
+                if value >= 0x8000:
+                    value -= 0x10000
+                return value
+
+            elif datatype == RegisterDataType.UINT32:
+                if len(registers) < 2:
+                    return None
+                # Big-endian: high word first
+                return (registers[0] << 16) | registers[1]
+
+            elif datatype == RegisterDataType.INT32:
+                if len(registers) < 2:
+                    return None
+                value = (registers[0] << 16) | registers[1]
+                if value >= 0x80000000:
+                    value -= 0x100000000
+                return value
+
+            elif datatype == RegisterDataType.FLOAT32:
+                if len(registers) < 2:
+                    return None
+                # Pack as big-endian unsigned shorts, unpack as float
+                packed = struct.pack(">HH", registers[0], registers[1])
+                return struct.unpack(">f", packed)[0]
+
+            elif datatype == RegisterDataType.FLOAT64:
+                if len(registers) < 4:
+                    return None
+                packed = struct.pack(
+                    ">HHHH",
+                    registers[0],
+                    registers[1],
+                    registers[2],
+                    registers[3],
+                )
+                return struct.unpack(">d", packed)[0]
+
+            return registers[0]
+
+        except (struct.error, IndexError) as e:
+            logger.warning(f"Error converting registers: {e}")
+            return None
+
+    @staticmethod
+    def get_register_count(datatype: RegisterDataType) -> int:
+        """Get number of registers for a data type"""
+        counts = {
+            RegisterDataType.UINT16: 1,
+            RegisterDataType.INT16: 1,
+            RegisterDataType.UINT32: 2,
+            RegisterDataType.INT32: 2,
+            RegisterDataType.FLOAT32: 2,
+            RegisterDataType.FLOAT64: 4,
+        }
+        return counts.get(datatype, 1)

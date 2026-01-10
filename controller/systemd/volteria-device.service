@@ -1,0 +1,35 @@
+[Unit]
+Description=Volteria Device Service (Modbus I/O, Polling)
+Documentation=https://volteria.org/docs
+After=volteria-config.service
+Requires=volteria-config.service
+PartOf=volteria-supervisor.service
+
+[Service]
+Type=simple
+User=volteria
+Group=volteria
+WorkingDirectory=/opt/volteria/controller
+ExecStart=/opt/volteria/venv/bin/python -m services.device.service
+Restart=on-failure
+RestartSec=10
+WatchdogSec=30
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/volteria/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=volteria-device
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/volteria/data /var/log/volteria
+PrivateTmp=yes
+
+[Install]
+WantedBy=volteria-supervisor.service

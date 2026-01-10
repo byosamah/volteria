@@ -1,0 +1,35 @@
+[Unit]
+Description=Volteria Control Service (Zero-Feeding Algorithm)
+Documentation=https://volteria.org/docs
+After=volteria-device.service
+Requires=volteria-device.service
+PartOf=volteria-supervisor.service
+
+[Service]
+Type=simple
+User=volteria
+Group=volteria
+WorkingDirectory=/opt/volteria/controller
+ExecStart=/opt/volteria/venv/bin/python -m services.control.service
+Restart=on-failure
+RestartSec=10
+WatchdogSec=30
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/volteria/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=volteria-control
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/volteria/data /var/log/volteria
+PrivateTmp=yes
+
+[Install]
+WantedBy=volteria-supervisor.service

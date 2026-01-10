@@ -1,0 +1,37 @@
+[Unit]
+Description=Volteria Controller Supervisor
+Documentation=https://volteria.org/docs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=volteria
+Group=volteria
+WorkingDirectory=/opt/volteria/controller
+ExecStart=/opt/volteria/venv/bin/python -m supervisor
+Restart=always
+RestartSec=5
+
+# High priority - master process should always run
+OOMScoreAdjust=-1000
+Nice=-10
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/volteria/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=volteria-supervisor
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/volteria/data /var/log/volteria
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

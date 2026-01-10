@@ -892,3 +892,126 @@ async def get_controller_config(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch controller config: {str(e)}"
         )
+
+
+# ============================================
+# ENDPOINTS - REBOOT CONTROLLER
+# ============================================
+
+class RebootResponse(BaseModel):
+    """Response for reboot command."""
+    success: bool
+    command_id: str
+    message: str
+
+
+@router.post("/{controller_id}/reboot", response_model=RebootResponse)
+async def reboot_controller(
+    controller_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Send reboot command to a controller.
+
+    The command is inserted into the control_commands table.
+    The controller polls this table and executes reboot commands.
+
+    Requires:
+    - User to be authenticated
+    - User to have control access to the site where the controller is assigned
+      (or be a super_admin/backend_admin/admin)
+    """
+    try:
+        # 1. Verify controller exists
+        controller_result = db.table("controllers").select(
+            "id, serial_number"
+        ).eq("id", str(controller_id)).execute()
+
+        if not controller_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Controller {controller_id} not found"
+            )
+
+        controller = controller_result.data[0]
+
+        # 2. Find the site where this controller is assigned
+        site_assignment = db.table("site_master_devices").select(
+            "site_id, sites:site_id (id, project_id)"
+        ).eq("controller_id", str(controller_id)).execute()
+
+        if not site_assignment.data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Controller is not assigned to any site"
+            )
+
+        site_data = site_assignment.data[0]
+        site_id = site_data["site_id"]
+        project_id = site_data.get("sites", {}).get("project_id")
+
+        # 3. Check user permissions
+        is_admin = current_user.role in ["super_admin", "backend_admin", "admin"]
+
+        if not is_admin:
+            # Check if user has control access to this project
+            access_result = db.table("user_projects").select(
+                "can_control"
+            ).eq("user_id", current_user.id).eq("project_id", str(project_id)).execute()
+
+            if not access_result.data or not access_result.data[0].get("can_control"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have permission to control this site"
+                )
+
+        # 4. Insert reboot command into control_commands table
+        command_data = {
+            "site_id": str(site_id),
+            "controller_id": str(controller_id),
+            "command_type": "reboot",
+            "parameters": {"graceful": True},
+            "status": "pending",
+            "priority": 1,  # High priority
+            "created_by": current_user.id
+        }
+
+        command_result = db.table("control_commands").insert(command_data).execute()
+
+        if not command_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create reboot command"
+            )
+
+        command = command_result.data[0]
+
+        # 5. Log the action to audit_logs
+        db.table("audit_logs").insert({
+            "user_id": current_user.id,
+            "action": "controller.reboot",
+            "category": "control",
+            "resource_type": "controller",
+            "resource_id": str(controller_id),
+            "description": f"Sent reboot command to controller {controller['serial_number']}",
+            "metadata": {
+                "command_id": str(command["id"]),
+                "site_id": str(site_id)
+            },
+            "status": "success"
+        }).execute()
+
+        return RebootResponse(
+            success=True,
+            command_id=str(command["id"]),
+            message="Reboot command sent successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send reboot command: {str(e)}"
+        )

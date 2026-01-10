@@ -1,0 +1,35 @@
+[Unit]
+Description=Volteria Logging Service (Local DB, Cloud Sync, Alarms)
+Documentation=https://volteria.org/docs
+After=volteria-control.service
+Requires=volteria-control.service
+PartOf=volteria-supervisor.service
+
+[Service]
+Type=simple
+User=volteria
+Group=volteria
+WorkingDirectory=/opt/volteria/controller
+ExecStart=/opt/volteria/venv/bin/python -m services.logging.service
+Restart=on-failure
+RestartSec=10
+WatchdogSec=300
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/volteria/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=volteria-logging
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/volteria/data /var/log/volteria
+PrivateTmp=yes
+
+[Install]
+WantedBy=volteria-supervisor.service

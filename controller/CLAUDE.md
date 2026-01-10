@@ -1,5 +1,7 @@
 # Controller - CLAUDE.md
 
+> **Architecture Reference**: See [CONTROL_MASTER.md](./CONTROL_MASTER.md) for comprehensive architecture decisions, design patterns, and knowledge base.
+
 ## Purpose
 Python-based on-site controller running on Raspberry Pi 5 that:
 1. Reads data from load meters, DG controllers, and solar inverters

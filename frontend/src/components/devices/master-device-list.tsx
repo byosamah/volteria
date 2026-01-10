@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { RefreshCw } from "lucide-react";
 
 // Helper to determine if controller is online (heartbeat within last 90 seconds)
 // Note: Controllers send heartbeats every 30 seconds
@@ -153,6 +154,12 @@ export function MasterDeviceList({
   const [deletingDevice, setDeletingDevice] = useState<MasterDevice | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Reboot confirmation state (double confirmation)
+  const [showRebootConfirm, setShowRebootConfirm] = useState(false);
+  const [showRebootFinalConfirm, setShowRebootFinalConfirm] = useState(false);
+  const [rebootConfirmText, setRebootConfirmText] = useState("");
+  const [isRebooting, setIsRebooting] = useState(false);
 
   // Heartbeat polling state - for live connection status
   const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
@@ -476,6 +483,37 @@ export function MasterDeviceList({
       toast.error(err instanceof Error ? err.message : "Failed to update device");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Reboot controller (double confirmation flow)
+  const handleReboot = async () => {
+    if (!editingDevice?.controller_id || rebootConfirmText !== "REBOOT") return;
+
+    setIsRebooting(true);
+    try {
+      // Send reboot command to control_commands table
+      const res = await fetch(`/api/controllers/${editingDevice.controller_id}/reboot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to send reboot command");
+      }
+
+      toast.success("Reboot command sent. Controller will restart shortly.");
+
+      // Close all dialogs
+      setShowRebootFinalConfirm(false);
+      setShowRebootConfirm(false);
+      setRebootConfirmText("");
+      setEditingDevice(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to reboot controller");
+    } finally {
+      setIsRebooting(false);
     }
   };
 
@@ -915,6 +953,35 @@ export function MasterDeviceList({
                     </div>
                   </div>
                 </div>
+
+                {/* Reboot Controller Section */}
+                {editingDevice?.controller_id && (
+                  <div className="pt-4 border-t">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-destructive">Reboot Controller</p>
+                        <p className="text-xs text-muted-foreground">
+                          Restart the controller hardware. Site will be offline for ~60 seconds.
+                        </p>
+                      </div>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setShowRebootConfirm(true)}
+                        disabled={!isControllerOnline(getControllerHeartbeat(editingDevice?.controller_id))}
+                        className="min-h-[40px]"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Reboot
+                      </Button>
+                    </div>
+                    {!isControllerOnline(getControllerHeartbeat(editingDevice?.controller_id)) && (
+                      <p className="text-xs text-amber-600 mt-2">
+                        Controller must be online to send reboot command.
+                      </p>
+                    )}
+                  </div>
+                )}
               </TabsContent>
 
               {/* Calculated Tab */}
@@ -1229,6 +1296,87 @@ export function MasterDeviceList({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Reboot Confirmation Dialog - Step 1 */}
+      <AlertDialog open={showRebootConfirm} onOpenChange={setShowRebootConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reboot Controller?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will restart the controller hardware. The site will be offline for approximately 60 seconds during the reboot.
+              <span className="block mt-2 text-amber-600 font-medium">
+                All active control operations will be interrupted.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowRebootConfirm(false);
+                setShowRebootFinalConfirm(true);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 min-h-[44px]"
+            >
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reboot Final Confirmation Dialog - Step 2 (Type REBOOT) */}
+      <Dialog open={showRebootFinalConfirm} onOpenChange={(open) => {
+        setShowRebootFinalConfirm(open);
+        if (!open) setRebootConfirmText("");
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Confirm Reboot</DialogTitle>
+            <DialogDescription>
+              Type <span className="font-mono font-bold">REBOOT</span> to confirm you want to restart the controller.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={rebootConfirmText}
+              onChange={(e) => setRebootConfirmText(e.target.value.toUpperCase())}
+              placeholder="Type REBOOT"
+              className="min-h-[44px] font-mono text-center text-lg"
+              autoComplete="off"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRebootFinalConfirm(false);
+                setRebootConfirmText("");
+              }}
+              className="min-h-[44px]"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleReboot}
+              disabled={rebootConfirmText !== "REBOOT" || isRebooting}
+              className="min-h-[44px]"
+            >
+              {isRebooting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Rebooting...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Confirm Reboot
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

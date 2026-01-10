@@ -1,0 +1,39 @@
+[Unit]
+Description=Volteria System Service (Heartbeat, OTA, Health Monitoring)
+Documentation=https://volteria.org/docs
+After=network-online.target
+Wants=network-online.target
+PartOf=volteria-supervisor.service
+
+[Service]
+Type=simple
+User=volteria
+Group=volteria
+WorkingDirectory=/opt/volteria/controller
+ExecStart=/opt/volteria/venv/bin/python -m services.system.service
+Restart=always
+RestartSec=5
+WatchdogSec=60
+
+# High priority - heartbeats must always run
+OOMScoreAdjust=-500
+Nice=-5
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/volteria/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=volteria-system
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/volteria/data /var/log/volteria
+PrivateTmp=yes
+
+[Install]
+WantedBy=volteria-supervisor.service
