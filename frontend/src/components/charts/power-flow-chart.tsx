@@ -85,13 +85,17 @@ const CHART_COLORS = {
 };
 
 // Threshold for considering controller offline (in seconds)
-// Controllers send heartbeats every 30 seconds, so 120s = 4 missed heartbeats
-// This provides tolerance for network latency and timing variations
-const OFFLINE_THRESHOLD_SECONDS = 120;
+// Controllers send heartbeats every 30 seconds, so 90s = 3 missed heartbeats
+// This is used for the LIVE indicator only - historical uses uptime detection
+const OFFLINE_THRESHOLD_SECONDS = 90;
 
 // Minimum offline duration (in seconds) to count as a "disconnection"
-// Brief gaps (< 30s) are likely timing variations, not real disconnections
-const MIN_DISCONNECTION_SECONDS = 30;
+// Brief gaps (< 10s) are likely timing variations, not real disconnections
+const MIN_DISCONNECTION_SECONDS = 10;
+
+// Tolerance for uptime comparison (accounts for timing variations)
+// If uptime drops by more than this much from expected, it's a reboot
+const UPTIME_TOLERANCE_SECONDS = 60;
 
 // Helper: Downsample data for chart performance (pure function, no deps)
 // Moved outside component to prevent recreation on every render
@@ -345,12 +349,14 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
       // Fetch data based on chart type
       if (chartType === "connection") {
         // Fetch heartbeat timestamps to derive connection status
+        // Uses uptime_seconds to detect reboots accurately
         try {
           const response = await fetch(`/api/sites/${siteId}/heartbeats?hours=${selectedRange}`);
           if (response.ok) {
             const result = await response.json();
             interface RawHeartbeat {
               timestamp: string;
+              uptime_seconds: number;
             }
             const heartbeats: RawHeartbeat[] = result.data || [];
 
@@ -358,19 +364,17 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
               setConnectionData([]);
               setConnectionStats(null);
             } else {
-              // Calculate connection status from heartbeat gaps
+              // Calculate connection status using UPTIME DETECTION for accurate reboot tracking
+              // This approach detects when uptime_seconds resets, indicating a reboot occurred
               const statusData: ConnectionStatusPoint[] = [];
               let totalOnlineMs = 0;
               let totalOfflineMs = 0;
               let offlineEvents = 0;
 
-              // Sort by timestamp
+              // Sort by timestamp (oldest first)
               const sortedHeartbeats = [...heartbeats].sort(
                 (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
               );
-
-              // Start tracking from the first heartbeat, NOT from the range start
-              // This prevents counting "no data" periods as "offline"
 
               // Add initial online point at first heartbeat
               statusData.push({
@@ -384,19 +388,49 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
               // Process each heartbeat starting from the second one
               for (let i = 1; i < sortedHeartbeats.length; i++) {
                 const hb = sortedHeartbeats[i];
+                const prevHb = sortedHeartbeats[i - 1];
                 const currentTime = new Date(hb.timestamp).getTime();
-                const prevTime = new Date(sortedHeartbeats[i - 1].timestamp).getTime();
+                const prevTime = new Date(prevHb.timestamp).getTime();
                 const gapSeconds = (currentTime - prevTime) / 1000;
 
-                // If gap is > threshold, there was an offline period
-                if (gapSeconds > OFFLINE_THRESHOLD_SECONDS) {
-                  // Calculate actual offline duration
-                  const offlineStartTime = prevTime + OFFLINE_THRESHOLD_SECONDS * 1000;
-                  const offlineDurationMs = currentTime - offlineStartTime;
-                  const offlineDurationSeconds = offlineDurationMs / 1000;
+                // REBOOT DETECTION: Check if uptime reset
+                // If current uptime is much less than (previous uptime + elapsed time), a reboot occurred
+                const expectedUptime = prevHb.uptime_seconds + gapSeconds;
+                const uptimeDrop = expectedUptime - hb.uptime_seconds;
+                const isReboot = uptimeDrop > UPTIME_TOLERANCE_SECONDS && hb.uptime_seconds < prevHb.uptime_seconds;
 
-                  // Only add offline point and count as disconnection if significant
-                  if (offlineDurationSeconds >= MIN_DISCONNECTION_SECONDS) {
+                if (isReboot) {
+                  // Reboot detected! Calculate exact offline period
+                  // Boot time = current heartbeat time - current uptime
+                  const bootTime = currentTime - (hb.uptime_seconds * 1000);
+                  // Offline started shortly after last heartbeat (give some buffer)
+                  const offlineStartTime = prevTime + 5000; // 5 seconds after last heartbeat
+                  const offlineDurationMs = Math.max(0, bootTime - offlineStartTime);
+
+                  if (offlineDurationMs >= MIN_DISCONNECTION_SECONDS * 1000) {
+                    // Add offline point
+                    statusData.push({
+                      timestamp: new Date(offlineStartTime).toISOString(),
+                      time: formatTime(new Date(offlineStartTime).toISOString()),
+                      status: 0,
+                      isOnline: false,
+                      gapSeconds: Math.floor(offlineDurationMs / 1000),
+                    });
+                    totalOfflineMs += offlineDurationMs;
+                    offlineEvents++;
+                    // Online time is from prev heartbeat to offline start, plus boot to current
+                    totalOnlineMs += 5000; // Time before offline
+                    totalOnlineMs += hb.uptime_seconds * 1000; // Time since boot
+                  } else {
+                    // Very brief reboot - count as online
+                    totalOnlineMs += gapSeconds * 1000;
+                  }
+                } else if (gapSeconds > OFFLINE_THRESHOLD_SECONDS) {
+                  // Large gap without reboot detection (maybe controller was off longer)
+                  const offlineStartTime = prevTime + 30000; // 30s after last heartbeat
+                  const offlineDurationMs = currentTime - offlineStartTime;
+
+                  if (offlineDurationMs >= MIN_DISCONNECTION_SECONDS * 1000) {
                     statusData.push({
                       timestamp: new Date(offlineStartTime).toISOString(),
                       time: formatTime(new Date(offlineStartTime).toISOString()),
@@ -406,10 +440,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     });
                     totalOfflineMs += offlineDurationMs;
                     offlineEvents++;
-                    // Online time for previous interval is just the threshold
-                    totalOnlineMs += OFFLINE_THRESHOLD_SECONDS * 1000;
+                    totalOnlineMs += 30000;
                   } else {
-                    // Brief gap - treat as continuous online (count full gap as online)
                     totalOnlineMs += gapSeconds * 1000;
                   }
                 } else {
@@ -428,19 +460,16 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
               }
 
               // Check if currently offline (last heartbeat was > threshold ago)
-              const lastHeartbeatTime = new Date(sortedHeartbeats[sortedHeartbeats.length - 1].timestamp).getTime();
+              const lastHb = sortedHeartbeats[sortedHeartbeats.length - 1];
+              const lastHeartbeatTime = new Date(lastHb.timestamp).getTime();
               const now = Date.now();
               const timeSinceLastHeartbeat = now - lastHeartbeatTime;
 
               if (timeSinceLastHeartbeat > OFFLINE_THRESHOLD_SECONDS * 1000) {
-                // Calculate offline duration
-                const offlineStartTime = lastHeartbeatTime + OFFLINE_THRESHOLD_SECONDS * 1000;
+                const offlineStartTime = lastHeartbeatTime + 30000;
                 const offlineDurationMs = now - offlineStartTime;
-                const offlineDurationSeconds = offlineDurationMs / 1000;
 
-                // Only count as disconnection if significant duration
-                if (offlineDurationSeconds >= MIN_DISCONNECTION_SECONDS) {
-                  // Controller is currently offline
+                if (offlineDurationMs >= MIN_DISCONNECTION_SECONDS * 1000) {
                   statusData.push({
                     timestamp: new Date(offlineStartTime).toISOString(),
                     time: formatTime(new Date(offlineStartTime).toISOString()),
@@ -449,18 +478,16 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     gapSeconds: Math.floor(timeSinceLastHeartbeat / 1000),
                   });
                   totalOfflineMs += offlineDurationMs;
-                  totalOnlineMs += OFFLINE_THRESHOLD_SECONDS * 1000;
+                  totalOnlineMs += 30000;
                   offlineEvents++;
                 } else {
-                  // Brief gap - treat as still online
                   totalOnlineMs += timeSinceLastHeartbeat;
                 }
               } else {
-                // Still online - add time since last heartbeat as online
                 totalOnlineMs += timeSinceLastHeartbeat;
               }
 
-              // Calculate stats based on actual monitoring period (from first heartbeat to now)
+              // Calculate stats
               const totalMs = totalOnlineMs + totalOfflineMs;
               const uptimePct = totalMs > 0 ? (totalOnlineMs / totalMs) * 100 : 100;
 

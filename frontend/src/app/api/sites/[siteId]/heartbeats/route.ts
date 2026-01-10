@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 // Heartbeat data point for the chart
 interface HeartbeatDataPoint {
   timestamp: string;
+  uptime_seconds: number;
   cpu_usage_pct: number;
   memory_usage_pct: number;
   disk_usage_pct: number;
@@ -88,6 +89,7 @@ export async function GET(
     // We fetch in ascending order (oldest first) and paginate forward
     let allHeartbeats: {
       timestamp: string;
+      uptime_seconds: number | null;
       cpu_usage_pct: number | null;
       memory_usage_pct: number | null;
       disk_usage_pct: number | null;
@@ -103,7 +105,7 @@ export async function GET(
 
       const { data: pageData, error: pageError } = await supabase
         .from("controller_heartbeats")
-        .select("timestamp, cpu_usage_pct, memory_usage_pct, disk_usage_pct, metadata")
+        .select("timestamp, uptime_seconds, cpu_usage_pct, memory_usage_pct, disk_usage_pct, metadata")
         .eq("controller_id", controllerId)
         .gte("timestamp", startTime.toISOString())
         .order("timestamp", { ascending: true })
@@ -134,6 +136,7 @@ export async function GET(
     // Step 4: Transform data for the chart
     const dataPoints: HeartbeatDataPoint[] = (heartbeats || []).map((hb) => ({
       timestamp: hb.timestamp,
+      uptime_seconds: hb.uptime_seconds ?? 0,
       cpu_usage_pct: hb.cpu_usage_pct ?? 0,
       memory_usage_pct: hb.memory_usage_pct ?? 0,
       disk_usage_pct: hb.disk_usage_pct ?? 0,
