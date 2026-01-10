@@ -1137,11 +1137,12 @@ async def reboot_controller(
                 )
 
         # 4. Execute SSH reboot
-        # Central server where reverse tunnels connect
-        CENTRAL_SERVER = "159.223.224.203"
+        # Use host.docker.internal to reach SSH tunnels on the host machine
+        # The reverse SSH tunnels listen on localhost of the host, accessible via Docker's host-gateway
+        SSH_HOST = "host.docker.internal"
 
         success, message = execute_ssh_reboot(
-            host=CENTRAL_SERVER,
+            host=SSH_HOST,
             port=controller["ssh_tunnel_port"],
             username=controller["ssh_username"],
             password=controller.get("ssh_password", "")
