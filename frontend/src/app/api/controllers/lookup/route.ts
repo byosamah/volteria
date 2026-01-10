@@ -67,7 +67,11 @@ export async function GET(request: NextRequest) {
 
     // Build response
     const sshConfigured = !!(controller.ssh_tunnel_port && controller.ssh_username);
-    const siteInfo = controller.site_master_devices?.[0]?.sites;
+    const masterDevice = controller.site_master_devices?.[0] as {
+      site_id: string;
+      sites: { id: string; name: string; project_id: string } | null
+    } | undefined;
+    const siteInfo = masterDevice?.sites;
 
     return NextResponse.json({
       controller_id: controller.id,
