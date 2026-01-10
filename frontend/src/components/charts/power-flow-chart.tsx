@@ -208,17 +208,19 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   }, [chartType, selectedRange]);
 
   // Zoom handlers for drag-to-zoom functionality
-  const handleMouseDown = useCallback((e: { activeLabel?: string }) => {
-    if (e.activeLabel) {
-      setRefAreaLeft(e.activeLabel);
-      setRefAreaRight(e.activeLabel);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleMouseDown = useCallback((e: any) => {
+    if (e?.activeLabel !== undefined) {
+      setRefAreaLeft(String(e.activeLabel));
+      setRefAreaRight(String(e.activeLabel));
       setIsZooming(true);
     }
   }, []);
 
-  const handleMouseMove = useCallback((e: { activeLabel?: string }) => {
-    if (isZooming && e.activeLabel) {
-      setRefAreaRight(e.activeLabel);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleMouseMove = useCallback((e: any) => {
+    if (isZooming && e?.activeLabel !== undefined) {
+      setRefAreaRight(String(e.activeLabel));
     }
   }, [isZooming]);
 
