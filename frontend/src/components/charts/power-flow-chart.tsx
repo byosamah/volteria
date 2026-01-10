@@ -166,7 +166,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const [containerDimensions, setContainerDimensions] = useState<{ width: number; height: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Helper: Format time based on selected range (memoized to prevent recreation)
+  // Helper: Format time for X-axis labels based on selected range
   const formatTime = useCallback((timestamp: string) => {
     const date = new Date(timestamp);
     if (selectedRange <= 6) {
@@ -176,10 +176,21 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
       // For 24h: show shorter format
       return date.toLocaleDateString([], { weekday: "short", hour: "2-digit" });
     } else {
-      // For 7d: show compact date
-      return date.toLocaleDateString([], { month: "short", day: "numeric" });
+      // For 7d: show date with time
+      return date.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit" });
     }
   }, [selectedRange]);
+
+  // Helper: Format time for tooltips (always show full date and time)
+  const formatTooltipTime = useCallback((timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }, []);
 
   // Calculate X-axis properties based on time range for better readability
   const getXAxisProps = useCallback(() => {
@@ -687,7 +698,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   )}
                   {/* Chart */}
                   <div className="flex-1 min-h-[200px] w-full">
-                    <ResponsiveContainer width={containerDimensions.width} height={Math.max(200, containerDimensions.height - 80)}>
+                    <ResponsiveContainer width="100%" height="100%">
                       <AreaChart
                         data={getZoomedData(connectionData)}
                         margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
@@ -728,7 +739,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                             const point = payload[0].payload as ConnectionStatusPoint;
                             return (
                               <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
-                                <p className="font-medium mb-2">{formatTime(point.timestamp)}</p>
+                                <p className="font-medium mb-2">{formatTooltipTime(point.timestamp)}</p>
                                 <div className="flex items-center gap-2">
                                   <div
                                     className={`w-3 h-3 rounded-full ${point.isOnline ? 'bg-green-500' : 'bg-red-500'}`}
@@ -790,7 +801,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 </div>
               ) : (
                 <div className="h-full w-full min-h-[280px]">
-                  <ResponsiveContainer width={containerDimensions.width} height={Math.max(250, containerDimensions.height - 20)}>
+                  <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       data={getZoomedData(systemData)}
                       margin={{ top: 5, right: 50, left: 0, bottom: xAxisProps.height - 20 }}
@@ -840,7 +851,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         if (!active || !payload || !payload.length) return null;
                         return (
                           <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
-                            <p className="font-medium mb-2">{formatTime(label as string)}</p>
+                            <p className="font-medium mb-2">{formatTooltipTime(label as string)}</p>
                             {payload.map((entry, index) => (
                               <div key={index} className="flex items-center gap-2">
                                 <div
@@ -940,7 +951,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 </div>
               ) : (
                 <div className="h-full w-full min-h-[280px]">
-                  <ResponsiveContainer width={containerDimensions.width} height={Math.max(250, containerDimensions.height - 20)}>
+                  <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
                       data={getZoomedData(controlData)}
                       margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
@@ -976,7 +987,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         const safeModeEntry = zoomedControlData.find(d => d.timestamp === label);
                         return (
                           <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
-                            <p className="font-medium mb-2">{formatTime(label as string)}</p>
+                            <p className="font-medium mb-2">{formatTooltipTime(label as string)}</p>
                             {payload.map((entry, index) => (
                               <div key={index} className="flex items-center gap-2">
                                 <div
