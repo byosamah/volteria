@@ -86,6 +86,7 @@ export async function GET(
     } : null;
 
     // Step 2: Get the latest heartbeat for this controller
+    console.log("Controller health API - fetching heartbeat for controller:", controllerId);
     const { data: heartbeat, error: heartbeatError } = await supabase
       .from("controller_heartbeats")
       .select("*")
@@ -94,6 +95,9 @@ export async function GET(
       .limit(1)
       .maybeSingle();
 
+    console.log("Controller health API - heartbeat:", heartbeat ? "found" : "null");
+    console.log("Controller health API - heartbeatError:", heartbeatError);
+
     if (heartbeatError) {
       console.error("Failed to fetch heartbeat:", heartbeatError);
       return NextResponse.json({ error: "Failed to fetch heartbeat" }, { status: 500 });
@@ -101,8 +105,11 @@ export async function GET(
 
     // No heartbeat data yet
     if (!heartbeat) {
+      console.log("Controller health API - No heartbeat found, returning 404");
       return NextResponse.json({ error: "No heartbeat data available" }, { status: 404 });
     }
+
+    console.log("Controller health API - heartbeat timestamp:", heartbeat.timestamp);
 
     // Step 3: Determine if online (heartbeat within last 90 seconds)
     // Note: Controllers send heartbeats every 30 seconds
