@@ -75,8 +75,8 @@ export async function GET(
       );
     }
 
-    // Step 2: Get the site's active master device (controller or gateway)
-    // Only consider active master devices - inactive ones should not affect site status
+    // Step 2: Get the site's master device (controller or gateway)
+    // Note: Gateways are stored inline in site_master_devices (no separate table)
     const { data: masterDevice, error: masterError } = await supabase
       .from("site_master_devices")
       .select(`
@@ -91,7 +91,6 @@ export async function GET(
         )
       `)
       .eq("site_id", siteId)
-      .eq("is_active", true)
       .maybeSingle();
 
     if (masterError) {
