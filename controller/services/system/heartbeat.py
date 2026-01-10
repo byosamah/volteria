@@ -115,13 +115,13 @@ class HeartbeatSender:
         )
 
     def _build_payload(self) -> dict[str, Any]:
-        """Build heartbeat payload"""
+        """Build heartbeat payload matching database schema"""
         metrics = self.metrics_collector.collect()
         service_health = get_service_health()
         config = SharedState.read("config")
         readings = get_readings()
 
-        # Build services status
+        # Build services status for metadata
         services_status = {}
         for service_name, health_data in service_health.items():
             if service_name.startswith("_"):
@@ -129,36 +129,57 @@ class HeartbeatSender:
             status = health_data.get("status", "unknown")
             services_status[service_name] = status
 
-        # Build live readings for dashboard
+        # Determine control loop status from service health
+        control_status = "unknown"
+        control_error = None
+        control_health = service_health.get("control", {})
+        if control_health.get("status") == "healthy":
+            control_status = "running"
+        elif control_health.get("status") == "unhealthy":
+            control_status = "error"
+            control_error = control_health.get("error")
+
+        # Build live readings for metadata
         live_readings = self._extract_live_readings(readings)
 
+        # Build metadata with extra fields
+        metadata = {
+            "controller_id": self.controller_id,
+        }
+        if metrics.cpu_temp_celsius is not None:
+            metadata["cpu_temp_celsius"] = metrics.cpu_temp_celsius
+        if config.get("updated_at"):
+            metadata["config_version"] = config.get("updated_at")
+        if services_status:
+            metadata["services"] = services_status
+        if live_readings:
+            metadata["live_readings"] = live_readings
+
+        # Add pending OTA info if any
+        ota_status = SharedState.read("ota_status")
+        if ota_status:
+            metadata["pending_ota"] = {
+                "version": ota_status.get("version"),
+                "status": ota_status.get("status"),
+            }
+
+        # Main payload matching database schema
         payload = {
             "controller_id": self.controller_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
             "firmware_version": self.firmware_version,
-            "config_version": config.get("updated_at"),
             "uptime_seconds": metrics.uptime_seconds,
             "cpu_usage_pct": metrics.cpu_usage_pct,
             "memory_usage_pct": metrics.memory_usage_pct,
             "disk_usage_pct": metrics.disk_usage_pct,
-            "cpu_temp_celsius": metrics.cpu_temp_celsius,
-            "services": services_status,
+            "control_loop_status": control_status,
+            "last_error": control_error,
             "active_alarms_count": self._get_active_alarms_count(),
-            "last_control_loop_ms": self._get_last_control_loop_time(),
-            "live_readings": live_readings,
+            "metadata": metadata,
         }
 
         # Add site_id if assigned
         if self.site_id:
             payload["site_id"] = self.site_id
-
-        # Add pending OTA info if any
-        ota_status = SharedState.read("ota_status")
-        if ota_status:
-            payload["pending_ota"] = {
-                "version": ota_status.get("version"),
-                "status": ota_status.get("status"),
-            }
 
         return payload
 
