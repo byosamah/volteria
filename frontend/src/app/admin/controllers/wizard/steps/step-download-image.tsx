@@ -27,10 +27,10 @@ const NVME_HARDWARE_TYPES = ["SOL564-NVME16-128"];
 
 // Setup configuration
 const SETUP_CONFIG = {
-  version: "1.0.0",
-  releaseUrl: "https://github.com/byosamah/volteria/releases/tag/v1.0.0-controller",
-  scriptUrl: "https://github.com/byosamah/volteria/releases/download/v1.0.0-controller/setup-controller.sh",
-  docsUrl: "https://github.com/byosamah/volteria/blob/main/controller/scripts/README-CONTROLLER.md",
+  version: "2.0.0",
+  releaseUrl: "https://github.com/byosamah/volteria/tree/main/controller",
+  scriptUrl: "https://raw.githubusercontent.com/byosamah/volteria/main/controller/scripts/setup-controller.sh",
+  docsUrl: "https://github.com/byosamah/volteria/blob/main/controller/CONTROL_MASTER.md",
 };
 
 // One-line install command

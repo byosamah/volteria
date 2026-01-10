@@ -175,6 +175,126 @@ class SerialRegisterResponse(BaseModel):
     supabase_anon_key: str
     status: str  # "registered" (existing) or "new" (just created)
     message: str
+    ssh_tunnel_port: Optional[int] = None
+
+
+class SetupScriptRegisterRequest(BaseModel):
+    """Request from setup-controller.sh script."""
+    serial_number: str = Field(..., description="Pi hardware serial from /proc/cpuinfo")
+    hardware_type: str = Field(..., description="Hardware type identifier")
+    firmware_version: str = Field(..., description="Controller firmware version")
+
+
+class SetupScriptRegisterResponse(BaseModel):
+    """Response for setup script registration."""
+    controller_id: str
+    ssh_tunnel_port: Optional[int] = None
+    supabase_key: Optional[str] = None
+    status: str  # "registered" or "new"
+    message: str
+
+
+@router.post("/register", response_model=SetupScriptRegisterResponse)
+async def register_from_setup_script(
+    request: SetupScriptRegisterRequest,
+    db: Client = Depends(get_supabase)
+):
+    """
+    Register controller from setup-controller.sh script.
+
+    This endpoint is called by the Raspberry Pi setup script to:
+    1. Register the controller with its hardware serial
+    2. Get assigned SSH tunnel port
+    3. Get Supabase credentials for cloud sync
+
+    No authentication required - controller identifies itself by hardware serial.
+    """
+    import os
+
+    try:
+        # Check if controller with this serial already exists
+        existing = db.table("controllers").select(
+            "id, serial_number, status, ssh_tunnel_port"
+        ).eq("serial_number", request.serial_number).execute()
+
+        if existing.data:
+            # Controller already registered
+            controller = existing.data[0]
+
+            # Get Supabase anon key for cloud sync
+            supabase_key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+            return SetupScriptRegisterResponse(
+                controller_id=str(controller["id"]),
+                ssh_tunnel_port=controller.get("ssh_tunnel_port"),
+                supabase_key=supabase_key,
+                status="registered",
+                message="Controller already registered"
+            )
+
+        # Find hardware type by identifier
+        hardware_result = db.table("approved_hardware").select("id").eq(
+            "hardware_type", request.hardware_type
+        ).eq("is_active", True).execute()
+
+        if not hardware_result.data:
+            # Try to find any active hardware type as fallback
+            hardware_result = db.table("approved_hardware").select("id").eq(
+                "is_active", True
+            ).limit(1).execute()
+
+        hardware_type_id = hardware_result.data[0]["id"] if hardware_result.data else None
+
+        # Allocate SSH tunnel port (find next available in range 10000-20000)
+        port_result = db.table("controllers").select("ssh_tunnel_port").order(
+            "ssh_tunnel_port", desc=True
+        ).limit(1).execute()
+
+        next_port = 10000
+        if port_result.data and port_result.data[0].get("ssh_tunnel_port"):
+            next_port = port_result.data[0]["ssh_tunnel_port"] + 1
+
+        # Create new controller
+        new_controller = {
+            "serial_number": request.serial_number,
+            "firmware_version": request.firmware_version,
+            "ssh_tunnel_port": next_port,
+            "status": "draft",
+            "is_active": True,
+            "notes": f"Auto-registered by setup script v{request.firmware_version}"
+        }
+
+        if hardware_type_id:
+            new_controller["hardware_type_id"] = hardware_type_id
+
+        result = db.table("controllers").insert(new_controller).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create controller record"
+            )
+
+        controller = result.data[0]
+
+        # Get Supabase anon key for cloud sync
+        supabase_key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+        return SetupScriptRegisterResponse(
+            controller_id=str(controller["id"]),
+            ssh_tunnel_port=next_port,
+            supabase_key=supabase_key,
+            status="new",
+            message="Controller registered successfully. Assign it to a site via the Volteria platform."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to register controller: {str(e)}"
+        )
 
 
 @router.get("/by-serial/{serial}/register", response_model=SerialRegisterResponse)
