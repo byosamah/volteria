@@ -40,6 +40,7 @@ export async function GET(
       .select(`
         id,
         controller_id,
+        is_active,
         controllers (
           id,
           serial_number,
@@ -51,7 +52,13 @@ export async function GET(
       `)
       .eq("site_id", siteId)
       .eq("device_type", "controller")
+      .eq("is_active", true)
       .maybeSingle();
+
+    // Debug logging
+    console.log("Controller health API - siteId:", siteId);
+    console.log("Controller health API - masterDevice:", JSON.stringify(masterDevice));
+    console.log("Controller health API - masterError:", masterError);
 
     if (masterError) {
       console.error("Failed to fetch master device:", masterError);
@@ -60,6 +67,7 @@ export async function GET(
 
     // No controller assigned to this site
     if (!masterDevice || !masterDevice.controller_id) {
+      console.log("Controller health API - No controller found for site:", siteId);
       return NextResponse.json({ error: "No controller assigned to this site" }, { status: 404 });
     }
 
