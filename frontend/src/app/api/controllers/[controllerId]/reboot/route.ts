@@ -56,13 +56,16 @@ export async function POST(
     }
 
     const siteId = masterDevice.site_id;
+    // Extract project_id from the joined sites data
+    const siteData = masterDevice.sites as unknown as { project_id: string };
+    const projectId = siteData.project_id;
 
     // Check user has access to this site (via project access)
-    const { data: userProject, error: accessError } = await supabase
+    const { data: userProject } = await supabase
       .from("user_projects")
       .select("can_control")
       .eq("user_id", user.id)
-      .eq("project_id", (masterDevice.sites as { project_id: string }).project_id)
+      .eq("project_id", projectId)
       .single();
 
     // Also check if user is super_admin or backend_admin (they have access to everything)
