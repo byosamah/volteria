@@ -10,7 +10,6 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { SupabaseClient } from "@supabase/supabase-js";
 
@@ -126,18 +125,8 @@ export async function GET(
       response.connection.type = "controller";
 
       // Get latest heartbeat for the controller
-      // Use service key to bypass RLS (heartbeat data is not sensitive)
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-
-      if (!supabaseUrl || !supabaseServiceKey) {
-        console.error("Missing Supabase credentials for heartbeat query");
-        return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
-      }
-
-      const adminClient = createAdminClient(supabaseUrl, supabaseServiceKey);
-
-      const { data: heartbeat, error: heartbeatError } = await adminClient
+      // RLS policy allows anyone to read heartbeats (not sensitive data)
+      const { data: heartbeat, error: heartbeatError } = await supabase
         .from("controller_heartbeats")
         .select("*")
         .eq("controller_id", masterDevice.controller_id)

@@ -503,7 +503,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   )}
                   {/* Chart */}
                   <div className="flex-1 min-h-[200px]">
-                    <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                       <AreaChart data={connectionData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                         <defs>
                           <linearGradient id="connectionGradient" x1="0" y1="0" x2="0" y2="1">
@@ -582,7 +582,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   </div>
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                   <LineChart data={systemData} margin={{ top: 5, right: 50, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
@@ -706,7 +706,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   </div>
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                   <AreaChart data={controlData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
