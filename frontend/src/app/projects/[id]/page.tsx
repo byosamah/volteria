@@ -7,6 +7,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -154,20 +155,28 @@ export default async function ProjectDetailPage({
           .map((md) => md.controller_id as string);
 
         // Fetch latest heartbeats for all controllers in batch
+        // Use service key to bypass RLS for heartbeat queries
         let heartbeatMap: Record<string, { timestamp: string }> = {};
         if (controllerIds.length > 0) {
-          // Get the latest heartbeat for each controller
-          const { data: heartbeats } = await supabase
-            .from("controller_heartbeats")
-            .select("controller_id, timestamp")
-            .in("controller_id", controllerIds)
-            .order("timestamp", { ascending: false });
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+          const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 
-          if (heartbeats) {
-            // Keep only the latest heartbeat per controller
-            for (const hb of heartbeats) {
-              if (!heartbeatMap[hb.controller_id]) {
-                heartbeatMap[hb.controller_id] = { timestamp: hb.timestamp };
+          if (supabaseUrl && supabaseServiceKey) {
+            const adminClient = createAdminClient(supabaseUrl, supabaseServiceKey);
+
+            // Get the latest heartbeat for each controller
+            const { data: heartbeats } = await adminClient
+              .from("controller_heartbeats")
+              .select("controller_id, timestamp")
+              .in("controller_id", controllerIds)
+              .order("timestamp", { ascending: false });
+
+            if (heartbeats) {
+              // Keep only the latest heartbeat per controller
+              for (const hb of heartbeats) {
+                if (!heartbeatMap[hb.controller_id]) {
+                  heartbeatMap[hb.controller_id] = { timestamp: hb.timestamp };
+                }
               }
             }
           }
