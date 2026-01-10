@@ -90,20 +90,37 @@ const LOGGING_FREQUENCY_OPTIONS = [
   { value: "86400", label: "24 hours" },
 ];
 
-// Register role options - defines how this register is used in control logic
+// Register role options - defines how this register is used in control logic and calculated fields
 // This list can be extended when new operational modes are added
 const REGISTER_ROLE_OPTIONS = [
-  { value: "none", label: "None (not used in control)" },
-  { value: "generator_active_power", label: "Generator Active Power" },
-  { value: "generator_reactive_power", label: "Generator Reactive Power" },
-  { value: "solar_active_power", label: "Solar Active Power" },
-  { value: "solar_reactive_power", label: "Solar Reactive Power" },
-  { value: "solar_power_limit_read", label: "Solar Power Limit (Read)" },
-  { value: "solar_power_limit_write", label: "Solar Power Limit Control (Write)" },
-  { value: "solar_reactive_limit_read", label: "Solar Reactive Limit (Read)" },
-  { value: "solar_reactive_limit_write", label: "Solar Reactive Limit Control (Write)" },
-  { value: "load_active_power", label: "Load Active Power" },
-  { value: "load_reactive_power", label: "Load Reactive Power" },
+  { value: "none", label: "None (not used)" },
+  // Solar Inverter roles
+  { value: "solar_active_power", label: "Solar: Total Active Power" },
+  { value: "solar_reactive_power", label: "Solar: Total Reactive Power" },
+  { value: "solar_power_limit_read", label: "Solar: Power Limit (Read)" },
+  { value: "solar_power_limit_write", label: "Solar: Power Limit Control (Write)" },
+  { value: "solar_reactive_limit_read", label: "Solar: Reactive Limit (Read)" },
+  { value: "solar_reactive_limit_write", label: "Solar: Reactive Limit Control (Write)" },
+  { value: "solar_kwh_counter", label: "Solar: Total kWh Counter" },
+  // Load Meter roles
+  { value: "load_active_power", label: "Load: Total Active Power" },
+  { value: "load_reactive_power", label: "Load: Total Reactive Power" },
+  { value: "load_kwh_counter", label: "Load: Total kWh Counter" },
+  // Sub Load Meter roles
+  { value: "subload_active_power", label: "Sub Load: Total Active Power" },
+  { value: "subload_reactive_power", label: "Sub Load: Total Reactive Power" },
+  { value: "subload_kwh_counter", label: "Sub Load: Total kWh Counter" },
+  // Diesel Generator roles
+  { value: "diesel_generator_active_power", label: "Diesel Generator: Total Active Power" },
+  { value: "diesel_generator_reactive_power", label: "Diesel Generator: Total Reactive Power" },
+  { value: "diesel_generator_kwh_counter", label: "Diesel Generator: Total kWh Counter" },
+  // Gas Generator roles
+  { value: "gas_generator_active_power", label: "Gas Generator: Total Active Power" },
+  { value: "gas_generator_reactive_power", label: "Gas Generator: Total Reactive Power" },
+  { value: "gas_generator_kwh_counter", label: "Gas Generator: Total kWh Counter" },
+  // Fuel Sensor roles (standalone sensors)
+  { value: "fuel_volume", label: "Fuel: Volume" },
+  { value: "fuel_level", label: "Fuel: Level" },
 ];
 
 /**
@@ -618,12 +635,12 @@ export function RegisterForm({
             </div>
           </div>
 
-          {/* Register Role - what is this register used for in control logic */}
+          {/* Register Role - what is this register used for in control logic and calculated fields */}
           <div className="space-y-2">
             <Label htmlFor="register_role">
               Register Role
               <span className="text-xs text-muted-foreground ml-2">
-                (how is this register used in control logic?)
+                (used in control logic and calculated fields)
               </span>
             </Label>
             <select
