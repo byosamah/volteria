@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { ControllerRebootAction, REBOOTABLE_STATUSES } from "@/components/controllers/controller-reboot-action";
 
 interface Controller {
   id: string;
@@ -929,20 +930,16 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                         <path d="m15 5 4 4" />
                       </svg>
                     </Button>
-                    {/* Restart button - mobile */}
-                    {controller.status === "deployed" && (
-                      <Button
-                        variant="ghost"
+                    {/* Reboot button - mobile (for ready, claimed, deployed) */}
+                    {REBOOTABLE_STATUSES.includes(controller.status) && (
+                      <ControllerRebootAction
+                        controllerId={controller.id}
+                        controllerName={controller.serial_number}
+                        controllerStatus={controller.status}
+                        lastHeartbeat={getControllerHeartbeat(controller.id, controller.last_heartbeat)}
+                        variant="icon"
                         size="sm"
-                        onClick={() => openRestartDialog(controller)}
-                        disabled={controller.pending_restart === true}
-                        className="min-h-[44px] min-w-[44px] text-blue-600 hover:text-blue-700"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${controller.pending_restart ? "animate-spin" : ""}`}>
-                          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                          <path d="M21 3v5h-5" />
-                        </svg>
-                      </Button>
+                      />
                     )}
                     {!["deployed", "deactivated", "eol"].includes(controller.status) && (
                       <Button
@@ -1116,30 +1113,16 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                           </svg>
                         </Button>
 
-                        {/* Restart button - only for deployed controllers */}
-                        {controller.status === "deployed" && (
-                          <Button
-                            variant="ghost"
+                        {/* Reboot button - for ready, claimed, deployed controllers */}
+                        {REBOOTABLE_STATUSES.includes(controller.status) && (
+                          <ControllerRebootAction
+                            controllerId={controller.id}
+                            controllerName={controller.serial_number}
+                            controllerStatus={controller.status}
+                            lastHeartbeat={getControllerHeartbeat(controller.id, controller.last_heartbeat)}
+                            variant="icon"
                             size="sm"
-                            onClick={() => openRestartDialog(controller)}
-                            title={controller.pending_restart ? "Restart pending..." : "Restart controller"}
-                            disabled={controller.pending_restart === true}
-                            className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700"
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className={`h-4 w-4 ${controller.pending_restart ? "animate-spin" : ""}`}
-                            >
-                              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                              <path d="M21 3v5h-5" />
-                            </svg>
-                          </Button>
+                          />
                         )}
 
                         {/* Deactivate button - only for non-deployed, non-deactivated, non-eol */}

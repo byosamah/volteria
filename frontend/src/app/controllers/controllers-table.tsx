@@ -59,6 +59,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { ControllerRebootAction, REBOOTABLE_STATUSES } from "@/components/controllers/controller-reboot-action";
 
 // Type definitions
 interface Controller {
@@ -717,29 +718,43 @@ export function ControllersTable({
                     </div>
                   )}
                 </div>
+                {/* Action buttons - mobile */}
                 {canEdit && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openFirmwareDialog(controller)}
-                    className="w-full min-h-[44px]"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-4 w-4 mr-2"
+                  <div className="flex gap-2">
+                    {/* Reboot button - for ready, claimed, deployed controllers */}
+                    {REBOOTABLE_STATUSES.includes(controller.status) && (
+                      <ControllerRebootAction
+                        controllerId={controller.id}
+                        controllerName={controller.serial_number}
+                        controllerStatus={controller.status}
+                        lastHeartbeat={getControllerHeartbeat(controller.id, controller.last_heartbeat)}
+                        variant="button"
+                        size="sm"
+                      />
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openFirmwareDialog(controller)}
+                      className="flex-1 min-h-[44px]"
                     >
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="17 8 12 3 7 8" />
-                      <line x1="12" x2="12" y1="3" y2="15" />
-                    </svg>
-                    Update Firmware
-                  </Button>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-4 w-4 mr-2"
+                      >
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" x2="12" y1="3" y2="15" />
+                      </svg>
+                      Update Firmware
+                    </Button>
+                  </div>
                 )}
               </div>
             ))}
@@ -815,27 +830,40 @@ export function ControllersTable({
                     </TableCell>
                     {canEdit && (
                       <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openFirmwareDialog(controller)}
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-4 w-4 mr-1"
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Reboot button - for ready, claimed, deployed */}
+                          {REBOOTABLE_STATUSES.includes(controller.status) && (
+                            <ControllerRebootAction
+                              controllerId={controller.id}
+                              controllerName={controller.serial_number}
+                              controllerStatus={controller.status}
+                              lastHeartbeat={getControllerHeartbeat(controller.id, controller.last_heartbeat)}
+                              variant="icon"
+                              size="sm"
+                            />
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openFirmwareDialog(controller)}
                           >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" x2="12" y1="3" y2="15" />
-                          </svg>
-                          Update Firmware
-                        </Button>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4 mr-1"
+                            >
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="17 8 12 3 7 8" />
+                              <line x1="12" x2="12" y1="3" y2="15" />
+                            </svg>
+                            Update Firmware
+                          </Button>
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
