@@ -162,6 +162,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   // Track if tab is visible (for pausing/resuming polling)
   const [isTabVisible, setIsTabVisible] = useState(true);
+  // Track if component is mounted (for ResponsiveContainer dimension calculation)
+  const [isMounted, setIsMounted] = useState(false);
 
   // Helper: Format time based on selected range (memoized to prevent recreation)
   const formatTime = useCallback((timestamp: string) => {
@@ -207,6 +209,13 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   }, [selectedRange]);
 
   const xAxisProps = getXAxisProps();
+
+  // Set mounted state after first render (allows ResponsiveContainer to calculate dimensions)
+  useEffect(() => {
+    // Small delay to ensure DOM has rendered and dimensions are computed
+    const timer = setTimeout(() => setIsMounted(true), 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Page Visibility API: Pause polling when tab is hidden to save bandwidth
   useEffect(() => {
@@ -619,14 +628,14 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
         </div>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          // Loading skeleton
+        {loading || !isMounted ? (
+          // Loading skeleton - also show while waiting for mount to prevent dimension errors
           <div className="h-[300px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
         ) : (
           // Render chart based on type
-          <div className="h-[300px]">
+          <div className="h-[300px] w-full">
             {chartType === "connection" && (
               // Connection Status Chart
               connectionData.length === 0 ? (
@@ -663,8 +672,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     </div>
                   )}
                   {/* Chart */}
-                  <div className="h-[220px]">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={200}>
+                  <div className="flex-1 min-h-[200px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
                       <AreaChart
                         data={getZoomedData(connectionData)}
                         margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
@@ -766,8 +775,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   </div>
                 </div>
               ) : (
-                <div className="h-[280px]">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={250}>
+                <div className="h-full w-full min-h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       data={getZoomedData(systemData)}
                       margin={{ top: 5, right: 50, left: 0, bottom: xAxisProps.height - 20 }}
@@ -916,8 +925,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   </div>
                 </div>
               ) : (
-                <div className="h-[280px]">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={250}>
+                <div className="h-full w-full min-h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
                       data={getZoomedData(controlData)}
                       margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
