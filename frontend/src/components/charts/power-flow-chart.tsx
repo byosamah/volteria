@@ -100,6 +100,27 @@ function downsample<T>(data: T[], maxPoints = 100): T[] {
   return data.filter((_, index) => index % step === 0);
 }
 
+// Custom tick renderer for XAxis with angle support
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CustomXAxisTick({ x, y, payload, angle, textAnchor, fontSize }: any) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        x={0}
+        y={0}
+        dy={16}
+        textAnchor={textAnchor || "middle"}
+        fill="currentColor"
+        fontSize={fontSize || 11}
+        transform={angle ? `rotate(${angle})` : undefined}
+        className="text-muted-foreground"
+      >
+        {payload.value}
+      </text>
+    </g>
+  );
+}
+
 interface PowerFlowChartProps {
   projectId: string;
   siteId: string;
@@ -659,7 +680,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis
                           dataKey="time"
-                          tick={{ fontSize: 11, angle: xAxisProps.angle, textAnchor: xAxisProps.textAnchor }}
+                          tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} />}
                           tickLine={false}
                           axisLine={false}
                           className="text-muted-foreground"
@@ -752,7 +773,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       dataKey="time"
-                      tick={{ fontSize: 11, angle: xAxisProps.angle, textAnchor: xAxisProps.textAnchor }}
+                      tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} />}
                       tickLine={false}
                       axisLine={false}
                       className="text-muted-foreground"
@@ -897,7 +918,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       dataKey="time"
-                      tick={{ fontSize: 11, angle: xAxisProps.angle, textAnchor: xAxisProps.textAnchor }}
+                      tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} />}
                       tickLine={false}
                       axisLine={false}
                       className="text-muted-foreground"
