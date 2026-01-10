@@ -1021,8 +1021,51 @@ async def get_controller_config(
 class RebootResponse(BaseModel):
     """Response for reboot command."""
     success: bool
-    command_id: str
+    command_id: Optional[str] = None
     message: str
+
+
+def execute_ssh_reboot(host: str, port: int, username: str, password: str) -> tuple[bool, str]:
+    """
+    Execute reboot command via SSH.
+    Returns (success, message).
+    """
+    import paramiko
+
+    try:
+        # Create SSH client
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # Connect via reverse tunnel
+        client.connect(
+            hostname=host,
+            port=port,
+            username=username,
+            password=password,
+            timeout=10,
+            banner_timeout=10,
+            auth_timeout=10
+        )
+
+        # Execute reboot command
+        # Using 'sudo reboot' - the volteria user has NOPASSWD sudo for reboot
+        stdin, stdout, stderr = client.exec_command("sudo reboot", timeout=5)
+
+        # Don't wait for output - reboot will kill the connection
+        client.close()
+
+        return True, "Reboot command executed successfully"
+
+    except paramiko.AuthenticationException:
+        return False, "SSH authentication failed"
+    except paramiko.SSHException as e:
+        return False, f"SSH error: {str(e)}"
+    except Exception as e:
+        # Connection reset is expected during reboot
+        if "reset" in str(e).lower() or "closed" in str(e).lower():
+            return True, "Reboot command executed (connection closed as expected)"
+        return False, f"Failed to connect: {str(e)}"
 
 
 @router.post("/{controller_id}/reboot", response_model=RebootResponse)
@@ -1032,20 +1075,21 @@ async def reboot_controller(
     db: Client = Depends(get_supabase)
 ):
     """
-    Send reboot command to a controller.
+    Reboot a controller via SSH through the reverse tunnel.
 
-    The command is inserted into the control_commands table.
-    The controller polls this table and executes reboot commands.
+    The reboot is executed immediately by connecting to the controller
+    via its SSH reverse tunnel and running 'sudo reboot'.
 
     Requires:
     - User to be authenticated
     - User to have control access to the site where the controller is assigned
       (or be a super_admin/backend_admin/admin)
+    - Controller must have SSH credentials configured
     """
     try:
-        # 1. Verify controller exists
+        # 1. Get controller with SSH credentials
         controller_result = db.table("controllers").select(
-            "id, serial_number"
+            "id, serial_number, ssh_tunnel_port, ssh_username, ssh_password"
         ).eq("id", str(controller_id)).execute()
 
         if not controller_result.data:
@@ -1055,6 +1099,13 @@ async def reboot_controller(
             )
 
         controller = controller_result.data[0]
+
+        # Check SSH credentials are available
+        if not controller.get("ssh_tunnel_port") or not controller.get("ssh_username"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Controller SSH credentials not configured. Complete the setup wizard first."
+            )
 
         # 2. Find the site where this controller is assigned
         site_assignment = db.table("site_master_devices").select(
@@ -1075,7 +1126,6 @@ async def reboot_controller(
         is_admin = current_user.role in ["super_admin", "backend_admin", "admin"]
 
         if not is_admin:
-            # Check if user has control access to this project
             access_result = db.table("user_projects").select(
                 "can_control"
             ).eq("user_id", current_user.id).eq("project_id", str(project_id)).execute()
@@ -1086,26 +1136,16 @@ async def reboot_controller(
                     detail="You don't have permission to control this site"
                 )
 
-        # 4. Insert reboot command into control_commands table
-        command_data = {
-            "site_id": str(site_id),
-            "controller_id": str(controller_id),
-            "command_type": "reboot",
-            "parameters": {"graceful": True},
-            "status": "pending",
-            "priority": 1,  # High priority
-            "created_by": current_user.id
-        }
+        # 4. Execute SSH reboot
+        # Central server where reverse tunnels connect
+        CENTRAL_SERVER = "159.223.224.203"
 
-        command_result = db.table("control_commands").insert(command_data).execute()
-
-        if not command_result.data:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create reboot command"
-            )
-
-        command = command_result.data[0]
+        success, message = execute_ssh_reboot(
+            host=CENTRAL_SERVER,
+            port=controller["ssh_tunnel_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", "")
+        )
 
         # 5. Log the action to audit_logs
         db.table("audit_logs").insert({
@@ -1114,18 +1154,24 @@ async def reboot_controller(
             "category": "control",
             "resource_type": "controller",
             "resource_id": str(controller_id),
-            "description": f"Sent reboot command to controller {controller['serial_number']}",
+            "description": f"Reboot command for controller {controller['serial_number']}: {message}",
             "metadata": {
-                "command_id": str(command["id"]),
-                "site_id": str(site_id)
+                "site_id": str(site_id),
+                "ssh_port": controller["ssh_tunnel_port"],
+                "success": success
             },
-            "status": "success"
+            "status": "success" if success else "failed"
         }).execute()
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=message
+            )
 
         return RebootResponse(
             success=True,
-            command_id=str(command["id"]),
-            message="Reboot command sent successfully"
+            message=f"Reboot command sent to {controller['serial_number']}. Controller will restart shortly."
         )
 
     except HTTPException:
@@ -1133,5 +1179,5 @@ async def reboot_controller(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send reboot command: {str(e)}"
+            detail=f"Failed to reboot controller: {str(e)}"
         )
