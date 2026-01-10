@@ -148,8 +148,9 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const [selectedRange, setSelectedRange] = useState(1); // Default: 1 hour (reduces initial load)
 
   // Zoom state for drag-to-zoom functionality
-  const [refAreaLeft, setRefAreaLeft] = useState<string | null>(null);
-  const [refAreaRight, setRefAreaRight] = useState<string | null>(null);
+  // Store indices directly instead of time labels (labels can be duplicated for 24h/7d)
+  const [refIndexLeft, setRefIndexLeft] = useState<number | null>(null);
+  const [refIndexRight, setRefIndexRight] = useState<number | null>(null);
   const [isZooming, setIsZooming] = useState(false);
   // Store the indices for zoomed view (null = showing full data)
   const [zoomLeft, setZoomLeft] = useState<number | null>(null);
@@ -224,49 +225,37 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   useEffect(() => {
     setZoomLeft(null);
     setZoomRight(null);
-    setRefAreaLeft(null);
-    setRefAreaRight(null);
+    setRefIndexLeft(null);
+    setRefIndexRight(null);
   }, [chartType, selectedRange]);
 
   // Zoom handlers for drag-to-zoom functionality
+  // Use activeTooltipIndex for reliable indexing (labels can be duplicated for 24h/7d)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleMouseDown = useCallback((e: any) => {
-    if (e?.activeLabel !== undefined) {
-      setRefAreaLeft(String(e.activeLabel));
-      setRefAreaRight(String(e.activeLabel));
+    if (e?.activeTooltipIndex !== undefined) {
+      setRefIndexLeft(e.activeTooltipIndex);
+      setRefIndexRight(e.activeTooltipIndex);
       setIsZooming(true);
     }
   }, []);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleMouseMove = useCallback((e: any) => {
-    if (isZooming && e?.activeLabel !== undefined) {
-      setRefAreaRight(String(e.activeLabel));
+    if (isZooming && e?.activeTooltipIndex !== undefined) {
+      setRefIndexRight(e.activeTooltipIndex);
     }
   }, [isZooming]);
 
-  // Helper to find index by time label in data array
-  const findIndexByTime = useCallback(<T extends { time: string }>(data: T[], timeLabel: string): number => {
-    return data.findIndex(d => d.time === timeLabel);
-  }, []);
-
   const handleMouseUp = useCallback(() => {
-    if (!isZooming || !refAreaLeft || !refAreaRight) {
+    if (!isZooming || refIndexLeft === null || refIndexRight === null) {
       setIsZooming(false);
       return;
     }
 
-    // Get the current data based on chart type
-    let currentData: { time: string }[] = [];
-    if (chartType === "connection") currentData = connectionData;
-    else if (chartType === "system") currentData = systemData;
-    else if (chartType === "control") currentData = controlData;
-
-    // Find indices for the selection
-    let leftIndex = findIndexByTime(currentData, refAreaLeft);
-    let rightIndex = findIndexByTime(currentData, refAreaRight);
-
     // Ensure left is before right
+    let leftIndex = refIndexLeft;
+    let rightIndex = refIndexRight;
     if (leftIndex > rightIndex) {
       [leftIndex, rightIndex] = [rightIndex, leftIndex];
     }
@@ -278,10 +267,10 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
     }
 
     // Reset selection state
-    setRefAreaLeft(null);
-    setRefAreaRight(null);
+    setRefIndexLeft(null);
+    setRefIndexRight(null);
     setIsZooming(false);
-  }, [isZooming, refAreaLeft, refAreaRight, chartType, connectionData, systemData, controlData, findIndexByTime]);
+  }, [isZooming, refIndexLeft, refIndexRight]);
 
   // Reset zoom to full view
   const resetZoom = useCallback(() => {
@@ -291,6 +280,16 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
 
   // Check if currently zoomed
   const isZoomed = zoomLeft !== null && zoomRight !== null;
+
+  // Get reference area bounds (time labels) from indices for the selection overlay
+  const getRefAreaBounds = useCallback((data: { time: string }[]) => {
+    if (refIndexLeft === null || refIndexRight === null || data.length === 0) {
+      return { left: null, right: null };
+    }
+    const left = data[Math.min(refIndexLeft, data.length - 1)]?.time;
+    const right = data[Math.min(refIndexRight, data.length - 1)]?.time;
+    return { left, right };
+  }, [refIndexLeft, refIndexRight]);
 
   // Get zoomed data slice for each chart type
   const getZoomedData = useCallback(<T,>(data: T[]): T[] => {
@@ -734,15 +733,18 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                           activeDot={{ r: 4, fill: CHART_COLORS.online }}
                         />
                         {/* Zoom selection overlay */}
-                        {refAreaLeft && refAreaRight && (
-                          <ReferenceArea
-                            x1={refAreaLeft}
-                            x2={refAreaRight}
-                            strokeOpacity={0.3}
-                            fill="#3b82f6"
-                            fillOpacity={0.3}
-                          />
-                        )}
+                        {(() => {
+                          const bounds = getRefAreaBounds(connectionData);
+                          return bounds.left && bounds.right ? (
+                            <ReferenceArea
+                              x1={bounds.left}
+                              x2={bounds.right}
+                              strokeOpacity={0.3}
+                              fill="#3b82f6"
+                              fillOpacity={0.3}
+                            />
+                          ) : null;
+                        })()}
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -881,16 +883,19 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       />
                     )}
                     {/* Zoom selection overlay */}
-                    {refAreaLeft && refAreaRight && (
-                      <ReferenceArea
-                        x1={refAreaLeft}
-                        x2={refAreaRight}
-                        strokeOpacity={0.3}
-                        fill="#3b82f6"
-                        fillOpacity={0.3}
-                        yAxisId="pct"
-                      />
-                    )}
+                    {(() => {
+                      const bounds = getRefAreaBounds(systemData);
+                      return bounds.left && bounds.right ? (
+                        <ReferenceArea
+                          x1={bounds.left}
+                          x2={bounds.right}
+                          strokeOpacity={0.3}
+                          fill="#3b82f6"
+                          fillOpacity={0.3}
+                          yAxisId="pct"
+                        />
+                      ) : null;
+                    })()}
                   </LineChart>
                 </ResponsiveContainer>
               )
@@ -980,15 +985,18 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       activeDot={{ r: 4 }}
                     />
                     {/* Zoom selection overlay */}
-                    {refAreaLeft && refAreaRight && (
-                      <ReferenceArea
-                        x1={refAreaLeft}
-                        x2={refAreaRight}
-                        strokeOpacity={0.3}
-                        fill="#3b82f6"
-                        fillOpacity={0.3}
-                      />
-                    )}
+                    {(() => {
+                      const bounds = getRefAreaBounds(controlData);
+                      return bounds.left && bounds.right ? (
+                        <ReferenceArea
+                          x1={bounds.left}
+                          x2={bounds.right}
+                          strokeOpacity={0.3}
+                          fill="#3b82f6"
+                          fillOpacity={0.3}
+                        />
+                      ) : null;
+                    })()}
                   </AreaChart>
                 </ResponsiveContainer>
               )
