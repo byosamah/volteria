@@ -242,6 +242,84 @@ curl -X POST http://localhost:8082/sync
 
 ---
 
+## SSH Remote Access
+
+Controllers maintain a persistent reverse SSH tunnel to the central server (159.223.224.203).
+This allows Claude Code and admins to SSH into any registered controller.
+
+### How It Works
+1. Controller establishes reverse SSH tunnel using `autossh`
+2. Tunnel connects controller's port 22 to a unique port on central server (2230-2299)
+3. SSH credentials stored in `controllers` table
+4. Access via central server: `ssh -p {port} {username}@localhost`
+
+### Database Columns (controllers table)
+| Column | Description |
+|--------|-------------|
+| `ssh_tunnel_port` | Unique port on central server (e.g., 2223) |
+| `ssh_username` | SSH username on controller |
+| `ssh_password` | SSH password (encrypted in production) |
+| `ssh_tunnel_active` | Whether tunnel is currently active |
+| `ssh_last_connected_at` | Last successful SSH connection |
+
+### Access Command Pattern
+```bash
+# From central server (159.223.224.203)
+sshpass -p '{password}' ssh -p {port} {username}@localhost '<command>'
+
+# Full command from anywhere with SSH access to central server
+ssh root@159.223.224.203 "sshpass -p '{password}' ssh -p {port} {username}@localhost '<command>'"
+```
+
+### Example: Access Controller by Serial Number
+```bash
+# 1. Look up controller
+curl -s "https://volteria.org/api/controllers/lookup?serial=3c1107e535ee5f4d" \
+  -H "Authorization: Bearer {token}"
+
+# 2. Use returned connection command
+ssh root@159.223.224.203 "sshpass -p 'Solar@1996' ssh -p 2223 mohkof1106@localhost 'uptime'"
+```
+
+### API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/controllers/lookup?serial=X` | GET | Find controller by serial, get SSH details |
+| `/api/controllers/[id]/ssh` | GET | Get SSH credentials for controller |
+| `/api/controllers/[id]/ssh` | PUT | Update SSH credentials |
+| `/api/controllers/[id]/ssh-setup` | POST | Allocate SSH port during wizard setup |
+
+### Wizard Integration
+When a new controller comes online (Step 6: Verify Online):
+1. Wizard detects heartbeat
+2. Automatically calls `/api/controllers/[id]/ssh-setup`
+3. Allocates unique port from 2230-2299 range
+4. Stores credentials in database
+5. Shows SSH port to admin
+
+### Systemd Service (on controller)
+```ini
+# /etc/systemd/system/volteria-tunnel.service
+[Unit]
+Description=Volteria SSH Reverse Tunnel
+After=network-online.target
+
+[Service]
+User=mohkof1106
+Type=simple
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -o "ServerAliveInterval 30" \
+  -o "ServerAliveCountMax 3" \
+  -R {port}:localhost:22 root@159.223.224.203
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
 ## Troubleshooting
 
 ### Service Won't Start

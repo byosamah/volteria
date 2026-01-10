@@ -3,7 +3,7 @@
 /**
  * Step 6: Verify Online
  *
- * Wait for and confirm controller heartbeat
+ * Wait for and confirm controller heartbeat, then set up SSH tunnel
  */
 
 import { useState, useEffect } from "react";
@@ -22,15 +22,52 @@ interface HeartbeatData {
   uptime_seconds?: number;
 }
 
+interface SSHSetupData {
+  ssh_tunnel_port: number;
+  ssh_username: string;
+  central_server: string;
+  setup_script: string;
+  already_configured?: boolean;
+}
+
 export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVerifyOnlineProps) {
   const supabase = createClient();
   const [status, setStatus] = useState<"waiting" | "online" | "timeout">("waiting");
   const [heartbeat, setHeartbeat] = useState<HeartbeatData | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [sshSetup, setSSHSetup] = useState<SSHSetupData | null>(null);
+  const [sshSetupStatus, setSSHSetupStatus] = useState<"pending" | "setting_up" | "complete" | "error">("pending");
 
   const TIMEOUT_SECONDS = 300; // 5 minutes
   const POLL_INTERVAL = 5000; // 5 seconds
+
+  // Set up SSH tunnel when controller comes online
+  useEffect(() => {
+    if (status !== "online" || !controllerId || sshSetupStatus !== "pending") return;
+
+    const setupSSH = async () => {
+      setSSHSetupStatus("setting_up");
+      try {
+        const response = await fetch(`/api/controllers/${controllerId}/ssh-setup`, {
+          method: "POST",
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to set up SSH tunnel");
+        }
+
+        const data = await response.json();
+        setSSHSetup(data);
+        setSSHSetupStatus("complete");
+      } catch (err) {
+        console.error("SSH setup error:", err);
+        setSSHSetupStatus("error");
+      }
+    };
+
+    setupSSH();
+  }, [status, controllerId, sshSetupStatus]);
 
   useEffect(() => {
     if (!controllerId || verified) return;
@@ -197,6 +234,35 @@ export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVer
             <p className="text-muted-foreground">
               Your controller is successfully connected to the cloud.
             </p>
+
+            {/* SSH Setup Status */}
+            <div className="mt-4 w-full max-w-md">
+              {sshSetupStatus === "setting_up" && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                  Setting up remote access...
+                </div>
+              )}
+              {sshSetupStatus === "complete" && sshSetup && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                  <div className="flex items-center gap-2 text-blue-800 font-medium mb-1">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Remote Access Configured
+                  </div>
+                  <p className="text-blue-700">
+                    SSH Port: <code className="bg-blue-100 px-1 rounded">{sshSetup.ssh_tunnel_port}</code>
+                    {sshSetup.already_configured && " (already configured)"}
+                  </p>
+                </div>
+              )}
+              {sshSetupStatus === "error" && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+                  Remote access setup failed. You can configure it manually later.
+                </div>
+              )}
+            </div>
           </>
         )}
 
