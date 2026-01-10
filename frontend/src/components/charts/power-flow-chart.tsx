@@ -687,7 +687,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   )}
                   {/* Chart */}
                   <div className="flex-1 min-h-[200px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width={containerDimensions.width} height={Math.max(200, containerDimensions.height - 80)}>
                       <AreaChart
                         data={getZoomedData(connectionData)}
                         margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
@@ -790,7 +790,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 </div>
               ) : (
                 <div className="h-full w-full min-h-[280px]">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width={containerDimensions.width} height={Math.max(250, containerDimensions.height - 20)}>
                     <LineChart
                       data={getZoomedData(systemData)}
                       margin={{ top: 5, right: 50, left: 0, bottom: xAxisProps.height - 20 }}
@@ -940,7 +940,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 </div>
               ) : (
                 <div className="h-full w-full min-h-[280px]">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width={containerDimensions.width} height={Math.max(250, containerDimensions.height - 20)}>
                     <AreaChart
                       data={getZoomedData(controlData)}
                       margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
