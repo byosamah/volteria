@@ -1291,10 +1291,7 @@ export function MasterDeviceList({
       </AlertDialog>
 
       {/* Reboot Confirmation Dialog - Step 1 */}
-      <AlertDialog open={showRebootConfirm} onOpenChange={(open) => {
-        setShowRebootConfirm(open);
-        if (!open) setRebootingDevice(null);
-      }}>
+      <AlertDialog open={showRebootConfirm} onOpenChange={setShowRebootConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Reboot &quot;{rebootingDevice?.name}&quot;?</AlertDialogTitle>
@@ -1306,7 +1303,12 @@ export function MasterDeviceList({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
+            <AlertDialogCancel
+              className="min-h-[44px]"
+              onClick={() => setRebootingDevice(null)}
+            >
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 setShowRebootConfirm(false);
