@@ -127,9 +127,111 @@ export default async function ProjectDetailPage({
     // Ignore errors
   }
 
+  // Get site IDs for batch queries
+  const siteIds = sites.map((s) => s.id);
+
+  // Fetch active master devices for all sites to determine actual controller status
+  // A site is only "online" if it has an active master device that is online
+  // For controllers: check heartbeats (same logic as site detail page API)
+  // For gateways: use is_online field directly
+  const siteMasterDeviceStatus: Record<string, { hasController: boolean; isOnline: boolean; lastSeen: string | null }> = {};
+
+  // 90-second threshold for online detection (same as site status API)
+  const ONLINE_THRESHOLD_MS = 90 * 1000;
+
+  if (siteIds.length > 0) {
+    try {
+      const { data: masterDevices } = await supabase
+        .from("site_master_devices")
+        .select("site_id, device_type, is_online, last_seen, controller_id")
+        .in("site_id", siteIds)
+        .eq("is_active", true);
+
+      if (masterDevices) {
+        // Collect controller IDs to fetch heartbeats
+        const controllerIds = masterDevices
+          .filter((md) => md.device_type === "controller" && md.controller_id)
+          .map((md) => md.controller_id as string);
+
+        // Fetch latest heartbeats for all controllers in batch
+        let heartbeatMap: Record<string, { timestamp: string }> = {};
+        if (controllerIds.length > 0) {
+          // Get the latest heartbeat for each controller
+          const { data: heartbeats } = await supabase
+            .from("controller_heartbeats")
+            .select("controller_id, timestamp")
+            .in("controller_id", controllerIds)
+            .order("timestamp", { ascending: false });
+
+          if (heartbeats) {
+            // Keep only the latest heartbeat per controller
+            for (const hb of heartbeats) {
+              if (!heartbeatMap[hb.controller_id]) {
+                heartbeatMap[hb.controller_id] = { timestamp: hb.timestamp };
+              }
+            }
+          }
+        }
+
+        for (const md of masterDevices) {
+          let isOnline = false;
+          let lastSeen: string | null = null;
+
+          if (md.device_type === "controller" && md.controller_id) {
+            // For controllers, check heartbeat (same as site status API)
+            const heartbeat = heartbeatMap[md.controller_id];
+            if (heartbeat) {
+              lastSeen = heartbeat.timestamp;
+              const heartbeatTime = new Date(heartbeat.timestamp).getTime();
+              isOnline = Date.now() - heartbeatTime < ONLINE_THRESHOLD_MS;
+            }
+          } else {
+            // For gateways, use is_online field directly
+            isOnline = md.is_online || false;
+            lastSeen = md.last_seen;
+          }
+
+          // Track if site has any active master device and its status
+          const existing = siteMasterDeviceStatus[md.site_id];
+          if (!existing) {
+            siteMasterDeviceStatus[md.site_id] = {
+              hasController: true,
+              isOnline,
+              lastSeen,
+            };
+          } else {
+            // If any master device is online, site is online
+            if (isOnline) {
+              existing.isOnline = true;
+            }
+            // Update last_seen to most recent
+            if (lastSeen && (!existing.lastSeen || lastSeen > existing.lastSeen)) {
+              existing.lastSeen = lastSeen;
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  // Update site controller status based on actual master device status
+  sites = sites.map((site) => {
+    const masterStatus = siteMasterDeviceStatus[site.id];
+    if (!masterStatus || !masterStatus.hasController) {
+      // No active master device - site is offline
+      return { ...site, controller_status: "offline", controller_last_seen: null };
+    }
+    return {
+      ...site,
+      controller_status: masterStatus.isOnline ? "online" : "offline",
+      controller_last_seen: masterStatus.lastSeen,
+    };
+  });
+
   // Count devices per site in batch (avoids N+1 queries)
   const siteDeviceCounts: Record<string, number> = {};
-  const siteIds = sites.map((s) => s.id);
 
   if (siteIds.length > 0) {
     try {

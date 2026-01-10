@@ -578,6 +578,9 @@ export default async function SiteDetailPage({
           {hasController && <ControllerHealthCard siteId={siteId} />}
         </div>
 
+        {/* Site Configuration Sync Status */}
+        <TemplateSyncStatus siteId={siteId} />
+
         {/* Tabs */}
         <Tabs defaultValue="devices" className="space-y-4">
           <TabsList>
@@ -585,9 +588,6 @@ export default async function SiteDetailPage({
             <ControlLogsTabTrigger value="logs" siteId={siteId} />
             <TabsTrigger value="alarms">Alarms</TabsTrigger>
           </TabsList>
-
-          {/* Site Configuration Sync Status - visible on all tabs */}
-          <TemplateSyncStatus siteId={siteId} />
 
           <TabsContent value="devices" className="space-y-4">
             {/* Master Devices (Controllers and Gateways) */}
