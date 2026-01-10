@@ -237,7 +237,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "status": status,
             "ip_address": ip_address,
             "user_agent": user_agent[:500] if user_agent else None,  # Truncate if too long
-            "details": {
+            "metadata": {
                 "method": method,
                 "path": path,
                 "status_code": response.status_code,
