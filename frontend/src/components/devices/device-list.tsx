@@ -639,101 +639,42 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     );
   };
 
+  // Define display order for device types
+  const typeOrder = ["load_meter", "inverter", "dg", "sensor", "fuel_level_sensor", "temperature_humidity_sensor", "solar_radiation_sensor", "wind_sensor", "unknown"];
+
   return (
     <>
-      {/* Load Meters */}
-      {devicesByType["load"] && devicesByType["load"].length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.load.title}</CardTitle>
-            <CardDescription>{typeConfigs.load.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {devicesByType["load"].map((device) => (
-                <DeviceCard key={device.id} device={device} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Render device groups in order */}
+      {typeOrder
+        .filter((type) => devicesByType[type] && devicesByType[type].length > 0)
+        .map((type) => (
+          <Card key={type}>
+            <CardHeader>
+              <CardTitle className="text-lg">
+                {typeConfigs[type]?.title || type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+              </CardTitle>
+              <CardDescription>
+                {typeConfigs[type]?.description || "Devices in this category"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {devicesByType[type].map((device) => (
+                  <DeviceCard key={device.id} device={device} />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
 
-      {/* Sub-load Meters */}
-      {devicesByType["sub_load"] && devicesByType["sub_load"].length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.sub_load.title}</CardTitle>
-            <CardDescription>{typeConfigs.sub_load.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {devicesByType["sub_load"].map((device) => (
-                <DeviceCard key={device.id} device={device} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Solar Inverters */}
-      {devicesByType["solar"] && devicesByType["solar"].length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.solar.title}</CardTitle>
-            <CardDescription>{typeConfigs.solar.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {devicesByType["solar"].map((device) => (
-                <DeviceCard key={device.id} device={device} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Generators */}
-      {devicesByType["generator"] && devicesByType["generator"].length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.generator.title}</CardTitle>
-            <CardDescription>{typeConfigs.generator.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {devicesByType["generator"].map((device) => (
-                <DeviceCard key={device.id} device={device} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Fuel Sensors */}
-      {devicesByType["fuel"] && devicesByType["fuel"].length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{typeConfigs.fuel.title}</CardTitle>
-            <CardDescription>{typeConfigs.fuel.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {devicesByType["fuel"].map((device) => (
-                <DeviceCard key={device.id} device={device} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Render any other device types not explicitly handled above (including "unknown") */}
+      {/* Render any other device types not in typeOrder */}
       {Object.entries(devicesByType)
-        .filter(([type]) => !["load", "sub_load", "solar", "generator", "fuel"].includes(type))
+        .filter(([type]) => !typeOrder.includes(type))
         .map(([type, typeDevices]) => (
           <Card key={type}>
             <CardHeader>
               <CardTitle className="text-lg">
-                {typeConfigs[type]?.title || (type === "unknown" ? "Other Devices" : type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))}
+                {typeConfigs[type]?.title || type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
               </CardTitle>
               <CardDescription>
                 {typeConfigs[type]?.description || "Devices in this category"}
