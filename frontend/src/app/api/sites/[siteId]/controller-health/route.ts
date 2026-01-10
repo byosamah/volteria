@@ -8,6 +8,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 // Define the heartbeat data structure
@@ -55,11 +56,6 @@ export async function GET(
       .eq("is_active", true)
       .maybeSingle();
 
-    // Debug logging
-    console.log("Controller health API - siteId:", siteId);
-    console.log("Controller health API - masterDevice:", JSON.stringify(masterDevice));
-    console.log("Controller health API - masterError:", masterError);
-
     if (masterError) {
       console.error("Failed to fetch master device:", masterError);
       return NextResponse.json({ error: "Failed to fetch controller" }, { status: 500 });
@@ -67,7 +63,6 @@ export async function GET(
 
     // No controller assigned to this site
     if (!masterDevice || !masterDevice.controller_id) {
-      console.log("Controller health API - No controller found for site:", siteId);
       return NextResponse.json({ error: "No controller assigned to this site" }, { status: 404 });
     }
 
@@ -86,17 +81,24 @@ export async function GET(
     } : null;
 
     // Step 2: Get the latest heartbeat for this controller
-    console.log("Controller health API - fetching heartbeat for controller:", controllerId);
-    const { data: heartbeat, error: heartbeatError } = await supabase
+    // Use service key to bypass RLS (heartbeat data is not sensitive)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing Supabase credentials for heartbeat query");
+      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    }
+
+    const adminClient = createAdminClient(supabaseUrl, supabaseServiceKey);
+
+    const { data: heartbeat, error: heartbeatError } = await adminClient
       .from("controller_heartbeats")
       .select("*")
       .eq("controller_id", controllerId)
       .order("timestamp", { ascending: false })
       .limit(1)
       .maybeSingle();
-
-    console.log("Controller health API - heartbeat:", heartbeat ? "found" : "null");
-    console.log("Controller health API - heartbeatError:", heartbeatError);
 
     if (heartbeatError) {
       console.error("Failed to fetch heartbeat:", heartbeatError);
@@ -105,11 +107,8 @@ export async function GET(
 
     // No heartbeat data yet
     if (!heartbeat) {
-      console.log("Controller health API - No heartbeat found, returning 404");
       return NextResponse.json({ error: "No heartbeat data available" }, { status: 404 });
     }
-
-    console.log("Controller health API - heartbeat timestamp:", heartbeat.timestamp);
 
     // Step 3: Determine if online (heartbeat within last 90 seconds)
     // Note: Controllers send heartbeats every 30 seconds
