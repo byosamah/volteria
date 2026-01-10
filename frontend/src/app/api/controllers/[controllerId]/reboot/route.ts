@@ -32,7 +32,7 @@ export async function POST(
 
     // Get the controller and verify it exists
     const { data: controller, error: controllerError } = await supabase
-      .from("controllers_master")
+      .from("controllers")
       .select("id, serial_number")
       .eq("id", controllerId)
       .single();

@@ -9,7 +9,7 @@
 
 CREATE TABLE IF NOT EXISTS controller_updates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    controller_id UUID NOT NULL REFERENCES controllers_master(id) ON DELETE CASCADE,
+    controller_id UUID NOT NULL REFERENCES controllers(id) ON DELETE CASCADE,
     firmware_release_id UUID NOT NULL REFERENCES firmware_releases(id) ON DELETE CASCADE,
     from_version TEXT,
     to_version TEXT NOT NULL,
@@ -78,7 +78,7 @@ CREATE POLICY "Users can view updates for their controllers"
     FOR SELECT
     USING (
         EXISTS (
-            SELECT 1 FROM controllers_master cm
+            SELECT 1 FROM controllers cm
             JOIN site_master_devices smd ON smd.controller_id = cm.id
             JOIN sites s ON s.id = smd.site_id
             JOIN user_projects up ON up.project_id = s.project_id
@@ -94,7 +94,7 @@ CREATE POLICY "Enterprise admins can approve updates"
     USING (
         EXISTS (
             SELECT 1 FROM users u
-            JOIN controllers_master cm ON cm.enterprise_id = u.enterprise_id
+            JOIN controllers cm ON cm.enterprise_id = u.enterprise_id
             WHERE u.id = auth.uid()
             AND u.role IN ('enterprise_admin', 'admin')
             AND cm.id = controller_updates.controller_id
