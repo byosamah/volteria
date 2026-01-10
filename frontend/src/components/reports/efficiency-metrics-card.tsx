@@ -135,7 +135,7 @@ export function EfficiencyMetricsCard({
 
               {avgSolarLimit < 70 && (
                 <p className="text-xs text-muted-foreground">
-                  Consider reviewing DG reserve settings to maximize solar output
+                  Consider reviewing generator reserve settings to maximize solar output
                 </p>
               )}
 

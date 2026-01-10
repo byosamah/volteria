@@ -57,7 +57,7 @@ export function StepReview({ formData, onEditStep }: StepReviewProps) {
   const formatOperationMode = (mode: string) => {
     switch (mode) {
       case "zero_dg_reverse":
-        return "DG Reserve / Zero DG Reverse";
+        return "Generator Reserve / Zero Generator Feed";
       case "peak_shaving":
         return "Peak Shaving";
       case "manual":
@@ -111,7 +111,7 @@ export function StepReview({ formData, onEditStep }: StepReviewProps) {
       {/* Section 4: Control Settings */}
       <ReviewSection title="Control Settings" step={4} onEdit={onEditStep}>
         <ReviewItem
-          label="DG Reserve"
+          label="Generator Reserve"
           value={`${formData.dgReserveKw} kW`}
         />
         <ReviewItem

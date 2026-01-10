@@ -54,7 +54,7 @@ function formatCommandType(type: string): { label: string; icon: React.ReactNode
       };
     case "set_dg_reserve":
       return {
-        label: "DG Reserve",
+        label: "Generator Reserve",
         icon: <Gauge className="h-4 w-4" />,
         color: "bg-blue-100 text-blue-700",
       };

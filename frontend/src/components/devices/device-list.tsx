@@ -174,7 +174,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
           label: `Solar (${latestReadings.solar_limit_pct}%)`,
         };
       case "dg":
-        return { value: latestReadings.dg_power_kw, unit: "kW", label: "DG Power" };
+        return { value: latestReadings.dg_power_kw, unit: "kW", label: "Generator Power" };
       default:
         return null;
     }
@@ -555,14 +555,10 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="font-medium truncate">{device.name}</p>
-              {/* Online/Offline status badge */}
-              {device.is_online ? (
+              {/* Online status badge - only show for online devices (offline indicated by gray circle) */}
+              {device.is_online && (
                 <Badge variant="outline" className="flex-shrink-0 text-xs bg-green-50 text-green-700 border-green-200">
                   Online
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="flex-shrink-0 text-xs bg-gray-100 text-gray-600">
-                  {device.last_seen ? formatLastSeen(device.last_seen) : "Offline"}
                 </Badge>
               )}
               {/* Measurement type badge - shows what the device measures */}

@@ -181,12 +181,12 @@ export default async function ReportsPage({ params }: ReportsPageProps) {
             </CardContent>
           </Card>
 
-          {/* Average DG */}
+          {/* Average Generator */}
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-1">
                 <Fuel className="h-4 w-4 text-gray-500" />
-                Avg. DG
+                Avg. Generator
               </CardDescription>
               <CardTitle className="text-2xl md:text-3xl text-gray-600">
                 {avgDg.toFixed(1)} <span className="text-base font-normal">kW</span>
@@ -194,7 +194,7 @@ export default async function ReportsPage({ params }: ReportsPageProps) {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">
-                DG provides backup power
+                Generator provides backup power
               </p>
             </CardContent>
           </Card>

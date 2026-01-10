@@ -333,13 +333,13 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="dg_reserve_kw" className="flex items-center gap-1.5">
-              DG Reserve (kW)
+              Generator Reserve (kW)
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span><InfoIcon /></span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
-                  <p>Minimum power reserve to maintain on diesel generators to prevent reverse feeding. Set to 0 for zero-export mode.</p>
+                  <p>Minimum power reserve to maintain on generators to prevent reverse feeding. Set to 0 for zero-export mode.</p>
                 </TooltipContent>
               </Tooltip>
             </Label>
@@ -411,7 +411,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
                   <span><InfoIcon /></span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
-                  <p>Control algorithm to use. Zero DG Reverse prevents reverse power flow to diesel generators.</p>
+                  <p>Control algorithm to use. Zero Generator Feed prevents reverse power flow to generators.</p>
                 </TooltipContent>
               </Tooltip>
             </Label>
@@ -422,7 +422,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
               onChange={handleChange}
               className="w-full h-10 px-3 rounded-md border border-input bg-background"
             >
-              <option value="zero_dg_reverse">Zero DG Reverse</option>
+              <option value="zero_dg_reverse">Zero Generator Feed</option>
               <option value="peak_shaving">Peak Shaving</option>
               <option value="manual">Manual</option>
             </select>

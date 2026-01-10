@@ -69,7 +69,7 @@ export function StepGridOperation({ formData, updateField }: StepProps) {
                   Diesel generators + solar system. No grid connection.
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Prevents reverse feeding to DG
+                  Prevents reverse feeding to generator
                 </p>
               </div>
             </div>
@@ -109,7 +109,7 @@ export function StepGridOperation({ formData, updateField }: StepProps) {
           </p>
 
           <div className="space-y-3">
-            {/* DG Reserve / Zero DG Reverse (Enabled) */}
+            {/* Generator Reserve / Zero Generator Feed (Enabled) */}
             <button
               type="button"
               onClick={() => updateField("operationMode", "zero_dg_reverse")}
@@ -134,10 +134,10 @@ export function StepGridOperation({ formData, updateField }: StepProps) {
                   )}
                 </div>
                 <div className="flex-1">
-                  <span className="font-semibold">DG Reserve / Zero DG Reverse</span>
+                  <span className="font-semibold">Generator Reserve / Zero Generator Feed</span>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Limits solar output to prevent reverse power flow to diesel generators.
-                    Maintains a configurable DG reserve power level.
+                    Limits solar output to prevent reverse power flow to generators.
+                    Maintains a configurable generator reserve power level.
                   </p>
                 </div>
               </div>

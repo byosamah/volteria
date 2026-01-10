@@ -50,7 +50,7 @@ export default function ControlLoading() {
 
               <Skeleton className="h-px w-full" />
 
-              {/* DG Reserve */}
+              {/* Generator Reserve */}
               <div className="space-y-4">
                 <Skeleton className="h-4 w-24" />
                 <div className="flex gap-2">

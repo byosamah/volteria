@@ -108,7 +108,7 @@ function validateStep(step: number, formData: WizardFormData): string | null {
       return null;
 
     case 4: // Control Settings
-      if (formData.dgReserveKw < 0) return "DG Reserve cannot be negative";
+      if (formData.dgReserveKw < 0) return "Generator Reserve cannot be negative";
       if (formData.controlIntervalMs < 100) return "Control interval must be at least 100ms";
       if (formData.controlIntervalMs > 10000) return "Control interval cannot exceed 10,000ms";
       return null;

@@ -79,7 +79,7 @@ function isVersionOutdated(current: string | null, minimum: string): boolean {
 function formatOperationMode(mode: string | null): string {
   switch (mode) {
     case "zero_dg_reverse":
-      return "Zero DG Reverse";
+      return "Zero Generator Feed";
     case "peak_shaving":
       return "Peak Shaving";
     case "manual":
@@ -510,8 +510,8 @@ export default async function SiteDetailPage({
 
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>DG Power</CardDescription>
-              {/* DG Power color coding */}
+              <CardDescription>Generator Power</CardDescription>
+              {/* Generator Power color coding */}
               <CardTitle className={`text-3xl ${
                 dgKw < 0
                   ? "text-red-600"
@@ -534,7 +534,7 @@ export default async function SiteDetailPage({
 
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>DG Reserve</CardDescription>
+              <CardDescription>Generator Reserve</CardDescription>
               <CardTitle className="text-3xl">
                 {site.dg_reserve_kw} <span className="text-lg font-normal">kW</span>
               </CardTitle>
@@ -598,7 +598,7 @@ export default async function SiteDetailPage({
               userRole={userProfile?.role || undefined}
             />
 
-            {/* Regular Devices (Load Meters, Inverters, DG Controllers) */}
+            {/* Regular Devices (Load Meters, Inverters, Generator Controllers) */}
             <DeviceList
               projectId={projectId}
               siteId={siteId}

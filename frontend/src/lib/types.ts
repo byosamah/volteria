@@ -397,7 +397,7 @@ export interface EffectiveAlarmConfig {
 // Calculation types
 export type CalculationType =
   | "sum"          // Sum of values (Total Solar, Total Load)
-  | "difference"   // A - B (DG Power = Load - Solar)
+  | "difference"   // A - B (Generator Power = Load - Solar)
   | "cumulative"   // Rolling sum over time (Daily Energy)
   | "average"      // Average of values
   | "max"          // Maximum value

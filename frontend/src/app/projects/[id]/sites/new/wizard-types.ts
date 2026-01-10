@@ -33,7 +33,7 @@ export type GridConnection = "on_grid" | "off_grid";
 
 /**
  * Operation mode options (for off-grid)
- * - zero_dg_reverse: Prevent reverse feeding to DG (currently only option)
+ * - zero_dg_reverse: Prevent reverse feeding to generator (currently only option)
  * - peak_shaving: Reduce peak demand (coming soon)
  * - manual: Manual control (coming soon)
  */
@@ -198,7 +198,7 @@ export const WIZARD_STEPS: StepDefinition[] = [
     number: 4,
     title: "Control Settings",
     shortTitle: "Settings",
-    description: "DG reserve and control intervals",
+    description: "Generator reserve and control intervals",
   },
   {
     number: 5,

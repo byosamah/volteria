@@ -4,7 +4,7 @@
  * Step 4: Control Settings
  *
  * Configure control parameters:
- * - DG Reserve (kW): Minimum power to keep on generators
+ * - Generator Reserve (kW): Minimum power to keep on generators
  * - Control Interval (ms): How often the control loop runs
  */
 
@@ -15,10 +15,10 @@ import type { StepProps } from "../wizard-types";
 export function StepControlSettings({ formData, updateField }: StepProps) {
   return (
     <div className="space-y-6">
-      {/* DG Reserve */}
+      {/* Generator Reserve */}
       <div className="space-y-2">
         <Label htmlFor="dg-reserve">
-          DG Reserve (kW) <span className="text-red-500">*</span>
+          Generator Reserve (kW) <span className="text-red-500">*</span>
         </Label>
         <Input
           id="dg-reserve"
@@ -30,7 +30,7 @@ export function StepControlSettings({ formData, updateField }: StepProps) {
           className="min-h-[44px]"
         />
         <p className="text-xs text-muted-foreground">
-          Minimum power (in kW) to maintain on diesel generators.
+          Minimum power (in kW) to maintain on generators.
           Set to 0 for maximum solar utilization.
         </p>
         {/* Helpful info box */}
@@ -42,7 +42,7 @@ export function StepControlSettings({ formData, updateField }: StepProps) {
               <line x1="12" y1="8" x2="12.01" y2="8"/>
             </svg>
             <p className="text-xs text-amber-800">
-              <strong>Tip:</strong> A DG reserve of 20-50 kW provides a safety buffer
+              <strong>Tip:</strong> A generator reserve of 20-50 kW provides a safety buffer
               for sudden load increases. Setting to 0 maximizes solar but may cause
               brief reverse feeding during load transitions.
             </p>
@@ -119,7 +119,7 @@ export function StepControlSettings({ formData, updateField }: StepProps) {
         <h4 className="text-sm font-medium mb-2">What these settings mean:</h4>
         <ul className="text-xs text-muted-foreground space-y-1">
           <li>
-            • With <strong>{formData.dgReserveKw} kW</strong> DG reserve, generators will
+            • With <strong>{formData.dgReserveKw} kW</strong> generator reserve, generators will
             maintain at least this power output at all times.
           </li>
           <li>

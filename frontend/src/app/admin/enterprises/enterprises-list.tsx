@@ -68,6 +68,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
     contact_email: "",
     city: "",
     country: "",
+    timezone: "UTC",
     subscription_plan: "starter",
   });
 
@@ -119,6 +120,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
           contact_email: formData.contact_email.trim() || null,
           city: formData.city.trim() || null,
           country: formData.country.trim() || null,
+          timezone: formData.timezone,
           subscription_plan: formData.subscription_plan,
           is_active: true,
         })
@@ -145,6 +147,7 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
         contact_email: "",
         city: "",
         country: "",
+        timezone: "UTC",
         subscription_plan: "starter",
       });
       router.refresh();
@@ -532,6 +535,64 @@ export function EnterprisesList({ enterprises: initialEnterprises }: Enterprises
                 onChange={handleChange}
                 className="min-h-[44px]"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="timezone">
+                Timezone <span className="text-red-500">*</span>
+              </Label>
+              <select
+                id="timezone"
+                value={formData.timezone}
+                onChange={(e) => setFormData((prev) => ({ ...prev, timezone: e.target.value }))}
+                className="w-full h-10 px-3 rounded-md border border-input bg-background min-h-[44px]"
+                required
+              >
+                <optgroup label="Common Timezones">
+                  <option value="UTC">UTC (Coordinated Universal Time)</option>
+                  <option value="Asia/Dubai">Asia/Dubai (Gulf Standard Time, UTC+4)</option>
+                  <option value="Asia/Riyadh">Asia/Riyadh (Arabia Standard Time, UTC+3)</option>
+                  <option value="Asia/Kuwait">Asia/Kuwait (Arabia Standard Time, UTC+3)</option>
+                  <option value="Asia/Qatar">Asia/Qatar (Arabia Standard Time, UTC+3)</option>
+                  <option value="Asia/Bahrain">Asia/Bahrain (Arabia Standard Time, UTC+3)</option>
+                  <option value="Africa/Cairo">Africa/Cairo (Eastern European Time, UTC+2)</option>
+                  <option value="Europe/London">Europe/London (GMT/BST)</option>
+                  <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                  <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
+                  <option value="America/New_York">America/New_York (Eastern Time)</option>
+                  <option value="America/Chicago">America/Chicago (Central Time)</option>
+                  <option value="America/Denver">America/Denver (Mountain Time)</option>
+                  <option value="America/Los_Angeles">America/Los_Angeles (Pacific Time)</option>
+                  <option value="Asia/Singapore">Asia/Singapore (Singapore Time, UTC+8)</option>
+                  <option value="Asia/Hong_Kong">Asia/Hong_Kong (Hong Kong Time, UTC+8)</option>
+                  <option value="Asia/Tokyo">Asia/Tokyo (Japan Standard Time, UTC+9)</option>
+                  <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                </optgroup>
+                <optgroup label="Middle East">
+                  <option value="Asia/Muscat">Asia/Muscat (Oman, UTC+4)</option>
+                  <option value="Asia/Baghdad">Asia/Baghdad (Iraq, UTC+3)</option>
+                  <option value="Asia/Amman">Asia/Amman (Jordan, UTC+3)</option>
+                  <option value="Asia/Beirut">Asia/Beirut (Lebanon, UTC+2)</option>
+                  <option value="Asia/Jerusalem">Asia/Jerusalem (Israel, UTC+2)</option>
+                </optgroup>
+                <optgroup label="Africa">
+                  <option value="Africa/Johannesburg">Africa/Johannesburg (South Africa, UTC+2)</option>
+                  <option value="Africa/Lagos">Africa/Lagos (Nigeria, UTC+1)</option>
+                  <option value="Africa/Nairobi">Africa/Nairobi (Kenya, UTC+3)</option>
+                </optgroup>
+                <optgroup label="Asia Pacific">
+                  <option value="Asia/Kolkata">Asia/Kolkata (India, UTC+5:30)</option>
+                  <option value="Asia/Karachi">Asia/Karachi (Pakistan, UTC+5)</option>
+                  <option value="Asia/Bangkok">Asia/Bangkok (Thailand, UTC+7)</option>
+                  <option value="Asia/Jakarta">Asia/Jakarta (Indonesia, UTC+7)</option>
+                  <option value="Asia/Manila">Asia/Manila (Philippines, UTC+8)</option>
+                  <option value="Asia/Seoul">Asia/Seoul (South Korea, UTC+9)</option>
+                  <option value="Asia/Shanghai">Asia/Shanghai (China, UTC+8)</option>
+                </optgroup>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Enterprise timezone for analysis and reporting
+              </p>
             </div>
 
             <div className="space-y-2">

@@ -135,7 +135,7 @@ export default function AddMasterDevicePage({
       const supabase = createClient();
 
       try {
-        // Get current user's enterprise and role
+        // Get current user's role
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
@@ -145,7 +145,21 @@ export default function AddMasterDevicePage({
           .eq("id", user.id)
           .single();
 
-        if (!userProfile?.enterprise_id) {
+        // Get the project's enterprise_id (use this to filter controllers)
+        // This ensures super admins can only add controllers from the project's enterprise
+        const { data: project } = await supabase
+          .from("projects")
+          .select("enterprise_id")
+          .eq("id", projectId)
+          .single();
+
+        // Determine which enterprise_id to use for filtering controllers
+        // - Use project's enterprise_id (controllers must belong to same enterprise as project)
+        // - For enterprise_admin/configurator: must match their own enterprise anyway
+        const projectEnterpriseId = project?.enterprise_id;
+
+        if (!projectEnterpriseId) {
+          // Project doesn't have an enterprise assigned
           setAvailableControllers([]);
           setAvailableTemplates([]);
           return;
@@ -166,7 +180,7 @@ export default function AddMasterDevicePage({
           setDeviceType("gateway");
         }
 
-        // Fetch available controllers (enterprise's claimed, not assigned to any site)
+        // Fetch available controllers from the PROJECT's enterprise (not user's enterprise)
         // Controllers with 'claimed' status are owned by enterprise but not yet on a site
         const { data: controllers } = await supabase
           .from("controllers")
@@ -180,7 +194,7 @@ export default function AddMasterDevicePage({
               manufacturer
             )
           `)
-          .eq("enterprise_id", userProfile.enterprise_id)
+          .eq("enterprise_id", projectEnterpriseId)
           .is("site_id", null)
           .eq("status", "claimed");
 
@@ -191,8 +205,8 @@ export default function AddMasterDevicePage({
         // Fetch available controller templates
         // Visibility rules:
         // - super_admin/backend_admin see all templates
-        // - Others see: public templates + their enterprise's custom templates
-        const isSuperAdmin = ["super_admin", "backend_admin"].includes(userProfile.role || "");
+        // - Others see: public templates + project's enterprise's custom templates
+        const isSuperAdmin = ["super_admin", "backend_admin"].includes(userProfile?.role || "");
 
         let templatesQuery = supabase
           .from("controller_templates")
@@ -201,8 +215,8 @@ export default function AddMasterDevicePage({
           .order("name");
 
         if (!isSuperAdmin) {
-          // Filter: public templates OR custom templates from user's enterprise
-          templatesQuery = templatesQuery.or(`template_type.eq.public,enterprise_id.eq.${userProfile.enterprise_id}`);
+          // Filter: public templates OR custom templates from project's enterprise
+          templatesQuery = templatesQuery.or(`template_type.eq.public,enterprise_id.eq.${projectEnterpriseId}`);
         }
 
         const { data: templates } = await templatesQuery;
@@ -218,7 +232,7 @@ export default function AddMasterDevicePage({
     }
 
     loadData();
-  }, [siteId]);
+  }, [projectId, siteId]);
 
   // Fetch calculated field definitions when template changes
   useEffect(() => {

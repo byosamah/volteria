@@ -5,7 +5,7 @@
  *
  * Shows real-time power data with auto-refresh:
  * - Total Load
- * - DG Power
+ * - Generator Power
  * - Solar Output
  * - Solar Limit
  * - Safe Mode Status
@@ -210,10 +210,10 @@ export function LivePowerDisplay({ projectId, dgReserveKw }: LivePowerDisplayPro
         </CardContent>
       </Card>
 
-      {/* DG Power */}
+      {/* Generator Power */}
       <Card>
         <CardHeader className="pb-2">
-          <CardDescription>DG Power</CardDescription>
+          <CardDescription>Generator Power</CardDescription>
           <CardTitle className="text-3xl">
             {dgKw.toFixed(1)} <span className="text-lg font-normal">kW</span>
           </CardTitle>
@@ -223,10 +223,10 @@ export function LivePowerDisplay({ projectId, dgReserveKw }: LivePowerDisplayPro
         </CardContent>
       </Card>
 
-      {/* DG Reserve & Status */}
+      {/* Generator Reserve & Status */}
       <Card>
         <CardHeader className="pb-2">
-          <CardDescription>DG Reserve</CardDescription>
+          <CardDescription>Generator Reserve</CardDescription>
           <CardTitle className="text-3xl">
             {dgReserveKw} <span className="text-lg font-normal">kW</span>
           </CardTitle>

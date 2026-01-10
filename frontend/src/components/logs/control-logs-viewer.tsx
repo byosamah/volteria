@@ -184,7 +184,7 @@ export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps)
     const headers = [
       "Timestamp",
       "Total Load (kW)",
-      "DG Power (kW)",
+      "Generator Power (kW)",
       "Solar Output (kW)",
       "Solar Limit (%)",
       "Available Headroom (kW)",
@@ -454,7 +454,7 @@ export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps)
                       <span className="font-medium">{log.total_load_kw?.toFixed(1) ?? "-"} kW</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">DG</span>
+                      <span className="text-muted-foreground">Generator</span>
                       <span className="font-medium">{log.dg_power_kw?.toFixed(1) ?? "-"} kW</span>
                     </div>
                     <div className="flex justify-between">
@@ -477,7 +477,7 @@ export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps)
                   <TableRow>
                     <TableHead>Time</TableHead>
                     <TableHead className="text-right">Load (kW)</TableHead>
-                    <TableHead className="text-right">DG (kW)</TableHead>
+                    <TableHead className="text-right">Generator (kW)</TableHead>
                     <TableHead className="text-right">Solar (kW)</TableHead>
                     <TableHead className="text-right">Limit (%)</TableHead>
                     <TableHead className="text-right">Headroom (kW)</TableHead>

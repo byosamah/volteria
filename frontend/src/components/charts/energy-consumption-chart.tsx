@@ -209,7 +209,7 @@ export function EnergyConsumptionChart({ projectId }: EnergyConsumptionChartProp
                 <Legend />
                 <Bar dataKey="load" name="Load" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="solar" name="Solar" fill="#6baf4f" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="dg" name="DG" fill="#64748b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="dg" name="Generator" fill="#64748b" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

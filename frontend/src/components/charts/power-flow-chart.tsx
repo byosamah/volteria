@@ -27,8 +27,9 @@ import {
   Legend,
   Area,
   AreaChart,
+  ReferenceArea,
 } from "recharts";
-import { Wifi, Activity, Gauge } from "lucide-react";
+import { Wifi, Activity, Gauge, ZoomIn, RotateCcw } from "lucide-react";
 
 // Chart type options
 type ChartType = "connection" | "system" | "control";
@@ -125,6 +126,14 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const [loading, setLoading] = useState(true);
   const [selectedRange, setSelectedRange] = useState(1); // Default: 1 hour (reduces initial load)
 
+  // Zoom state for drag-to-zoom functionality
+  const [refAreaLeft, setRefAreaLeft] = useState<string | null>(null);
+  const [refAreaRight, setRefAreaRight] = useState<string | null>(null);
+  const [isZooming, setIsZooming] = useState(false);
+  // Store the indices for zoomed view (null = showing full data)
+  const [zoomLeft, setZoomLeft] = useState<number | null>(null);
+  const [zoomRight, setZoomRight] = useState<number | null>(null);
+
   // Ref to store interval ID for visibility-aware polling
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   // Track if tab is visible (for pausing/resuming polling)
@@ -137,13 +146,43 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
       // For 1h and 6h: show just time (same day)
       return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     } else if (selectedRange <= 24) {
-      // For 24h: show day and time since data spans multiple days
-      return date.toLocaleDateString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+      // For 24h: show shorter format
+      return date.toLocaleDateString([], { weekday: "short", hour: "2-digit" });
     } else {
-      // For 7d: show date and time
-      return date.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit" });
+      // For 7d: show compact date
+      return date.toLocaleDateString([], { month: "short", day: "numeric" });
     }
   }, [selectedRange]);
+
+  // Calculate X-axis properties based on time range for better readability
+  const getXAxisProps = useCallback(() => {
+    // Angled text for longer ranges, horizontal for short ranges
+    if (selectedRange <= 6) {
+      return {
+        angle: 0,
+        textAnchor: "middle" as const,
+        interval: "preserveStartEnd" as const,
+        height: 30,
+      };
+    } else if (selectedRange <= 24) {
+      return {
+        angle: -35,
+        textAnchor: "end" as const,
+        interval: Math.floor(4), // Show fewer labels
+        height: 50,
+      };
+    } else {
+      // 7 days - most angled, fewest labels
+      return {
+        angle: -45,
+        textAnchor: "end" as const,
+        interval: Math.floor(8), // Show even fewer labels
+        height: 60,
+      };
+    }
+  }, [selectedRange]);
+
+  const xAxisProps = getXAxisProps();
 
   // Page Visibility API: Pause polling when tab is hidden to save bandwidth
   useEffect(() => {
@@ -159,6 +198,82 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
+
+  // Reset zoom when chart type or time range changes
+  useEffect(() => {
+    setZoomLeft(null);
+    setZoomRight(null);
+    setRefAreaLeft(null);
+    setRefAreaRight(null);
+  }, [chartType, selectedRange]);
+
+  // Zoom handlers for drag-to-zoom functionality
+  const handleMouseDown = useCallback((e: { activeLabel?: string }) => {
+    if (e.activeLabel) {
+      setRefAreaLeft(e.activeLabel);
+      setRefAreaRight(e.activeLabel);
+      setIsZooming(true);
+    }
+  }, []);
+
+  const handleMouseMove = useCallback((e: { activeLabel?: string }) => {
+    if (isZooming && e.activeLabel) {
+      setRefAreaRight(e.activeLabel);
+    }
+  }, [isZooming]);
+
+  // Helper to find index by time label in data array
+  const findIndexByTime = useCallback(<T extends { time: string }>(data: T[], timeLabel: string): number => {
+    return data.findIndex(d => d.time === timeLabel);
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    if (!isZooming || !refAreaLeft || !refAreaRight) {
+      setIsZooming(false);
+      return;
+    }
+
+    // Get the current data based on chart type
+    let currentData: { time: string }[] = [];
+    if (chartType === "connection") currentData = connectionData;
+    else if (chartType === "system") currentData = systemData;
+    else if (chartType === "control") currentData = controlData;
+
+    // Find indices for the selection
+    let leftIndex = findIndexByTime(currentData, refAreaLeft);
+    let rightIndex = findIndexByTime(currentData, refAreaRight);
+
+    // Ensure left is before right
+    if (leftIndex > rightIndex) {
+      [leftIndex, rightIndex] = [rightIndex, leftIndex];
+    }
+
+    // Only zoom if selection is meaningful (at least 2 points)
+    if (rightIndex - leftIndex >= 1) {
+      setZoomLeft(leftIndex);
+      setZoomRight(rightIndex);
+    }
+
+    // Reset selection state
+    setRefAreaLeft(null);
+    setRefAreaRight(null);
+    setIsZooming(false);
+  }, [isZooming, refAreaLeft, refAreaRight, chartType, connectionData, systemData, controlData, findIndexByTime]);
+
+  // Reset zoom to full view
+  const resetZoom = useCallback(() => {
+    setZoomLeft(null);
+    setZoomRight(null);
+  }, []);
+
+  // Check if currently zoomed
+  const isZoomed = zoomLeft !== null && zoomRight !== null;
+
+  // Get zoomed data slice for each chart type
+  const getZoomedData = useCallback(<T,>(data: T[]): T[] => {
+    if (!isZoomed) return data;
+    return data.slice(zoomLeft!, zoomRight! + 1);
+  }, [isZoomed, zoomLeft, zoomRight]);
 
   // Fetch data based on current chart type
   useEffect(() => {
@@ -420,19 +535,40 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
               <CardTitle className="text-lg">{chartInfo.title}</CardTitle>
               <CardDescription>{chartInfo.description}</CardDescription>
             </div>
-            {/* Time Range Selector */}
-            <div className="flex gap-1">
-              {TIME_RANGES.map((range) => (
+            {/* Time Range Selector and Zoom Controls */}
+            <div className="flex items-center gap-2">
+              {/* Zoom indicator and reset button */}
+              {isZoomed && (
                 <Button
-                  key={range.label}
-                  variant={selectedRange === range.value ? "default" : "outline"}
+                  variant="outline"
                   size="sm"
-                  onClick={() => setSelectedRange(range.value)}
-                  className="min-h-[36px] min-w-[44px]"
+                  onClick={resetZoom}
+                  className="min-h-[36px] gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50"
                 >
-                  {range.label}
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Reset Zoom</span>
                 </Button>
-              ))}
+              )}
+              {!isZoomed && (
+                <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
+                  <ZoomIn className="h-3.5 w-3.5" />
+                  <span>Drag to zoom</span>
+                </div>
+              )}
+              {/* Time Range Selector */}
+              <div className="flex gap-1">
+                {TIME_RANGES.map((range) => (
+                  <Button
+                    key={range.label}
+                    variant={selectedRange === range.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedRange(range.value)}
+                    className="min-h-[36px] min-w-[44px]"
+                  >
+                    {range.label}
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
           {/* Chart Type Tabs */}
@@ -504,7 +640,14 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   {/* Chart */}
                   <div className="flex-1 min-h-[200px]">
                     <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
-                      <AreaChart data={connectionData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                      <AreaChart
+                        data={getZoomedData(connectionData)}
+                        margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onMouseLeave={handleMouseUp}
+                      >
                         <defs>
                           <linearGradient id="connectionGradient" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor={CHART_COLORS.online} stopOpacity={0.8}/>
@@ -514,10 +657,13 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis
                           dataKey="time"
-                          tick={{ fontSize: 12 }}
+                          tick={{ fontSize: 11, angle: xAxisProps.angle, textAnchor: xAxisProps.textAnchor }}
                           tickLine={false}
                           axisLine={false}
                           className="text-muted-foreground"
+                          allowDataOverflow
+                          interval={xAxisProps.interval}
+                          height={xAxisProps.height}
                         />
                         <YAxis
                           tick={{ fontSize: 12 }}
@@ -564,6 +710,16 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                           dot={false}
                           activeDot={{ r: 4, fill: CHART_COLORS.online }}
                         />
+                        {/* Zoom selection overlay */}
+                        {refAreaLeft && refAreaRight && (
+                          <ReferenceArea
+                            x1={refAreaLeft}
+                            x2={refAreaRight}
+                            strokeOpacity={0.3}
+                            fill="#3b82f6"
+                            fillOpacity={0.3}
+                          />
+                        )}
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -583,14 +739,24 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
-                  <LineChart data={systemData} margin={{ top: 5, right: 50, left: 0, bottom: 5 }}>
+                  <LineChart
+                    data={getZoomedData(systemData)}
+                    margin={{ top: 5, right: 50, left: 0, bottom: xAxisProps.height - 20 }}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                  >
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       dataKey="time"
-                      tick={{ fontSize: 12 }}
+                      tick={{ fontSize: 11, angle: xAxisProps.angle, textAnchor: xAxisProps.textAnchor }}
                       tickLine={false}
                       axisLine={false}
                       className="text-muted-foreground"
+                      allowDataOverflow
+                      interval={xAxisProps.interval}
+                      height={xAxisProps.height}
                     />
                     {/* Left Y-Axis: Percentage (CPU, Memory, Disk) */}
                     <YAxis
@@ -691,6 +857,17 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         yAxisId="temp"
                       />
                     )}
+                    {/* Zoom selection overlay */}
+                    {refAreaLeft && refAreaRight && (
+                      <ReferenceArea
+                        x1={refAreaLeft}
+                        x2={refAreaRight}
+                        strokeOpacity={0.3}
+                        fill="#3b82f6"
+                        fillOpacity={0.3}
+                        yAxisId="pct"
+                      />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               )
@@ -707,14 +884,24 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
-                  <AreaChart data={controlData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <AreaChart
+                    data={getZoomedData(controlData)}
+                    margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                  >
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       dataKey="time"
-                      tick={{ fontSize: 12 }}
+                      tick={{ fontSize: 11, angle: xAxisProps.angle, textAnchor: xAxisProps.textAnchor }}
                       tickLine={false}
                       axisLine={false}
                       className="text-muted-foreground"
+                      allowDataOverflow
+                      interval={xAxisProps.interval}
+                      height={xAxisProps.height}
                     />
                     <YAxis
                       tick={{ fontSize: 12 }}
@@ -728,7 +915,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     <Tooltip
                       content={({ active, payload, label }) => {
                         if (!active || !payload || !payload.length) return null;
-                        const safeModeEntry = controlData.find(d => d.time === label);
+                        const zoomedControlData = getZoomedData(controlData);
+                        const safeModeEntry = zoomedControlData.find(d => d.time === label);
                         return (
                           <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
                             <p className="font-medium mb-2">{label}</p>
@@ -768,6 +956,16 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       dot={false}
                       activeDot={{ r: 4 }}
                     />
+                    {/* Zoom selection overlay */}
+                    {refAreaLeft && refAreaRight && (
+                      <ReferenceArea
+                        x1={refAreaLeft}
+                        x2={refAreaRight}
+                        strokeOpacity={0.3}
+                        fill="#3b82f6"
+                        fillOpacity={0.3}
+                      />
+                    )}
                   </AreaChart>
                 </ResponsiveContainer>
               )

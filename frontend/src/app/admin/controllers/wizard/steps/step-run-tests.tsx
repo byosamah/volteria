@@ -45,12 +45,12 @@ const INITIAL_TESTS: TestResult[] = [
   },
   {
     name: "dg_controller",
-    description: "Simulated DG Controller Read",
+    description: "Simulated Generator Controller Read",
     status: "pending",
   },
   {
     name: "control_logic",
-    description: "DG Zero Feed Control Logic",
+    description: "Generator Zero Feed Control Logic",
     status: "pending",
   },
 ];
@@ -138,7 +138,7 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
       case "dg_controller":
         return "Read value: 80.0 kW";
       case "control_logic":
-        return "Load=100kW, DG=80kW → Solar limit=20kW";
+        return "Load=100kW, Generator=80kW → Solar limit=20kW";
       default:
         return "Test passed";
     }
@@ -326,13 +326,13 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
             reading them back from a simulated inverter.
           </div>
           <div>
-            <strong>Simulated DG Controller:</strong> Tests reading power values
-            from a simulated diesel generator controller.
+            <strong>Simulated Generator Controller:</strong> Tests reading power values
+            from a simulated generator controller.
           </div>
           <div>
-            <strong>DG Zero Feed Logic:</strong> Verifies the zero-feed control
+            <strong>Generator Zero Feed Logic:</strong> Verifies the zero-feed control
             algorithm calculates correct solar limits to prevent reverse power
-            flow to the diesel generator.
+            flow to the generator.
           </div>
         </div>
       </details>

@@ -267,7 +267,7 @@ export function WidgetConfigDialog({
               <SelectContent>
                 <SelectItem value="total_load_kw">Total Load (kW)</SelectItem>
                 <SelectItem value="solar_output_kw">Solar Output (kW)</SelectItem>
-                <SelectItem value="dg_power_kw">DG Power (kW)</SelectItem>
+                <SelectItem value="dg_power_kw">Generator Power (kW)</SelectItem>
                 <SelectItem value="solar_limit_pct">Solar Limit (%)</SelectItem>
               </SelectContent>
             </Select>
@@ -303,7 +303,7 @@ export function WidgetConfigDialog({
     const seriesOptions = [
       { register_name: "total_load_kw", label: "Total Load" },
       { register_name: "solar_output_kw", label: "Solar Output" },
-      { register_name: "dg_power_kw", label: "DG Power" },
+      { register_name: "dg_power_kw", label: "Generator Power" },
     ];
 
     return (

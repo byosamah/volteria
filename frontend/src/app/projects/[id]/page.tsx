@@ -40,7 +40,7 @@ function StatusBadge({ status }: { status: string }) {
 function formatOperationMode(mode: string | null): string {
   switch (mode) {
     case "zero_dg_reverse":
-      return "Zero DG Reverse";
+      return "Zero Generator Feed";
     case "peak_shaving":
       return "Peak Shaving";
     case "manual":
@@ -379,7 +379,7 @@ export default async function ProjectDetailPage({
                       </p>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span>{siteDeviceCounts[site.id] || 0} devices</span>
-                        {/* Show operation mode and grid connection instead of DG Reserve */}
+                        {/* Show operation mode and grid connection instead of Generator Reserve */}
                         <span>{formatOperationMode(site.operation_mode)} · {formatGridConnection(site.grid_connection)}</span>
                         {site.controller_status === "offline" && site.controller_last_seen && (
                           <span>Last seen: <FormattedDate date={site.controller_last_seen} /></span>

@@ -135,7 +135,7 @@ export function SiteTestModal({
       case "inverter":
         return "Inverter";
       case "dg":
-        return "DG Controller";
+        return "Generator Controller";
       case "control_logic":
         return "Control Logic";
       default:

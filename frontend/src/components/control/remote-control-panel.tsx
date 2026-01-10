@@ -234,11 +234,11 @@ export function RemoteControlPanel({
         {/* Divider */}
         <div className="border-t" />
 
-        {/* DG Reserve Control */}
+        {/* Generator Reserve Control */}
         <div className="space-y-4">
           <Label className="flex items-center gap-2">
             <Gauge className="h-4 w-4 text-gray-500" />
-            DG Reserve (kW)
+            Generator Reserve (kW)
           </Label>
 
           <div className="flex gap-2">
@@ -250,7 +250,7 @@ export function RemoteControlPanel({
               max={1000}
               step={1}
               className="min-h-[44px] flex-1"
-              placeholder="Enter DG reserve in kW"
+              placeholder="Enter generator reserve in kW"
             />
             <Button
               onClick={handleDgReserveSubmit}
@@ -268,7 +268,7 @@ export function RemoteControlPanel({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Minimum power the DG should maintain. Solar output will be limited to prevent reverse feeding.
+            Minimum power the generator should maintain. Solar output will be limited to prevent reverse feeding.
           </p>
         </div>
       </CardContent>

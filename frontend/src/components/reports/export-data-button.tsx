@@ -95,7 +95,7 @@ export function ExportDataButton({ projectId }: ExportDataButtonProps) {
         "Timestamp",
         "Total Load (kW)",
         "Solar Output (kW)",
-        "DG Power (kW)",
+        "Generator Power (kW)",
         "Solar Limit (%)",
         "Safe Mode Active",
         "Config Mode",
