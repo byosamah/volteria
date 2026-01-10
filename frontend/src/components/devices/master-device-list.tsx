@@ -156,6 +156,7 @@ export function MasterDeviceList({
   const [isSaving, setIsSaving] = useState(false);
 
   // Reboot confirmation state (double confirmation)
+  const [rebootingDevice, setRebootingDevice] = useState<MasterDevice | null>(null);
   const [showRebootConfirm, setShowRebootConfirm] = useState(false);
   const [showRebootFinalConfirm, setShowRebootFinalConfirm] = useState(false);
   const [rebootConfirmText, setRebootConfirmText] = useState("");
@@ -488,12 +489,12 @@ export function MasterDeviceList({
 
   // Reboot controller (double confirmation flow)
   const handleReboot = async () => {
-    if (!editingDevice?.controller_id || rebootConfirmText !== "REBOOT") return;
+    if (!rebootingDevice?.controller_id || rebootConfirmText !== "REBOOT") return;
 
     setIsRebooting(true);
     try {
       // Send reboot command to control_commands table
-      const res = await fetch(`/api/controllers/${editingDevice.controller_id}/reboot`, {
+      const res = await fetch(`/api/controllers/${rebootingDevice.controller_id}/reboot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -509,12 +510,18 @@ export function MasterDeviceList({
       setShowRebootFinalConfirm(false);
       setShowRebootConfirm(false);
       setRebootConfirmText("");
-      setEditingDevice(null);
+      setRebootingDevice(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to reboot controller");
     } finally {
       setIsRebooting(false);
     }
+  };
+
+  // Start reboot flow for a device
+  const startReboot = (device: MasterDevice) => {
+    setRebootingDevice(device);
+    setShowRebootConfirm(true);
   };
 
   // Delete device
@@ -708,6 +715,20 @@ export function MasterDeviceList({
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                    {/* Reboot button - only for online controllers */}
+                    {device.device_type === "controller" && device.controller_id && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                        onClick={() => startReboot(device)}
+                        disabled={!isControllerOnline(getControllerHeartbeat(device.controller_id))}
+                        title={isControllerOnline(getControllerHeartbeat(device.controller_id)) ? "Reboot controller" : "Controller must be online to reboot"}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        <span className="sr-only">Reboot</span>
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -954,34 +975,6 @@ export function MasterDeviceList({
                   </div>
                 </div>
 
-                {/* Reboot Controller Section */}
-                {editingDevice?.controller_id && (
-                  <div className="pt-4 border-t">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-destructive">Reboot Controller</p>
-                        <p className="text-xs text-muted-foreground">
-                          Restart the controller hardware. Site will be offline for ~60 seconds.
-                        </p>
-                      </div>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setShowRebootConfirm(true)}
-                        disabled={!isControllerOnline(getControllerHeartbeat(editingDevice?.controller_id))}
-                        className="min-h-[40px]"
-                      >
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Reboot
-                      </Button>
-                    </div>
-                    {!isControllerOnline(getControllerHeartbeat(editingDevice?.controller_id)) && (
-                      <p className="text-xs text-amber-600 mt-2">
-                        Controller must be online to send reboot command.
-                      </p>
-                    )}
-                  </div>
-                )}
               </TabsContent>
 
               {/* Calculated Tab */}
@@ -1298,10 +1291,13 @@ export function MasterDeviceList({
       </AlertDialog>
 
       {/* Reboot Confirmation Dialog - Step 1 */}
-      <AlertDialog open={showRebootConfirm} onOpenChange={setShowRebootConfirm}>
+      <AlertDialog open={showRebootConfirm} onOpenChange={(open) => {
+        setShowRebootConfirm(open);
+        if (!open) setRebootingDevice(null);
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reboot Controller?</AlertDialogTitle>
+            <AlertDialogTitle>Reboot &quot;{rebootingDevice?.name}&quot;?</AlertDialogTitle>
             <AlertDialogDescription>
               This will restart the controller hardware. The site will be offline for approximately 60 seconds during the reboot.
               <span className="block mt-2 text-amber-600 font-medium">
@@ -1327,7 +1323,10 @@ export function MasterDeviceList({
       {/* Reboot Final Confirmation Dialog - Step 2 (Type REBOOT) */}
       <Dialog open={showRebootFinalConfirm} onOpenChange={(open) => {
         setShowRebootFinalConfirm(open);
-        if (!open) setRebootConfirmText("");
+        if (!open) {
+          setRebootConfirmText("");
+          setRebootingDevice(null);
+        }
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
