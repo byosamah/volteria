@@ -1150,15 +1150,16 @@ async def reboot_controller(
         # 5. Log the action to audit_logs
         db.table("audit_logs").insert({
             "user_id": current_user.id,
-            "action": "controller.reboot",
-            "category": "control",
+            "action": "reboot",
+            "action_category": "control",
             "resource_type": "controller",
             "resource_id": str(controller_id),
-            "description": f"Reboot command for controller {controller['serial_number']}: {message}",
+            "resource_name": controller['serial_number'],
             "metadata": {
                 "site_id": str(site_id),
                 "ssh_port": controller["ssh_tunnel_port"],
-                "success": success
+                "success": success,
+                "message": message
             },
             "status": "success" if success else "failed"
         }).execute()
