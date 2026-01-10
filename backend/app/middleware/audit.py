@@ -224,6 +224,10 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         # Determine status
         status = "success" if 200 <= response.status_code < 400 else "failed"
 
+        # Get additional context headers
+        referer = request.headers.get("referer", "")
+        origin = request.headers.get("origin", "")
+
         # Build audit log entry
         audit_entry = {
             "id": str(uuid4()),
@@ -241,6 +245,8 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
                 "method": method,
                 "path": path,
                 "status_code": response.status_code,
+                "referer": referer[:500] if referer else None,  # Page that triggered the request
+                "origin": origin[:200] if origin else None,  # Origin domain
             }
         }
 

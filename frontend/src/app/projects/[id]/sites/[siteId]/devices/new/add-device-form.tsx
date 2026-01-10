@@ -49,23 +49,22 @@ const protocols = [
   { value: "rtu_direct", label: "Direct RTU", description: "Direct RS485 connection" },
 ];
 
-// Measurement type options - defines what the device measures for control logic
-const measurementTypes = [
-  { value: "load", label: "Load (Main)", description: "Primary site load measurement" },
-  { value: "sub_load", label: "Sub-load", description: "Secondary/partial load measurement" },
-  { value: "solar", label: "Solar", description: "Solar inverter output" },
-  { value: "generator", label: "Generator", description: "Power generator output" },
-  { value: "fuel", label: "Fuel", description: "Fuel consumption or level" },
+// Device type options - matches Device Templates for consistency
+const deviceTypes = [
+  { value: "inverter", label: "Solar Inverter", description: "PV power conversion" },
+  { value: "load_meter", label: "Energy Meter", description: "Load measurement device" },
+  { value: "dg", label: "Generator Controller", description: "Generator control and monitoring" },
+  { value: "sensor", label: "Sensor (Generic)", description: "Generic sensor device" },
+  { value: "fuel_level_sensor", label: "Fuel Level Sensor", description: "Fuel tank level monitoring" },
+  { value: "temperature_humidity_sensor", label: "Temperature & Humidity Sensor", description: "Environmental monitoring" },
+  { value: "solar_radiation_sensor", label: "Solar Radiation Sensor", description: "Solar irradiance measurement" },
+  { value: "wind_sensor", label: "Wind Sensor", description: "Wind speed and direction" },
 ];
 
-// Auto-suggest measurement type based on template's device_type
-const suggestMeasurementType = (deviceType: string): string => {
-  switch (deviceType) {
-    case "load_meter": return "load";
-    case "inverter": return "solar";
-    case "dg": return "generator";
-    default: return "";
-  }
+// Auto-suggest device type based on template's device_type (same values now)
+const suggestDeviceType = (deviceType: string): string => {
+  // Device types now match template device_types directly
+  return deviceTypes.some(dt => dt.value === deviceType) ? deviceType : "";
 };
 
 export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormProps) {
@@ -123,8 +122,8 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
           ...prev,
           // Auto-fill name if empty
           name: prev.name || `${template.brand} ${template.model}`,
-          // Auto-suggest measurement_type based on device_type (user can change)
-          measurement_type: suggestMeasurementType(template.device_type),
+          // Auto-suggest device type based on template (user can change)
+          measurement_type: suggestDeviceType(template.device_type),
         }));
       }
     }
@@ -350,10 +349,10 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
           />
         </div>
 
-        {/* Measurement Type - What the device measures for control logic */}
+        {/* Device Type - matches Device Templates for consistency */}
         <div className="space-y-2">
           <Label htmlFor="measurement_type">
-            Measurement Type <span className="text-red-500">*</span>
+            Device Type <span className="text-red-500">*</span>
           </Label>
           {/* MOBILE-FRIENDLY: 44px touch target */}
           <select
@@ -364,16 +363,16 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
             className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
             required
           >
-            <option value="">Select what this device measures...</option>
-            {measurementTypes.map((mt) => (
-              <option key={mt.value} value={mt.value}>
-                {mt.label}
+            <option value="">Select device type...</option>
+            {deviceTypes.map((dt) => (
+              <option key={dt.value} value={dt.value}>
+                {dt.label}
               </option>
             ))}
           </select>
           <p className="text-xs text-muted-foreground">
             {formData.measurement_type
-              ? measurementTypes.find((mt) => mt.value === formData.measurement_type)?.description
+              ? deviceTypes.find((dt) => dt.value === formData.measurement_type)?.description
               : "Determines how this device is used in the control logic"}
           </p>
         </div>

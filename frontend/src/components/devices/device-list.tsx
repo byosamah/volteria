@@ -70,13 +70,16 @@ const protocols = [
   { value: "rtu_direct", label: "Direct RTU", description: "Direct RS485 connection" },
 ];
 
-// Measurement type options - what the device measures for control logic
-const measurementTypes = [
-  { value: "load", label: "Load (Main)", description: "Primary site load measurement" },
-  { value: "sub_load", label: "Sub-load", description: "Secondary/partial load measurement" },
-  { value: "solar", label: "Solar", description: "Solar inverter output" },
-  { value: "generator", label: "Generator", description: "Power generator output" },
-  { value: "fuel", label: "Fuel", description: "Fuel consumption or level" },
+// Device type options - matches Device Templates for consistency
+const deviceTypes = [
+  { value: "inverter", label: "Solar Inverter", description: "PV power conversion" },
+  { value: "load_meter", label: "Energy Meter", description: "Load measurement device" },
+  { value: "dg", label: "Generator Controller", description: "Generator control and monitoring" },
+  { value: "sensor", label: "Sensor (Generic)", description: "Generic sensor device" },
+  { value: "fuel_level_sensor", label: "Fuel Level Sensor", description: "Fuel tank level monitoring" },
+  { value: "temperature_humidity_sensor", label: "Temperature & Humidity Sensor", description: "Environmental monitoring" },
+  { value: "solar_radiation_sensor", label: "Solar Radiation Sensor", description: "Solar irradiance measurement" },
+  { value: "wind_sensor", label: "Wind Sensor", description: "Wind speed and direction" },
 ];
 
 // Calculated field selection for devices
@@ -90,7 +93,7 @@ interface CalculatedFieldSelection {
 interface Device {
   id: string;
   name: string;
-  measurement_type: string | null;  // What the device measures: load, sub_load, solar, generator, fuel
+  measurement_type: string | null;  // Device type: inverter, load_meter, dg, sensor, etc.
   protocol: string;
   slave_id: number;
   // TCP fields
@@ -126,14 +129,16 @@ interface Device {
   } | null;
 }
 
-// Measurement type labels and colors for display
-// Colors: Yellow=Solar, Blue=Load/Sub-load, Black=Generator, Purple=Fuel
-const measurementTypeConfig: Record<string, { label: string; color: string }> = {
-  load: { label: "Load", color: "bg-blue-100 text-blue-700" },
-  sub_load: { label: "Sub-load", color: "bg-blue-100 text-blue-700" },
-  solar: { label: "Solar", color: "bg-yellow-100 text-yellow-700" },
-  generator: { label: "Generator", color: "bg-slate-200 text-slate-800" },
-  fuel: { label: "Fuel", color: "bg-purple-100 text-purple-700" },
+// Device type labels and colors for display (matches Device Templates)
+const deviceTypeConfig: Record<string, { label: string; color: string }> = {
+  inverter: { label: "Solar Inverter", color: "bg-yellow-100 text-yellow-700" },
+  load_meter: { label: "Energy Meter", color: "bg-blue-100 text-blue-700" },
+  dg: { label: "Generator", color: "bg-slate-200 text-slate-800" },
+  sensor: { label: "Sensor", color: "bg-gray-100 text-gray-700" },
+  fuel_level_sensor: { label: "Fuel Sensor", color: "bg-purple-100 text-purple-700" },
+  temperature_humidity_sensor: { label: "Temp/Humidity", color: "bg-green-100 text-green-700" },
+  solar_radiation_sensor: { label: "Solar Radiation", color: "bg-orange-100 text-orange-700" },
+  wind_sensor: { label: "Wind Sensor", color: "bg-cyan-100 text-cyan-700" },
 };
 
 // Latest power readings from control logs (aggregate values)
@@ -510,7 +515,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     setDeleteDevice(null);
   };
 
-  // Group devices by measurement type (what the device measures)
+  // Group devices by device type (matches Device Templates)
   const devicesByType = devices.reduce(
     (acc, device) => {
       const type = device.measurement_type || "unknown";
@@ -521,14 +526,17 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     {} as Record<string, Device[]>
   );
 
-  // Type configurations for measurement types
+  // Type configurations for device types (matches Device Templates)
   const typeConfigs: Record<string, { title: string; description: string }> = {
-    load: { title: "Load Meters", description: "Main load measurement devices" },
-    sub_load: { title: "Sub-load Meters", description: "Secondary load measurement" },
-    solar: { title: "Solar Inverters", description: "PV power conversion" },
-    generator: { title: "Power Generators", description: "Generator controllers" },
-    fuel: { title: "Fuel Sensors", description: "Fuel level monitoring" },
-    unknown: { title: "Other Devices", description: "Devices without measurement type" },
+    inverter: { title: "Solar Inverters", description: "PV power conversion" },
+    load_meter: { title: "Energy Meters", description: "Load measurement devices" },
+    dg: { title: "Generator Controllers", description: "Generator control and monitoring" },
+    sensor: { title: "Sensors (Generic)", description: "Generic sensor devices" },
+    fuel_level_sensor: { title: "Fuel Level Sensors", description: "Fuel tank monitoring" },
+    temperature_humidity_sensor: { title: "Temp & Humidity Sensors", description: "Environmental monitoring" },
+    solar_radiation_sensor: { title: "Solar Radiation Sensors", description: "Irradiance measurement" },
+    wind_sensor: { title: "Wind Sensors", description: "Wind speed and direction" },
+    unknown: { title: "Other Devices", description: "Devices without type specified" },
   };
 
   // Device card component - MOBILE-FRIENDLY with 44px touch targets
@@ -561,13 +569,13 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                   Online
                 </Badge>
               )}
-              {/* Measurement type badge - shows what the device measures */}
-              {device.measurement_type && measurementTypeConfig[device.measurement_type] && (
+              {/* Device type badge - matches Device Templates */}
+              {device.measurement_type && deviceTypeConfig[device.measurement_type] && (
                 <Badge
                   variant="outline"
-                  className={`flex-shrink-0 text-xs ${measurementTypeConfig[device.measurement_type].color}`}
+                  className={`flex-shrink-0 text-xs ${deviceTypeConfig[device.measurement_type].color}`}
                 >
-                  {measurementTypeConfig[device.measurement_type].label}
+                  {deviceTypeConfig[device.measurement_type].label}
                 </Badge>
               )}
               {/* Show reading badge if available and device is online */}
@@ -820,25 +828,25 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 />
               </div>
 
-              {/* Measurement Type - what the device measures for control logic */}
+              {/* Device Type - matches Device Templates for consistency */}
               <div className="space-y-2">
-                <Label htmlFor="edit-measurement-type">Measurement Type</Label>
+                <Label htmlFor="edit-device-type">Device Type</Label>
                 <select
-                  id="edit-measurement-type"
+                  id="edit-device-type"
                   value={editMeasurementType}
                   onChange={(e) => setEditMeasurementType(e.target.value)}
                   className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
                 >
-                  <option value="">Select what this device measures...</option>
-                  {measurementTypes.map((mt) => (
-                    <option key={mt.value} value={mt.value}>
-                      {mt.label}
+                  <option value="">Select device type...</option>
+                  {deviceTypes.map((dt) => (
+                    <option key={dt.value} value={dt.value}>
+                      {dt.label}
                     </option>
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">
                   {editMeasurementType
-                    ? measurementTypes.find((mt) => mt.value === editMeasurementType)?.description
+                    ? deviceTypes.find((dt) => dt.value === editMeasurementType)?.description
                     : "Determines how this device is used in the control logic"}
                 </p>
               </div>

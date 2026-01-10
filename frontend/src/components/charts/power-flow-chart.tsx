@@ -102,7 +102,9 @@ function downsample<T>(data: T[], maxPoints = 100): T[] {
 
 // Custom tick renderer for XAxis with angle support
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CustomXAxisTick({ x, y, payload, angle, textAnchor, fontSize }: any) {
+function CustomXAxisTick({ x, y, payload, angle, textAnchor, fontSize, tickFormatter }: any) {
+  // Use tickFormatter if provided, otherwise use raw value
+  const displayValue = tickFormatter ? tickFormatter(payload.value) : payload.value;
   return (
     <g transform={`translate(${x},${y})`}>
       <text
@@ -115,7 +117,7 @@ function CustomXAxisTick({ x, y, payload, angle, textAnchor, fontSize }: any) {
         transform={angle ? `rotate(${angle})` : undefined}
         className="text-muted-foreground"
       >
-        {payload.value}
+        {displayValue}
       </text>
     </g>
   );
@@ -281,13 +283,14 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   // Check if currently zoomed
   const isZoomed = zoomLeft !== null && zoomRight !== null;
 
-  // Get reference area bounds (time labels) from indices for the selection overlay
-  const getRefAreaBounds = useCallback((data: { time: string }[]) => {
+  // Get reference area bounds (timestamps) from indices for the selection overlay
+  // Using timestamp (unique) instead of time (can have duplicates for 24h/7d)
+  const getRefAreaBounds = useCallback((data: { timestamp: string }[]) => {
     if (refIndexLeft === null || refIndexRight === null || data.length === 0) {
       return { left: null, right: null };
     }
-    const left = data[Math.min(refIndexLeft, data.length - 1)]?.time;
-    const right = data[Math.min(refIndexRight, data.length - 1)]?.time;
+    const left = data[Math.min(refIndexLeft, data.length - 1)]?.timestamp;
+    const right = data[Math.min(refIndexRight, data.length - 1)]?.timestamp;
     return { left, right };
   }, [refIndexLeft, refIndexRight]);
 
@@ -660,8 +663,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     </div>
                   )}
                   {/* Chart */}
-                  <div className="flex-1 min-h-[200px]">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
+                  <div className="h-[220px]">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={200}>
                       <AreaChart
                         data={getZoomedData(connectionData)}
                         margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
@@ -678,8 +681,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis
-                          dataKey="time"
-                          tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} />}
+                          dataKey="timestamp"
+                          tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} tickFormatter={formatTime} />}
                           tickLine={false}
                           axisLine={false}
                           className="text-muted-foreground"
@@ -697,12 +700,12 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                           tickFormatter={(value) => value === 1 ? "Online" : "Offline"}
                         />
                         <Tooltip
-                          content={({ active, payload, label }) => {
+                          content={({ active, payload }) => {
                             if (!active || !payload || !payload.length) return null;
                             const point = payload[0].payload as ConnectionStatusPoint;
                             return (
                               <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
-                                <p className="font-medium mb-2">{label}</p>
+                                <p className="font-medium mb-2">{formatTime(point.timestamp)}</p>
                                 <div className="flex items-center gap-2">
                                   <div
                                     className={`w-3 h-3 rounded-full ${point.isOnline ? 'bg-green-500' : 'bg-red-500'}`}
@@ -763,19 +766,20 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   </div>
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
-                  <LineChart
-                    data={getZoomedData(systemData)}
-                    margin={{ top: 5, right: 50, left: 0, bottom: xAxisProps.height - 20 }}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <div className="h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={250}>
+                    <LineChart
+                      data={getZoomedData(systemData)}
+                      margin={{ top: 5, right: 50, left: 0, bottom: xAxisProps.height - 20 }}
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
-                      dataKey="time"
-                      tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} />}
+                      dataKey="timestamp"
+                      tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} tickFormatter={formatTime} />}
                       tickLine={false}
                       axisLine={false}
                       className="text-muted-foreground"
@@ -813,7 +817,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         if (!active || !payload || !payload.length) return null;
                         return (
                           <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
-                            <p className="font-medium mb-2">{label}</p>
+                            <p className="font-medium mb-2">{formatTime(label as string)}</p>
                             {payload.map((entry, index) => (
                               <div key={index} className="flex items-center gap-2">
                                 <div
@@ -896,8 +900,9 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         />
                       ) : null;
                     })()}
-                  </LineChart>
-                </ResponsiveContainer>
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               )
             )}
 
@@ -911,20 +916,21 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   </div>
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
-                  <AreaChart
-                    data={getZoomedData(controlData)}
-                    margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis
-                      dataKey="time"
-                      tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} />}
-                      tickLine={false}
+                <div className="h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={250}>
+                    <AreaChart
+                      data={getZoomedData(controlData)}
+                      margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis
+                        dataKey="timestamp"
+                        tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} tickFormatter={formatTime} />}
+                        tickLine={false}
                       axisLine={false}
                       className="text-muted-foreground"
                       allowDataOverflow
@@ -944,10 +950,10 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       content={({ active, payload, label }) => {
                         if (!active || !payload || !payload.length) return null;
                         const zoomedControlData = getZoomedData(controlData);
-                        const safeModeEntry = zoomedControlData.find(d => d.time === label);
+                        const safeModeEntry = zoomedControlData.find(d => d.timestamp === label);
                         return (
                           <div className="bg-background border rounded-lg shadow-lg p-3 text-sm">
-                            <p className="font-medium mb-2">{label}</p>
+                            <p className="font-medium mb-2">{formatTime(label as string)}</p>
                             {payload.map((entry, index) => (
                               <div key={index} className="flex items-center gap-2">
                                 <div
@@ -997,8 +1003,9 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         />
                       ) : null;
                     })()}
-                  </AreaChart>
-                </ResponsiveContainer>
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               )
             )}
           </div>
