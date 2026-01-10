@@ -31,7 +31,19 @@ controller:
 cloud:
   supabase_url: "https://xxx.supabase.co"
   supabase_key: "eyJhbG..."
-  sync_enabled: true`;
+  sync_interval_s: 300  # Config sync every 5 minutes
+
+services:
+  system:
+    heartbeat_interval_s: 30
+    health_check_interval_s: 10
+  logging:
+    local_write_interval_s: 10
+    cloud_sync_interval_s: 120
+
+ssh:
+  tunnel_port: <assigned-by-cloud>
+  central_server: "159.223.224.203"`;
 
   return (
     <div className="space-y-6">
@@ -101,9 +113,22 @@ cloud:
               4
             </div>
             <div>
-              <h5 className="font-medium text-sm">Service starts automatically</h5>
+              <h5 className="font-medium text-sm">5 services start automatically</h5>
               <p className="text-xs text-muted-foreground mt-1">
-                The volteria-controller service is enabled and started
+                System, config, device, control, and logging services are enabled
+              </p>
+            </div>
+          </div>
+
+          {/* Step 5 */}
+          <div className="flex gap-4 p-4 border rounded-lg">
+            <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-sm">
+              5
+            </div>
+            <div>
+              <h5 className="font-medium text-sm">SSH tunnel established</h5>
+              <p className="text-xs text-muted-foreground mt-1">
+                Reverse SSH tunnel connects to central server for remote access
               </p>
             </div>
           </div>

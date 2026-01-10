@@ -323,31 +323,49 @@ export function StepDownloadImage({ onConfirm, confirmed, hardwareType }: StepDo
 
       {/* What gets installed */}
       <div className="bg-muted rounded-lg p-4">
-        <h4 className="font-medium mb-2">What the script installs:</h4>
-        <ul className="text-sm space-y-1 text-muted-foreground">
+        <h4 className="font-medium mb-3">What the script installs:</h4>
+        <ul className="text-sm space-y-2 text-muted-foreground">
           <li className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            Python 3.11 with all dependencies
+            Python 3.11 with pymodbus, supabase, and dependencies
+          </li>
+          <li className="flex items-start gap-2">
+            <svg className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <div>
+              <span className="font-medium text-foreground">5-Layer Service Architecture:</span>
+              <ul className="mt-1 ml-4 space-y-1 text-xs">
+                <li><code className="bg-background px-1 rounded">volteria-system</code> - Heartbeat, OTA updates, health monitoring</li>
+                <li><code className="bg-background px-1 rounded">volteria-config</code> - Cloud sync, versioning, local cache</li>
+                <li><code className="bg-background px-1 rounded">volteria-device</code> - Modbus I/O, polling, writes</li>
+                <li><code className="bg-background px-1 rounded">volteria-control</code> - Zero-feeding algorithm</li>
+                <li><code className="bg-background px-1 rounded">volteria-logging</code> - Data logging, cloud sync, alarms</li>
+              </ul>
+            </div>
           </li>
           <li className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            Volteria Controller software
+            <div>
+              <span className="font-medium text-foreground">SSH Tunnel Service</span>
+              <span className="text-xs ml-1">(autossh for remote access)</span>
+            </div>
           </li>
           <li className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            Systemd service (auto-start on boot)
+            Local SQLite database for offline operation
           </li>
           <li className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            Configuration template at /etc/volteria/config.yaml
+            Configuration at /etc/volteria/config.yaml
           </li>
         </ul>
       </div>

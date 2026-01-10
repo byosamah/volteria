@@ -24,6 +24,11 @@ interface TestResult {
 
 const INITIAL_TESTS: TestResult[] = [
   {
+    name: "service_health",
+    description: "Service Health (5 Services)",
+    status: "pending",
+  },
+  {
     name: "communication",
     description: "Cloud Communication",
     status: "pending",
@@ -31,6 +36,11 @@ const INITIAL_TESTS: TestResult[] = [
   {
     name: "config_sync",
     description: "Configuration Sync",
+    status: "pending",
+  },
+  {
+    name: "ssh_tunnel",
+    description: "SSH Tunnel Connectivity",
     status: "pending",
   },
   {
@@ -51,6 +61,11 @@ const INITIAL_TESTS: TestResult[] = [
   {
     name: "control_logic",
     description: "Generator Zero Feed Control Logic",
+    status: "pending",
+  },
+  {
+    name: "ota_check",
+    description: "OTA Update Mechanism",
     status: "pending",
   },
 ];
@@ -127,10 +142,14 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
 
   const getSuccessMessage = (testName: string): string => {
     switch (testName) {
+      case "service_health":
+        return "All 5 services running: system, config, device, control, logging";
       case "communication":
         return "Heartbeat received successfully";
       case "config_sync":
         return "Configuration fetched from cloud";
+      case "ssh_tunnel":
+        return "SSH tunnel active on assigned port";
       case "load_meter":
         return "Read value: 100.0 kW";
       case "inverter":
@@ -139,6 +158,8 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
         return "Read value: 80.0 kW";
       case "control_logic":
         return "Load=100kW, Generator=80kW → Solar limit=20kW";
+      case "ota_check":
+        return "OTA updater ready, no pending updates";
       default:
         return "Test passed";
     }
@@ -146,10 +167,14 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
 
   const getFailureMessage = (testName: string): string => {
     switch (testName) {
+      case "service_health":
+        return "One or more services not running";
       case "communication":
         return "No heartbeat received within timeout";
       case "config_sync":
         return "Failed to fetch configuration";
+      case "ssh_tunnel":
+        return "SSH tunnel not established";
       case "load_meter":
         return "Simulated device not responding";
       case "inverter":
@@ -158,6 +183,8 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
         return "Simulated device not responding";
       case "control_logic":
         return "Control calculation error";
+      case "ota_check":
+        return "OTA update mechanism not responding";
       default:
         return "Test failed";
     }
@@ -310,12 +337,20 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
         </summary>
         <div className="px-4 pb-4 pt-2 text-sm text-muted-foreground space-y-3">
           <div>
+            <strong>Service Health:</strong> Verifies all 5 controller services are running:
+            system (heartbeat/OTA), config (sync), device (Modbus), control (algorithm), logging (data).
+          </div>
+          <div>
             <strong>Cloud Communication:</strong> Verifies the controller can send
             heartbeats to the Volteria cloud.
           </div>
           <div>
             <strong>Configuration Sync:</strong> Confirms the controller can fetch
             its configuration from the cloud.
+          </div>
+          <div>
+            <strong>SSH Tunnel:</strong> Verifies the reverse SSH tunnel is active
+            and the controller is accessible for remote management.
           </div>
           <div>
             <strong>Simulated Load Meter:</strong> Tests reading power values from
@@ -333,6 +368,10 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
             <strong>Generator Zero Feed Logic:</strong> Verifies the zero-feed control
             algorithm calculates correct solar limits to prevent reverse power
             flow to the generator.
+          </div>
+          <div>
+            <strong>OTA Update Mechanism:</strong> Confirms the OTA updater is ready
+            to receive firmware updates from the cloud.
           </div>
         </div>
       </details>
