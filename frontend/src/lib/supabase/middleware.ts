@@ -42,8 +42,13 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Redirect unauthenticated users to login (except for public pages)
-  // Note: /api/controllers/heartbeats uses service key internally, so bypass middleware auth
-  const publicPaths = ["/login", "/auth/callback", "/api/test-login", "/api/controllers/heartbeats"];
+  // Note: Controller APIs use service key internally, so bypass middleware auth
+  const publicPaths = [
+    "/login",
+    "/auth/callback",
+    "/api/test-login",
+    "/api/controllers", // Allow all controller API endpoints (heartbeats, config, etc.)
+  ];
   const isPublicPath = publicPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
   );
