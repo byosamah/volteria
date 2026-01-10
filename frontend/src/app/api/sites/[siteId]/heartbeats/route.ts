@@ -10,6 +10,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 // Heartbeat data point for the chart
@@ -67,11 +68,22 @@ export async function GET(
 
     const controllerId = masterDevice.controller_id;
 
-    // Step 2: Calculate time range
+    // Step 2: Create admin client to bypass RLS for heartbeat queries
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing Supabase credentials for heartbeat query");
+      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    }
+
+    const adminClient = createAdminClient(supabaseUrl, supabaseServiceKey);
+
+    // Step 3: Calculate time range
     const startTime = new Date();
     startTime.setHours(startTime.getHours() - clampedHours);
 
-    // Step 3: Fetch heartbeats for the time range
+    // Step 4: Fetch heartbeats for the time range
     // Heartbeats are typically every 30 seconds, so:
     // - 1 hour = ~120 points
     // - 6 hours = ~720 points
@@ -100,7 +112,7 @@ export async function GET(
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE; // Request PAGE_SIZE+1 rows, server caps at 1000
 
-      const { data: pageData, error: pageError } = await supabase
+      const { data: pageData, error: pageError } = await adminClient
         .from("controller_heartbeats")
         .select("timestamp, cpu_usage_pct, memory_usage_pct, disk_usage_pct, metadata")
         .eq("controller_id", controllerId)
@@ -130,7 +142,7 @@ export async function GET(
     // Reverse to get newest first (for consistency with previous behavior)
     const heartbeats = allHeartbeats.reverse();
 
-    // Step 4: Transform data for the chart
+    // Step 5: Transform data for the chart
     const dataPoints: HeartbeatDataPoint[] = (heartbeats || []).map((hb) => ({
       timestamp: hb.timestamp,
       cpu_usage_pct: hb.cpu_usage_pct ?? 0,
