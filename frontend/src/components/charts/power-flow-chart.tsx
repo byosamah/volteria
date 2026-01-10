@@ -162,8 +162,9 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   // Track if tab is visible (for pausing/resuming polling)
   const [isTabVisible, setIsTabVisible] = useState(true);
-  // Track if component is mounted (for ResponsiveContainer dimension calculation)
-  const [isMounted, setIsMounted] = useState(false);
+  // Track container dimensions (for ResponsiveContainer)
+  const [containerDimensions, setContainerDimensions] = useState<{ width: number; height: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Helper: Format time based on selected range (memoized to prevent recreation)
   const formatTime = useCallback((timestamp: string) => {
@@ -210,11 +211,22 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
 
   const xAxisProps = getXAxisProps();
 
-  // Set mounted state after first render (allows ResponsiveContainer to calculate dimensions)
+  // Use ResizeObserver to track container dimensions (prevents ResponsiveContainer -1 errors)
   useEffect(() => {
-    // Small delay to ensure DOM has rendered and dimensions are computed
-    const timer = setTimeout(() => setIsMounted(true), 50);
-    return () => clearTimeout(timer);
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setContainerDimensions({ width, height });
+        }
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
   }, []);
 
   // Page Visibility API: Pause polling when tab is hidden to save bandwidth
@@ -628,14 +640,16 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
         </div>
       </CardHeader>
       <CardContent>
-        {loading || !isMounted ? (
-          // Loading skeleton - also show while waiting for mount to prevent dimension errors
-          <div className="h-[300px] flex items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        ) : (
-          // Render chart based on type
-          <div className="h-[300px] w-full">
+        {/* Container for dimension tracking - always rendered */}
+        <div ref={containerRef} className="h-[300px] w-full">
+          {loading || !containerDimensions ? (
+            // Loading skeleton - also show while waiting for valid dimensions
+            <div className="h-full flex items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            // Render chart based on type
+            <>
             {chartType === "connection" && (
               // Connection Status Chart
               connectionData.length === 0 ? (
@@ -1017,8 +1031,9 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 </div>
               )
             )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
