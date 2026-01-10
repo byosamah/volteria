@@ -118,14 +118,15 @@ export default async function ProjectsPage() {
   // Get site and device counts for all projects in batch (avoids N+1 queries)
   const projectIds = projects.map((p) => p.id);
 
-  // Single query for all device counts
+  // Single query for all device counts (only enabled devices)
   let deviceCountMap: Record<string, number> = {};
   if (projectIds.length > 0) {
     try {
       const { data: deviceRows } = await supabase
         .from("project_devices")
         .select("project_id")
-        .in("project_id", projectIds);
+        .in("project_id", projectIds)
+        .eq("enabled", true);
 
       // Count devices per project
       if (deviceRows) {
@@ -162,7 +163,7 @@ export default async function ProjectsPage() {
     }
   }
 
-  // Single query for all controller counts (master devices via sites)
+  // Single query for all controller counts (only active master devices via sites)
   let controllerCountMap: Record<string, number> = {};
   const siteIds = Object.keys(siteToProjectMap);
   if (siteIds.length > 0) {
@@ -170,7 +171,8 @@ export default async function ProjectsPage() {
       const { data: masterDeviceRows } = await supabase
         .from("site_master_devices")
         .select("site_id")
-        .in("site_id", siteIds);
+        .in("site_id", siteIds)
+        .eq("is_active", true);
 
       // Count master devices per project (via site->project mapping)
       if (masterDeviceRows) {

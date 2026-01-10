@@ -586,6 +586,9 @@ export default async function SiteDetailPage({
             <TabsTrigger value="alarms">Alarms</TabsTrigger>
           </TabsList>
 
+          {/* Site Configuration Sync Status - visible on all tabs */}
+          <TemplateSyncStatus siteId={siteId} />
+
           <TabsContent value="devices" className="space-y-4">
             {/* Master Devices (Controllers and Gateways) */}
             <MasterDeviceList
@@ -594,9 +597,6 @@ export default async function SiteDetailPage({
               masterDevices={masterDevices}
               userRole={userProfile?.role || undefined}
             />
-
-            {/* Template Sync Status - shows sync status between device templates and devices */}
-            <TemplateSyncStatus siteId={siteId} />
 
             {/* Regular Devices (Load Meters, Inverters, DG Controllers) */}
             <DeviceList
