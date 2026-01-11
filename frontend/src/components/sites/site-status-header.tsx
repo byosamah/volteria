@@ -329,8 +329,8 @@ function ConfigSyncStatus({
         </Tooltip>
       </TooltipProvider>
 
-      {/* Push Sync button - visible when sync_needed for immediate sync */}
-      {status === "sync_needed" && (
+      {/* Push Sync button - visible when sync is needed or never synced */}
+      {(status === "sync_needed" || status === "never_synced") && (
         <Button
           variant="outline"
           size="sm"
