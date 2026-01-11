@@ -93,6 +93,29 @@ Before writing to SQLite/cloud, readings are aggregated:
 - `avg` - Average value
 - `count` - Number of samples
 
+### Cloud Sync Modes
+The controller supports two cloud sync methods:
+
+| Mode | Config | Endpoint | Use Case |
+|------|--------|----------|----------|
+| Direct Supabase | `backend_url` not set | `/rest/v1/control_logs` | Simple, fewer hops |
+| FastAPI Backend | `backend_url` set | `/api/logs/site/{site_id}/push` | Notifications, validation |
+
+**FastAPI Backend Benefits:**
+- Alarm notifications triggered on insert
+- Server-side validation
+- Audit logging
+- Future: rate limiting, quotas
+
+**Config Example:**
+```yaml
+cloud:
+  supabase_url: "https://xxx.supabase.co"
+  supabase_key: "your-key"
+  backend_url: "https://volteria.org/api"  # Optional: routes through FastAPI
+  sync_enabled: true
+```
+
 ### Cloud Storage (3-Tier Architecture)
 | Tier | Retention | Storage | Size |
 |------|-----------|---------|------|
