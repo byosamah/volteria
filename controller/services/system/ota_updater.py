@@ -127,6 +127,13 @@ class OTAUpdater:
 
     async def check_for_updates(self) -> FirmwareRelease | None:
         """Check for available updates"""
+        # Skip if no hardware type configured
+        if not self.hardware_type_id:
+            logger.debug("Skipping update check: no hardware_type_id configured")
+            self._status = UpdateStatus.IDLE
+            self._update_state()
+            return None
+
         self._status = UpdateStatus.CHECKING
         self._update_state()
 

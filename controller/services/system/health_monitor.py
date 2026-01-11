@@ -158,46 +158,49 @@ class HealthMonitor:
         status: ServiceStatus,
         error: str,
     ) -> None:
-        """Handle unhealthy service with restart policy"""
+        """Handle unhealthy service - monitor and report only.
+
+        Note: We don't restart services here because:
+        1. Systemd handles restarts via Restart=on-failure
+        2. NoNewPrivileges security hardening prevents sudo
+        3. Having one restart mechanism (systemd) is cleaner
+        """
         status.is_healthy = False
         status.last_error = error
         status.status = "error"
 
-        if status.restart_count < self.MAX_RESTART_ATTEMPTS:
-            # Attempt restart
-            status.restart_count += 1
+        # Track consecutive failures for alerting
+        status.restart_count += 1
+
+        if status.restart_count <= self.MAX_RESTART_ATTEMPTS:
+            # Log warning - systemd will handle the restart
             logger.warning(
-                f"Service {service_info.name} unhealthy, restarting "
-                f"({status.restart_count}/{self.MAX_RESTART_ATTEMPTS})",
+                f"Service {service_info.name} unhealthy "
+                f"({status.restart_count}/{self.MAX_RESTART_ATTEMPTS} failures)",
                 extra={
                     "service": service_info.name,
-                    "restart_count": status.restart_count,
+                    "failure_count": status.restart_count,
                     "error": error,
                 },
             )
-
-            await self._restart_service(service_info)
-            status.status = "starting"
-
         else:
-            # Max restarts exceeded
-            logger.critical(
-                f"Service {service_info.name} failed after "
-                f"{self.MAX_RESTART_ATTEMPTS} restart attempts",
-                extra={"service": service_info.name},
-            )
-
-            # Send alert
-            if self._on_alert:
-                await self._on_alert(
-                    service_info.name,
-                    f"Service {service_info.name} unrecoverable after "
-                    f"{self.MAX_RESTART_ATTEMPTS} restart attempts: {error}",
+            # Multiple failures - alert but let systemd continue handling it
+            if status.restart_count == self.MAX_RESTART_ATTEMPTS + 1:
+                logger.error(
+                    f"Service {service_info.name} has failed {status.restart_count} times",
+                    extra={"service": service_info.name},
                 )
 
-            # Trigger safe mode for critical services
-            if service_info.critical and self._on_safe_mode_trigger:
-                await self._on_safe_mode_trigger(service_info.name)
+                # Send alert
+                if self._on_alert:
+                    await self._on_alert(
+                        service_info.name,
+                        f"Service {service_info.name} repeatedly unhealthy: {error}",
+                    )
+
+                # Trigger safe mode for critical services
+                if service_info.critical and self._on_safe_mode_trigger:
+                    await self._on_safe_mode_trigger(service_info.name)
 
     async def _restart_service(self, service_info: ServiceInfo) -> None:
         """Restart a service via systemd"""
