@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import type { ControllerTemplate, SystemRegister, CalculatedFieldDefinition } from "@/lib/types";
 import { CONTROLLER_READINGS } from "./master-device-templates-list";
@@ -132,6 +133,13 @@ function canToggleActiveStatus(role?: string): boolean {
   return role === "super_admin";
 }
 
+// Check if user can edit controller readings (fields, frequencies, alarms)
+// Only super_admin and backend_admin can modify these critical settings
+function canEditControllerReadings(role?: string): boolean {
+  if (!role) return false;
+  return ["super_admin", "backend_admin"].includes(role);
+}
+
 // =============================================================================
 // COMPONENT
 // =============================================================================
@@ -179,14 +187,15 @@ export function MasterDeviceTemplateForm({
   const [calculatedFields, setCalculatedFields] = useState<FieldSelection[]>([]);
 
   // Controller readings selection with alarm config and logging frequency
+  // Default: all enabled with default frequencies (critical for controller health monitoring)
   const [controllerReadings, setControllerReadings] = useState<ReadingSelection[]>(
     CONTROLLER_READINGS.map((field) => ({
       field_id: field.field_id,
       name: field.name,
       unit: field.unit,
       storage_mode: "log" as StorageMode,
-      logging_frequency_seconds: 60,
-      enabled: false,
+      logging_frequency_seconds: field.default_frequency || 600,
+      enabled: true, // All enabled by default
       alarm_config: getDefaultAlarmConfig(field.field_id),
     }))
   );
@@ -458,14 +467,15 @@ export function MasterDeviceTemplateForm({
         }
 
         // Reset controller readings with default alarm configs
+        // All enabled by default with correct frequencies (critical for controller health)
         setControllerReadings(
           CONTROLLER_READINGS.map((field) => ({
             field_id: field.field_id,
             name: field.name,
             unit: field.unit,
             storage_mode: "log" as StorageMode,
-            logging_frequency_seconds: 60,
-            enabled: false,
+            logging_frequency_seconds: field.default_frequency || 600,
+            enabled: true, // All enabled by default
             alarm_config: getDefaultAlarmConfig(field.field_id),
           }))
         );
@@ -717,13 +727,15 @@ export function MasterDeviceTemplateForm({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Basic Info Section */}
-          <div className="space-y-4">
-            <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-              Basic Information
-            </h3>
+        <Tabs defaultValue="connection" className="w-full">
+          <TabsList className="w-full grid grid-cols-3">
+            <TabsTrigger value="connection" className="text-xs sm:text-sm">Connection</TabsTrigger>
+            <TabsTrigger value="controller-fields" className="text-xs sm:text-sm">Controller Fields</TabsTrigger>
+            <TabsTrigger value="calculated" className="text-xs sm:text-sm">Calculated</TabsTrigger>
+          </TabsList>
 
+          {/* Connection Tab - Basic Information */}
+          <TabsContent value="connection" className="space-y-4 py-4">
             {/* Row 1: Name */}
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
@@ -866,7 +878,7 @@ export function MasterDeviceTemplateForm({
               </p>
             </div>
 
-            {/* Row 4: Brand & Model (read-only, auto-populated from hardware) */}
+            {/* Row 5: Brand & Model (read-only, auto-populated from hardware) */}
             <div className="grid grid-cols-2 gap-4">
               {/* Brand - Read-only */}
               <div className="space-y-2">
@@ -892,24 +904,45 @@ export function MasterDeviceTemplateForm({
                 />
               </div>
             </div>
-          </div>
+          </TabsContent>
 
-          {/* Divider */}
-          <div className="border-t" />
+          {/* Controller Fields Tab */}
+          <TabsContent value="controller-fields" className="space-y-4 py-4">
+            <div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Controller health metrics (read from system).
+                </p>
+                <span className="text-xs text-muted-foreground">
+                  {enabledReadingsCount} selected
+                </span>
+              </div>
+              {!canEditControllerReadings(userRole) && (
+                <p className="text-xs text-amber-600 mt-2">
+                  Only Super Admin or Backend Admin can modify controller fields
+                </p>
+              )}
+            </div>
 
-          {/* Calculated Fields Section */}
-          <div className="space-y-3">
+            <ControllerReadingsForm
+              readings={controllerReadings}
+              onReadingsChange={setControllerReadings}
+              statusAlarm={statusAlarm}
+              onStatusAlarmChange={setStatusAlarm}
+              disabled={!canEditControllerReadings(userRole)}
+            />
+          </TabsContent>
+
+          {/* Calculated Tab */}
+          <TabsContent value="calculated" className="space-y-4 py-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                Calculated Fields
-              </h3>
+              <p className="text-sm text-muted-foreground">
+                Site-level aggregations computed by the controller.
+              </p>
               <span className="text-xs text-muted-foreground">
                 {enabledCalculatedCount} selected
               </span>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Site-level aggregations computed by the controller.
-            </p>
 
             <div className="border rounded-lg divide-y">
               {isLoadingCalculatedFields ? (
@@ -971,33 +1004,8 @@ export function MasterDeviceTemplateForm({
                 })
               )}
             </div>
-          </div>
-
-          {/* Divider */}
-          <div className="border-t" />
-
-          {/* Controller Readings Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                Controller Readings
-              </h3>
-              <span className="text-xs text-muted-foreground">
-                {enabledReadingsCount} selected
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Controller health metrics (read from system).
-            </p>
-
-            <ControllerReadingsForm
-              readings={controllerReadings}
-              onReadingsChange={setControllerReadings}
-              statusAlarm={statusAlarm}
-              onStatusAlarmChange={setStatusAlarm}
-            />
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

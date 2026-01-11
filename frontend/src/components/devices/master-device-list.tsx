@@ -353,13 +353,14 @@ export function MasterDeviceList({
   const [editSelectedTemplateId, setEditSelectedTemplateId] = useState<string>("");
 
   // Controller readings with alarm config (for Controller Fields tab)
+  // Default: all enabled with correct frequencies (critical for controller health monitoring)
   const [editControllerReadings, setEditControllerReadings] = useState<ReadingSelection[]>(
     CONTROLLER_READINGS.map((field) => ({
       field_id: field.field_id,
       name: field.name,
       unit: field.unit,
       storage_mode: "log" as StorageMode,
-      logging_frequency_seconds: 60,
+      logging_frequency_seconds: field.default_frequency || 600,
       enabled: true, // Default all enabled
       alarm_config: getDefaultAlarmConfig(field.field_id),
     }))
@@ -372,8 +373,8 @@ export function MasterDeviceList({
     offline_timeout_seconds: 60,
   });
 
-  // Check if user is super_admin (only super_admin can edit controller fields)
-  const isSuperAdmin = userRole === "super_admin";
+  // Check if user can edit controller readings (super_admin or backend_admin only)
+  const canEditControllerReadings = userRole && ["super_admin", "backend_admin"].includes(userRole);
 
   // Check if site already has a controller
   const hasController = devices.some((d) => d.device_type === "controller");
@@ -423,13 +424,32 @@ export function MasterDeviceList({
       const supabase = createClient();
 
       // Load available controller templates for the dropdown
+      // Filter by the controller's hardware_type_id for compatibility
       setLoadingTemplates(true);
       try {
-        const { data: templates } = await supabase
+        // First get the hardware_type_id from the controller
+        let hardwareTypeId: string | null = null;
+        if (device.controller_id) {
+          const { data: controllerData } = await supabase
+            .from("controllers_master")
+            .select("hardware_type_id")
+            .eq("id", device.controller_id)
+            .single();
+          hardwareTypeId = controllerData?.hardware_type_id || null;
+        }
+
+        // Build query for templates
+        let query = supabase
           .from("controller_templates")
           .select("id, template_id, name, template_type")
-          .eq("is_active", true)
-          .order("name");
+          .eq("is_active", true);
+
+        // Filter by hardware_type_id if available
+        if (hardwareTypeId) {
+          query = query.eq("hardware_type_id", hardwareTypeId);
+        }
+
+        const { data: templates } = await query.order("name");
 
         if (templates) {
           setAvailableTemplates(templates as ControllerTemplateListItem[]);
@@ -469,13 +489,14 @@ export function MasterDeviceList({
         }
       } else {
         // No template linked - reset to defaults with all readings enabled
+        // Use default frequencies (critical for controller health monitoring)
         setEditControllerReadings(
           CONTROLLER_READINGS.map((field) => ({
             field_id: field.field_id,
             name: field.name,
             unit: field.unit,
             storage_mode: "log" as StorageMode,
-            logging_frequency_seconds: 60,
+            logging_frequency_seconds: field.default_frequency || 600,
             enabled: true,
             alarm_config: getDefaultAlarmConfig(field.field_id),
           }))
@@ -545,18 +566,19 @@ export function MasterDeviceList({
             name: field.name,
             unit: field.unit,
             storage_mode: "log" as StorageMode,
-            logging_frequency_seconds: existing.logging_frequency_seconds || 60,
+            logging_frequency_seconds: existing.logging_frequency_seconds || field.default_frequency || 600,
             enabled: true,
             alarm_config: alarmConfig,
           };
         }
+        // Reading not in template - use defaults
         return {
           field_id: field.field_id,
           name: field.name,
           unit: field.unit,
           storage_mode: "log" as StorageMode,
-          logging_frequency_seconds: 60,
-          enabled: false,
+          logging_frequency_seconds: field.default_frequency || 600,
+          enabled: false, // Not selected in template
           alarm_config: alarmConfig,
         };
       })
@@ -591,7 +613,8 @@ export function MasterDeviceList({
     setEditSelectedTemplateId(actualTemplateId);
 
     if (!actualTemplateId) {
-      // Cleared template selection - reset to defaults
+      // Cleared template selection - reset to defaults with all readings enabled
+      // Use default frequencies (critical for controller health monitoring)
       setControllerTemplate(null);
       setEditControllerReadings(
         CONTROLLER_READINGS.map((field) => ({
@@ -599,7 +622,7 @@ export function MasterDeviceList({
           name: field.name,
           unit: field.unit,
           storage_mode: "log" as StorageMode,
-          logging_frequency_seconds: 60,
+          logging_frequency_seconds: field.default_frequency || 600,
           enabled: true,
           alarm_config: getDefaultAlarmConfig(field.field_id),
         }))
@@ -1275,9 +1298,9 @@ export function MasterDeviceList({
                       {editControllerReadings.filter((f) => f.enabled).length} selected
                     </span>
                   </div>
-                  {!isSuperAdmin && (
+                  {!canEditControllerReadings && (
                     <p className="text-xs text-amber-600 mt-2">
-                      Only Super Admin can modify controller fields
+                      Only Super Admin or Backend Admin can modify controller fields
                     </p>
                   )}
                 </div>
@@ -1292,7 +1315,7 @@ export function MasterDeviceList({
                     onReadingsChange={setEditControllerReadings}
                     statusAlarm={editStatusAlarm}
                     onStatusAlarmChange={setEditStatusAlarm}
-                    disabled={!isSuperAdmin}
+                    disabled={!canEditControllerReadings}
                   />
                 )}
               </TabsContent>

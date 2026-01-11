@@ -126,6 +126,9 @@ interface Device {
   template_synced_at: string | null;
   // Logging interval in milliseconds
   logging_interval_ms: number | null;
+  // Connection alarm settings
+  connection_alarm_enabled: boolean | null;
+  connection_timeout_multiplier: number | null;
   device_templates: {
     name: string;
     device_type: string;
@@ -231,6 +234,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   // RTU Direct fields
   const [editSerialPort, setEditSerialPort] = useState("");
   const [editBaudrate, setEditBaudrate] = useState(9600);
+  // Connection alarm settings
+  const [editConnectionAlarmEnabled, setEditConnectionAlarmEnabled] = useState(true);
+  const [editConnectionTimeoutMultiplier, setEditConnectionTimeoutMultiplier] = useState(3.0);
 
   // Edit form state - Registers tab
   const [editRegisters, setEditRegisters] = useState<ModbusRegister[]>([]);
@@ -273,6 +279,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     // RTU Direct fields
     setEditSerialPort(device.serial_port || "");
     setEditBaudrate(device.baudrate || 9600);
+    // Connection alarm settings
+    setEditConnectionAlarmEnabled(device.connection_alarm_enabled ?? true);
+    setEditConnectionTimeoutMultiplier(device.connection_timeout_multiplier ?? 3.0);
     // Logging Registers tab - load from device
     setEditRegisters(device.registers || []);
     // Visualization Registers tab - load from device
@@ -473,6 +482,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       visualization_registers: editVisualizationRegisters.length > 0 ? editVisualizationRegisters : null,
       alarm_registers: editAlarmRegisters.length > 0 ? editAlarmRegisters : null,
       calculated_fields: editCalculatedFields.length > 0 ? editCalculatedFields : null,
+      // Connection alarm settings
+      connection_alarm_enabled: editConnectionAlarmEnabled,
+      connection_timeout_multiplier: editConnectionTimeoutMultiplier,
       // Clear all protocol-specific fields first, then set the right ones
       ip_address: null,
       port: null,
@@ -975,6 +987,72 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                   </div>
                 </div>
               )}
+
+              {/* Connection Alarm Section */}
+              <div className="space-y-4 pt-4 border-t">
+                <div>
+                  <p className="text-sm font-medium">Connection Alarm</p>
+                  <p className="text-xs text-muted-foreground">
+                    Trigger alarm when device stops responding
+                  </p>
+                </div>
+
+                {/* Enable/disable toggle */}
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="edit-connection-alarm" className="cursor-pointer">
+                    Enable connection alarm
+                  </Label>
+                  <input
+                    type="checkbox"
+                    id="edit-connection-alarm"
+                    checked={editConnectionAlarmEnabled}
+                    onChange={(e) => setEditConnectionAlarmEnabled(e.target.checked)}
+                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                </div>
+
+                {/* Timeout multiplier - only shown when alarm is enabled */}
+                {editConnectionAlarmEnabled && (
+                  <div className="space-y-2 pl-4 border-l-2 border-muted">
+                    <Label htmlFor="edit-timeout-multiplier">Timeout Multiplier</Label>
+                    <Input
+                      id="edit-timeout-multiplier"
+                      type="number"
+                      step="0.5"
+                      min="2"
+                      max="10"
+                      value={editConnectionTimeoutMultiplier}
+                      onChange={(e) => setEditConnectionTimeoutMultiplier(parseFloat(e.target.value) || 3.0)}
+                      className="min-h-[44px]"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Timeout = logging frequency × {editConnectionTimeoutMultiplier}
+                    </p>
+                    {/* Show calculated timeout based on registers */}
+                    {editRegisters.length > 0 && (
+                      <p className="text-xs font-medium text-blue-600">
+                        Calculated timeout:{" "}
+                        {(() => {
+                          const minFreq = Math.min(
+                            ...editRegisters
+                              .map((r) => r.logging_frequency || 60)
+                              .filter((f) => f > 0)
+                          );
+                          const timeout = minFreq * editConnectionTimeoutMultiplier;
+                          if (timeout < 60) return `${timeout.toFixed(0)}s`;
+                          if (timeout < 3600) return `${(timeout / 60).toFixed(1)} min`;
+                          return `${(timeout / 3600).toFixed(1)}h`;
+                        })()}
+                      </p>
+                    )}
+                    {editRegisters.length === 0 && (
+                      <p className="text-xs text-amber-600">
+                        Add logging registers to see calculated timeout
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </TabsContent>
 
             {/* Logging Tab - Registers stored in DB */}

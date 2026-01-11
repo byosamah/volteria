@@ -60,14 +60,15 @@ export const CONTROLLER_CALCULATED_FIELDS = [
 ];
 
 // Controller readings (system health metrics)
+// Default frequencies: most fields at 10 min (600s), uptime at 1 min (60s)
 export const CONTROLLER_READINGS = [
-  { field_id: "cpu_temp_celsius", name: "CPU Temperature", unit: "°C", source: "device_info" as const },
-  { field_id: "cpu_usage_pct", name: "CPU Usage", unit: "%", source: "device_info" as const },
-  { field_id: "memory_usage_pct", name: "Memory Usage", unit: "%", source: "device_info" as const },
-  { field_id: "disk_usage_pct", name: "Disk Usage", unit: "%", source: "device_info" as const },
-  { field_id: "uptime_seconds", name: "System Uptime", unit: "seconds", source: "device_info" as const },
-  { field_id: "network_rx_bytes", name: "Network Received", unit: "bytes", source: "device_info" as const },
-  { field_id: "network_tx_bytes", name: "Network Transmitted", unit: "bytes", source: "device_info" as const },
+  { field_id: "cpu_temp_celsius", name: "CPU Temperature", unit: "°C", source: "device_info" as const, default_frequency: 600 },
+  { field_id: "cpu_usage_pct", name: "CPU Usage", unit: "%", source: "device_info" as const, default_frequency: 600 },
+  { field_id: "memory_usage_pct", name: "Memory Usage", unit: "%", source: "device_info" as const, default_frequency: 600 },
+  { field_id: "disk_usage_pct", name: "Disk Usage", unit: "%", source: "device_info" as const, default_frequency: 600 },
+  { field_id: "uptime_seconds", name: "System Uptime", unit: "seconds", source: "device_info" as const, default_frequency: 60 },
+  { field_id: "network_rx_bytes", name: "Network Received", unit: "bytes", source: "device_info" as const, default_frequency: 600 },
+  { field_id: "network_tx_bytes", name: "Network Transmitted", unit: "bytes", source: "device_info" as const, default_frequency: 600 },
 ];
 
 // =============================================================================
@@ -97,7 +98,7 @@ const controllerTypeLabels: Record<string, string> = {
 };
 
 const controllerTypeColors: Record<string, string> = {
-  raspberry_pi: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+  raspberry_pi: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   gateway: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
   plc: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
 };
