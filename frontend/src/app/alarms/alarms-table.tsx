@@ -37,7 +37,7 @@ export function AlarmsTable() {
   const fetchAlarms = async () => {
     let query = supabase
       .from("alarms")
-      .select("id, project_id, alarm_type, device_name, message, severity, acknowledged, acknowledged_by, created_at")
+      .select("*")
       .order("created_at", { ascending: false })
       .limit(50);
 
