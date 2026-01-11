@@ -20,6 +20,11 @@ interface HeartbeatData {
   firmware_version?: string;
   ip_address?: string;
   uptime_seconds?: number;
+  metadata?: {
+    config_version?: string;
+    services?: Record<string, string>;
+    pending_ota?: { status: string; version?: string };
+  };
 }
 
 interface SSHSetupData {
@@ -38,6 +43,7 @@ export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVer
   const [error, setError] = useState<string | null>(null);
   const [sshSetup, setSSHSetup] = useState<SSHSetupData | null>(null);
   const [sshSetupStatus, setSSHSetupStatus] = useState<"pending" | "setting_up" | "complete" | "error">("pending");
+  const [configStatus, setConfigStatus] = useState<{ synced: boolean; message: string } | null>(null);
 
   const TIMEOUT_SECONDS = 300; // 5 minutes
   const POLL_INTERVAL = 5000; // 5 seconds
@@ -141,6 +147,21 @@ export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVer
           if (heartbeatTime > tenMinutesAgo) {
             setHeartbeat(latestHeartbeat);
             setStatus("online");
+
+            // Check config version from metadata
+            const configVersion = latestHeartbeat.metadata?.config_version;
+            if (configVersion) {
+              setConfigStatus({
+                synced: true,
+                message: `Configuration synced at ${new Date(configVersion).toLocaleString()}`,
+              });
+            } else {
+              setConfigStatus({
+                synced: false,
+                message: "Heartbeat received but configuration may not be fully synced yet",
+              });
+            }
+
             onVerified();
             // Stop polling
             clearInterval(pollInterval);
@@ -234,6 +255,33 @@ export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVer
             <p className="text-muted-foreground">
               Your controller is successfully connected to the cloud.
             </p>
+
+            {/* Config Sync Status */}
+            {configStatus && (
+              <div className="mt-4 w-full max-w-md">
+                {configStatus.synced ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+                    <div className="flex items-center gap-2 text-green-800 font-medium mb-1">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Configuration Synced
+                    </div>
+                    <p className="text-green-700">{configStatus.message}</p>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+                    <div className="flex items-center gap-2 text-amber-800 font-medium mb-1">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Config Sync Pending
+                    </div>
+                    <p className="text-amber-700">{configStatus.message}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* SSH Setup Status */}
             <div className="mt-4 w-full max-w-md">

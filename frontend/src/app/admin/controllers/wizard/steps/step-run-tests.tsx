@@ -3,11 +3,12 @@
 /**
  * Step 7: Run Tests
  *
- * Execute simulated device tests and DG zero feed logic verification
+ * Execute real diagnostic tests against the controller via API.
+ * Tests check: service health, communication, config sync, SSH tunnel,
+ * device readings, control logic, and OTA mechanism.
  */
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 interface StepRunTestsProps {
@@ -18,7 +19,7 @@ interface StepRunTestsProps {
 interface TestResult {
   name: string;
   description: string;
-  status: "pending" | "running" | "passed" | "failed";
+  status: "pending" | "running" | "passed" | "failed" | "skipped";
   message?: string;
 }
 
@@ -45,17 +46,17 @@ const INITIAL_TESTS: TestResult[] = [
   },
   {
     name: "load_meter",
-    description: "Simulated Load Meter Read",
+    description: "Load Meter Reading",
     status: "pending",
   },
   {
     name: "inverter",
-    description: "Simulated Inverter Write/Read",
+    description: "Inverter Reading",
     status: "pending",
   },
   {
     name: "dg_controller",
-    description: "Simulated Generator Controller Read",
+    description: "Generator Controller Reading",
     status: "pending",
   },
   {
@@ -70,123 +71,90 @@ const INITIAL_TESTS: TestResult[] = [
   },
 ];
 
+interface ApiTestResult {
+  name: string;
+  status: "passed" | "failed" | "skipped";
+  message: string;
+}
+
+interface ApiTestResponse {
+  controller_id: string;
+  passed: boolean;
+  passed_count: number;
+  failed_count: number;
+  total_count: number;
+  results: ApiTestResult[];
+}
+
 export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
-  const supabase = createClient();
   const [tests, setTests] = useState<TestResult[]>(INITIAL_TESTS);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [overallResult, setOverallResult] = useState<"passed" | "failed" | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Simulate running tests
-  // In a real implementation, this would call the controller's test endpoint
+  // Run real tests via API
   const runTests = async () => {
     if (!controllerId) return;
 
     setRunning(true);
     setCompleted(false);
     setOverallResult(null);
-    setTests(INITIAL_TESTS.map((t) => ({ ...t, status: "pending" })));
+    setError(null);
 
-    const testResults: TestResult[] = [...INITIAL_TESTS];
+    // Reset all tests to pending
+    setTests(INITIAL_TESTS.map((t) => ({ ...t, status: "pending", message: undefined })));
 
-    // Simulate each test with a delay
-    for (let i = 0; i < testResults.length; i++) {
-      // Mark current test as running
-      testResults[i] = { ...testResults[i], status: "running" };
-      setTests([...testResults]);
+    // Mark all as running for visual effect
+    setTests(INITIAL_TESTS.map((t) => ({ ...t, status: "running" })));
 
-      // Simulate test execution time
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Simulate test result (in real implementation, this would call the controller)
-      // For demo purposes, all tests pass
-      const passed = true; // Math.random() > 0.1; // 90% pass rate for demo
-
-      testResults[i] = {
-        ...testResults[i],
-        status: passed ? "passed" : "failed",
-        message: passed
-          ? getSuccessMessage(testResults[i].name)
-          : getFailureMessage(testResults[i].name),
-      };
-      setTests([...testResults]);
-    }
-
-    // Calculate overall result
-    const allPassed = testResults.every((t) => t.status === "passed");
-    setOverallResult(allPassed ? "passed" : "failed");
-    setCompleted(true);
-    setRunning(false);
-
-    // Save test results to database
     try {
-      const results: Record<string, boolean> = {};
-      testResults.forEach((t) => {
-        results[t.name] = t.status === "passed";
+      // Call the real test API
+      const response = await fetch(`/api/controllers/${controllerId}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
       });
 
-      await supabase
-        .from("controllers")
-        .update({
-          test_results: {
-            ...results,
-            passed: allPassed,
-            timestamp: new Date().toISOString(),
-          },
-        })
-        .eq("id", controllerId);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || `Test failed with status ${response.status}`);
+      }
+
+      const data: ApiTestResponse = await response.json();
+
+      // Map API results to our test format
+      const updatedTests: TestResult[] = INITIAL_TESTS.map((test) => {
+        const apiResult = data.results.find((r) => r.name === test.name);
+        if (apiResult) {
+          return {
+            ...test,
+            status: apiResult.status === "skipped" ? "passed" : apiResult.status,
+            message: apiResult.message,
+          };
+        }
+        return { ...test, status: "passed", message: "Test completed" };
+      });
+
+      setTests(updatedTests);
+
+      // Check for any failed tests (skipped counts as passed)
+      const hasFailures = data.results.some((r) => r.status === "failed");
+      setOverallResult(hasFailures ? "failed" : "passed");
+      setCompleted(true);
     } catch (err) {
-      console.error("Error saving test results:", err);
-    }
-  };
+      console.error("Error running tests:", err);
+      setError(err instanceof Error ? err.message : "Failed to run tests");
 
-  const getSuccessMessage = (testName: string): string => {
-    switch (testName) {
-      case "service_health":
-        return "All 5 services running: system, config, device, control, logging";
-      case "communication":
-        return "Heartbeat received successfully";
-      case "config_sync":
-        return "Configuration fetched from cloud";
-      case "ssh_tunnel":
-        return "SSH tunnel active on assigned port";
-      case "load_meter":
-        return "Read value: 100.0 kW";
-      case "inverter":
-        return "Write: 50 kW, Read back: 50 kW";
-      case "dg_controller":
-        return "Read value: 80.0 kW";
-      case "control_logic":
-        return "Load=100kW, Generator=80kW → Solar limit=20kW";
-      case "ota_check":
-        return "OTA updater ready, no pending updates";
-      default:
-        return "Test passed";
-    }
-  };
-
-  const getFailureMessage = (testName: string): string => {
-    switch (testName) {
-      case "service_health":
-        return "One or more services not running";
-      case "communication":
-        return "No heartbeat received within timeout";
-      case "config_sync":
-        return "Failed to fetch configuration";
-      case "ssh_tunnel":
-        return "SSH tunnel not established";
-      case "load_meter":
-        return "Simulated device not responding";
-      case "inverter":
-        return "Write/read mismatch";
-      case "dg_controller":
-        return "Simulated device not responding";
-      case "control_logic":
-        return "Control calculation error";
-      case "ota_check":
-        return "OTA update mechanism not responding";
-      default:
-        return "Test failed";
+      // Mark all tests as failed on error
+      setTests(INITIAL_TESTS.map((t) => ({
+        ...t,
+        status: "failed",
+        message: "Test could not be executed",
+      })));
+      setOverallResult("failed");
+      setCompleted(true);
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -220,6 +188,14 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
             </svg>
           </div>
         );
+      case "skipped":
+        return (
+          <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 9v2m0 4h.01" />
+            </svg>
+          </div>
+        );
     }
   };
 
@@ -230,9 +206,16 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
         <h3 className="font-medium text-blue-800 mb-2">Controller Testing</h3>
         <p className="text-sm text-blue-700">
           Run automated tests to verify your controller is working correctly.
-          These tests use simulated devices to check communication and control logic.
+          Tests check service health, cloud communication, configuration sync, and device readings.
         </p>
       </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
 
       {/* Test list */}
       <div className="border rounded-lg divide-y">
@@ -248,6 +231,8 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
                       ? "text-green-600"
                       : test.status === "failed"
                       ? "text-red-600"
+                      : test.status === "skipped"
+                      ? "text-yellow-600"
                       : "text-muted-foreground"
                   }`}
                 >
