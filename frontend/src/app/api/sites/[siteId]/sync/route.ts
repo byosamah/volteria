@@ -100,28 +100,20 @@ export async function POST(
 
     if (commandError) {
       console.error("Error inserting sync command:", commandError);
-      // Don't fail - the timestamp update is enough for sync detection
-    }
-
-    // Update the site's updated_at to force version mismatch
-    // This makes the controller detect a change on next poll
-    const { error: updateError } = await supabase
-      .from("sites")
-      .update({
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", siteId);
-
-    if (updateError) {
       return NextResponse.json(
-        { error: "Failed to trigger sync" },
+        { error: "Failed to create sync command" },
         { status: 500 }
       );
     }
 
+    // Note: We no longer update site.updated_at here because:
+    // 1. The command queue (polled every 5 seconds) triggers the sync
+    // 2. Updating updated_at would make the status show "Not Synced" immediately
+    // 3. The controller updates config_synced_at after successful sync
+
     return NextResponse.json({
       success: true,
-      message: "Sync triggered. Controller will pull config within 5 minutes.",
+      message: "Sync command sent. Controller will sync within 5 seconds.",
       triggered_at: new Date().toISOString(),
     });
 

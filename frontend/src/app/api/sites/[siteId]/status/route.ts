@@ -172,23 +172,31 @@ export async function GET(
     }
 
     // Step 4: Determine config sync status
+    // Note: site.updated_at has an auto-update trigger, so we can't rely on it
+    // for detecting config changes. Instead, we use config_synced_at and the
+    // controller's reported config_version from heartbeats.
     if (site.config_synced_at) {
       response.configSync.lastSyncedAt = site.config_synced_at;
 
-      // Compare updated_at vs config_synced_at
-      const updatedAt = new Date(site.updated_at).getTime();
+      // If controller has reported a config_version that matches what it synced,
+      // and sync was recent (within last hour), consider it synced
       const syncedAt = new Date(site.config_synced_at).getTime();
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
 
-      if (syncedAt >= updatedAt) {
-        // Also check config version hashes if available
+      // Check if controller's config matches what we have
+      const controllerConfigVersion = response.configSync.localPulledAt;
+      const hasRecentSync = syncedAt > oneHourAgo;
+      const versionMatches = controllerConfigVersion && site.controller_config_version === controllerConfigVersion;
+
+      if (hasRecentSync || versionMatches) {
+        // If there are explicit version hashes and they differ, still show sync_needed
         if (
           site.platform_config_version &&
           site.controller_config_version &&
-          site.platform_config_version !== site.controller_config_version
+          site.platform_config_version !== site.controller_config_version &&
+          !site.platform_config_version.includes("-") // Skip if timestamp format (not hash)
         ) {
           response.configSync.status = "sync_needed";
-          // Calculate pending changes would go here
-          // For now, we just show that sync is needed
           response.configSync.pendingChanges = await calculatePendingChanges(
             supabase,
             siteId
@@ -197,6 +205,7 @@ export async function GET(
           response.configSync.status = "synced";
         }
       } else {
+        // Sync is old or controller hasn't reported matching version
         response.configSync.status = "sync_needed";
         response.configSync.pendingChanges = await calculatePendingChanges(
           supabase,
