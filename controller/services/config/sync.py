@@ -165,7 +165,7 @@ class ConfigSync:
             processed = {
                 "id": device["id"],
                 "name": device["name"],
-                "device_type": device.get("device_type") or device.get("device_templates", {}).get("device_type"),
+                "device_type": device.get("device_type") or (device.get("device_templates") or {}).get("device_type"),
                 "protocol": device.get("protocol", "tcp"),
                 "host": device.get("host") or device.get("gateway_ip", ""),
                 "port": device.get("port") or device.get("gateway_port", 502),
@@ -175,7 +175,7 @@ class ConfigSync:
                 # Get registers from device or template
                 "registers": device.get("registers") or [],
                 # Use device's alarm_registers, fallback to template's alarm_registers
-                "alarm_registers": device.get("alarm_registers") or device.get("device_templates", {}).get("alarm_registers") or [],
+                "alarm_registers": device.get("alarm_registers") or (device.get("device_templates") or {}).get("alarm_registers") or [],
             }
 
             # If device has a template and no custom registers, fetch template registers
