@@ -8,14 +8,42 @@
 **Active Plan**: `.claude/plans/purrfect-jumping-meerkat.md`
 **Full Original Plan**: `.claude/plans/compressed-jingling-cocke.md` (98KB, 21 Parts)
 
-### Current Phase: Phase 7 - Deploy to Raspberry Pi
+### Current Phase: Phase 9 - Re-flash Controller & Follow Wizard
 - Phase 1 COMPLETE: All services validated, 17/17 tests passed
 - Phase 2 COMPLETE: Database migrations created (058, 059 existed; 068 new)
 - Phase 3 COMPLETE: `main_v2.py` entry point created and tested
 - Phase 4 COMPLETE: Reboot feature (backend + frontend + controller)
 - Phase 5 COMPLETE: Wizard already updated for 5-layer architecture
 - Phase 6 DEFERRED: OTA mechanism (lower priority)
-- **Next**: Phase 7 - Deploy to Raspberry Pi, Phase 8 - Retire old code
+- Phase 6b COMPLETE: Sync widget enhancement (cloud/local dates)
+- Phase 7 COMPLETE: Deployed to Raspberry Pi, all 5 services running
+- **Phase 9 READY**: Re-flash controller and follow wizard (before Phase 8)
+- Phase 8 PENDING: Retire old code (after Phase 9 validates wizard)
+
+### Wizard Fixes (2026-01-11)
+Critical gaps in wizard were discovered and fixed:
+
+1. **Real Tests API** (`/api/controllers/[controllerId]/test`)
+   - Tests now check actual heartbeat metadata instead of hardcoded `true`
+   - Verifies: service health, communication, config sync, SSH tunnel, device readings, control logic, OTA
+
+2. **Registration Verification** (Step 5: Cloud Connection)
+   - Queries database to verify controller was registered by setup script
+   - Shows green "Registration Verified" or amber "Registration Pending"
+
+3. **Config Verification** (Step 6: Verify Online)
+   - Checks `metadata.config_version` from heartbeat
+   - Shows green "Configuration Synced" or amber "Config Sync Pending"
+
+4. **SSH Setup Endpoint** - Already existed at `/api/controllers/[controllerId]/ssh-setup`
+
+**Files Modified**:
+- `frontend/src/app/api/controllers/[controllerId]/test/route.ts` (NEW)
+- `frontend/src/app/admin/controllers/wizard/steps/step-run-tests.tsx`
+- `frontend/src/app/admin/controllers/wizard/steps/step-cloud-connection.tsx`
+- `frontend/src/app/admin/controllers/wizard/steps/step-verify-online.tsx`
+
+**Next Step**: Format SD card and NVMe, run setup script, follow wizard at https://volteria.org/admin/controllers/wizard
 
 ### Quick Command to Continue
 ```
