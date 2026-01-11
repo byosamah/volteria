@@ -17,6 +17,14 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { RefreshCw } from "lucide-react";
 import { ControllerRebootAction } from "@/components/controllers/controller-reboot-action";
+import { CONTROLLER_READINGS } from "./master-device-templates-list";
+import {
+  ControllerReadingsForm,
+  type ReadingSelection,
+  type StatusAlarmConfig,
+  type StorageMode,
+  getDefaultAlarmConfig,
+} from "./controller-readings-form";
 
 // Helper to determine if controller is online (heartbeat within last 90 seconds)
 // Note: Controllers send heartbeats every 30 seconds
@@ -162,6 +170,17 @@ interface ControllerTemplateData {
     cooldown_seconds: number;
   }[];
 }
+
+// Controller template list item (for selector dropdown)
+interface ControllerTemplateListItem {
+  id: string;
+  template_id: string;
+  name: string;
+  template_type: "public" | "custom";
+}
+
+// Types imported from controller-readings-form.tsx:
+// - StorageMode, ReadingSelection, StatusAlarmConfig, getDefaultAlarmConfig
 
 interface MasterDeviceListProps {
   projectId: string;
@@ -326,6 +345,33 @@ export function MasterDeviceList({
   const [controllerTemplate, setControllerTemplate] = useState<ControllerTemplateData | null>(null);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
 
+  // Available controller templates for selector dropdown
+  const [availableTemplates, setAvailableTemplates] = useState<ControllerTemplateListItem[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+
+  // Selected template ID for the dropdown
+  const [editSelectedTemplateId, setEditSelectedTemplateId] = useState<string>("");
+
+  // Controller readings with alarm config (for Controller Fields tab)
+  const [editControllerReadings, setEditControllerReadings] = useState<ReadingSelection[]>(
+    CONTROLLER_READINGS.map((field) => ({
+      field_id: field.field_id,
+      name: field.name,
+      unit: field.unit,
+      storage_mode: "log" as StorageMode,
+      logging_frequency_seconds: 60,
+      enabled: true, // Default all enabled
+      alarm_config: getDefaultAlarmConfig(field.field_id),
+    }))
+  );
+
+  // Status alarm config (online/offline)
+  const [editStatusAlarm, setEditStatusAlarm] = useState<StatusAlarmConfig>({
+    enabled: true,
+    offline_severity: "critical",
+    offline_timeout_seconds: 60,
+  });
+
   // Check if user is super_admin (only super_admin can edit controller fields)
   const isSuperAdmin = userRole === "super_admin";
 
@@ -371,7 +417,28 @@ export function MasterDeviceList({
       const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
       setEditSelectedCalculatedFields(existingFieldIds);
 
+      // Set the selected template ID
+      setEditSelectedTemplateId(device.controller_template_id || "");
+
       const supabase = createClient();
+
+      // Load available controller templates for the dropdown
+      setLoadingTemplates(true);
+      try {
+        const { data: templates } = await supabase
+          .from("controller_templates")
+          .select("id, template_id, name, template_type")
+          .eq("is_active", true)
+          .order("name");
+
+        if (templates) {
+          setAvailableTemplates(templates as ControllerTemplateListItem[]);
+        }
+      } catch (err) {
+        console.error("Failed to load controller templates:", err);
+      } finally {
+        setLoadingTemplates(false);
+      }
 
       // Load controller template if linked
       if (device.controller_template_id) {
@@ -391,12 +458,33 @@ export function MasterDeviceList({
                 templateData.calculated_fields.map((f: { field_id: string }) => f.field_id)
               );
             }
+
+            // Populate controller readings from template
+            populateReadingsFromTemplate(templateData as ControllerTemplateData);
           }
         } catch (err) {
           console.error("Failed to load controller template:", err);
         } finally {
           setLoadingTemplate(false);
         }
+      } else {
+        // No template linked - reset to defaults with all readings enabled
+        setEditControllerReadings(
+          CONTROLLER_READINGS.map((field) => ({
+            field_id: field.field_id,
+            name: field.name,
+            unit: field.unit,
+            storage_mode: "log" as StorageMode,
+            logging_frequency_seconds: 60,
+            enabled: true,
+            alarm_config: getDefaultAlarmConfig(field.field_id),
+          }))
+        );
+        setEditStatusAlarm({
+          enabled: true,
+          offline_severity: "critical",
+          offline_timeout_seconds: 60,
+        });
       }
 
       // Load ALL controller-scope calculated fields from the database
@@ -421,6 +509,136 @@ export function MasterDeviceList({
       } finally {
         setLoadingCalculatedFields(false);
       }
+    }
+  };
+
+  // Populate controller readings and status alarm from template data
+  const populateReadingsFromTemplate = (templateData: ControllerTemplateData) => {
+    const templateRegisters = templateData.registers || [];
+    const templateAlarms = templateData.alarm_definitions || [];
+
+    // Map registers to readings with alarm config
+    setEditControllerReadings(
+      CONTROLLER_READINGS.map((field) => {
+        const existing = templateRegisters.find((r) => r.field === field.field_id);
+        const alarmDef = templateAlarms.find(
+          (a) => a.source_key === field.field_id && a.source_type === "device_info"
+        );
+
+        // Parse alarm config from alarm definition
+        let alarmConfig = getDefaultAlarmConfig(field.field_id);
+        if (alarmDef) {
+          const warningCondition = alarmDef.conditions?.find((c) => c.severity === "warning");
+          const criticalCondition = alarmDef.conditions?.find((c) => c.severity === "critical");
+          alarmConfig = {
+            enabled: alarmDef.enabled_by_default ?? true,
+            warning_threshold: warningCondition?.value ?? null,
+            critical_threshold: criticalCondition?.value ?? null,
+            warning_operator: (warningCondition?.operator as ">" | "<") || ">",
+            critical_operator: (criticalCondition?.operator as ">" | "<") || ">",
+          };
+        }
+
+        if (existing) {
+          return {
+            field_id: field.field_id,
+            name: field.name,
+            unit: field.unit,
+            storage_mode: "log" as StorageMode,
+            logging_frequency_seconds: existing.logging_frequency_seconds || 60,
+            enabled: true,
+            alarm_config: alarmConfig,
+          };
+        }
+        return {
+          field_id: field.field_id,
+          name: field.name,
+          unit: field.unit,
+          storage_mode: "log" as StorageMode,
+          logging_frequency_seconds: 60,
+          enabled: false,
+          alarm_config: alarmConfig,
+        };
+      })
+    );
+
+    // Parse status alarm from alarm definitions
+    const statusAlarmDef = templateAlarms.find(
+      (a) => a.id === "controller_offline" || a.source_type === "heartbeat"
+    );
+    if (statusAlarmDef) {
+      const criticalCond = statusAlarmDef.conditions?.find((c) => c.severity === "critical");
+      const warningCond = statusAlarmDef.conditions?.find((c) => c.severity === "warning");
+      const severity = criticalCond ? "critical" : warningCond ? "warning" : "critical";
+      const timeoutCond = criticalCond || warningCond;
+      setEditStatusAlarm({
+        enabled: statusAlarmDef.enabled_by_default ?? true,
+        offline_severity: severity as "warning" | "critical",
+        offline_timeout_seconds: timeoutCond?.value || 60,
+      });
+    } else {
+      setEditStatusAlarm({
+        enabled: true,
+        offline_severity: "critical",
+        offline_timeout_seconds: 60,
+      });
+    }
+  };
+
+  // Handle template selection change
+  const handleTemplateChange = async (templateId: string) => {
+    setEditSelectedTemplateId(templateId);
+
+    if (!templateId) {
+      // Cleared template selection - reset to defaults
+      setControllerTemplate(null);
+      setEditControllerReadings(
+        CONTROLLER_READINGS.map((field) => ({
+          field_id: field.field_id,
+          name: field.name,
+          unit: field.unit,
+          storage_mode: "log" as StorageMode,
+          logging_frequency_seconds: 60,
+          enabled: true,
+          alarm_config: getDefaultAlarmConfig(field.field_id),
+        }))
+      );
+      setEditStatusAlarm({
+        enabled: true,
+        offline_severity: "critical",
+        offline_timeout_seconds: 60,
+      });
+      // Clear calculated fields
+      setEditSelectedCalculatedFields(availableCalculatedFields.map(f => f.field_id));
+      return;
+    }
+
+    // Load the selected template
+    setLoadingTemplate(true);
+    try {
+      const supabase = createClient();
+      const { data: templateData } = await supabase
+        .from("controller_templates")
+        .select("id, template_id, name, registers, calculated_fields, alarm_definitions")
+        .eq("id", templateId)
+        .single();
+
+      if (templateData) {
+        setControllerTemplate(templateData as ControllerTemplateData);
+        populateReadingsFromTemplate(templateData as ControllerTemplateData);
+
+        // Update calculated fields from template
+        if (templateData.calculated_fields && Array.isArray(templateData.calculated_fields)) {
+          setEditSelectedCalculatedFields(
+            templateData.calculated_fields.map((f: { field_id: string }) => f.field_id)
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load selected template:", err);
+      toast.error("Failed to load template");
+    } finally {
+      setLoadingTemplate(false);
     }
   };
 
@@ -449,6 +667,9 @@ export function MasterDeviceList({
         updateData.modbus_extra_delay = parseInt(editModbusExtraDelay);
         updateData.modbus_slave_timeout = parseInt(editModbusSlaveTimeout);
         updateData.modbus_write_function = editModbusWriteFunction;
+
+        // Add controller template ID
+        updateData.controller_template_id = editSelectedTemplateId || null;
 
         // Add calculated fields selection
         updateData.calculated_fields = editSelectedCalculatedFields.map(id => ({
@@ -834,6 +1055,45 @@ export function MasterDeviceList({
 
               {/* Connection Tab */}
               <TabsContent value="connection" className="space-y-4 py-4">
+                {/* Controller Template Selector */}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-template">Controller Template</Label>
+                  <Select
+                    value={editSelectedTemplateId}
+                    onValueChange={handleTemplateChange}
+                    disabled={loadingTemplates}
+                  >
+                    <SelectTrigger id="edit-template" className="min-h-[44px]">
+                      <SelectValue placeholder={loadingTemplates ? "Loading..." : "Select a template"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">
+                        <span className="text-muted-foreground">No template</span>
+                      </SelectItem>
+                      {availableTemplates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{template.name}</span>
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${
+                                template.template_type === "public"
+                                  ? "border-green-500 text-green-700"
+                                  : "border-blue-500 text-blue-700"
+                              }`}
+                            >
+                              {template.template_type}
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Selecting a template will update Controller Fields and Calculated Fields settings
+                  </p>
+                </div>
+
                 {/* Device Name */}
                 <div className="space-y-2">
                   <Label htmlFor="edit-name">Device Name</Label>
@@ -1005,16 +1265,14 @@ export function MasterDeviceList({
                 <div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium">Controller Fields</p>
+                      <p className="text-sm font-medium">Controller Readings</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Health metrics and alarm thresholds from template
+                        Controller health metrics with alarm thresholds
                       </p>
                     </div>
-                    {controllerTemplate && (
-                      <Badge variant="outline" className="text-xs">
-                        Template: {controllerTemplate.name}
-                      </Badge>
-                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {editControllerReadings.filter((f) => f.enabled).length} selected
+                    </span>
                   </div>
                   {!isSuperAdmin && (
                     <p className="text-xs text-amber-600 mt-2">
@@ -1027,126 +1285,14 @@ export function MasterDeviceList({
                   <div className="flex items-center justify-center py-8">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
                   </div>
-                ) : !controllerTemplate ? (
-                  <div className="text-sm text-muted-foreground py-4 text-center border rounded-lg bg-muted/20">
-                    <p>No controller template linked</p>
-                    <p className="text-xs mt-1">Link a template to configure controller fields</p>
-                  </div>
-                ) : controllerTemplate.registers?.length === 0 ? (
-                  <div className="text-sm text-muted-foreground py-4 text-center">
-                    No controller fields configured in template
-                  </div>
                 ) : (
-                  <div className="border rounded-lg divide-y">
-                    {controllerTemplate.registers?.map((register) => {
-                      // Find alarm definition for this register
-                      const alarmDef = controllerTemplate.alarm_definitions?.find(
-                        (a) => a.source_key === register.field
-                      );
-                      return (
-                        <div key={register.field} className="p-3">
-                          {/* Main row */}
-                          <div className="flex items-center gap-3">
-                            {/* Checkbox - disabled for non-super_admin */}
-                            <Checkbox
-                              checked={true}
-                              disabled={!isSuperAdmin}
-                              className="opacity-50"
-                            />
-
-                            {/* Name and Unit */}
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-sm">{register.name}</span>
-                                {register.unit && (
-                                  <span className="text-xs text-muted-foreground">
-                                    ({register.unit})
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Logging Frequency */}
-                            {register.logging_frequency_seconds && (
-                              <Badge variant="outline" className="text-xs">
-                                {register.logging_frequency_seconds >= 60
-                                  ? `${register.logging_frequency_seconds / 60} min`
-                                  : `${register.logging_frequency_seconds} sec`}
-                              </Badge>
-                            )}
-
-                            {/* Alarm indicator */}
-                            {alarmDef && (
-                              <Badge
-                                variant={alarmDef.enabled_by_default ? "default" : "secondary"}
-                                className="text-xs"
-                              >
-                                Alarm
-                              </Badge>
-                            )}
-                          </div>
-
-                          {/* Alarm conditions (if any) */}
-                          {alarmDef && alarmDef.conditions?.length > 0 && (
-                            <div className="mt-2 ml-7 space-y-1">
-                              {alarmDef.conditions.map((condition, idx) => (
-                                <div
-                                  key={idx}
-                                  className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
-                                    condition.severity === "critical"
-                                      ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                                      : condition.severity === "warning"
-                                      ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
-                                      : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                                  }`}
-                                >
-                                  <span className="font-medium capitalize w-16">{condition.severity}</span>
-                                  <span>
-                                    {condition.operator} {condition.value}{register.unit}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {/* Status Alarm (Online/Offline) */}
-                    {controllerTemplate.alarm_definitions?.some(a => a.source_type === "heartbeat") && (
-                      <div className="p-3 bg-muted/30">
-                        <div className="flex items-center gap-3">
-                          <Checkbox checked={true} disabled={!isSuperAdmin} className="opacity-50" />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">Connection Status</span>
-                              <span className="text-xs text-muted-foreground">(Online/Offline)</span>
-                            </div>
-                          </div>
-                          <Badge variant="default" className="text-xs">Alarm</Badge>
-                        </div>
-                        {controllerTemplate.alarm_definitions
-                          ?.filter(a => a.source_type === "heartbeat")
-                          .map((alarm) => (
-                            <div key={alarm.id} className="mt-2 ml-7 space-y-1">
-                              {alarm.conditions?.map((condition, idx) => (
-                                <div
-                                  key={idx}
-                                  className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
-                                    condition.severity === "critical"
-                                      ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                                      : "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
-                                  }`}
-                                >
-                                  <span className="font-medium capitalize w-16">{condition.severity}</span>
-                                  <span>Offline &gt; {condition.value}s</span>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                      </div>
-                    )}
-                  </div>
+                  <ControllerReadingsForm
+                    readings={editControllerReadings}
+                    onReadingsChange={setEditControllerReadings}
+                    statusAlarm={editStatusAlarm}
+                    onStatusAlarmChange={setEditStatusAlarm}
+                    disabled={!isSuperAdmin}
+                  />
                 )}
               </TabsContent>
 

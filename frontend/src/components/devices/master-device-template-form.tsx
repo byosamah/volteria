@@ -33,14 +33,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { toast } from "sonner";
 import type { ControllerTemplate, SystemRegister, CalculatedFieldDefinition } from "@/lib/types";
 import { CONTROLLER_READINGS } from "./master-device-templates-list";
+import {
+  ControllerReadingsForm,
+  type ReadingSelection,
+  type StatusAlarmConfig,
+  type StorageMode,
+  getDefaultAlarmConfig,
+} from "./controller-readings-form";
 
 // =============================================================================
 // TYPES
@@ -83,30 +85,8 @@ function generateNumericTemplateId(): string {
   return `${timestamp}${random}`;
 }
 
-// Storage mode for calculated fields and readings
-type StorageMode = "log" | "viz_only";
-
-// Logging frequency options (in seconds)
-const LOGGING_FREQUENCY_OPTIONS = [
-  { value: 5, label: "5 sec" },
-  { value: 10, label: "10 sec" },
-  { value: 30, label: "30 sec" },
-  { value: 60, label: "1 min" },
-  { value: 300, label: "5 min" },
-  { value: 600, label: "10 min" },
-];
-
-// Alarm severity levels
-type AlarmSeverity = "warning" | "critical";
-
-// Alarm configuration for a reading
-interface ReadingAlarmConfig {
-  enabled: boolean;
-  warning_threshold: number | null;  // Threshold for warning (e.g., 80%)
-  critical_threshold: number | null; // Threshold for critical (e.g., 95%)
-  warning_operator: ">" | "<";       // Whether warning triggers above or below threshold
-  critical_operator: ">" | "<";      // Whether critical triggers above or below threshold
-}
+// Types imported from controller-readings-form.tsx:
+// - StorageMode, ReadingSelection, StatusAlarmConfig, getDefaultAlarmConfig
 
 // Field selection with storage mode (for calculated fields)
 interface FieldSelection {
@@ -115,64 +95,6 @@ interface FieldSelection {
   storage_mode: StorageMode;
   enabled: boolean;
 }
-
-// Reading selection with storage mode, logging frequency, and alarm config
-interface ReadingSelection {
-  field_id: string;
-  name: string;
-  unit: string;
-  storage_mode: StorageMode;
-  logging_frequency_seconds: number;
-  enabled: boolean;
-  alarm_config: ReadingAlarmConfig;
-}
-
-// Online/Offline status alarm config
-interface StatusAlarmConfig {
-  enabled: boolean;
-  offline_severity: AlarmSeverity;
-  offline_timeout_seconds: number; // How long offline before alarm
-}
-
-// Default alarm configurations based on reading type
-const getDefaultAlarmConfig = (fieldId: string): ReadingAlarmConfig => {
-  switch (fieldId) {
-    case "cpu_temp_celsius":
-      return {
-        enabled: true,
-        warning_threshold: 70,
-        critical_threshold: 85,
-        warning_operator: ">",
-        critical_operator: ">",
-      };
-    case "cpu_usage_pct":
-    case "memory_usage_pct":
-    case "disk_usage_pct":
-      return {
-        enabled: true,
-        warning_threshold: 80,
-        critical_threshold: 95,
-        warning_operator: ">",
-        critical_operator: ">",
-      };
-    case "uptime_seconds":
-      return {
-        enabled: true,
-        warning_threshold: 300,    // Warning if uptime < 5 min (recent restart)
-        critical_threshold: 60,     // Critical if uptime < 1 min
-        warning_operator: "<",
-        critical_operator: "<",
-      };
-    default:
-      return {
-        enabled: false,
-        warning_threshold: null,
-        critical_threshold: null,
-        warning_operator: ">",
-        critical_operator: ">",
-      };
-  }
-};
 
 // Form data interface
 // Note: template_id is auto-generated for new templates
@@ -275,9 +197,6 @@ export function MasterDeviceTemplateForm({
     offline_severity: "critical",
     offline_timeout_seconds: 60,
   });
-
-  // Expanded state for alarm configuration sections
-  const [expandedAlarms, setExpandedAlarms] = useState<Set<string>>(new Set());
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -505,7 +424,7 @@ export function MasterDeviceTemplateForm({
           const criticalCond = statusAlarmDef.conditions?.find((c) => c.severity === "critical");
           setStatusAlarm({
             enabled: statusAlarmDef.enabled_by_default ?? true,
-            offline_severity: (criticalCond?.severity as AlarmSeverity) || "critical",
+            offline_severity: (criticalCond?.severity as "warning" | "critical") || "critical",
             offline_timeout_seconds: criticalCond?.value || 60,
           });
         } else {
@@ -774,60 +693,6 @@ export function MasterDeviceTemplateForm({
         f.field_id === field_id ? { ...f, storage_mode: mode } : f
       )
     );
-  };
-
-  // Toggle a controller reading
-  const toggleControllerReading = (field_id: string) => {
-    setControllerReadings((prev) =>
-      prev.map((f) =>
-        f.field_id === field_id ? { ...f, enabled: !f.enabled } : f
-      )
-    );
-  };
-
-  // Update storage mode for a controller reading
-  const updateControllerReadingMode = (field_id: string, mode: StorageMode) => {
-    setControllerReadings((prev) =>
-      prev.map((f) =>
-        f.field_id === field_id ? { ...f, storage_mode: mode } : f
-      )
-    );
-  };
-
-  // Update logging frequency for a controller reading
-  const updateControllerReadingFrequency = (field_id: string, frequency: number) => {
-    setControllerReadings((prev) =>
-      prev.map((f) =>
-        f.field_id === field_id ? { ...f, logging_frequency_seconds: frequency } : f
-      )
-    );
-  };
-
-  // Update alarm config for a controller reading
-  const updateControllerReadingAlarm = (
-    field_id: string,
-    alarmConfig: Partial<ReadingAlarmConfig>
-  ) => {
-    setControllerReadings((prev) =>
-      prev.map((f) =>
-        f.field_id === field_id
-          ? { ...f, alarm_config: { ...f.alarm_config, ...alarmConfig } }
-          : f
-      )
-    );
-  };
-
-  // Toggle alarm expanded state
-  const toggleAlarmExpanded = (field_id: string) => {
-    setExpandedAlarms((prev) => {
-      const next = new Set(prev);
-      if (next.has(field_id)) {
-        next.delete(field_id);
-      } else {
-        next.add(field_id);
-      }
-      return next;
-    });
   };
 
   // Get counts
@@ -1125,289 +990,12 @@ export function MasterDeviceTemplateForm({
               Controller health metrics (read from system).
             </p>
 
-            <div className="border rounded-lg divide-y">
-              {controllerReadings.map((field) => {
-                const isExpanded = expandedAlarms.has(field.field_id);
-                return (
-                  <Collapsible
-                    key={field.field_id}
-                    open={isExpanded && field.enabled}
-                    onOpenChange={() => field.enabled && toggleAlarmExpanded(field.field_id)}
-                  >
-                    <div className="p-3 hover:bg-muted/30">
-                      {/* Main row */}
-                      <div className="flex items-center gap-4">
-                        {/* Checkbox */}
-                        <Checkbox
-                          id={`reading-${field.field_id}`}
-                          checked={field.enabled}
-                          onCheckedChange={() => toggleControllerReading(field.field_id)}
-                        />
-
-                        {/* Name and Unit */}
-                        <label
-                          htmlFor={`reading-${field.field_id}`}
-                          className="flex-1 text-sm cursor-pointer"
-                        >
-                          {field.name}
-                          <span className="text-muted-foreground ml-2">
-                            ({field.unit})
-                          </span>
-                        </label>
-
-                        {/* Logging Frequency */}
-                        <Select
-                          value={field.logging_frequency_seconds.toString()}
-                          onValueChange={(value) =>
-                            updateControllerReadingFrequency(field.field_id, parseInt(value))
-                          }
-                          disabled={!field.enabled}
-                        >
-                          <SelectTrigger className="w-[90px] h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {LOGGING_FREQUENCY_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value.toString()}>
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-
-                        {/* Storage Mode Selector */}
-                        <Select
-                          value={field.storage_mode}
-                          onValueChange={(value: StorageMode) =>
-                            updateControllerReadingMode(field.field_id, value)
-                          }
-                          disabled={!field.enabled}
-                        >
-                          <SelectTrigger className="w-[100px] h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="log">Log</SelectItem>
-                            <SelectItem value="viz_only">Viz Only</SelectItem>
-                          </SelectContent>
-                        </Select>
-
-                        {/* Expand alarm config button */}
-                        <CollapsibleTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={!field.enabled}
-                            className="h-8 px-2"
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className={`h-4 w-4 transition-transform ${isExpanded && field.enabled ? "rotate-180" : ""}`}
-                            >
-                              <path d="m6 9 6 6 6-6" />
-                            </svg>
-                          </Button>
-                        </CollapsibleTrigger>
-                      </div>
-
-                      {/* Alarm configuration (collapsible) */}
-                      <CollapsibleContent className="mt-3 pl-8 pr-2 space-y-3">
-                        <div className="rounded-md border p-3 bg-muted/30">
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-sm font-medium">Alarm Configuration</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">Enable Alarms</span>
-                              <Switch
-                                checked={field.alarm_config.enabled}
-                                onCheckedChange={(checked) =>
-                                  updateControllerReadingAlarm(field.field_id, { enabled: checked })
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          {field.alarm_config.enabled && (
-                            <div className="space-y-3">
-                              {/* Warning threshold */}
-                              <div className="flex items-center gap-3">
-                                <span className="w-16 text-sm text-yellow-600 font-medium">Warning</span>
-                                <Select
-                                  value={field.alarm_config.warning_operator}
-                                  onValueChange={(value: ">" | "<") =>
-                                    updateControllerReadingAlarm(field.field_id, {
-                                      warning_operator: value,
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="w-16 h-8">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value=">">&gt;</SelectItem>
-                                    <SelectItem value="<">&lt;</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <Input
-                                  type="number"
-                                  placeholder="Value"
-                                  value={field.alarm_config.warning_threshold ?? ""}
-                                  onChange={(e) =>
-                                    updateControllerReadingAlarm(field.field_id, {
-                                      warning_threshold: e.target.value ? parseFloat(e.target.value) : null,
-                                    })
-                                  }
-                                  className="w-24 h-8"
-                                />
-                                <span className="text-sm text-muted-foreground">{field.unit}</span>
-                              </div>
-
-                              {/* Critical threshold */}
-                              <div className="flex items-center gap-3">
-                                <span className="w-16 text-sm text-red-600 font-medium">Critical</span>
-                                <Select
-                                  value={field.alarm_config.critical_operator}
-                                  onValueChange={(value: ">" | "<") =>
-                                    updateControllerReadingAlarm(field.field_id, {
-                                      critical_operator: value,
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="w-16 h-8">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value=">">&gt;</SelectItem>
-                                    <SelectItem value="<">&lt;</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <Input
-                                  type="number"
-                                  placeholder="Value"
-                                  value={field.alarm_config.critical_threshold ?? ""}
-                                  onChange={(e) =>
-                                    updateControllerReadingAlarm(field.field_id, {
-                                      critical_threshold: e.target.value ? parseFloat(e.target.value) : null,
-                                    })
-                                  }
-                                  className="w-24 h-8"
-                                />
-                                <span className="text-sm text-muted-foreground">{field.unit}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </CollapsibleContent>
-                    </div>
-                  </Collapsible>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div className="border-t" />
-
-          {/* Online/Offline Status Alarm Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                Connection Status Alarm
-              </h3>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Alert when controller goes offline.
-            </p>
-
-            <div className="rounded-lg border p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-4 w-4 text-red-600 dark:text-red-400"
-                    >
-                      <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
-                      <line x1="12" y1="2" x2="12" y2="12" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Controller Offline</p>
-                    <p className="text-xs text-muted-foreground">
-                      Triggers when no heartbeat received
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  checked={statusAlarm.enabled}
-                  onCheckedChange={(checked) =>
-                    setStatusAlarm({ ...statusAlarm, enabled: checked })
-                  }
-                />
-              </div>
-
-              {statusAlarm.enabled && (
-                <div className="pl-11 space-y-3">
-                  {/* Severity */}
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-muted-foreground w-24">Severity</span>
-                    <Select
-                      value={statusAlarm.offline_severity}
-                      onValueChange={(value: AlarmSeverity) =>
-                        setStatusAlarm({ ...statusAlarm, offline_severity: value })
-                      }
-                    >
-                      <SelectTrigger className="w-32 h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="warning">
-                          <span className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-yellow-500" />
-                            Warning
-                          </span>
-                        </SelectItem>
-                        <SelectItem value="critical">
-                          <span className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-red-500" />
-                            Critical
-                          </span>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Timeout */}
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-muted-foreground w-24">Timeout</span>
-                    <Input
-                      type="number"
-                      value={statusAlarm.offline_timeout_seconds}
-                      onChange={(e) =>
-                        setStatusAlarm({
-                          ...statusAlarm,
-                          offline_timeout_seconds: parseInt(e.target.value) || 60,
-                        })
-                      }
-                      className="w-24 h-8"
-                      min={10}
-                    />
-                    <span className="text-sm text-muted-foreground">seconds</span>
-                  </div>
-                </div>
-              )}
-            </div>
+            <ControllerReadingsForm
+              readings={controllerReadings}
+              onReadingsChange={setControllerReadings}
+              statusAlarm={statusAlarm}
+              onStatusAlarmChange={setStatusAlarm}
+            />
           </div>
         </div>
 
