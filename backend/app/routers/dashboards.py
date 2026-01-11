@@ -631,7 +631,7 @@ async def get_live_data(
         )
 
     # Fetch device status
-    devices = supabase.table("project_devices").select(
+    devices = supabase.table("site_devices").select(
         "id, is_online, last_seen"
     ).in_("id", list(device_ids)).execute()
 

@@ -632,7 +632,7 @@ async def duplicate_template(
 # ============================================
 
 @router.get("/project/{project_id}", response_model=list[ProjectDeviceResponse])
-async def list_project_devices(
+async def list_site_devices(
     project_id: UUID,
     device_type: Optional[str] = Query(None, description="Filter by device type"),
     current_user: CurrentUser = Depends(require_project_access()),
@@ -646,7 +646,7 @@ async def list_project_devices(
     User must have access to the project.
     """
     try:
-        query = db.table("project_devices").select(
+        query = db.table("site_devices").select(
             "*, device_templates(*)"
         ).eq("project_id", str(project_id)).eq("enabled", True)
 
@@ -709,7 +709,7 @@ async def add_project_device(
         # ============================================
 
         # Build query to check for existing devices with same connection
-        conflict_query = db.table("project_devices").select("id, name").eq(
+        conflict_query = db.table("site_devices").select("id, name").eq(
             "project_id", str(project_id)
         ).eq("enabled", True).eq("slave_id", device.slave_id)
 
@@ -772,7 +772,7 @@ async def add_project_device(
             "enabled": True
         }
 
-        result = db.table("project_devices").insert(insert_data).execute()
+        result = db.table("site_devices").insert(insert_data).execute()
 
         if not result.data:
             raise HTTPException(
@@ -781,7 +781,7 @@ async def add_project_device(
             )
 
         # Fetch with template info
-        device_result = db.table("project_devices").select(
+        device_result = db.table("site_devices").select(
             "*, device_templates(*)"
         ).eq("id", result.data[0]["id"]).execute()
 
@@ -809,7 +809,7 @@ async def get_project_device(
     User must have access to the project.
     """
     try:
-        result = db.table("project_devices").select(
+        result = db.table("site_devices").select(
             "*, device_templates(*)"
         ).eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
 
@@ -845,7 +845,7 @@ async def update_project_device(
     """
     try:
         # Check if device exists
-        existing = db.table("project_devices").select("id").eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
+        existing = db.table("site_devices").select("id").eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
         if not existing.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -875,7 +875,7 @@ async def update_project_device(
 
         if not update_data:
             # Nothing to update, return current
-            result = db.table("project_devices").select(
+            result = db.table("site_devices").select(
                 "*, device_templates(*)"
             ).eq("id", str(device_id)).execute()
             return db_row_to_device_response(result.data[0])
@@ -896,7 +896,7 @@ async def update_project_device(
 
         if connection_fields_updated:
             # Get current device data to merge with updates
-            current_device = db.table("project_devices").select(
+            current_device = db.table("site_devices").select(
                 "protocol, ip_address, port, gateway_ip, gateway_port, slave_id"
             ).eq("id", str(device_id)).execute()
 
@@ -911,7 +911,7 @@ async def update_project_device(
                 protocol = current["protocol"]
 
                 # Build conflict query excluding current device
-                conflict_query = db.table("project_devices").select("id, name").eq(
+                conflict_query = db.table("site_devices").select("id, name").eq(
                     "project_id", str(project_id)
                 ).eq("enabled", True).eq("slave_id", final_slave_id).neq("id", str(device_id))
 
@@ -936,10 +936,10 @@ async def update_project_device(
                             detail=f"Modbus conflict: Device '{existing_device['name']}' already uses Slave ID {final_slave_id} at gateway {final_gateway_ip}:{final_gateway_port}"
                         )
 
-        db.table("project_devices").update(update_data).eq("id", str(device_id)).execute()
+        db.table("site_devices").update(update_data).eq("id", str(device_id)).execute()
 
         # Fetch updated device with template
-        result = db.table("project_devices").select(
+        result = db.table("site_devices").select(
             "*, device_templates(*)"
         ).eq("id", str(device_id)).execute()
 
@@ -967,7 +967,7 @@ async def remove_project_device(
     """
     try:
         # Check if device exists
-        existing = db.table("project_devices").select("id").eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
+        existing = db.table("site_devices").select("id").eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
         if not existing.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -975,7 +975,7 @@ async def remove_project_device(
             )
 
         # Soft delete - set enabled to false
-        db.table("project_devices").update({"enabled": False}).eq("id", str(device_id)).execute()
+        db.table("site_devices").update({"enabled": False}).eq("id", str(device_id)).execute()
 
         return None
     except HTTPException:
@@ -1013,7 +1013,7 @@ async def update_device_status(
         if last_error is not None:
             update_data["last_error"] = last_error
 
-        db.table("project_devices").update(update_data).eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
+        db.table("site_devices").update(update_data).eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
 
         return {
             "status": "updated",
@@ -1045,7 +1045,7 @@ async def list_site_devices(
     Filter by device_type if needed.
     """
     try:
-        query = db.table("project_devices").select(
+        query = db.table("site_devices").select(
             "*, device_templates(*)"
         ).eq("site_id", str(site_id)).eq("enabled", True)
 
@@ -1115,7 +1115,7 @@ async def add_site_device(
         # MODBUS CONFLICT VALIDATION
         # ============================================
 
-        conflict_query = db.table("project_devices").select("id, name").eq(
+        conflict_query = db.table("site_devices").select("id, name").eq(
             "site_id", str(site_id)
         ).eq("enabled", True).eq("slave_id", device.slave_id)
 
@@ -1160,7 +1160,7 @@ async def add_site_device(
             "enabled": True
         }
 
-        result = db.table("project_devices").insert(insert_data).execute()
+        result = db.table("site_devices").insert(insert_data).execute()
 
         if not result.data:
             raise HTTPException(
@@ -1169,7 +1169,7 @@ async def add_site_device(
             )
 
         # Fetch with template info
-        device_result = db.table("project_devices").select(
+        device_result = db.table("site_devices").select(
             "*, device_templates(*)"
         ).eq("id", result.data[0]["id"]).execute()
 
@@ -1205,7 +1205,7 @@ async def update_site_device_status(
         if last_error is not None:
             update_data["last_error"] = last_error
 
-        db.table("project_devices").update(update_data).eq("id", str(device_id)).eq("site_id", str(site_id)).execute()
+        db.table("site_devices").update(update_data).eq("id", str(device_id)).eq("site_id", str(site_id)).execute()
 
         return {
             "status": "updated",

@@ -3,34 +3,17 @@
 
 -- ============================================
 -- PROJECTS TABLE
+-- Note: Projects are containers for grouping sites.
+-- All operational settings (control, logging, safe mode) are managed at the site level.
+-- See the sites table for operational configuration.
 -- ============================================
 CREATE TABLE IF NOT EXISTS projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     location TEXT,
     description TEXT,
-
-    -- Controller Registration
-    controller_serial_number TEXT,
-    controller_status TEXT DEFAULT 'offline' CHECK (controller_status IN ('online', 'offline', 'error')),
-    controller_last_seen TIMESTAMPTZ,
-
-    -- Control Settings
-    control_interval_ms INTEGER DEFAULT 1000,
-    dg_reserve_kw NUMERIC DEFAULT 50 CHECK (dg_reserve_kw >= 0),
-    operation_mode TEXT DEFAULT 'zero_dg_reverse',
-
-    -- Logging Settings
-    logging_local_interval_ms INTEGER DEFAULT 1000,
-    logging_cloud_interval_ms INTEGER DEFAULT 5000,
-    logging_local_retention_days INTEGER DEFAULT 7,
-
-    -- Safe Mode Settings
-    safe_mode_enabled BOOLEAN DEFAULT TRUE,
-    safe_mode_type TEXT DEFAULT 'rolling_average' CHECK (safe_mode_type IN ('time_based', 'rolling_average')),
-    safe_mode_timeout_s INTEGER DEFAULT 30,
-    safe_mode_rolling_window_min INTEGER DEFAULT 3,
-    safe_mode_threshold_pct NUMERIC DEFAULT 80,
+    timezone TEXT DEFAULT 'UTC',
+    enterprise_id UUID REFERENCES enterprises(id),
 
     -- Status
     is_active BOOLEAN DEFAULT TRUE,
@@ -56,18 +39,18 @@ CREATE TABLE IF NOT EXISTS device_templates (
 );
 
 -- ============================================
--- PROJECT DEVICES TABLE
+-- SITE DEVICES TABLE (devices belong to sites)
 -- ============================================
-CREATE TABLE IF NOT EXISTS project_devices (
+CREATE TABLE IF NOT EXISTS site_devices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+    site_id UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
     template_id UUID REFERENCES device_templates(id),
 
     -- Device naming
     name TEXT NOT NULL,
 
     -- Connection details
-    protocol TEXT CHECK (protocol IN ('tcp', 'rtu_gateway', 'rtu_direct')),
+    protocol TEXT NOT NULL CHECK (protocol IN ('tcp', 'rtu_gateway', 'rtu_direct')),
     ip_address TEXT,
     port INTEGER DEFAULT 502,
     gateway_ip TEXT,
@@ -80,13 +63,21 @@ CREATE TABLE IF NOT EXISTS project_devices (
     rated_power_kw NUMERIC,
     rated_power_kva NUMERIC,
 
+    -- Register configuration (from template or custom)
+    registers JSONB DEFAULT '[]',
+    alarm_registers JSONB DEFAULT '[]',
+    logging_interval_ms INTEGER DEFAULT 1000,
+
     -- Status
     enabled BOOLEAN DEFAULT TRUE,
     is_online BOOLEAN DEFAULT FALSE,
     last_seen TIMESTAMPTZ,
+    last_error TEXT,
 
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+    UNIQUE(site_id, name)
 );
 
 -- ============================================
@@ -221,7 +212,7 @@ VALUES (
 -- Enable RLS on all tables
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE device_templates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE project_devices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE site_devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE control_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alarms ENABLE ROW LEVEL SECURITY;
 
@@ -232,7 +223,7 @@ CREATE POLICY "Allow authenticated read" ON projects
 CREATE POLICY "Allow authenticated read" ON device_templates
     FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY "Allow authenticated read" ON project_devices
+CREATE POLICY "Allow authenticated read" ON site_devices
     FOR SELECT TO authenticated USING (true);
 
 CREATE POLICY "Allow authenticated read" ON control_logs
@@ -249,13 +240,13 @@ CREATE POLICY "Allow authenticated update" ON projects
     FOR UPDATE TO authenticated USING (true);
 
 -- Allow authenticated users to manage project devices
-CREATE POLICY "Allow authenticated insert" ON project_devices
+CREATE POLICY "Allow authenticated insert" ON site_devices
     FOR INSERT TO authenticated WITH CHECK (true);
 
-CREATE POLICY "Allow authenticated update" ON project_devices
+CREATE POLICY "Allow authenticated update" ON site_devices
     FOR UPDATE TO authenticated USING (true);
 
-CREATE POLICY "Allow authenticated delete" ON project_devices
+CREATE POLICY "Allow authenticated delete" ON site_devices
     FOR DELETE TO authenticated USING (true);
 
 -- Allow authenticated users to manage alarms
@@ -269,7 +260,7 @@ CREATE POLICY "Service role full access" ON projects
 CREATE POLICY "Service role full access" ON device_templates
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY "Service role full access" ON project_devices
+CREATE POLICY "Service role full access" ON site_devices
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 CREATE POLICY "Service role full access" ON control_logs

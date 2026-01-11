@@ -470,7 +470,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     }
 
     const { error } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .update(updateData)
       .eq("id", editDevice.id);
 
@@ -501,7 +501,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
     // Soft delete by setting enabled to false
     const { error } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .update({ enabled: false })
       .eq("id", deleteDevice.id);
 

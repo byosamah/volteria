@@ -233,7 +233,7 @@ async function calculatePendingChanges(
     // For a simple implementation, we can count total devices
     // A more sophisticated approach would track sync status per device
     const { count: deviceCount } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select("*", { count: "exact", head: true })
       .eq("site_id", siteId);
 

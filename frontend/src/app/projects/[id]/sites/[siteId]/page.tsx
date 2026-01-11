@@ -198,7 +198,7 @@ export default async function SiteDetailPage({
 
   try {
     const { data } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select(`
         id,
         name,

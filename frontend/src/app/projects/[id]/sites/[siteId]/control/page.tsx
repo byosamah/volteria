@@ -151,7 +151,7 @@ export default async function ControlPage({ params }: ControlPageProps) {
 
   // Fetch devices with registers for this site
   const { data: devices } = await supabase
-    .from("project_devices")
+    .from("site_devices")
     .select(`
       id,
       name,

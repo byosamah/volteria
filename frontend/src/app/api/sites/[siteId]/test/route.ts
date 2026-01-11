@@ -48,7 +48,7 @@ export async function POST(
 
     // Get site devices with their current status
     const { data: devices } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select(`
         id, name, enabled, is_online, last_seen, last_error,
         device_templates(device_type, brand, model)

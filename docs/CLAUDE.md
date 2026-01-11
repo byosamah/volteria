@@ -84,7 +84,7 @@ If starting fresh, run these in Supabase SQL Editor:
 | `users` | User accounts with roles | **Disabled** |
 | `projects` | Site configurations | Enabled |
 | `sites` | Sites within projects | Enabled |
-| `project_devices` | Devices per project | Enabled |
+| `site_devices` | Devices per site | Enabled |
 | `device_templates` | Reusable device definitions | Enabled |
 | `user_projects` | User-project assignments | Enabled |
 

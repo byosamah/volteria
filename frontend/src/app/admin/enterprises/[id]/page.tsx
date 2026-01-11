@@ -117,7 +117,8 @@ export default async function EnterpriseDetailPage({
     id: string;
     name: string;
     location: string | null;
-    controller_status: string;
+    description: string | null;
+    site_count: number;
     created_at: string;
   }> = [];
 
@@ -125,13 +126,14 @@ export default async function EnterpriseDetailPage({
     // Path 1: Direct enterprise_id match
     const { data: directProjects } = await supabase
       .from("projects")
-      .select("id, name, location, controller_status, created_at")
+      .select("id, name, location, description, created_at")
       .eq("enterprise_id", id)
+      .eq("is_active", true)
       .order("name");
 
     // Path 2: Projects via controllers (controller → site_master_devices → site → project)
     // First get sites that have controllers assigned to this enterprise
-    let controllerProjects: typeof projects = [];
+    let controllerProjects: typeof directProjects = [];
     if (controllers.length > 0) {
       const { data: controllerSites } = await supabase
         .from("site_master_devices")
@@ -152,21 +154,44 @@ export default async function EnterpriseDetailPage({
       if (projectIdsFromControllers.size > 0) {
         const { data: ctrlProjects } = await supabase
           .from("projects")
-          .select("id, name, location, controller_status, created_at")
+          .select("id, name, location, description, created_at")
           .in("id", Array.from(projectIdsFromControllers))
+          .eq("is_active", true)
           .order("name");
         controllerProjects = ctrlProjects || [];
       }
     }
 
     // Merge and deduplicate by id
-    const projectMap = new Map<string, typeof projects[0]>();
-    [...(directProjects || []), ...controllerProjects].forEach(p => {
+    const allProjects = [...(directProjects || []), ...(controllerProjects || [])];
+    const projectMap = new Map<string, (typeof allProjects)[0]>();
+    allProjects.forEach(p => {
       if (!projectMap.has(p.id)) {
         projectMap.set(p.id, p);
       }
     });
-    projects = Array.from(projectMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const uniqueProjects = Array.from(projectMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+    // Get site counts for all projects in batch
+    const projectIds = uniqueProjects.map(p => p.id);
+    const siteCountMap: Record<string, number> = {};
+    if (projectIds.length > 0) {
+      const { data: sitesData } = await supabase
+        .from("sites")
+        .select("project_id")
+        .in("project_id", projectIds)
+        .eq("is_active", true);
+
+      (sitesData || []).forEach(s => {
+        siteCountMap[s.project_id] = (siteCountMap[s.project_id] || 0) + 1;
+      });
+    }
+
+    // Add site_count to projects
+    projects = uniqueProjects.map(p => ({
+      ...p,
+      site_count: siteCountMap[p.id] || 0,
+    }));
 
   } catch {
     // Table might not exist yet
@@ -197,7 +222,7 @@ export default async function EnterpriseDetailPage({
   }
 
   // Calculate stats
-  const onlineProjects = projects.filter((p) => p.controller_status === "online").length;
+  const totalSites = projects.reduce((sum, p) => sum + p.site_count, 0);
 
   return (
     <DashboardLayout user={{
@@ -264,8 +289,8 @@ export default async function EnterpriseDetailPage({
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Online Projects</CardDescription>
-              <CardTitle className="text-3xl text-green-600">{onlineProjects}</CardTitle>
+              <CardDescription>Total Sites</CardDescription>
+              <CardTitle className="text-3xl">{totalSites}</CardTitle>
             </CardHeader>
           </Card>
           <Card>

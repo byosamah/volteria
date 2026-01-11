@@ -202,7 +202,7 @@ export async function GET(request: NextRequest) {
       if (!readingsError && readingsData && readingsData.length > 0) {
         // Fetch device names for mapping
         const { data: devicesData } = await supabase
-          .from("project_devices")
+          .from("site_devices")
           .select("id, name")
           .in("id", deviceIds);
 

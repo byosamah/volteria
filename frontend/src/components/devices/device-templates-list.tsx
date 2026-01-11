@@ -279,9 +279,9 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   const checkTemplateUsage = async (templateId: string): Promise<TemplateUsageInfo[]> => {
     const supabase = createClient();
 
-    // Query project_devices joined with sites and projects
+    // Query site_devices joined with sites and projects
     const { data, error } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select(`
         id,
         name,

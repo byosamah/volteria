@@ -22,7 +22,7 @@ export async function GET(
 
     // Get all devices in site that have a template_id
     const { data: devices, error: devicesError } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select(`
         id,
         template_id,

@@ -297,6 +297,7 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | 50 | `050_project_devices_registers.sql` | Add registers, alarm_registers columns + make template_id nullable |
 | 51 | `051_fix_device_templates_rls.sql` | Fix RLS policies for device_templates + add sensor subtypes to constraint |
 | 52 | `052_enterprise_subscription_plan.sql` | Add subscription_plan column to enterprises (starter, advanced, pro) |
+| 62 | `062_rename_project_devices.sql` | Rename project_devices to site_devices, drop project_id column |
 
 ### Core Tables
 | Table | Purpose | RLS |
@@ -304,7 +305,7 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | `users` | User accounts with roles | **Disabled** |
 | `projects` | Site configurations | Enabled |
 | `sites` | Sites within projects | Enabled |
-| `project_devices` | Device connections | Enabled |
+| `site_devices` | Device connections per site | Enabled |
 | `device_templates` | Reusable device definitions | Enabled |
 | `control_logs` | Time-series data | Enabled |
 | `alarms` | System alarms | Enabled |

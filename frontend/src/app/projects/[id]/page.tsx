@@ -237,7 +237,7 @@ export default async function ProjectDetailPage({
   if (siteIds.length > 0) {
     try {
       const { data: deviceRows } = await supabase
-        .from("project_devices")
+        .from("site_devices")
         .select("site_id")
         .in("site_id", siteIds)
         .eq("enabled", true);

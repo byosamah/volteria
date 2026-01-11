@@ -73,7 +73,8 @@ class EnterpriseResponse(BaseModel):
 class EnterpriseStats(BaseModel):
     """Enterprise statistics."""
     total_projects: int
-    online_projects: int
+    total_sites: int
+    online_sites: int
     total_controllers: int
     total_users: int
 
@@ -161,14 +162,36 @@ async def get_enterprise(
 
         # Get statistics
         # Count projects
-        projects_result = db.table("projects").select("id, controller_status").eq(
+        projects_result = db.table("projects").select("id").eq(
             "enterprise_id", str(enterprise_id)
-        ).execute()
+        ).eq("is_active", True).execute()
         total_projects = len(projects_result.data)
-        online_projects = len([p for p in projects_result.data if p.get("controller_status") == "online"])
+        project_ids = [p["id"] for p in projects_result.data]
+
+        # Count sites and online sites
+        total_sites = 0
+        online_sites = 0
+        if project_ids:
+            sites_result = db.table("sites").select(
+                "id, project_id"
+            ).in_("project_id", project_ids).eq("is_active", True).execute()
+            total_sites = len(sites_result.data)
+
+            # Get online sites by checking controller heartbeats
+            site_ids = [s["id"] for s in sites_result.data]
+            if site_ids:
+                # Get sites with online controllers (heartbeat within last minute)
+                from datetime import timedelta
+                one_minute_ago = (datetime.utcnow() - timedelta(minutes=1)).isoformat()
+                online_result = db.table("controller_heartbeats").select(
+                    "site_id"
+                ).in_("site_id", site_ids).gte("timestamp", one_minute_ago).execute()
+                # Count unique sites with recent heartbeats
+                online_site_ids = set(h["site_id"] for h in online_result.data if h.get("site_id"))
+                online_sites = len(online_site_ids)
 
         # Count controllers
-        controllers_result = db.table("controllers").select("id").eq(
+        controllers_result = db.table("controllers_master").select("id").eq(
             "enterprise_id", str(enterprise_id)
         ).eq("is_active", True).execute()
         total_controllers = len(controllers_result.data)
@@ -181,7 +204,8 @@ async def get_enterprise(
 
         stats = EnterpriseStats(
             total_projects=total_projects,
-            online_projects=online_projects,
+            total_sites=total_sites,
+            online_sites=online_sites,
             total_controllers=total_controllers,
             total_users=total_users
         )
@@ -370,14 +394,34 @@ async def get_enterprise_stats(
             )
 
         # Count projects
-        projects_result = db.table("projects").select("id, controller_status").eq(
+        projects_result = db.table("projects").select("id").eq(
             "enterprise_id", str(enterprise_id)
-        ).execute()
+        ).eq("is_active", True).execute()
         total_projects = len(projects_result.data)
-        online_projects = len([p for p in projects_result.data if p.get("controller_status") == "online"])
+        project_ids = [p["id"] for p in projects_result.data]
+
+        # Count sites and online sites
+        total_sites = 0
+        online_sites = 0
+        if project_ids:
+            sites_result = db.table("sites").select(
+                "id, project_id"
+            ).in_("project_id", project_ids).eq("is_active", True).execute()
+            total_sites = len(sites_result.data)
+
+            # Get online sites by checking controller heartbeats
+            site_ids = [s["id"] for s in sites_result.data]
+            if site_ids:
+                from datetime import timedelta
+                one_minute_ago = (datetime.utcnow() - timedelta(minutes=1)).isoformat()
+                online_result = db.table("controller_heartbeats").select(
+                    "site_id"
+                ).in_("site_id", site_ids).gte("timestamp", one_minute_ago).execute()
+                online_site_ids = set(h["site_id"] for h in online_result.data if h.get("site_id"))
+                online_sites = len(online_site_ids)
 
         # Count controllers
-        controllers_result = db.table("controllers").select("id").eq(
+        controllers_result = db.table("controllers_master").select("id").eq(
             "enterprise_id", str(enterprise_id)
         ).eq("is_active", True).execute()
         total_controllers = len(controllers_result.data)
@@ -390,7 +434,8 @@ async def get_enterprise_stats(
 
         return EnterpriseStats(
             total_projects=total_projects,
-            online_projects=online_projects,
+            total_sites=total_sites,
+            online_sites=online_sites,
             total_controllers=total_controllers,
             total_users=total_users
         )
@@ -422,10 +467,26 @@ async def get_enterprise_projects(
             )
 
         result = db.table("projects").select(
-            "id, name, location, controller_status, created_at"
-        ).eq("enterprise_id", str(enterprise_id)).order("name").execute()
+            "id, name, location, description, is_active, created_at"
+        ).eq("enterprise_id", str(enterprise_id)).eq("is_active", True).order("name").execute()
 
-        return result.data
+        # For each project, get site count
+        projects = []
+        for row in result.data:
+            sites_result = db.table("sites").select(
+                "id", count="exact"
+            ).eq("project_id", row["id"]).eq("is_active", True).execute()
+
+            projects.append({
+                "id": row["id"],
+                "name": row["name"],
+                "location": row.get("location"),
+                "description": row.get("description"),
+                "site_count": sites_result.count or 0,
+                "created_at": row.get("created_at")
+            })
+
+        return projects
     except HTTPException:
         raise
     except Exception as e:

@@ -104,7 +104,7 @@ export default async function SiteDashboardPage({
 
   // Fetch site devices for widget configuration
   const { data: rawDevices } = await supabase
-    .from("project_devices")
+    .from("site_devices")
     .select(`
       id,
       name,

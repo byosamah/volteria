@@ -910,7 +910,7 @@ async def get_controller_config(
 
         # 4. Get all devices for this site
         # Query both logging_registers (new) and registers (legacy) for backward compatibility
-        devices_result = db.table("project_devices").select("""
+        devices_result = db.table("site_devices").select("""
             *,
             device_templates:template_id (
                 template_id,

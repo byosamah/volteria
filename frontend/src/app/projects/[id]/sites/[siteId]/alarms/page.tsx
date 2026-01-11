@@ -144,7 +144,7 @@ export default async function SiteAlarmsPage({
 
   // 2. Get device template alarms for all devices in this site
   const { data: siteDevices } = await supabase
-    .from("project_devices")
+    .from("site_devices")
     .select(`
       id,
       name,

@@ -52,7 +52,9 @@
       "Bash(wc:*)",
       "Bash(python:*)",
       "Bash(del C:UsersHpvolteriatest_register.sh)",
-      "Bash(PGPASSWORD=\"Solar@1996\" psql:*)"
+      "Bash(PGPASSWORD=\"Solar@1996\" psql:*)",
+      "Bash(cmd /c \"cd C:\\\\Users\\\\Hp\\\\volteria\\\\frontend && npm run build\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\Hp\\\\volteria\\\\frontend && npm run build 2>&1\")"
     ]
   }
 }

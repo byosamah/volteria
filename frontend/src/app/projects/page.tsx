@@ -119,19 +119,22 @@ export default async function ProjectsPage() {
   const projectIds = projects.map((p) => p.id);
 
   // Single query for all device counts (only enabled devices)
+  // Note: Devices are now at site level, so we join via sites table
   let deviceCountMap: Record<string, number> = {};
   if (projectIds.length > 0) {
     try {
       const { data: deviceRows } = await supabase
-        .from("project_devices")
-        .select("project_id")
-        .in("project_id", projectIds)
+        .from("site_devices")
+        .select("sites!inner(project_id)")
+        .in("sites.project_id", projectIds)
         .eq("enabled", true);
 
-      // Count devices per project
+      // Count devices per project (via site's project_id)
       if (deviceRows) {
         for (const row of deviceRows) {
-          deviceCountMap[row.project_id] = (deviceCountMap[row.project_id] || 0) + 1;
+          const site = row.sites as unknown as { project_id: string };
+          const projectId = site.project_id;
+          deviceCountMap[projectId] = (deviceCountMap[projectId] || 0) + 1;
         }
       }
     } catch {

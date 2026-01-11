@@ -104,11 +104,11 @@ export function AddDeviceForm({ projectId, templates }: AddDeviceFormProps) {
   // Check for Modbus address conflicts
   // Prevents duplicate Slave ID + IP/Port combinations
   const checkForConflicts = async (): Promise<string | null> => {
-    // Query existing devices in this project
+    // Query existing devices in this project (via site_devices joined to sites)
     const { data: existingDevices, error } = await supabase
-      .from("project_devices")
-      .select("name, protocol, ip_address, port, gateway_ip, gateway_port, serial_port, slave_id")
-      .eq("project_id", projectId)
+      .from("site_devices")
+      .select("name, protocol, ip_address, port, gateway_ip, gateway_port, serial_port, slave_id, sites!inner(project_id)")
+      .eq("sites.project_id", projectId)
       .eq("enabled", true);
 
     if (error || !existingDevices) {
@@ -198,8 +198,8 @@ export function AddDeviceForm({ projectId, templates }: AddDeviceFormProps) {
       }
 
       // Create device in Supabase
-      const { error } = await supabase.from("project_devices").insert({
-        project_id: projectId,
+      // Note: This is a legacy form - devices should now be added at site level
+      const { error } = await supabase.from("site_devices").insert({
         template_id: selectedTemplateId,
         name: formData.name.trim(),
         protocol: formData.protocol,

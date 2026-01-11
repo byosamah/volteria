@@ -48,6 +48,10 @@ export interface UserProjectAssignment {
 // PROJECT TYPES
 // ============================================
 
+// Note: Control settings, logging settings, safe mode settings, and controller info
+// are now managed at the SITE level, not project level.
+// Projects are just containers for grouping sites.
+
 export type ControllerStatus = "online" | "offline" | "error";
 export type OperationMode = "zero_dg_reverse" | "zero_dg_pf" | "zero_dg_reactive";
 export type SafeModeType = "time_based" | "rolling_average";
@@ -57,35 +61,8 @@ export interface Project {
   name: string;
   location: string | null;
   description: string | null;
-
-  // Controller info
-  controller_serial_number: string | null;
-  controller_hardware_type: string;
-  controller_firmware_version: string | null;
-  controller_registered_at: string | null;
-  controller_last_seen: string | null;
-  controller_status: ControllerStatus;
-
-  // Control settings
-  control_interval_ms: number;
-  dg_reserve_kw: number;
-  operation_mode: OperationMode;
-
-  // Logging settings
-  logging_local_interval_ms: number;
-  logging_cloud_interval_ms: number;
-  logging_local_retention_days: number;
-
-  // Safe mode settings
-  safe_mode_enabled: boolean;
-  safe_mode_type: SafeModeType;
-  safe_mode_timeout_s: number;
-  safe_mode_rolling_window_min: number;
-  safe_mode_threshold_pct: number;
-
-  // Metadata
-  created_at: string;
-  updated_at: string;
+  timezone: string;
+  site_count: number;
   is_active: boolean;
 }
 
@@ -93,8 +70,7 @@ export interface ProjectSummary {
   id: string;
   name: string;
   location: string | null;
-  controller_status: ControllerStatus;
-  device_count: number;
+  site_count: number;
   is_active: boolean;
 }
 
@@ -203,25 +179,32 @@ export interface AlarmRegister extends ModbusRegister {
   thresholds?: AlarmThreshold[];
 }
 
-export interface ProjectDevice {
+// SiteDevice - devices belong to sites, not projects
+export interface SiteDevice {
   id: string;
-  project_id: string;
-  template_id: string;
+  site_id: string;
+  template_id: string | null;
   template?: DeviceTemplate;
   name: string;
   protocol: Protocol;
   ip_address: string | null;
   port: number;
   gateway_ip: string | null;
-  gateway_port: number;
+  gateway_port: number | null;
   slave_id: number;
   rated_power_kw: number | null;
   rated_power_kva: number | null;
+  registers: ModbusRegister[];
+  alarm_registers: AlarmRegister[];
+  logging_interval_ms: number;
   last_seen: string | null;
   is_online: boolean;
   last_error: string | null;
   enabled: boolean;
 }
+
+// Legacy alias for backward compatibility
+export type ProjectDevice = SiteDevice;
 
 // ============================================
 // CONTROL LOG TYPES

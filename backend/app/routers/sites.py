@@ -206,7 +206,7 @@ async def list_sites_in_project(
         sites = []
         for row in result.data:
             # Get device count for this site
-            device_count_result = db.table("project_devices").select(
+            device_count_result = db.table("site_devices").select(
                 "id", count="exact"
             ).eq("site_id", row["id"]).eq("enabled", True).execute()
 
@@ -329,7 +329,7 @@ async def get_site(
             )
 
         # Get device count
-        device_count_result = db.table("project_devices").select(
+        device_count_result = db.table("site_devices").select(
             "id", count="exact"
         ).eq("site_id", str(site_id)).eq("enabled", True).execute()
 
@@ -405,7 +405,7 @@ async def update_site(
 
         if not update_data:
             # Nothing to update
-            device_count_result = db.table("project_devices").select(
+            device_count_result = db.table("site_devices").select(
                 "id", count="exact"
             ).eq("site_id", str(site_id)).eq("enabled", True).execute()
             return db_row_to_site_response(site, device_count=device_count_result.count or 0)
@@ -419,7 +419,7 @@ async def update_site(
             )
 
         # Get device count
-        device_count_result = db.table("project_devices").select(
+        device_count_result = db.table("site_devices").select(
             "id", count="exact"
         ).eq("site_id", str(site_id)).eq("enabled", True).execute()
 
@@ -635,7 +635,7 @@ async def get_site_config(
         project = site.get("projects", {})
 
         # Get devices for this site with measurement_type
-        devices_result = db.table("project_devices").select(
+        devices_result = db.table("site_devices").select(
             "*, device_templates(*)"
         ).eq("site_id", str(site_id)).eq("enabled", True).execute()
 
@@ -794,7 +794,7 @@ async def get_template_sync_status(
     """
     try:
         # Get all devices in the site with their template info
-        devices_result = db.table("project_devices").select(
+        devices_result = db.table("site_devices").select(
             "id, name, template_id, template_synced_at"
         ).eq("site_id", str(site_id)).eq("enabled", True).execute()
 
@@ -899,7 +899,7 @@ async def sync_site_templates(
     """
     try:
         # Get all devices in site that have a template_id
-        devices_result = db.table("project_devices").select(
+        devices_result = db.table("site_devices").select(
             "id, template_id"
         ).eq("site_id", str(site_id)).eq("enabled", True).not_.is_("template_id", "null").execute()
 
@@ -927,7 +927,7 @@ async def sync_site_templates(
                     # Use logging_registers if available, fall back to registers for backward compatibility
                     logging_regs = template.get("logging_registers") or template.get("registers") or []
 
-                    db.table("project_devices").update({
+                    db.table("site_devices").update({
                         "registers": logging_regs,
                         "visualization_registers": template.get("visualization_registers") or [],
                         "alarm_registers": template.get("alarm_registers") or [],

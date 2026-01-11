@@ -138,7 +138,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
   const checkForConflicts = async (): Promise<string | null> => {
     // Query existing devices in this site
     const { data: existingDevices, error } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select("name, protocol, ip_address, port, gateway_ip, gateway_port, serial_port, slave_id")
       .eq("site_id", siteId)
       .eq("enabled", true);
@@ -235,9 +235,8 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
       // Use logging_registers if available, otherwise fall back to registers
       const loggingRegisters = selectedTemplate?.logging_registers || selectedTemplate?.registers || [];
 
-      const { error } = await supabase.from("project_devices").insert({
-        project_id: projectId,
-        site_id: siteId,  // Link device to specific site
+      const { error } = await supabase.from("site_devices").insert({
+        site_id: siteId,  // Required: Link device to this site
         // Only include template_id if a template is selected
         // (empty string would fail foreign key constraint)
         template_id: selectedTemplateId || null,

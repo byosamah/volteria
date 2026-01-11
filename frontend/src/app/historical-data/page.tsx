@@ -106,7 +106,7 @@ export default async function HistoricalDataPage() {
   let devices: Device[] = [];
   if (siteIds.length > 0) {
     const { data } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select(`
         id,
         name,

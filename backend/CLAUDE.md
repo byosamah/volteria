@@ -219,7 +219,7 @@ ROLE_HIERARCHY = {
 - `user_projects` - User-project assignments
 - `projects` - Site configurations
 - `sites` - Sites within projects
-- `project_devices` - Device connections
+- `site_devices` - Device connections per site
 - `device_templates` - Reusable device definitions
 
 ### Monitoring Tables

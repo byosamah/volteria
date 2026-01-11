@@ -64,7 +64,8 @@ interface Project {
   id: string;
   name: string;
   location: string | null;
-  controller_status: string;
+  description: string | null;
+  site_count: number;
   created_at: string;
 }
 
@@ -343,16 +344,12 @@ export function EnterpriseDetailTabs({
     }
   };
 
-  // Get status badge for controller_status (projects)
-  const getProjectStatusBadge = (status: string) => {
-    switch (status) {
-      case "online":
-        return <Badge className="bg-green-500">Online</Badge>;
-      case "offline":
-        return <Badge variant="destructive">Offline</Badge>;
-      default:
-        return <Badge variant="secondary">Unknown</Badge>;
+  // Get site count badge for projects
+  const getSiteCountBadge = (count: number) => {
+    if (count === 0) {
+      return <Badge variant="secondary">No sites</Badge>;
     }
+    return <Badge variant="outline">{count} site{count !== 1 ? 's' : ''}</Badge>;
   };
 
   return (
@@ -464,7 +461,7 @@ export function EnterpriseDetailTabs({
                         >
                           {project.name}
                         </Link>
-                        {getProjectStatusBadge(project.controller_status)}
+                        {getSiteCountBadge(project.site_count)}
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {project.location || "No location"}

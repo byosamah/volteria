@@ -30,7 +30,7 @@ export async function POST(
 
     // Get all devices in site that have a template_id
     const { data: devices, error: devicesError } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select(`
         id,
         template_id
@@ -102,7 +102,7 @@ export async function POST(
       };
 
       const { error: updateError } = await supabase
-        .from("project_devices")
+        .from("site_devices")
         .update(updateData)
         .eq("id", device.id);
 

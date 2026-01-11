@@ -56,7 +56,7 @@ export async function GET(
 
     // Fetch device with its template AND device-specific registers
     const { data: deviceData, error: deviceError } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select(`
         id,
         name,
@@ -136,11 +136,11 @@ export async function GET(
     }
 
     // Parse registers - prioritize device-specific, fall back to template
-    // Device-specific registers are stored in project_devices.registers
+    // Device-specific registers are stored in site_devices.registers
     // Template registers are stored in device_templates.registers
     let registers: RegisterDefinition[] = [];
 
-    // Priority 1: Device-specific registers (from project_devices.registers)
+    // Priority 1: Device-specific registers (from site_devices.registers)
     const deviceRegisters = deviceData.registers as RegisterDefinition[] | Record<string, RegisterDefinition> | null;
     // Priority 2: Template registers (from device_templates.registers)
     const templateRegisters = template?.registers;

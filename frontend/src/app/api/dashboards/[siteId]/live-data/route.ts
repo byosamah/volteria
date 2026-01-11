@@ -67,7 +67,7 @@ export async function GET(
 
     // Get device status
     const { data: devices } = await supabase
-      .from("project_devices")
+      .from("site_devices")
       .select("id, name, device_type, is_online, last_seen")
       .eq("site_id", siteId);
 
