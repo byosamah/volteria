@@ -1026,7 +1026,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                       className="min-h-[44px]"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Timeout = logging frequency × {editConnectionTimeoutMultiplier}
+                      Timeout = lowest register logging frequency × {editConnectionTimeoutMultiplier}
                     </p>
                     {/* Show calculated timeout based on registers */}
                     {editRegisters.length > 0 && (
@@ -1039,10 +1039,13 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                               .filter((f) => f > 0)
                           );
                           const timeout = minFreq * editConnectionTimeoutMultiplier;
-                          if (timeout < 60) return `${timeout.toFixed(0)}s`;
+                          // Format based on value
+                          if (timeout < 1) return `${(timeout * 1000).toFixed(0)}ms`;
+                          if (timeout < 60) return `${timeout % 1 === 0 ? timeout.toFixed(0) : timeout.toFixed(1)}s`;
                           if (timeout < 3600) return `${(timeout / 60).toFixed(1)} min`;
                           return `${(timeout / 3600).toFixed(1)}h`;
                         })()}
+                        {" "}(min freq: {Math.min(...editRegisters.map((r) => r.logging_frequency || 60).filter((f) => f > 0))}s)
                       </p>
                     )}
                     {editRegisters.length === 0 && (

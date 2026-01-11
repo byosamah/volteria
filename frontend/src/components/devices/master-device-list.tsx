@@ -434,7 +434,7 @@ export function MasterDeviceList({
             .from("controllers_master")
             .select("hardware_type_id")
             .eq("id", device.controller_id)
-            .single();
+            .maybeSingle();
           hardwareTypeId = controllerData?.hardware_type_id || null;
         }
 
@@ -758,6 +758,11 @@ export function MasterDeviceList({
                 name: editName.trim(),
                 ip_address: editIpAddress.trim() || null,
                 port: editPort ? parseInt(editPort) : null,
+                // Controller template (only relevant for controller devices)
+                controller_template_id:
+                  editingDevice.device_type === "controller"
+                    ? editSelectedTemplateId || null
+                    : d.controller_template_id,
                 // Gateway fields (only relevant for gateway devices)
                 gateway_type:
                   editingDevice.device_type === "gateway"
