@@ -515,6 +515,14 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       console.error("Error updating device:", error);
       toast.error("Failed to update device");
     } else {
+      // Also update site's updated_at to trigger config sync detection
+      if (siteId) {
+        await supabase
+          .from("sites")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", siteId);
+      }
+
       toast.success("Device updated successfully");
 
       // Update local state
@@ -546,6 +554,14 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       console.error("Error deleting device:", error);
       toast.error("Failed to delete device");
     } else {
+      // Also update site's updated_at to trigger config sync detection
+      if (siteId) {
+        await supabase
+          .from("sites")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", siteId);
+      }
+
       toast.success("Device removed successfully");
 
       // Remove from local state
