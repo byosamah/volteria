@@ -25,23 +25,6 @@ interface Alarm {
   acknowledged: boolean;
   acknowledged_by: string | null;
   created_at: string;
-  projects: {
-    name: string;
-  } | null;
-}
-
-// Raw type from Supabase (projects comes as an object for single relation)
-interface AlarmRow {
-  id: string;
-  project_id: string;
-  alarm_type: string;
-  device_name: string | null;
-  message: string;
-  severity: string;
-  acknowledged: boolean;
-  acknowledged_by: string | null;
-  created_at: string;
-  projects: { name: string } | null;
 }
 
 export function AlarmsTable() {
@@ -54,7 +37,7 @@ export function AlarmsTable() {
   const fetchAlarms = async () => {
     let query = supabase
       .from("alarms")
-      .select("id, project_id, alarm_type, device_name, message, severity, acknowledged, acknowledged_by, created_at, projects(name)")
+      .select("id, project_id, alarm_type, device_name, message, severity, acknowledged, acknowledged_by, created_at")
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -173,7 +156,6 @@ export function AlarmsTable() {
             <thead>
               <tr className="border-b">
                 <th className="text-left py-3 px-4 font-medium">Time</th>
-                <th className="text-left py-3 px-4 font-medium">Project</th>
                 <th className="text-left py-3 px-4 font-medium">Type</th>
                 <th className="text-left py-3 px-4 font-medium">Message</th>
                 <th className="text-center py-3 px-4 font-medium">Severity</th>
@@ -193,9 +175,6 @@ export function AlarmsTable() {
                 >
                   <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
                     {new Date(alarm.created_at).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4">
-                    {alarm.projects?.name || "Unknown"}
                   </td>
                   <td className="py-3 px-4 font-mono text-xs">
                     {alarm.alarm_type.replace(/_/g, " ")}
