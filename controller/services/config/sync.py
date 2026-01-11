@@ -151,7 +151,7 @@ class ConfigSync:
             f"{self.supabase_url}/rest/v1/site_devices",
             params={
                 "site_id": f"eq.{self.site_id}",
-                "select": "*,device_templates(id,template_id,name,device_type,brand,model,alarm_definitions)",
+                "select": "*,device_templates(id,template_id,name,device_type,brand,model,alarm_registers)",
             },
             headers=self._headers(),
             timeout=30.0,
@@ -174,8 +174,8 @@ class ConfigSync:
                 "rated_power_kva": device.get("rated_power_kva"),
                 # Get registers from device or template
                 "registers": device.get("registers") or [],
-                "alarm_registers": device.get("alarm_registers") or [],
-                "alarm_definitions": device.get("device_templates", {}).get("alarm_definitions") or [],
+                # Use device's alarm_registers, fallback to template's alarm_registers
+                "alarm_registers": device.get("alarm_registers") or device.get("device_templates", {}).get("alarm_registers") or [],
             }
 
             # If device has a template and no custom registers, fetch template registers
