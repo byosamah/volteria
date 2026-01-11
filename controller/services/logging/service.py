@@ -238,7 +238,6 @@ class LoggingService:
                 supabase_url=supabase_url,
                 supabase_key=supabase_key,
                 local_db=self.local_db,
-                backend_url=backend_url if backend_url else None,  # FastAPI backend for site endpoints
             )
 
         logger.info(f"Config loaded: {len(self._alarm_definitions)} alarm definitions")

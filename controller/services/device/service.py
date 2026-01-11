@@ -216,10 +216,27 @@ class DeviceService:
         # Parse devices
         self._devices = []
         for device_data in config.get("devices", []):
+            # Skip devices without valid device_type
+            device_type_str = device_data.get("device_type")
+            if not device_type_str:
+                logger.warning(
+                    f"Skipping device {device_data.get('name', 'unknown')}: missing device_type"
+                )
+                continue
+
+            try:
+                device_type = DeviceType(device_type_str)
+            except ValueError:
+                logger.warning(
+                    f"Skipping device {device_data.get('name', 'unknown')}: "
+                    f"invalid device_type '{device_type_str}'"
+                )
+                continue
+
             device = DeviceConfig(
                 id=device_data["id"],
                 name=device_data["name"],
-                device_type=DeviceType(device_data["device_type"]),
+                device_type=device_type,
                 protocol=device_data.get("protocol", "tcp"),
                 host=device_data.get("host", ""),
                 port=device_data.get("port", 502),
