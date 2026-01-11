@@ -2,6 +2,63 @@
 
 > Industrial hybrid power management system for preventing reverse feeding to diesel generators
 
+## Claude Workflow - IMPORTANT
+
+### Database Access (Supabase) - USE THIS METHOD ALWAYS
+Claude has **direct access** to the Supabase database via REST API. **NEVER ask the user to run migrations manually.**
+
+**Method: REST API with curl** (works directly, no SSH needed):
+```bash
+# Query any table
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE_NAME?select=*&limit=10" \
+  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I"
+
+# Insert data
+curl -s -X POST "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE_NAME" \
+  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: return=representation" \
+  -d '{"column": "value"}'
+
+# Update data
+curl -s -X PATCH "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE_NAME?id=eq.UUID" \
+  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I" \
+  -H "Content-Type: application/json" \
+  -d '{"column": "new_value"}'
+
+# Delete data
+curl -s -X DELETE "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE_NAME?id=eq.UUID" \
+  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I"
+```
+
+**Credentials** (stored in `.env`):
+- **Supabase URL**: `https://usgxhzdctzthcqxyxfxl.supabase.co`
+- **Service Key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I`
+- **Database Password**: `Solar@1996`
+
+**For schema changes (CREATE/ALTER TABLE)**:
+- Use Supabase Dashboard SQL Editor: https://supabase.com/dashboard/project/usgxhzdctzthcqxyxfxl/sql
+- Create migration file in `database/migrations/` and run via dashboard
+
+### Local Testing
+- Frontend dev server: `cd frontend && npm run dev` (runs on localhost:3000)
+- Backend dev server: `cd backend && uvicorn app.main:app --reload` (runs on localhost:8000)
+
+### Production Deployment
+```bash
+# Deploy all changes
+git add . && git commit -m "message" && git push origin main
+# Then on server (via DigitalOcean console or user SSH):
+cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build
+
+# Restart nginx if 502 errors
+docker restart sdc-nginx
+```
+
 ## Live Deployment
 - **URL**: https://volteria.org
 - **Server**: DigitalOcean Droplet (159.223.224.203)
