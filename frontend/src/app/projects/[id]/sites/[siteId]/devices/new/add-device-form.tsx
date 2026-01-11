@@ -54,6 +54,7 @@ const deviceTypes = [
   { value: "diesel_generator", label: "Diesel Generator", description: "Diesel generator control and monitoring" },
   { value: "gas_generator", label: "Gas Generator", description: "Gas generator control and monitoring" },
   { value: "inverter", label: "Solar Inverter", description: "PV power conversion" },
+  { value: "solar_meter", label: "Solar Meter", description: "Solar energy metering" },
   { value: "load", label: "Load", description: "Main load measurement" },
   { value: "subload", label: "SubLoad", description: "Sub load measurement" },
   { value: "solar_sensor", label: "Solar Sensor", description: "Solar irradiance measurement" },

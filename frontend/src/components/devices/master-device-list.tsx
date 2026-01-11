@@ -559,7 +559,7 @@ export function MasterDeviceList({
 
   return (
     <>
-      <Card>
+      <Card className="bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-800">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <div>
             <CardTitle className="text-lg">Master Devices</CardTitle>

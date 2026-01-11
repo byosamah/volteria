@@ -75,6 +75,7 @@ const deviceTypes = [
   { value: "diesel_generator", label: "Diesel Generator", description: "Diesel generator control and monitoring" },
   { value: "gas_generator", label: "Gas Generator", description: "Gas generator control and monitoring" },
   { value: "inverter", label: "Solar Inverter", description: "PV power conversion" },
+  { value: "solar_meter", label: "Solar Meter", description: "Solar energy metering" },
   { value: "load", label: "Load", description: "Main load measurement" },
   { value: "subload", label: "SubLoad", description: "Sub load measurement" },
   { value: "solar_sensor", label: "Solar Sensor", description: "Solar irradiance measurement" },
@@ -142,6 +143,7 @@ const deviceTypeConfig: Record<string, { label: string; color: string }> = {
 
   // Solar
   inverter: { label: "Solar Inverter", color: "bg-yellow-100 text-yellow-700" },
+  solar_meter: { label: "Solar Meter", color: "bg-amber-100 text-amber-700" },
   solar_sensor: { label: "Solar Sensor", color: "bg-orange-100 text-orange-700" },
   solar_radiation_sensor: { label: "Solar Radiation", color: "bg-orange-100 text-orange-700" },
 
@@ -562,6 +564,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
     // Solar
     inverter: { title: "Solar Inverters", description: "PV power conversion" },
+    solar_meter: { title: "Solar Meters", description: "Solar energy metering" },
     solar_sensor: { title: "Solar Sensors", description: "Irradiance measurement" },
     solar_radiation_sensor: { title: "Solar Radiation Sensors", description: "Irradiance measurement" },
 
@@ -694,7 +697,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     // Load first
     "load", "load_meter", "subload",
     // Then solar
-    "inverter", "solar_sensor", "solar_radiation_sensor",
+    "inverter", "solar_meter", "solar_sensor", "solar_radiation_sensor",
     // Then generators
     "diesel_generator", "gas_generator", "dg",
     // Then other energy systems
