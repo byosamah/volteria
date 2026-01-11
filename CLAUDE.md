@@ -44,26 +44,30 @@ curl -s -X DELETE "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE_NAME?i
 - Use Supabase Dashboard SQL Editor: https://supabase.com/dashboard/project/usgxhzdctzthcqxyxfxl/sql
 - Create migration file in `database/migrations/` and run via dashboard
 
-### Local Testing & Browser Automation
-**One-time setup** (user runs this once):
+### Local Testing & Browser Automation - FULLY AUTOMATED
+**Setup complete** - Claude can now run tests automatically.
+
+**Claude runs these commands** (no user action needed):
 ```bash
-cd frontend && npm install && npx playwright install chromium
+# Set PATH for npm access
+export PATH="$PATH:/c/Program Files/nodejs"
+
+# Run build verification
+cd /c/Users/Hp/volteria/frontend && npm run build
+
+# Run browser tests
+cd /c/Users/Hp/volteria/frontend && npm test
 ```
 
-**Testing commands**:
-- `npm run dev` - Start dev server (localhost:3000)
-- `npm run build` - Verify build passes before deploy
-- `npm test` - Run Playwright smoke tests (headless)
-- `npm run test:headed` - Run tests with visible browser
-- `npm run test:ui` - Run tests with Playwright UI
-
-**Smoke tests verify**:
-- Login page loads correctly
-- No console errors on key pages
-- Static assets load properly
-- Authenticated pages accessible (if TEST_PASSWORD set)
+**What gets tested automatically**:
+- ✅ TypeScript compilation (build)
+- ✅ Login page loads correctly
+- ✅ No console errors on key pages
+- ✅ Static assets load properly
+- ✅ Authenticated pages (if TEST_PASSWORD set)
 
 **Test files location**: `frontend/tests/e2e/`
+**Environment file**: `frontend/.env.local` (contains Supabase credentials)
 
 ### Pre-Deploy Checklist
 1. Run `npm run build` - catches TypeScript/build errors
