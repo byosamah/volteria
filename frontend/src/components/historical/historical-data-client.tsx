@@ -564,7 +564,7 @@ export function HistoricalDataClient({
     };
 
     return (
-      <ResponsiveContainer width="100%" height={400}>
+      <ResponsiveContainer width="99%" height={400}>
         <ComposedChart
           data={chartData}
           margin={{ top: 20, right: 80, left: 20, bottom: 20 }}

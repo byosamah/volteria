@@ -8,7 +8,7 @@
  * Time range: 1h, 6h, 24h, 7d
  */
 
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, useRef, memo } from "react";
 import {
   LineChart,
   Line,
@@ -75,6 +75,28 @@ const COLORS = [
 export const ChartWidget = memo(function ChartWidget({ widget, liveData, isEditMode, onSelect, siteId }: ChartWidgetProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Track container dimensions to prevent ResponsiveContainer -1 errors
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
+  // ResizeObserver to track container size
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setDimensions({ width, height });
+        }
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   const config = widget.config as {
     chart_type?: "line" | "area" | "bar";
@@ -287,8 +309,8 @@ export const ChartWidget = memo(function ChartWidget({ widget, liveData, isEditM
       )}
 
       {/* Chart */}
-      <div className="flex-1 min-h-0">
-        {isLoading ? (
+      <div ref={containerRef} className="flex-1 min-h-0">
+        {isLoading || !dimensions ? (
           <div className="h-full flex items-center justify-center">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
           </div>
@@ -297,7 +319,7 @@ export const ChartWidget = memo(function ChartWidget({ widget, liveData, isEditM
             {isEditMode ? "Click to configure" : "No series configured"}
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%" minHeight={100}>
+          <ResponsiveContainer width={dimensions.width} height={Math.max(100, dimensions.height)}>
             {renderChart()}
           </ResponsiveContainer>
         )}

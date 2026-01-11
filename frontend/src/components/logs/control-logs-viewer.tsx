@@ -56,6 +56,11 @@ interface SiteStatus {
     lastSeen: string | null;
     type: "controller" | "gateway" | "none";
   };
+  controlLogic: {
+    status: "running" | "stopped" | "error" | "unknown";
+    lastError: string | null;
+    activeAlarms: number;
+  } | null;
   logging: {
     hasLogs: boolean;
     lastLogTimestamp: string | null;
@@ -338,15 +343,76 @@ export function ControlLogsViewer({ projectId, siteId }: ControlLogsViewerProps)
     }
 
     // Case 3: Controller online but no logs at all for this site
+    // Show controller status and any errors - don't hide information
     if (!logging.hasLogs) {
+      const controlStatus = siteStatus.controlLogic;
+      const hasError = controlStatus?.lastError || controlStatus?.status === "error";
+
       return (
-        <div className="text-center py-12">
-          <svg className="h-12 w-12 text-primary/50 mx-auto mb-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-muted-foreground font-medium">Waiting for data...</p>
-          <p className="text-muted-foreground/70 text-sm mt-1">
-            Controller is online. Data will appear shortly.
+        <div className="text-center py-8">
+          {/* Status Icon */}
+          <div className={`h-12 w-12 mx-auto mb-4 rounded-full flex items-center justify-center ${
+            hasError ? "bg-destructive/10" : "bg-primary/10"
+          }`}>
+            {hasError ? (
+              <svg className="h-6 w-6 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+            ) : (
+              <svg className="h-6 w-6 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+          </div>
+
+          {/* Status Message */}
+          <p className="text-muted-foreground font-medium">
+            {hasError ? "Controller has errors" : "No control logs yet"}
+          </p>
+
+          {/* Controller Status Details */}
+          {controlStatus && (
+            <div className="mt-4 mx-auto max-w-md">
+              <div className="rounded-lg border bg-muted/30 p-4 text-left space-y-2">
+                {/* Status */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Control Loop Status</span>
+                  <Badge variant={
+                    controlStatus.status === "running" ? "default" :
+                    controlStatus.status === "error" ? "destructive" :
+                    controlStatus.status === "stopped" ? "secondary" : "outline"
+                  }>
+                    {controlStatus.status}
+                  </Badge>
+                </div>
+
+                {/* Active Alarms */}
+                {controlStatus.activeAlarms > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Active Alarms</span>
+                    <Badge variant="destructive">{controlStatus.activeAlarms}</Badge>
+                  </div>
+                )}
+
+                {/* Last Error */}
+                {controlStatus.lastError && (
+                  <div className="pt-2 border-t">
+                    <p className="text-sm text-muted-foreground mb-1">Last Error</p>
+                    <p className="text-sm text-destructive bg-destructive/10 rounded p-2 font-mono break-all">
+                      {controlStatus.lastError}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Help text */}
+          <p className="text-muted-foreground/70 text-sm mt-4">
+            {hasError
+              ? "Fix the errors above to start receiving control logs"
+              : "Control logs will appear when the controller starts processing"
+            }
           </p>
         </div>
       );

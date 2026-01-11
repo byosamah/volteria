@@ -130,6 +130,39 @@ interface CalculatedFieldDef {
   time_window: string | null;
 }
 
+// Controller template definition (from controller_templates table)
+interface ControllerTemplateData {
+  id: string;
+  template_id: string;
+  name: string;
+  registers: {
+    field: string;
+    name: string;
+    unit: string;
+    logging_frequency_seconds?: number;
+  }[];
+  calculated_fields: {
+    field_id: string;
+    name: string;
+    storage_mode: string;
+  }[];
+  alarm_definitions: {
+    id: string;
+    name: string;
+    description?: string;
+    source_type: string;
+    source_key: string;
+    conditions: {
+      operator: string;
+      value: number;
+      severity: string;
+      message: string;
+    }[];
+    enabled_by_default: boolean;
+    cooldown_seconds: number;
+  }[];
+}
+
 interface MasterDeviceListProps {
   projectId: string;
   siteId: string;
@@ -289,12 +322,20 @@ export function MasterDeviceList({
   const [availableCalculatedFields, setAvailableCalculatedFields] = useState<CalculatedFieldDef[]>([]);
   const [loadingCalculatedFields, setLoadingCalculatedFields] = useState(false);
 
+  // Controller template data (linked template with readings, calculated fields, alarms)
+  const [controllerTemplate, setControllerTemplate] = useState<ControllerTemplateData | null>(null);
+  const [loadingTemplate, setLoadingTemplate] = useState(false);
+
+  // Check if user is super_admin (only super_admin can edit controller fields)
+  const isSuperAdmin = userRole === "super_admin";
+
   // Check if site already has a controller
   const hasController = devices.some((d) => d.device_type === "controller");
 
   // Open edit dialog
   const handleEdit = async (device: MasterDevice) => {
     setEditingDevice(device);
+    setControllerTemplate(null);
 
     // Basic fields
     setEditName(device.name);
@@ -330,10 +371,37 @@ export function MasterDeviceList({
       const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
       setEditSelectedCalculatedFields(existingFieldIds);
 
+      const supabase = createClient();
+
+      // Load controller template if linked
+      if (device.controller_template_id) {
+        setLoadingTemplate(true);
+        try {
+          const { data: templateData } = await supabase
+            .from("controller_templates")
+            .select("id, template_id, name, registers, calculated_fields, alarm_definitions")
+            .eq("id", device.controller_template_id)
+            .single();
+
+          if (templateData) {
+            setControllerTemplate(templateData as ControllerTemplateData);
+            // If device has no calculated fields selection, use template defaults
+            if (existingFieldIds.length === 0 && templateData.calculated_fields) {
+              setEditSelectedCalculatedFields(
+                templateData.calculated_fields.map((f: { field_id: string }) => f.field_id)
+              );
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load controller template:", err);
+        } finally {
+          setLoadingTemplate(false);
+        }
+      }
+
       // Load ALL controller-scope calculated fields from the database
       setLoadingCalculatedFields(true);
       try {
-        const supabase = createClient();
         const { data: fieldDefs } = await supabase
           .from("calculated_field_definitions")
           .select("field_id, name, description, unit, calculation_type, time_window")
@@ -343,8 +411,8 @@ export function MasterDeviceList({
 
         if (fieldDefs) {
           setAvailableCalculatedFields(fieldDefs);
-          // If device has no existing selection, pre-select all fields by default
-          if (existingFieldIds.length === 0) {
+          // If device has no existing selection and no template, pre-select all fields
+          if (existingFieldIds.length === 0 && !device.controller_template_id) {
             setEditSelectedCalculatedFields(fieldDefs.map(f => f.field_id));
           }
         }
@@ -755,11 +823,12 @@ export function MasterDeviceList({
             </DialogDescription>
           </DialogHeader>
 
-          {/* Controller uses tabs (Connection + Calculated), Gateway uses simple form */}
+          {/* Controller uses tabs (Connection + Controller Fields + Calculated), Gateway uses simple form */}
           {editingDevice?.device_type === "controller" ? (
             <Tabs defaultValue="connection" className="w-full">
-              <TabsList className="w-full grid grid-cols-2">
+              <TabsList className="w-full grid grid-cols-3">
                 <TabsTrigger value="connection" className="text-xs sm:text-sm">Connection</TabsTrigger>
+                <TabsTrigger value="controller-fields" className="text-xs sm:text-sm">Controller Fields</TabsTrigger>
                 <TabsTrigger value="calculated" className="text-xs sm:text-sm">Calculated</TabsTrigger>
               </TabsList>
 
@@ -931,6 +1000,156 @@ export function MasterDeviceList({
 
               </TabsContent>
 
+              {/* Controller Fields Tab - Readings with alarm configuration */}
+              <TabsContent value="controller-fields" className="space-y-4 py-4">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Controller Fields</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Health metrics and alarm thresholds from template
+                      </p>
+                    </div>
+                    {controllerTemplate && (
+                      <Badge variant="outline" className="text-xs">
+                        Template: {controllerTemplate.name}
+                      </Badge>
+                    )}
+                  </div>
+                  {!isSuperAdmin && (
+                    <p className="text-xs text-amber-600 mt-2">
+                      Only Super Admin can modify controller fields
+                    </p>
+                  )}
+                </div>
+
+                {loadingTemplate ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+                  </div>
+                ) : !controllerTemplate ? (
+                  <div className="text-sm text-muted-foreground py-4 text-center border rounded-lg bg-muted/20">
+                    <p>No controller template linked</p>
+                    <p className="text-xs mt-1">Link a template to configure controller fields</p>
+                  </div>
+                ) : controllerTemplate.registers?.length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-4 text-center">
+                    No controller fields configured in template
+                  </div>
+                ) : (
+                  <div className="border rounded-lg divide-y">
+                    {controllerTemplate.registers?.map((register) => {
+                      // Find alarm definition for this register
+                      const alarmDef = controllerTemplate.alarm_definitions?.find(
+                        (a) => a.source_key === register.field
+                      );
+                      return (
+                        <div key={register.field} className="p-3">
+                          {/* Main row */}
+                          <div className="flex items-center gap-3">
+                            {/* Checkbox - disabled for non-super_admin */}
+                            <Checkbox
+                              checked={true}
+                              disabled={!isSuperAdmin}
+                              className="opacity-50"
+                            />
+
+                            {/* Name and Unit */}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">{register.name}</span>
+                                {register.unit && (
+                                  <span className="text-xs text-muted-foreground">
+                                    ({register.unit})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Logging Frequency */}
+                            {register.logging_frequency_seconds && (
+                              <Badge variant="outline" className="text-xs">
+                                {register.logging_frequency_seconds >= 60
+                                  ? `${register.logging_frequency_seconds / 60} min`
+                                  : `${register.logging_frequency_seconds} sec`}
+                              </Badge>
+                            )}
+
+                            {/* Alarm indicator */}
+                            {alarmDef && (
+                              <Badge
+                                variant={alarmDef.enabled_by_default ? "default" : "secondary"}
+                                className="text-xs"
+                              >
+                                Alarm
+                              </Badge>
+                            )}
+                          </div>
+
+                          {/* Alarm conditions (if any) */}
+                          {alarmDef && alarmDef.conditions?.length > 0 && (
+                            <div className="mt-2 ml-7 space-y-1">
+                              {alarmDef.conditions.map((condition, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
+                                    condition.severity === "critical"
+                                      ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                                      : condition.severity === "warning"
+                                      ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
+                                      : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                                  }`}
+                                >
+                                  <span className="font-medium capitalize w-16">{condition.severity}</span>
+                                  <span>
+                                    {condition.operator} {condition.value}{register.unit}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* Status Alarm (Online/Offline) */}
+                    {controllerTemplate.alarm_definitions?.some(a => a.source_type === "heartbeat") && (
+                      <div className="p-3 bg-muted/30">
+                        <div className="flex items-center gap-3">
+                          <Checkbox checked={true} disabled={!isSuperAdmin} className="opacity-50" />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">Connection Status</span>
+                              <span className="text-xs text-muted-foreground">(Online/Offline)</span>
+                            </div>
+                          </div>
+                          <Badge variant="default" className="text-xs">Alarm</Badge>
+                        </div>
+                        {controllerTemplate.alarm_definitions
+                          ?.filter(a => a.source_type === "heartbeat")
+                          .map((alarm) => (
+                            <div key={alarm.id} className="mt-2 ml-7 space-y-1">
+                              {alarm.conditions?.map((condition, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
+                                    condition.severity === "critical"
+                                      ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                                      : "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
+                                  }`}
+                                >
+                                  <span className="font-medium capitalize w-16">{condition.severity}</span>
+                                  <span>Offline &gt; {condition.value}s</span>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </TabsContent>
+
               {/* Calculated Tab */}
               <TabsContent value="calculated" className="space-y-4 py-4">
                 <div>
@@ -988,6 +1207,7 @@ export function MasterDeviceList({
                   </div>
                 )}
               </TabsContent>
+
             </Tabs>
           ) : (
             /* Gateway form */
