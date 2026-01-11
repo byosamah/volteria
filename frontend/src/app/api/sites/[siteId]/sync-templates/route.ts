@@ -114,6 +114,14 @@ export async function POST(
       syncedCount++;
     }
 
+    // Update site's config_synced_at to mark sync as complete
+    if (syncedCount > 0) {
+      await supabase
+        .from("sites")
+        .update({ config_synced_at: now })
+        .eq("id", siteId);
+    }
+
     return NextResponse.json({
       synced_devices: syncedCount,
       synced_at: now,
