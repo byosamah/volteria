@@ -286,6 +286,9 @@ class ConfigService:
             # Notify other services
             await self._notify_config_change()
 
+            # Update config_synced_at in cloud so frontend knows we synced
+            await self._update_config_synced_at(new_version)
+
             logger.info(
                 f"Config updated: {current_version} → {new_version}",
                 extra={
@@ -308,6 +311,34 @@ class ConfigService:
         notify_config_changed(version)
 
         logger.info(f"Config change notification sent (version: {version})")
+
+    async def _update_config_synced_at(self, config_version: str) -> None:
+        """Update site.config_synced_at in cloud so frontend knows we synced"""
+        if not self.site_id:
+            return
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.supabase_url}/rest/v1/sites",
+                    params={"id": f"eq.{self.site_id}"},
+                    json={
+                        "config_synced_at": datetime.now(timezone.utc).isoformat(),
+                        "controller_config_version": config_version,
+                    },
+                    headers={
+                        "apikey": self.supabase_key,
+                        "Authorization": f"Bearer {self.supabase_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                logger.debug(f"Updated config_synced_at for site {self.site_id}")
+        except Exception as e:
+            # Don't fail sync if this update fails
+            logger.warning(f"Failed to update config_synced_at: {e}")
 
     async def _command_poll_loop(self) -> None:
         """Poll for sync commands from cloud"""
@@ -371,6 +402,9 @@ class ConfigService:
             # Even if unchanged, the command succeeded
             if self._current_config:
                 await self._update_command_status(command_id, "completed")
+                # Always update config_synced_at on manual sync to confirm we checked
+                config_version = self._current_config.get("updated_at", "")
+                await self._update_config_synced_at(config_version)
                 if config_changed:
                     logger.info(f"Sync command {command_id} completed - config updated")
                 else:
