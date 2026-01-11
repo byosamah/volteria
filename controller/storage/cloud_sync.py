@@ -48,10 +48,10 @@ def is_valid_uuid(value: str) -> bool:
 
 class CloudSync:
     """
-    Syncs local data to Supabase cloud.
+    Syncs local data to Supabase cloud via FastAPI backend.
 
     Handles:
-    - Batch uploading of control logs and alarms
+    - Batch uploading of control logs and alarms via backend API
     - Retry logic with exponential backoff
     - Connection status tracking
     - Controller heartbeat
@@ -67,7 +67,8 @@ class CloudSync:
         max_retries: int = 3,
         batch_size: int = 100,
         project_id: str = None,  # Optional: for backward compatibility
-        controller_id: str = None  # Controller ID for heartbeats before site assignment
+        controller_id: str = None,  # Controller ID for heartbeats before site assignment
+        backend_url: str = None  # FastAPI backend URL (e.g., https://volteria.org/api)
     ):
         """
         Initialize cloud sync service.
@@ -82,12 +83,14 @@ class CloudSync:
             batch_size: Maximum records per batch upload
             project_id: Optional UUID of the project (for backward compatibility)
             controller_id: Controller ID for heartbeats before site assignment
+            backend_url: FastAPI backend URL for site-based endpoints
         """
         self.site_id = site_id
         self.project_id = project_id  # Optional: kept for backward compatibility
         self.controller_id = controller_id  # For heartbeats before site assignment
         self.supabase_url = supabase_url.rstrip("/")
         self.supabase_key = supabase_key
+        self.backend_url = backend_url.rstrip("/") if backend_url else None
         self.local_db = local_db
         self.sync_interval_s = sync_interval_ms / 1000.0
         self.max_retries = max_retries
@@ -99,8 +102,9 @@ class CloudSync:
         self.last_error: Optional[str] = None
         self.consecutive_failures = 0
 
-        # HTTP client with timeout
+        # HTTP clients with timeout
         self._client: Optional[httpx.AsyncClient] = None
+        self._backend_client: Optional[httpx.AsyncClient] = None
 
         # Control flag
         self._running = False
@@ -122,8 +126,14 @@ class CloudSync:
                 f"Controller can send heartbeats but not sync logs/alarms until assigned to a site."
             )
 
+        # Log backend URL status
+        if self.backend_url:
+            logger.info(f"Using FastAPI backend for logs/alarms: {self.backend_url}")
+        else:
+            logger.info("Using direct Supabase REST API for logs/alarms")
+
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
+        """Get or create Supabase HTTP client."""
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.supabase_url,
@@ -137,11 +147,27 @@ class CloudSync:
             )
         return self._client
 
+    async def _get_backend_client(self) -> httpx.AsyncClient:
+        """Get or create FastAPI backend HTTP client."""
+        if self._backend_client is None:
+            self._backend_client = httpx.AsyncClient(
+                base_url=self.backend_url,
+                headers={
+                    "apikey": self.supabase_key,
+                    "Content-Type": "application/json"
+                },
+                timeout=30.0
+            )
+        return self._backend_client
+
     async def close(self):
-        """Close HTTP client."""
+        """Close HTTP clients."""
         if self._client:
             await self._client.aclose()
             self._client = None
+        if self._backend_client:
+            await self._backend_client.aclose()
+            self._backend_client = None
 
     # ============================================
     # SYNC LOOP
@@ -201,6 +227,9 @@ class CloudSync:
         """
         Sync pending logs to cloud.
 
+        Uses FastAPI backend endpoint if backend_url is configured,
+        otherwise falls back to direct Supabase REST API.
+
         Returns:
             Number of logs synced
         """
@@ -213,14 +242,25 @@ class CloudSync:
         if not logs:
             return 0
 
-        # Prepare batch payload
-        payload = [self._log_to_payload(log) for log in logs]
-
-        # Try to upload with retry
-        success = await self._upload_with_retry(
-            endpoint="/rest/v1/control_logs",
-            payload=payload
-        )
+        # Use backend API if configured, otherwise direct Supabase
+        if self.backend_url:
+            # Backend API expects batch format with entries array
+            payload = {
+                "entries": [self._log_to_backend_payload(log) for log in logs]
+            }
+            success = await self._upload_with_retry(
+                endpoint=f"/logs/site/{self.site_id}/push",
+                payload=payload,
+                use_backend=True
+            )
+        else:
+            # Direct Supabase REST API
+            payload = [self._log_to_payload(log) for log in logs]
+            success = await self._upload_with_retry(
+                endpoint="/rest/v1/control_logs",
+                payload=payload,
+                use_backend=False
+            )
 
         if success:
             # Mark as synced
@@ -231,7 +271,7 @@ class CloudSync:
         return 0
 
     def _log_to_payload(self, log: ControlLogRecord) -> dict:
-        """Convert log record to API payload."""
+        """Convert log record to Supabase REST API payload."""
         payload = {
             "site_id": self.site_id,  # Primary: site is the physical location
             "timestamp": log.timestamp.isoformat(),
@@ -246,10 +286,24 @@ class CloudSync:
             "inverters_online": log.inverters_online,
             "generators_online": log.generators_online
         }
-        # Include project_id if available (for backward compatibility)
-        if self.project_id:
-            payload["project_id"] = self.project_id
         return payload
+
+    def _log_to_backend_payload(self, log: ControlLogRecord) -> dict:
+        """Convert log record to FastAPI backend payload format."""
+        return {
+            "timestamp": log.timestamp.isoformat(),
+            "total_load_kw": log.total_load_kw,
+            "dg_power_kw": log.dg_power_kw,
+            "solar_output_kw": log.solar_output_kw,
+            "solar_limit_pct": log.solar_limit_pct,
+            "available_headroom_kw": log.available_headroom_kw,
+            "safe_mode_active": log.safe_mode_active,
+            "config_mode": log.config_mode,
+            "load_meters_online": log.load_meters_online,
+            "inverters_online": log.inverters_online,
+            "generators_online": log.generators_online,
+            "raw_data": None  # Optional field
+        }
 
     # ============================================
     # ALARM SYNC
@@ -258,6 +312,9 @@ class CloudSync:
     async def _sync_alarms(self) -> int:
         """
         Sync pending alarms to cloud.
+
+        Uses FastAPI backend endpoint if backend_url is configured,
+        otherwise falls back to direct Supabase REST API.
 
         Returns:
             Number of alarms synced
@@ -271,26 +328,42 @@ class CloudSync:
         if not alarms:
             return 0
 
-        # Prepare batch payload
-        payload = [self._alarm_to_payload(alarm) for alarm in alarms]
+        # Use backend API if configured, otherwise direct Supabase
+        if self.backend_url:
+            # Backend API: send alarms one at a time (each triggers notifications)
+            synced_ids = []
+            for alarm in alarms:
+                payload = self._alarm_to_backend_payload(alarm)
+                success = await self._upload_with_retry(
+                    endpoint=f"/alarms/site/{self.site_id}",
+                    payload=payload,
+                    use_backend=True
+                )
+                if success and alarm.id:
+                    synced_ids.append(alarm.id)
 
-        # Try to upload with retry
-        success = await self._upload_with_retry(
-            endpoint="/rest/v1/alarms",
-            payload=payload
-        )
+            if synced_ids:
+                self.local_db.mark_alarms_synced(synced_ids)
+            return len(synced_ids)
+        else:
+            # Direct Supabase REST API (batch insert)
+            payload = [self._alarm_to_payload(alarm) for alarm in alarms]
+            success = await self._upload_with_retry(
+                endpoint="/rest/v1/alarms",
+                payload=payload,
+                use_backend=False
+            )
 
-        if success:
-            # Mark as synced
-            ids = [alarm.id for alarm in alarms if alarm.id]
-            self.local_db.mark_alarms_synced(ids)
-            return len(alarms)
+            if success:
+                ids = [alarm.id for alarm in alarms if alarm.id]
+                self.local_db.mark_alarms_synced(ids)
+                return len(alarms)
 
         return 0
 
     def _alarm_to_payload(self, alarm: AlarmRecord) -> dict:
-        """Convert alarm record to API payload."""
-        payload = {
+        """Convert alarm record to Supabase REST API payload."""
+        return {
             "site_id": self.site_id,  # Primary: site is the physical location
             "alarm_type": alarm.alarm_type,
             "device_name": alarm.device_name,
@@ -298,10 +371,15 @@ class CloudSync:
             "severity": alarm.severity,
             "created_at": alarm.timestamp.isoformat()
         }
-        # Include project_id if available (for backward compatibility)
-        if self.project_id:
-            payload["project_id"] = self.project_id
-        return payload
+
+    def _alarm_to_backend_payload(self, alarm: AlarmRecord) -> dict:
+        """Convert alarm record to FastAPI backend payload format."""
+        return {
+            "alarm_type": alarm.alarm_type,
+            "device_name": alarm.device_name,
+            "message": alarm.message,
+            "severity": alarm.severity
+        }
 
     # ============================================
     # DEVICE READINGS SYNC
@@ -358,19 +436,24 @@ class CloudSync:
     async def _upload_with_retry(
         self,
         endpoint: str,
-        payload: list[dict]
+        payload: list[dict] | dict,
+        use_backend: bool = False
     ) -> bool:
         """
         Upload data with exponential backoff retry.
 
         Args:
             endpoint: API endpoint path
-            payload: Data to upload
+            payload: Data to upload (list for Supabase, dict for backend)
+            use_backend: If True, use FastAPI backend client
 
         Returns:
             True if upload succeeded
         """
-        client = await self._get_client()
+        if use_backend and self.backend_url:
+            client = await self._get_backend_client()
+        else:
+            client = await self._get_client()
 
         for attempt in range(self.max_retries):
             try:

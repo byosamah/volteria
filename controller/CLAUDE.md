@@ -152,6 +152,7 @@ devices:
 cloud:
   supabase_url: "https://xxx.supabase.co"
   supabase_key: "your-service-role-key"
+  backend_url: "https://volteria.org/api"  # Optional: FastAPI backend for site endpoints
   sync_enabled: true
 ```
 

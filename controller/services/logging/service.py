@@ -227,6 +227,7 @@ class LoggingService:
         cloud_config = SharedState.read("controller_config")
         supabase_url = cloud_config.get("supabase_url") or os.environ.get("SUPABASE_URL", "")
         supabase_key = cloud_config.get("supabase_key") or os.environ.get("SUPABASE_SERVICE_KEY", "")
+        backend_url = cloud_config.get("backend_url") or os.environ.get("BACKEND_URL", "")
 
         if supabase_url and supabase_key and self._site_id:
             self.cloud_sync = CloudSync(
@@ -234,6 +235,7 @@ class LoggingService:
                 supabase_url=supabase_url,
                 supabase_key=supabase_key,
                 local_db=self.local_db,
+                backend_url=backend_url if backend_url else None,  # FastAPI backend for site endpoints
             )
 
         logger.info(f"Config loaded: {len(self._alarm_definitions)} alarm definitions")

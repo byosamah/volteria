@@ -377,7 +377,8 @@ async def wait_for_assignment(local_config: dict) -> dict:
         supabase_url=supabase_url,
         supabase_key=supabase_key,
         local_db=local_db,
-        controller_id=controller_id  # This enables heartbeat-only mode
+        controller_id=controller_id,  # This enables heartbeat-only mode
+        backend_url=cloud.get("backend_url")  # FastAPI backend for site endpoints
     )
 
     print("\n" + "=" * 60)
@@ -480,7 +481,8 @@ async def wait_for_valid_config(local_config: dict, current_config: dict) -> dic
         supabase_url=supabase_url,
         supabase_key=supabase_key,
         local_db=local_db,
-        controller_id=controller_id
+        controller_id=controller_id,
+        backend_url=cloud.get("backend_url")  # FastAPI backend for site endpoints
     )
 
     print("\n" + "=" * 60)

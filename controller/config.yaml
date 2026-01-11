@@ -92,4 +92,5 @@ devices:
 cloud:
   supabase_url: "https://usgxhzdctzthcqxyxfxl.supabase.co"
   supabase_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I"
+  backend_url: "https://volteria.org/api"  # FastAPI backend for site-based endpoints
   sync_enabled: true

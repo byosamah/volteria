@@ -394,7 +394,8 @@ class ControlLoop:
                 supabase_key=cloud_cfg.get("supabase_key", ""),
                 local_db=self.local_db,
                 sync_interval_ms=self.cloud_interval_ms,
-                controller_id=self.controller_id  # For heartbeats before site assignment
+                controller_id=self.controller_id,  # For heartbeats before site assignment
+                backend_url=cloud_cfg.get("backend_url")  # FastAPI backend for site endpoints
             )
 
         # Modbus connections (will be established on start)
