@@ -226,18 +226,25 @@ class ConfigSync:
         return response.json()
 
     async def _fetch_alarm_overrides(self, client: httpx.AsyncClient) -> list[dict]:
-        """Fetch site-specific alarm overrides"""
-        response = await client.get(
-            f"{self.supabase_url}/rest/v1/site_alarm_overrides",
-            params={
-                "site_id": f"eq.{self.site_id}",
-                "select": "*",
-            },
-            headers=self._headers(),
-            timeout=10.0,
-        )
-        response.raise_for_status()
-        return response.json()
+        """Fetch site-specific alarm overrides (optional table)"""
+        try:
+            response = await client.get(
+                f"{self.supabase_url}/rest/v1/site_alarm_overrides",
+                params={
+                    "site_id": f"eq.{self.site_id}",
+                    "select": "*",
+                },
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            # Return empty list if table doesn't exist (404)
+            if response.status_code == 404:
+                return []
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError:
+            # Table may not exist yet, return empty list
+            return []
 
     def _build_config(
         self,
