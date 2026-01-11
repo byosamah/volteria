@@ -23,7 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { RefreshCw, WifiOff, Cpu, AlertCircle, Check, Clock } from "lucide-react";
+import { RefreshCw, WifiOff, Cpu, AlertCircle, Check, Clock, X } from "lucide-react";
 
 // Status response from API
 interface SiteStatusData {
@@ -236,10 +236,10 @@ function ConfigSyncStatus({
       dotColor: "bg-green-500",
     },
     sync_needed: {
-      icon: <RefreshCw className="h-3.5 w-3.5 text-orange-500" />,
-      label: "Sync Needed",
-      color: "text-orange-500",
-      dotColor: "bg-orange-400",
+      icon: <X className="h-3.5 w-3.5 text-red-500" />,
+      label: "Not Synced",
+      color: "text-red-500",
+      dotColor: "bg-red-500",
     },
     never_synced: {
       icon: <Clock className="h-3.5 w-3.5 text-gray-500" />,
@@ -268,11 +268,20 @@ function ConfigSyncStatus({
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-2 cursor-default">
-              <span className={`relative flex h-2.5 w-2.5`}>
-                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${config.dotColor}`}></span>
-              </span>
+              {/* Status icon */}
+              {status === "synced" ? (
+                <Check className="h-4 w-4 text-green-600" />
+              ) : status === "sync_needed" ? (
+                <X className="h-4 w-4 text-red-500" />
+              ) : (
+                <Clock className="h-4 w-4 text-gray-400" />
+              )}
               <span className={`text-sm font-medium ${config.color}`}>
-                {status === "synced" ? formatTimeSince(lastSyncedAt) : config.label}
+                {status === "synced"
+                  ? "Synced"
+                  : status === "sync_needed"
+                  ? "Not Synced"
+                  : "Never Synced"}
               </span>
             </div>
           </TooltipTrigger>
@@ -295,12 +304,14 @@ function ConfigSyncStatus({
               {/* Status message */}
               {status === "synced" && (
                 <p className="text-green-600 pt-1 border-t border-border">
+                  <Check className="h-3 w-3 inline mr-1" />
                   Platform and controller configs match
                 </p>
               )}
               {status === "sync_needed" && (
-                <p className="text-orange-500 pt-1 border-t border-border">
-                  {pendingText || "Changes pending - controller will pull within 5 min"}
+                <p className="text-red-500 pt-1 border-t border-border">
+                  <X className="h-3 w-3 inline mr-1" />
+                  Changes pending - will auto-sync within 5 min
                 </p>
               )}
               {status === "never_synced" && (
@@ -308,12 +319,17 @@ function ConfigSyncStatus({
                   Controller has never synced config
                 </p>
               )}
+
+              {/* Auto-sync note */}
+              <p className="text-muted-foreground text-[10px] pt-1 border-t border-border italic">
+                Controller automatically checks for changes every 5 minutes
+              </p>
             </div>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
 
-      {/* Push Sync button - always visible when sync_needed */}
+      {/* Push Sync button - visible when sync_needed for immediate sync */}
       {status === "sync_needed" && (
         <Button
           variant="outline"
@@ -330,7 +346,7 @@ function ConfigSyncStatus({
           ) : (
             <RefreshCw className="h-3 w-3 mr-1" />
           )}
-          Push Sync
+          Sync Now
         </Button>
       )}
     </div>
