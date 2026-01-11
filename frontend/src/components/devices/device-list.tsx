@@ -135,14 +135,37 @@ interface Device {
 
 // Device type labels and colors for display (matches Device Templates)
 const deviceTypeConfig: Record<string, { label: string; color: string }> = {
+  // Generators
+  diesel_generator: { label: "Diesel Generator", color: "bg-slate-900 text-white" },
+  gas_generator: { label: "Gas Generator", color: "bg-gray-400 text-gray-900" },
+  dg: { label: "Generator", color: "bg-slate-900 text-white" },  // Legacy
+
+  // Solar
   inverter: { label: "Solar Inverter", color: "bg-yellow-100 text-yellow-700" },
-  load_meter: { label: "Energy Meter", color: "bg-blue-100 text-blue-700" },
-  dg: { label: "Generator", color: "bg-slate-200 text-slate-800" },
-  sensor: { label: "Sensor", color: "bg-gray-100 text-gray-700" },
-  fuel_level_sensor: { label: "Fuel Sensor", color: "bg-purple-100 text-purple-700" },
-  temperature_humidity_sensor: { label: "Temp/Humidity", color: "bg-green-100 text-green-700" },
+  solar_sensor: { label: "Solar Sensor", color: "bg-orange-100 text-orange-700" },
   solar_radiation_sensor: { label: "Solar Radiation", color: "bg-orange-100 text-orange-700" },
+
+  // Load
+  load: { label: "Load", color: "bg-blue-200 text-blue-800" },
+  load_meter: { label: "Energy Meter", color: "bg-blue-200 text-blue-800" },  // Legacy
+  subload: { label: "SubLoad", color: "bg-blue-100 text-blue-600" },
+
+  // Fuel
+  fuel: { label: "Fuel Sensor", color: "bg-purple-100 text-purple-700" },
+  fuel_level_sensor: { label: "Fuel Sensor", color: "bg-purple-100 text-purple-700" },
+
+  // Sensors
+  sensor: { label: "Sensor", color: "bg-gray-100 text-gray-700" },
+  temperature_humidity_sensor: { label: "Temp/Humidity", color: "bg-green-100 text-green-700" },
   wind_sensor: { label: "Wind Sensor", color: "bg-cyan-100 text-cyan-700" },
+
+  // Other energy systems
+  wind_turbine: { label: "Wind Turbine", color: "bg-teal-100 text-teal-700" },
+  bess: { label: "Battery Storage", color: "bg-emerald-100 text-emerald-700" },
+  capacitor_bank: { label: "Capacitor Bank", color: "bg-indigo-100 text-indigo-700" },
+
+  // Fallback
+  other: { label: "Other", color: "bg-gray-100 text-gray-600" },
 };
 
 // Latest power readings from control logs (aggregate values)
@@ -532,14 +555,37 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
   // Type configurations for device types (matches Device Templates)
   const typeConfigs: Record<string, { title: string; description: string }> = {
-    inverter: { title: "Solar Inverters", description: "PV power conversion" },
-    load_meter: { title: "Energy Meters", description: "Load measurement devices" },
+    // Generators
+    diesel_generator: { title: "Diesel Generator", description: "Devices in this category" },
+    gas_generator: { title: "Gas Generator", description: "Devices in this category" },
     dg: { title: "Generator Controllers", description: "Generator control and monitoring" },
-    sensor: { title: "Sensors (Generic)", description: "Generic sensor devices" },
-    fuel_level_sensor: { title: "Fuel Level Sensors", description: "Fuel tank monitoring" },
-    temperature_humidity_sensor: { title: "Temp & Humidity Sensors", description: "Environmental monitoring" },
+
+    // Solar
+    inverter: { title: "Solar Inverters", description: "PV power conversion" },
+    solar_sensor: { title: "Solar Sensors", description: "Irradiance measurement" },
     solar_radiation_sensor: { title: "Solar Radiation Sensors", description: "Irradiance measurement" },
+
+    // Load
+    load: { title: "Load Meters", description: "Main load measurement" },
+    load_meter: { title: "Energy Meters", description: "Load measurement devices" },
+    subload: { title: "SubLoad Meters", description: "Sub load measurement" },
+
+    // Fuel
+    fuel: { title: "Fuel Sensors", description: "Fuel tank monitoring" },
+    fuel_level_sensor: { title: "Fuel Level Sensors", description: "Fuel tank monitoring" },
+
+    // Sensors
+    sensor: { title: "Sensors (Generic)", description: "Generic sensor devices" },
+    temperature_humidity_sensor: { title: "Temp & Humidity Sensors", description: "Environmental monitoring" },
     wind_sensor: { title: "Wind Sensors", description: "Wind speed and direction" },
+
+    // Other energy systems
+    wind_turbine: { title: "Wind Turbines", description: "Wind turbine power generation" },
+    bess: { title: "Battery Storage", description: "Battery energy storage systems" },
+    capacitor_bank: { title: "Capacitor Banks", description: "Reactive power compensation" },
+
+    // Fallback
+    other: { title: "Other Devices", description: "Other device types" },
     unknown: { title: "Other Devices", description: "Devices without type specified" },
   };
 
@@ -644,7 +690,20 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   };
 
   // Define display order for device types
-  const typeOrder = ["load_meter", "inverter", "dg", "sensor", "fuel_level_sensor", "temperature_humidity_sensor", "solar_radiation_sensor", "wind_sensor", "unknown"];
+  const typeOrder = [
+    // Load first
+    "load", "load_meter", "subload",
+    // Then solar
+    "inverter", "solar_sensor", "solar_radiation_sensor",
+    // Then generators
+    "diesel_generator", "gas_generator", "dg",
+    // Then other energy systems
+    "wind_turbine", "bess", "capacitor_bank",
+    // Then sensors
+    "fuel", "fuel_level_sensor", "temperature_humidity_sensor", "wind_sensor", "sensor",
+    // Finally other/unknown
+    "other", "unknown"
+  ];
 
   return (
     <>
