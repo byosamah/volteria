@@ -44,9 +44,32 @@ curl -s -X DELETE "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE_NAME?i
 - Use Supabase Dashboard SQL Editor: https://supabase.com/dashboard/project/usgxhzdctzthcqxyxfxl/sql
 - Create migration file in `database/migrations/` and run via dashboard
 
-### Local Testing
-- Frontend dev server: `cd frontend && npm run dev` (runs on localhost:3000)
-- Backend dev server: `cd backend && uvicorn app.main:app --reload` (runs on localhost:8000)
+### Local Testing & Browser Automation
+**One-time setup** (user runs this once):
+```bash
+cd frontend && npm install && npx playwright install chromium
+```
+
+**Testing commands**:
+- `npm run dev` - Start dev server (localhost:3000)
+- `npm run build` - Verify build passes before deploy
+- `npm test` - Run Playwright smoke tests (headless)
+- `npm run test:headed` - Run tests with visible browser
+- `npm run test:ui` - Run tests with Playwright UI
+
+**Smoke tests verify**:
+- Login page loads correctly
+- No console errors on key pages
+- Static assets load properly
+- Authenticated pages accessible (if TEST_PASSWORD set)
+
+**Test files location**: `frontend/tests/e2e/`
+
+### Pre-Deploy Checklist
+1. Run `npm run build` - catches TypeScript/build errors
+2. Run `npm test` - catches runtime issues
+3. Commit and push to GitHub
+4. Deploy to production
 
 ### Production Deployment
 ```bash
