@@ -13,7 +13,6 @@ WorkingDirectory=/opt/volteria/controller
 ExecStart=/opt/volteria/venv/bin/python -m services.config.service
 Restart=on-failure
 RestartSec=10
-WatchdogSec=120
 
 # Environment
 Environment=PYTHONUNBUFFERED=1

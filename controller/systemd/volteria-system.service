@@ -13,7 +13,6 @@ WorkingDirectory=/opt/volteria/controller
 ExecStart=/opt/volteria/venv/bin/python -m services.system.service
 Restart=always
 RestartSec=5
-WatchdogSec=60
 
 # High priority - heartbeats must always run
 OOMScoreAdjust=-500
