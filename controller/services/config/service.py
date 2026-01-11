@@ -14,6 +14,7 @@ import signal
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 import yaml
 from aiohttp import web
 
@@ -31,6 +32,8 @@ logger = get_service_logger("config")
 HEALTH_PORT = 8082
 # Sync interval in seconds (5 minutes)
 SYNC_INTERVAL_SECONDS = 300
+# Command poll interval (check for sync commands every 5 seconds)
+COMMAND_POLL_INTERVAL_SECONDS = 5
 
 
 class ConfigService:
@@ -79,6 +82,7 @@ class ConfigService:
         # State
         self._running = False
         self._sync_task: asyncio.Task | None = None
+        self._command_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
     def _find_config_path(self) -> str:
@@ -132,6 +136,9 @@ class ConfigService:
         # Start periodic sync task
         self._sync_task = asyncio.create_task(self._sync_loop())
 
+        # Start command polling task (for manual sync commands from cloud)
+        self._command_task = asyncio.create_task(self._command_poll_loop())
+
         # Update service health to running
         set_service_health("config", {
             "status": "running",
@@ -161,6 +168,14 @@ class ConfigService:
             self._sync_task.cancel()
             try:
                 await self._sync_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel command polling task
+        if self._command_task:
+            self._command_task.cancel()
+            try:
+                await self._command_task
             except asyncio.CancelledError:
                 pass
 
@@ -293,6 +308,114 @@ class ConfigService:
         notify_config_changed(version)
 
         logger.info(f"Config change notification sent (version: {version})")
+
+    async def _command_poll_loop(self) -> None:
+        """Poll for sync commands from cloud"""
+        while self._running:
+            try:
+                await self._check_sync_commands()
+            except Exception as e:
+                logger.error(f"Error checking sync commands: {e}")
+
+            await asyncio.sleep(COMMAND_POLL_INTERVAL_SECONDS)
+
+    async def _check_sync_commands(self) -> None:
+        """Check for pending sync_config commands"""
+        if not self.site_id:
+            return
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.supabase_url}/rest/v1/control_commands",
+                    params={
+                        "site_id": f"eq.{self.site_id}",
+                        "command_type": "eq.sync_config",
+                        "status": "eq.pending",
+                        "order": "created_at.asc",
+                        "limit": "1",
+                    },
+                    headers={
+                        "apikey": self.supabase_key,
+                        "Authorization": f"Bearer {self.supabase_key}",
+                    },
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                commands = response.json()
+
+                if commands:
+                    await self._execute_sync_command(commands[0])
+
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error checking sync commands: {e}")
+
+    async def _execute_sync_command(self, command: dict) -> None:
+        """Execute a sync_config command"""
+        command_id = command["id"]
+
+        logger.info(
+            f"Executing sync command {command_id}",
+            extra={"command_id": command_id},
+        )
+
+        try:
+            # Update command status to "in_progress"
+            await self._update_command_status(command_id, "in_progress")
+
+            # Force sync
+            success = await self.force_sync()
+
+            if success:
+                await self._update_command_status(command_id, "completed")
+                logger.info(f"Sync command {command_id} completed successfully")
+            else:
+                await self._update_command_status(
+                    command_id, "failed", "Config sync failed"
+                )
+                logger.error(f"Sync command {command_id} failed")
+
+        except Exception as e:
+            logger.error(f"Error executing sync command {command_id}: {e}")
+            await self._update_command_status(
+                command_id, "failed", str(e)
+            )
+
+    async def _update_command_status(
+        self,
+        command_id: str,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        """Update command status in database"""
+        try:
+            update_data = {"status": status}
+
+            if status == "in_progress":
+                update_data["executed_at"] = datetime.now(timezone.utc).isoformat()
+            elif status in ["completed", "failed"]:
+                update_data["executed_at"] = datetime.now(timezone.utc).isoformat()
+
+            if error:
+                update_data["error_message"] = error
+
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.supabase_url}/rest/v1/control_commands",
+                    params={"id": f"eq.{command_id}"},
+                    json=update_data,
+                    headers={
+                        "apikey": self.supabase_key,
+                        "Authorization": f"Bearer {self.supabase_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+
+        except Exception as e:
+            logger.error(f"Failed to update command status: {e}")
 
     async def force_sync(self) -> bool:
         """Force immediate config sync (for API trigger)"""
