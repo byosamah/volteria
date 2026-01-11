@@ -7,8 +7,8 @@
  * Features:
  * - Basic info: template_id, name, description, controller_type, brand, model
  * - Template type: public (super_admin/backend_admin) or custom (auto for others)
- * - Calculated Fields table with storage_mode (Log/Viz Only)
- * - Controller Readings table with storage_mode (Log/Viz Only)
+ * - Calculated Fields table with storage_mode (Log/Viz Only) - fetched from DB
+ * - Controller Readings table with storage_mode, logging frequency, and alarm thresholds
  */
 
 import { useState, useEffect } from "react";
@@ -33,9 +33,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { toast } from "sonner";
-import type { ControllerTemplate, SystemRegister } from "@/lib/types";
-import { CONTROLLER_CALCULATED_FIELDS, CONTROLLER_READINGS } from "./master-device-templates-list";
+import type { ControllerTemplate, SystemRegister, CalculatedFieldDefinition } from "@/lib/types";
+import { CONTROLLER_READINGS } from "./master-device-templates-list";
 
 // =============================================================================
 // TYPES
@@ -81,13 +86,93 @@ function generateNumericTemplateId(): string {
 // Storage mode for calculated fields and readings
 type StorageMode = "log" | "viz_only";
 
-// Field selection with storage mode
+// Logging frequency options (in seconds)
+const LOGGING_FREQUENCY_OPTIONS = [
+  { value: 5, label: "5 sec" },
+  { value: 10, label: "10 sec" },
+  { value: 30, label: "30 sec" },
+  { value: 60, label: "1 min" },
+  { value: 300, label: "5 min" },
+  { value: 600, label: "10 min" },
+];
+
+// Alarm severity levels
+type AlarmSeverity = "warning" | "critical";
+
+// Alarm configuration for a reading
+interface ReadingAlarmConfig {
+  enabled: boolean;
+  warning_threshold: number | null;  // Threshold for warning (e.g., 80%)
+  critical_threshold: number | null; // Threshold for critical (e.g., 95%)
+  warning_operator: ">" | "<";       // Whether warning triggers above or below threshold
+  critical_operator: ">" | "<";      // Whether critical triggers above or below threshold
+}
+
+// Field selection with storage mode (for calculated fields)
 interface FieldSelection {
   field_id: string;
   name: string;
   storage_mode: StorageMode;
   enabled: boolean;
 }
+
+// Reading selection with storage mode, logging frequency, and alarm config
+interface ReadingSelection {
+  field_id: string;
+  name: string;
+  unit: string;
+  storage_mode: StorageMode;
+  logging_frequency_seconds: number;
+  enabled: boolean;
+  alarm_config: ReadingAlarmConfig;
+}
+
+// Online/Offline status alarm config
+interface StatusAlarmConfig {
+  enabled: boolean;
+  offline_severity: AlarmSeverity;
+  offline_timeout_seconds: number; // How long offline before alarm
+}
+
+// Default alarm configurations based on reading type
+const getDefaultAlarmConfig = (fieldId: string): ReadingAlarmConfig => {
+  switch (fieldId) {
+    case "cpu_temp_celsius":
+      return {
+        enabled: true,
+        warning_threshold: 70,
+        critical_threshold: 85,
+        warning_operator: ">",
+        critical_operator: ">",
+      };
+    case "cpu_usage_pct":
+    case "memory_usage_pct":
+    case "disk_usage_pct":
+      return {
+        enabled: true,
+        warning_threshold: 80,
+        critical_threshold: 95,
+        warning_operator: ">",
+        critical_operator: ">",
+      };
+    case "uptime_seconds":
+      return {
+        enabled: true,
+        warning_threshold: 300,    // Warning if uptime < 5 min (recent restart)
+        critical_threshold: 60,     // Critical if uptime < 1 min
+        warning_operator: "<",
+        critical_operator: "<",
+      };
+    default:
+      return {
+        enabled: false,
+        warning_threshold: null,
+        critical_threshold: null,
+        warning_operator: ">",
+        critical_operator: ">",
+      };
+  }
+};
 
 // Form data interface
 // Note: template_id is auto-generated for new templates
@@ -164,25 +249,35 @@ export function MasterDeviceTemplateForm({
   // Get selected hardware details (for displaying brand/model)
   const selectedHardware = hardwareOptions.find((h) => h.id === formData.hardware_id);
 
-  // Calculated fields selection
-  const [calculatedFields, setCalculatedFields] = useState<FieldSelection[]>(
-    CONTROLLER_CALCULATED_FIELDS.map((field) => ({
-      field_id: field.field_id,
-      name: field.name,
-      storage_mode: "log" as StorageMode,
-      enabled: false,
-    }))
-  );
+  // Database calculated fields (fetched from calculated_field_definitions)
+  const [dbCalculatedFields, setDbCalculatedFields] = useState<CalculatedFieldDefinition[]>([]);
+  const [isLoadingCalculatedFields, setIsLoadingCalculatedFields] = useState(false);
 
-  // Controller readings selection
-  const [controllerReadings, setControllerReadings] = useState<FieldSelection[]>(
+  // Calculated fields selection (populated from DB)
+  const [calculatedFields, setCalculatedFields] = useState<FieldSelection[]>([]);
+
+  // Controller readings selection with alarm config and logging frequency
+  const [controllerReadings, setControllerReadings] = useState<ReadingSelection[]>(
     CONTROLLER_READINGS.map((field) => ({
       field_id: field.field_id,
       name: field.name,
+      unit: field.unit,
       storage_mode: "log" as StorageMode,
+      logging_frequency_seconds: 60,
       enabled: false,
+      alarm_config: getDefaultAlarmConfig(field.field_id),
     }))
   );
+
+  // Online/Offline status alarm configuration
+  const [statusAlarm, setStatusAlarm] = useState<StatusAlarmConfig>({
+    enabled: true,
+    offline_severity: "critical",
+    offline_timeout_seconds: 60,
+  });
+
+  // Expanded state for alarm configuration sections
+  const [expandedAlarms, setExpandedAlarms] = useState<Set<string>>(new Set());
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -238,6 +333,51 @@ export function MasterDeviceTemplateForm({
     fetchEnterpriseOptions();
   }, [open]);
 
+  // Fetch calculated fields from database when dialog opens
+  useEffect(() => {
+    if (!open) return;
+
+    const fetchCalculatedFields = async () => {
+      setIsLoadingCalculatedFields(true);
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("calculated_field_definitions")
+          .select("*")
+          .eq("scope", "controller")
+          .eq("is_active", true)
+          .order("name");
+
+        if (error) throw error;
+        setDbCalculatedFields((data as CalculatedFieldDefinition[]) || []);
+      } catch (error) {
+        console.error("Error fetching calculated fields:", error);
+        toast.error("Failed to load calculated fields");
+      } finally {
+        setIsLoadingCalculatedFields(false);
+      }
+    };
+
+    fetchCalculatedFields();
+  }, [open]);
+
+  // Update calculated fields selection when dbCalculatedFields loads
+  useEffect(() => {
+    if (dbCalculatedFields.length === 0) return;
+
+    // Only update if we don't have a template to load from
+    if (!template || !open) {
+      setCalculatedFields(
+        dbCalculatedFields.map((field) => ({
+          field_id: field.field_id,
+          name: field.name,
+          storage_mode: "log" as StorageMode,
+          enabled: false,
+        }))
+      );
+    }
+  }, [dbCalculatedFields, template, open]);
+
   // Reset form when dialog opens or template changes
   useEffect(() => {
     if (open) {
@@ -267,101 +407,159 @@ export function MasterDeviceTemplateForm({
           is_active: isDupe ? true : template.is_active ?? true, // Duplicates are always active
         });
 
-        // Parse calculated fields from template
-        // The template stores calculated_fields as an array of field configurations
-        // Format: [{ field_id: string, name: string, storage_mode: "log" | "viz_only" }]
+        // Parse calculated fields from template using DB fields
         const templateCalcFields = template.calculated_fields || [];
-        setCalculatedFields(
-          CONTROLLER_CALCULATED_FIELDS.map((field) => {
-            // Find if this field exists in template's calculated_fields
-            const existing = Array.isArray(templateCalcFields)
-              ? templateCalcFields.find((f: unknown) => {
-                  if (typeof f === "string") return f === field.field_id;
-                  if (typeof f === "object" && f !== null) {
-                    return (f as { field_id?: string }).field_id === field.field_id;
-                  }
-                  return false;
-                })
-              : null;
+        if (dbCalculatedFields.length > 0) {
+          setCalculatedFields(
+            dbCalculatedFields.map((field) => {
+              // Find if this field exists in template's calculated_fields
+              const existing = Array.isArray(templateCalcFields)
+                ? templateCalcFields.find((f: unknown) => {
+                    if (typeof f === "string") return f === field.field_id;
+                    if (typeof f === "object" && f !== null) {
+                      return (f as { field_id?: string }).field_id === field.field_id;
+                    }
+                    return false;
+                  })
+                : null;
 
-            if (existing && typeof existing === "object") {
-              return {
-                field_id: field.field_id,
-                name: field.name,
-                storage_mode: (existing as { storage_mode?: StorageMode }).storage_mode || "log",
-                enabled: true,
-              };
-            } else if (typeof existing === "string") {
+              if (existing && typeof existing === "object") {
+                return {
+                  field_id: field.field_id,
+                  name: field.name,
+                  storage_mode: (existing as { storage_mode?: StorageMode }).storage_mode || "log",
+                  enabled: true,
+                };
+              } else if (typeof existing === "string") {
+                return {
+                  field_id: field.field_id,
+                  name: field.name,
+                  storage_mode: "log" as StorageMode,
+                  enabled: true,
+                };
+              }
               return {
                 field_id: field.field_id,
                 name: field.name,
                 storage_mode: "log" as StorageMode,
+                enabled: false,
+              };
+            })
+          );
+        }
+
+        // Parse controller readings from template registers with alarm config
+        const templateRegisters = template.registers || [];
+        const templateAlarms = template.alarm_definitions || [];
+
+        setControllerReadings(
+          CONTROLLER_READINGS.map((field) => {
+            const existing = templateRegisters.find((r) => r.field === field.field_id);
+            // Find alarm definition for this field
+            const alarmDef = templateAlarms.find(
+              (a) => a.source_key === field.field_id && a.source_type === "device_info"
+            );
+
+            // Parse alarm config from alarm definition
+            let alarmConfig = getDefaultAlarmConfig(field.field_id);
+            if (alarmDef) {
+              const warningCondition = alarmDef.conditions?.find((c) => c.severity === "warning");
+              const criticalCondition = alarmDef.conditions?.find((c) => c.severity === "critical");
+              alarmConfig = {
+                enabled: alarmDef.enabled_by_default ?? true,
+                warning_threshold: warningCondition?.value ?? null,
+                critical_threshold: criticalCondition?.value ?? null,
+                warning_operator: (warningCondition?.operator as ">" | "<") || ">",
+                critical_operator: (criticalCondition?.operator as ">" | "<") || ">",
+              };
+            }
+
+            if (existing) {
+              return {
+                field_id: field.field_id,
+                name: field.name,
+                unit: field.unit,
+                storage_mode: "log" as StorageMode,
+                logging_frequency_seconds: (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || 60,
                 enabled: true,
+                alarm_config: alarmConfig,
               };
             }
             return {
               field_id: field.field_id,
               name: field.name,
+              unit: field.unit,
               storage_mode: "log" as StorageMode,
+              logging_frequency_seconds: 60,
               enabled: false,
+              alarm_config: alarmConfig,
             };
           })
         );
 
-        // Parse controller readings from template registers
-        const templateRegisters = template.registers || [];
-        setControllerReadings(
-          CONTROLLER_READINGS.map((field) => {
-            const existing = templateRegisters.find((r) => r.field === field.field_id);
-            if (existing) {
-              // Determine storage_mode from register data
-              // If register has logging_frequency or similar, it's "log"
-              return {
-                field_id: field.field_id,
-                name: field.name,
-                storage_mode: "log" as StorageMode, // Default to log for existing
-                enabled: true,
-              };
-            }
-            return {
-              field_id: field.field_id,
-              name: field.name,
-              storage_mode: "log" as StorageMode,
-              enabled: false,
-            };
-          })
+        // Parse status alarm from alarm definitions
+        const statusAlarmDef = templateAlarms.find(
+          (a) => a.id === "controller_offline" || a.source_type === "heartbeat"
         );
+        if (statusAlarmDef) {
+          const criticalCond = statusAlarmDef.conditions?.find((c) => c.severity === "critical");
+          setStatusAlarm({
+            enabled: statusAlarmDef.enabled_by_default ?? true,
+            offline_severity: (criticalCond?.severity as AlarmSeverity) || "critical",
+            offline_timeout_seconds: criticalCond?.value || 60,
+          });
+        } else {
+          setStatusAlarm({
+            enabled: true,
+            offline_severity: "critical",
+            offline_timeout_seconds: 60,
+          });
+        }
       } else {
         // Create mode - reset to defaults
-        // Note: template_id will be auto-generated on submit
-        // Note: brand/model will be auto-populated from hardware selection
         setFormData({
           name: "",
           description: "",
           hardware_id: "",
           template_type: canCreatePublicTemplate(userRole) ? "public" : "custom",
           enterprise_id: userEnterpriseId || "",
-          is_active: true, // New templates are active by default
+          is_active: true,
         });
-        setCalculatedFields(
-          CONTROLLER_CALCULATED_FIELDS.map((field) => ({
-            field_id: field.field_id,
-            name: field.name,
-            storage_mode: "log" as StorageMode,
-            enabled: false,
-          }))
-        );
+
+        // Reset calculated fields from DB
+        if (dbCalculatedFields.length > 0) {
+          setCalculatedFields(
+            dbCalculatedFields.map((field) => ({
+              field_id: field.field_id,
+              name: field.name,
+              storage_mode: "log" as StorageMode,
+              enabled: false,
+            }))
+          );
+        }
+
+        // Reset controller readings with default alarm configs
         setControllerReadings(
           CONTROLLER_READINGS.map((field) => ({
             field_id: field.field_id,
             name: field.name,
+            unit: field.unit,
             storage_mode: "log" as StorageMode,
+            logging_frequency_seconds: 60,
             enabled: false,
+            alarm_config: getDefaultAlarmConfig(field.field_id),
           }))
         );
+
+        // Reset status alarm to defaults
+        setStatusAlarm({
+          enabled: true,
+          offline_severity: "critical",
+          offline_timeout_seconds: 60,
+        });
       }
     }
-  }, [open, template, isDuplicating, userRole, userEnterpriseId]);
+  }, [open, template, isDuplicating, userRole, userEnterpriseId, dbCalculatedFields]);
 
   // Handle form submission
   const handleSubmit = async () => {
@@ -406,8 +604,8 @@ export function MasterDeviceTemplateForm({
           storage_mode: f.storage_mode,
         }));
 
-      // Build registers array from selected readings
-      const selectedRegisters: SystemRegister[] = controllerReadings
+      // Build registers array from selected readings with logging frequency
+      const selectedRegisters: (SystemRegister & { logging_frequency_seconds?: number })[] = controllerReadings
         .filter((f) => f.enabled)
         .map((f) => {
           const original = CONTROLLER_READINGS.find((r) => r.field_id === f.field_id);
@@ -415,11 +613,84 @@ export function MasterDeviceTemplateForm({
             name: f.name,
             source: original?.source || "device_info",
             field: f.field_id,
-            unit: original?.unit || "",
+            unit: f.unit || original?.unit || "",
             description: f.name,
-            // Note: storage_mode would be added to register schema if needed
+            logging_frequency_seconds: f.logging_frequency_seconds,
           };
         });
+
+      // Build alarm definitions from reading alarm configs
+      const alarmDefinitions: {
+        id: string;
+        name: string;
+        description: string;
+        source_type: string;
+        source_key: string;
+        conditions: { operator: string; value: number; severity: string; message: string }[];
+        enabled_by_default: boolean;
+        cooldown_seconds: number;
+      }[] = [];
+
+      // Add alarms for enabled controller readings
+      controllerReadings.forEach((reading) => {
+        if (reading.enabled && reading.alarm_config.enabled) {
+          const conditions: { operator: string; value: number; severity: string; message: string }[] = [];
+
+          // Add warning condition if threshold is set
+          if (reading.alarm_config.warning_threshold !== null) {
+            conditions.push({
+              operator: reading.alarm_config.warning_operator,
+              value: reading.alarm_config.warning_threshold,
+              severity: "warning",
+              message: `${reading.name} ${reading.alarm_config.warning_operator} ${reading.alarm_config.warning_threshold}${reading.unit} (Warning)`,
+            });
+          }
+
+          // Add critical condition if threshold is set
+          if (reading.alarm_config.critical_threshold !== null) {
+            conditions.push({
+              operator: reading.alarm_config.critical_operator,
+              value: reading.alarm_config.critical_threshold,
+              severity: "critical",
+              message: `${reading.name} ${reading.alarm_config.critical_operator} ${reading.alarm_config.critical_threshold}${reading.unit} (Critical)`,
+            });
+          }
+
+          if (conditions.length > 0) {
+            alarmDefinitions.push({
+              id: `${reading.field_id}_alarm`,
+              name: `${reading.name} Alarm`,
+              description: `Threshold alarm for ${reading.name}`,
+              source_type: "device_info",
+              source_key: reading.field_id,
+              conditions,
+              enabled_by_default: true,
+              cooldown_seconds: 300,
+            });
+          }
+        }
+      });
+
+      // Add status alarm (online/offline)
+      if (statusAlarm.enabled) {
+        alarmDefinitions.push({
+          id: "controller_offline",
+          name: "Controller Offline",
+          description: "Alarm when controller goes offline",
+          source_type: "heartbeat",
+          source_key: "last_heartbeat",
+          conditions: [
+            {
+              operator: ">",
+              value: statusAlarm.offline_timeout_seconds,
+              severity: statusAlarm.offline_severity,
+              message: `Controller offline for more than ${statusAlarm.offline_timeout_seconds} seconds`,
+            },
+          ],
+          enabled_by_default: true,
+          cooldown_seconds: 60,
+        });
+      }
 
       // Generate template_id for new templates, keep existing for edits
       const templateId = isEditing && template
@@ -427,12 +698,11 @@ export function MasterDeviceTemplateForm({
         : generateNumericTemplateId();
 
       // Derive controller_type from hardware_type
-      // Map hardware types to controller types
       const controllerType = hardware.hardware_type === "plc"
         ? "plc"
         : hardware.hardware_type === "gateway"
         ? "gateway"
-        : "raspberry_pi"; // Default for controller variants
+        : "raspberry_pi";
 
       // Prepare template data
       const templateData = {
@@ -440,18 +710,16 @@ export function MasterDeviceTemplateForm({
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         controller_type: controllerType,
-        hardware_type_id: formData.hardware_id, // Link to approved_hardware table
-        brand: hardware.brand, // Auto-populated from hardware
-        model: hardware.model, // Auto-populated from hardware
+        hardware_type_id: formData.hardware_id,
+        brand: hardware.brand,
+        model: hardware.model,
         template_type: formData.template_type,
-        // For custom templates, set enterprise_id from form
         enterprise_id:
           formData.template_type === "custom" ? formData.enterprise_id : null,
-        // Set created_by for new templates
         created_by: isEditing ? template?.created_by : user?.id,
         registers: selectedRegisters,
         calculated_fields: selectedCalculatedFields,
-        alarm_definitions: template?.alarm_definitions || [],
+        alarm_definitions: alarmDefinitions,
         is_active: formData.is_active,
       };
 
@@ -524,6 +792,42 @@ export function MasterDeviceTemplateForm({
         f.field_id === field_id ? { ...f, storage_mode: mode } : f
       )
     );
+  };
+
+  // Update logging frequency for a controller reading
+  const updateControllerReadingFrequency = (field_id: string, frequency: number) => {
+    setControllerReadings((prev) =>
+      prev.map((f) =>
+        f.field_id === field_id ? { ...f, logging_frequency_seconds: frequency } : f
+      )
+    );
+  };
+
+  // Update alarm config for a controller reading
+  const updateControllerReadingAlarm = (
+    field_id: string,
+    alarmConfig: Partial<ReadingAlarmConfig>
+  ) => {
+    setControllerReadings((prev) =>
+      prev.map((f) =>
+        f.field_id === field_id
+          ? { ...f, alarm_config: { ...f.alarm_config, ...alarmConfig } }
+          : f
+      )
+    );
+  };
+
+  // Toggle alarm expanded state
+  const toggleAlarmExpanded = (field_id: string) => {
+    setExpandedAlarms((prev) => {
+      const next = new Set(prev);
+      if (next.has(field_id)) {
+        next.delete(field_id);
+      } else {
+        next.add(field_id);
+      }
+      return next;
+    });
   };
 
   // Get counts
@@ -739,58 +1043,68 @@ export function MasterDeviceTemplateForm({
               </span>
             </div>
             <p className="text-sm text-muted-foreground">
-              Site-level aggregations computed by the controller daily.
+              Site-level aggregations computed by the controller.
             </p>
 
             <div className="border rounded-lg divide-y">
-              {calculatedFields.map((field) => {
-                const original = CONTROLLER_CALCULATED_FIELDS.find(
-                  (f) => f.field_id === field.field_id
-                );
-                return (
-                  <div
-                    key={field.field_id}
-                    className="flex items-center gap-4 p-3 hover:bg-muted/30"
-                  >
-                    {/* Checkbox */}
-                    <Checkbox
-                      id={`calc-${field.field_id}`}
-                      checked={field.enabled}
-                      onCheckedChange={() => toggleCalculatedField(field.field_id)}
-                    />
-
-                    {/* Name and Unit */}
-                    <label
-                      htmlFor={`calc-${field.field_id}`}
-                      className="flex-1 text-sm cursor-pointer"
+              {isLoadingCalculatedFields ? (
+                <div className="p-4 text-center text-muted-foreground text-sm">
+                  Loading calculated fields...
+                </div>
+              ) : calculatedFields.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground text-sm">
+                  No calculated fields available
+                </div>
+              ) : (
+                calculatedFields.map((field) => {
+                  const dbField = dbCalculatedFields.find(
+                    (f) => f.field_id === field.field_id
+                  );
+                  return (
+                    <div
+                      key={field.field_id}
+                      className="flex items-center gap-4 p-3 hover:bg-muted/30"
                     >
-                      {field.name}
-                      {original && (
-                        <span className="text-muted-foreground ml-2">
-                          ({original.unit})
-                        </span>
-                      )}
-                    </label>
+                      {/* Checkbox */}
+                      <Checkbox
+                        id={`calc-${field.field_id}`}
+                        checked={field.enabled}
+                        onCheckedChange={() => toggleCalculatedField(field.field_id)}
+                      />
 
-                    {/* Storage Mode Selector */}
-                    <Select
-                      value={field.storage_mode}
-                      onValueChange={(value: StorageMode) =>
-                        updateCalculatedFieldMode(field.field_id, value)
-                      }
-                      disabled={!field.enabled}
-                    >
-                      <SelectTrigger className="w-[120px] h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="log">Log</SelectItem>
-                        <SelectItem value="viz_only">Viz Only</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                );
-              })}
+                      {/* Name and Unit */}
+                      <label
+                        htmlFor={`calc-${field.field_id}`}
+                        className="flex-1 text-sm cursor-pointer"
+                      >
+                        {field.name}
+                        {dbField?.unit && (
+                          <span className="text-muted-foreground ml-2">
+                            ({dbField.unit})
+                          </span>
+                        )}
+                      </label>
+
+                      {/* Storage Mode Selector */}
+                      <Select
+                        value={field.storage_mode}
+                        onValueChange={(value: StorageMode) =>
+                          updateCalculatedFieldMode(field.field_id, value)
+                        }
+                        disabled={!field.enabled}
+                      >
+                        <SelectTrigger className="w-[120px] h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="log">Log</SelectItem>
+                          <SelectItem value="viz_only">Viz Only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -813,53 +1127,286 @@ export function MasterDeviceTemplateForm({
 
             <div className="border rounded-lg divide-y">
               {controllerReadings.map((field) => {
-                const original = CONTROLLER_READINGS.find(
-                  (f) => f.field_id === field.field_id
-                );
+                const isExpanded = expandedAlarms.has(field.field_id);
                 return (
-                  <div
+                  <Collapsible
                     key={field.field_id}
-                    className="flex items-center gap-4 p-3 hover:bg-muted/30"
+                    open={isExpanded && field.enabled}
+                    onOpenChange={() => field.enabled && toggleAlarmExpanded(field.field_id)}
                   >
-                    {/* Checkbox */}
-                    <Checkbox
-                      id={`reading-${field.field_id}`}
-                      checked={field.enabled}
-                      onCheckedChange={() => toggleControllerReading(field.field_id)}
-                    />
+                    <div className="p-3 hover:bg-muted/30">
+                      {/* Main row */}
+                      <div className="flex items-center gap-4">
+                        {/* Checkbox */}
+                        <Checkbox
+                          id={`reading-${field.field_id}`}
+                          checked={field.enabled}
+                          onCheckedChange={() => toggleControllerReading(field.field_id)}
+                        />
 
-                    {/* Name and Unit */}
-                    <label
-                      htmlFor={`reading-${field.field_id}`}
-                      className="flex-1 text-sm cursor-pointer"
+                        {/* Name and Unit */}
+                        <label
+                          htmlFor={`reading-${field.field_id}`}
+                          className="flex-1 text-sm cursor-pointer"
+                        >
+                          {field.name}
+                          <span className="text-muted-foreground ml-2">
+                            ({field.unit})
+                          </span>
+                        </label>
+
+                        {/* Logging Frequency */}
+                        <Select
+                          value={field.logging_frequency_seconds.toString()}
+                          onValueChange={(value) =>
+                            updateControllerReadingFrequency(field.field_id, parseInt(value))
+                          }
+                          disabled={!field.enabled}
+                        >
+                          <SelectTrigger className="w-[90px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {LOGGING_FREQUENCY_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value.toString()}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        {/* Storage Mode Selector */}
+                        <Select
+                          value={field.storage_mode}
+                          onValueChange={(value: StorageMode) =>
+                            updateControllerReadingMode(field.field_id, value)
+                          }
+                          disabled={!field.enabled}
+                        >
+                          <SelectTrigger className="w-[100px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="log">Log</SelectItem>
+                            <SelectItem value="viz_only">Viz Only</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {/* Expand alarm config button */}
+                        <CollapsibleTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!field.enabled}
+                            className="h-8 px-2"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className={`h-4 w-4 transition-transform ${isExpanded && field.enabled ? "rotate-180" : ""}`}
+                            >
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
+                          </Button>
+                        </CollapsibleTrigger>
+                      </div>
+
+                      {/* Alarm configuration (collapsible) */}
+                      <CollapsibleContent className="mt-3 pl-8 pr-2 space-y-3">
+                        <div className="rounded-md border p-3 bg-muted/30">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-sm font-medium">Alarm Configuration</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Enable Alarms</span>
+                              <Switch
+                                checked={field.alarm_config.enabled}
+                                onCheckedChange={(checked) =>
+                                  updateControllerReadingAlarm(field.field_id, { enabled: checked })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          {field.alarm_config.enabled && (
+                            <div className="space-y-3">
+                              {/* Warning threshold */}
+                              <div className="flex items-center gap-3">
+                                <span className="w-16 text-sm text-yellow-600 font-medium">Warning</span>
+                                <Select
+                                  value={field.alarm_config.warning_operator}
+                                  onValueChange={(value: ">" | "<") =>
+                                    updateControllerReadingAlarm(field.field_id, {
+                                      warning_operator: value,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="w-16 h-8">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value=">">&gt;</SelectItem>
+                                    <SelectItem value="<">&lt;</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  type="number"
+                                  placeholder="Value"
+                                  value={field.alarm_config.warning_threshold ?? ""}
+                                  onChange={(e) =>
+                                    updateControllerReadingAlarm(field.field_id, {
+                                      warning_threshold: e.target.value ? parseFloat(e.target.value) : null,
+                                    })
+                                  }
+                                  className="w-24 h-8"
+                                />
+                                <span className="text-sm text-muted-foreground">{field.unit}</span>
+                              </div>
+
+                              {/* Critical threshold */}
+                              <div className="flex items-center gap-3">
+                                <span className="w-16 text-sm text-red-600 font-medium">Critical</span>
+                                <Select
+                                  value={field.alarm_config.critical_operator}
+                                  onValueChange={(value: ">" | "<") =>
+                                    updateControllerReadingAlarm(field.field_id, {
+                                      critical_operator: value,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="w-16 h-8">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value=">">&gt;</SelectItem>
+                                    <SelectItem value="<">&lt;</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  type="number"
+                                  placeholder="Value"
+                                  value={field.alarm_config.critical_threshold ?? ""}
+                                  onChange={(e) =>
+                                    updateControllerReadingAlarm(field.field_id, {
+                                      critical_threshold: e.target.value ? parseFloat(e.target.value) : null,
+                                    })
+                                  }
+                                  className="w-24 h-8"
+                                />
+                                <span className="text-sm text-muted-foreground">{field.unit}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </div>
+                  </Collapsible>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t" />
+
+          {/* Online/Offline Status Alarm Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                Connection Status Alarm
+              </h3>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Alert when controller goes offline.
+            </p>
+
+            <div className="rounded-lg border p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4 text-red-600 dark:text-red-400"
                     >
-                      {field.name}
-                      {original && (
-                        <span className="text-muted-foreground ml-2">
-                          ({original.unit})
-                        </span>
-                      )}
-                    </label>
+                      <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                      <line x1="12" y1="2" x2="12" y2="12" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Controller Offline</p>
+                    <p className="text-xs text-muted-foreground">
+                      Triggers when no heartbeat received
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={statusAlarm.enabled}
+                  onCheckedChange={(checked) =>
+                    setStatusAlarm({ ...statusAlarm, enabled: checked })
+                  }
+                />
+              </div>
 
-                    {/* Storage Mode Selector */}
+              {statusAlarm.enabled && (
+                <div className="pl-11 space-y-3">
+                  {/* Severity */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-24">Severity</span>
                     <Select
-                      value={field.storage_mode}
-                      onValueChange={(value: StorageMode) =>
-                        updateControllerReadingMode(field.field_id, value)
+                      value={statusAlarm.offline_severity}
+                      onValueChange={(value: AlarmSeverity) =>
+                        setStatusAlarm({ ...statusAlarm, offline_severity: value })
                       }
-                      disabled={!field.enabled}
                     >
-                      <SelectTrigger className="w-[120px] h-8">
+                      <SelectTrigger className="w-32 h-8">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="log">Log</SelectItem>
-                        <SelectItem value="viz_only">Viz Only</SelectItem>
+                        <SelectItem value="warning">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                            Warning
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="critical">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-red-500" />
+                            Critical
+                          </span>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                );
-              })}
+
+                  {/* Timeout */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-24">Timeout</span>
+                    <Input
+                      type="number"
+                      value={statusAlarm.offline_timeout_seconds}
+                      onChange={(e) =>
+                        setStatusAlarm({
+                          ...statusAlarm,
+                          offline_timeout_seconds: parseInt(e.target.value) || 60,
+                        })
+                      }
+                      className="w-24 h-8"
+                      min={10}
+                    />
+                    <span className="text-sm text-muted-foreground">seconds</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
