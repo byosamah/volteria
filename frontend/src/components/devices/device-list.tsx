@@ -126,9 +126,9 @@ interface Device {
   template_synced_at: string | null;
   // Logging interval in milliseconds
   logging_interval_ms: number | null;
-  // Connection alarm settings
-  connection_alarm_enabled: boolean | null;
-  connection_timeout_multiplier: number | null;
+  // Connection alarm settings (optional - may not exist in older records)
+  connection_alarm_enabled?: boolean | null;
+  connection_timeout_multiplier?: number | null;
   device_templates: {
     name: string;
     device_type: string;
