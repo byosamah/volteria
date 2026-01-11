@@ -117,14 +117,17 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
         },
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        toast.success(`Prepared ${result.synced_devices} device(s) for sync - controller will pull on next cycle`);
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        toast.success(result.message || `Synced ${result.synced_devices} device(s) to controller`);
         // Refresh status
         await fetchStatus();
       } else {
-        const error = await response.json();
-        toast.error(error.detail || "Failed to synchronize");
+        // Handle error responses (timeout, failed, etc.)
+        const errorMsg = result.error || result.detail || "Sync failed";
+        const hint = result.hint ? ` ${result.hint}` : "";
+        toast.error(`${errorMsg}${hint}`);
       }
     } catch (error) {
       console.error("Sync failed:", error);
@@ -207,12 +210,12 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
             {syncing ? (
               <>
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Preparing...
+                Syncing...
               </>
             ) : (
               <>
                 <RefreshCw className="h-4 w-4 mr-2" />
-                Prepare config for sync
+                Sync now
               </>
             )}
           </Button>
