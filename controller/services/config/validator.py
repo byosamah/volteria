@@ -41,44 +41,53 @@ class ConfigValidator:
 
         Returns:
             Tuple of (is_valid, list of error messages)
+            Note: Device-level issues are logged as warnings but don't block config.
         """
-        errors: list[str] = []
+        critical_errors: list[str] = []
+        warnings: list[str] = []
 
-        # Basic required fields
+        # Basic required fields - CRITICAL
         if not config.get("id"):
-            errors.append("Missing site ID")
+            critical_errors.append("Missing site ID")
 
         if not config.get("operation_mode"):
-            errors.append("Missing operation mode")
+            critical_errors.append("Missing operation mode")
 
-        # Validate mode-specific settings
+        # Validate mode-specific settings - CRITICAL
         operation_mode = config.get("operation_mode", "zero_dg_reverse")
         mode_errors = self._validate_mode_settings(config, operation_mode)
-        errors.extend(mode_errors)
+        critical_errors.extend(mode_errors)
 
-        # Validate devices
-        device_errors = self._validate_devices(config, operation_mode)
-        errors.extend(device_errors)
+        # Validate devices - WARNINGS only (don't block config)
+        device_warnings = self._validate_devices(config, operation_mode)
+        warnings.extend(device_warnings)
 
-        # Validate control settings
+        # Validate control settings - CRITICAL
         control_errors = self._validate_control_settings(config)
-        errors.extend(control_errors)
+        critical_errors.extend(control_errors)
 
-        # Validate safe mode settings
-        safe_mode_errors = self._validate_safe_mode(config)
-        errors.extend(safe_mode_errors)
+        # Validate safe mode settings - WARNINGS
+        safe_mode_warnings = self._validate_safe_mode(config)
+        warnings.extend(safe_mode_warnings)
 
-        is_valid = len(errors) == 0
+        # Log warnings but don't block config
+        if warnings:
+            logger.warning(
+                f"Config validation warnings: {len(warnings)} issues",
+                extra={"warnings": warnings[:5]},  # Log first 5 only
+            )
+
+        is_valid = len(critical_errors) == 0
 
         if not is_valid:
-            logger.warning(
-                f"Config validation failed: {len(errors)} errors",
-                extra={"errors": errors},
+            logger.error(
+                f"Config validation FAILED: {len(critical_errors)} critical errors",
+                extra={"errors": critical_errors},
             )
         else:
-            logger.debug("Config validation passed")
+            logger.info(f"Config validation passed ({len(warnings)} warnings)")
 
-        return is_valid, errors
+        return is_valid, critical_errors
 
     def _validate_mode_settings(
         self,
