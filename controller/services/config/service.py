@@ -363,17 +363,23 @@ class ConfigService:
             # Update command status to "in_progress"
             await self._update_command_status(command_id, "in_progress")
 
-            # Force sync
-            success = await self.force_sync()
+            # Force sync - fetch fresh config from cloud
+            # Note: force_sync returns False if config unchanged, which is OK
+            config_changed = await self.force_sync()
 
-            if success:
+            # For manual sync, success means we fetched and validated config
+            # Even if unchanged, the command succeeded
+            if self._current_config:
                 await self._update_command_status(command_id, "completed")
-                logger.info(f"Sync command {command_id} completed successfully")
+                if config_changed:
+                    logger.info(f"Sync command {command_id} completed - config updated")
+                else:
+                    logger.info(f"Sync command {command_id} completed - config unchanged")
             else:
                 await self._update_command_status(
-                    command_id, "failed", "Config sync failed"
+                    command_id, "failed", "No config available after sync"
                 )
-                logger.error(f"Sync command {command_id} failed")
+                logger.error(f"Sync command {command_id} failed - no config")
 
         except Exception as e:
             logger.error(f"Error executing sync command {command_id}: {e}")
