@@ -45,3 +45,7 @@ npm-debug.log*
 # Misc
 .vercel
 .turbo
+
+# Playwright
+frontend/playwright-report/
+frontend/test-results/
