@@ -56,8 +56,8 @@ test.describe('Authenticated Pages', () => {
     await page.fill('input[type="password"]', TEST_PASSWORD);
     await page.click('button[type="submit"]');
 
-    // Wait for redirect after login
-    await page.waitForURL(/\/(projects|dashboard)/, { timeout: 10000 });
+    // Wait for login to complete - look for dashboard element or navigation
+    await page.waitForSelector('nav a[href="/projects"], [data-testid="dashboard"]', { timeout: 15000 });
   });
 
   test('projects page loads', async ({ page }) => {

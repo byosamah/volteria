@@ -69,6 +69,10 @@ cd /c/Users/Hp/volteria/frontend && npm test
 **Test files location**: `frontend/tests/e2e/`
 **Environment file**: `frontend/.env.local` (contains Supabase credentials)
 
+**Test Account (superadmin)** - USE FOR ALL TESTING:
+- Email: `mohkof1106@gmail.com`
+- Password: `Solar@1996`
+
 ### Pre-Deploy Checklist
 1. Run `npm run build` - catches TypeScript/build errors
 2. Run `npm test` - catches runtime issues
