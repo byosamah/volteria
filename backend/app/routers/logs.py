@@ -52,7 +52,8 @@ class ControlLogBatch(BaseModel):
 class ControlLogResponse(BaseModel):
     """Control log response for queries."""
     id: int
-    project_id: str
+    site_id: str
+    project_id: str  # Derived from site for backward compatibility
     timestamp: datetime
     total_load_kw: Optional[float]
     dg_power_kw: Optional[float]
@@ -80,9 +81,9 @@ class LogStats(BaseModel):
 # ENDPOINTS - DATA INGESTION
 # ============================================
 
-@router.post("/{project_id}/push", status_code=status.HTTP_201_CREATED)
-async def push_logs(
-    project_id: UUID,
+@router.post("/site/{site_id}/push", status_code=status.HTTP_201_CREATED)
+async def push_logs_by_site(
+    site_id: UUID,
     batch: ControlLogBatch,
     supabase=Depends(get_supabase)
 ):
@@ -92,26 +93,25 @@ async def push_logs(
     Called periodically by the on-site controller to sync
     buffered data to the cloud. Handles:
     - Batch inserts for efficiency
-    - Duplicate detection (by timestamp)
+    - Duplicate detection (by site_id + timestamp)
     - Offline data sync (timestamps preserved)
     """
-    # First verify the project exists
-    project_result = supabase.table("projects").select("id").eq(
-        "id", str(project_id)
+    # Verify the site exists
+    site_result = supabase.table("sites").select("id").eq(
+        "id", str(site_id)
     ).execute()
 
-    if not project_result.data:
+    if not site_result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Project {project_id} not found"
+            detail=f"Site {site_id} not found"
         )
 
     # Prepare batch data for insert
-    # Each entry becomes a row in control_logs table
     log_entries = []
     for entry in batch.entries:
         log_entries.append({
-            "project_id": str(project_id),
+            "site_id": str(site_id),
             "timestamp": entry.timestamp.isoformat(),
             "total_load_kw": entry.total_load_kw,
             "dg_power_kw": entry.dg_power_kw,
@@ -127,16 +127,75 @@ async def push_logs(
         })
 
     # Batch insert all entries
-    # Using upsert to handle duplicates (same project_id + timestamp)
+    # Using upsert to handle duplicates (same site_id + timestamp)
     if log_entries:
-        result = supabase.table("control_logs").upsert(
+        supabase.table("control_logs").upsert(
             log_entries,
-            on_conflict="project_id,timestamp"  # Assumes unique constraint on these columns
+            on_conflict="site_id,timestamp"
+        ).execute()
+
+    return {
+        "status": "received",
+        "site_id": str(site_id),
+        "entries_received": len(batch.entries)
+    }
+
+
+@router.post("/{project_id}/push", status_code=status.HTTP_201_CREATED, deprecated=True)
+async def push_logs(
+    project_id: UUID,
+    batch: ControlLogBatch,
+    supabase=Depends(get_supabase)
+):
+    """
+    DEPRECATED: Use /site/{site_id}/push instead.
+
+    This endpoint is kept for backward compatibility with older controllers.
+    It will find the first site in the project and write logs to that site.
+    """
+    # Find the first site in this project
+    site_result = supabase.table("sites").select("id").eq(
+        "project_id", str(project_id)
+    ).eq("is_active", True).limit(1).execute()
+
+    if not site_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No active sites found for project {project_id}"
+        )
+
+    site_id = site_result.data[0]["id"]
+
+    # Prepare batch data for insert
+    log_entries = []
+    for entry in batch.entries:
+        log_entries.append({
+            "site_id": site_id,
+            "timestamp": entry.timestamp.isoformat(),
+            "total_load_kw": entry.total_load_kw,
+            "dg_power_kw": entry.dg_power_kw,
+            "solar_output_kw": entry.solar_output_kw,
+            "solar_limit_pct": entry.solar_limit_pct,
+            "available_headroom_kw": entry.available_headroom_kw,
+            "safe_mode_active": entry.safe_mode_active,
+            "config_mode": entry.config_mode,
+            "load_meters_online": entry.load_meters_online,
+            "inverters_online": entry.inverters_online,
+            "generators_online": entry.generators_online,
+            "raw_data": entry.raw_data
+        })
+
+    # Batch insert all entries
+    if log_entries:
+        supabase.table("control_logs").upsert(
+            log_entries,
+            on_conflict="site_id,timestamp"
         ).execute()
 
     return {
         "status": "received",
         "project_id": str(project_id),
+        "site_id": site_id,
         "entries_received": len(batch.entries)
     }
 
@@ -161,13 +220,26 @@ async def get_logs(
     Returns logs within the specified time range.
     Sorted by timestamp descending (newest first).
     User must have access to the project.
+
+    Note: Logs are stored by site_id. This endpoint queries all sites
+    in the project and aggregates their logs.
     """
-    # Build query
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
+        "project_id", str(project_id)
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        return []
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Query control_logs with JOIN to sites for project_id
     query = supabase.table("control_logs").select(
-        "id, project_id, timestamp, total_load_kw, dg_power_kw, "
+        "id, site_id, timestamp, total_load_kw, dg_power_kw, "
         "solar_output_kw, solar_limit_pct, available_headroom_kw, "
-        "safe_mode_active, config_mode"
-    ).eq("project_id", str(project_id))
+        "safe_mode_active, config_mode, sites!inner(project_id)"
+    ).in_("site_id", site_ids)
 
     # Apply time range filters if provided
     if start:
@@ -183,9 +255,14 @@ async def get_logs(
     # Transform to response format
     logs = []
     for row in result.data:
+        # Extract project_id from the joined sites table
+        sites_data = row.get("sites", {})
+        derived_project_id = sites_data.get("project_id", str(project_id)) if sites_data else str(project_id)
+
         logs.append(ControlLogResponse(
             id=row["id"],
-            project_id=row["project_id"],
+            site_id=row["site_id"],
+            project_id=derived_project_id,
             timestamp=row["timestamp"],
             total_load_kw=row.get("total_load_kw"),
             dg_power_kw=row.get("dg_power_kw"),
@@ -211,12 +288,25 @@ async def get_latest_log(
     Useful for dashboard real-time display.
     User must have access to the project.
     """
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
+        "project_id", str(project_id)
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No sites found for this project"
+        )
+
+    site_ids = [s["id"] for s in sites_result.data]
+
     result = supabase.table("control_logs").select(
-        "id, project_id, timestamp, total_load_kw, dg_power_kw, "
+        "id, site_id, timestamp, total_load_kw, dg_power_kw, "
         "solar_output_kw, solar_limit_pct, available_headroom_kw, "
         "safe_mode_active, config_mode"
-    ).eq(
-        "project_id", str(project_id)
+    ).in_(
+        "site_id", site_ids
     ).order(
         "timestamp", desc=True
     ).limit(1).execute()
@@ -230,7 +320,8 @@ async def get_latest_log(
     row = result.data[0]
     return ControlLogResponse(
         id=row["id"],
-        project_id=row["project_id"],
+        site_id=row["site_id"],
+        project_id=str(project_id),
         timestamp=row["timestamp"],
         total_load_kw=row.get("total_load_kw"),
         dg_power_kw=row.get("dg_power_kw"),
@@ -257,11 +348,31 @@ async def get_log_stats(
     max solar output, safe mode triggers, etc.
     User must have access to the project.
     """
-    # Query logs within time range
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
+        "project_id", str(project_id)
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        return LogStats(
+            period_start=start,
+            period_end=end,
+            total_records=0,
+            avg_load_kw=None,
+            max_load_kw=None,
+            avg_solar_output_kw=None,
+            max_solar_output_kw=None,
+            avg_solar_limit_pct=None,
+            safe_mode_triggers=0
+        )
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Query logs within time range via site_id
     result = supabase.table("control_logs").select(
         "total_load_kw, solar_output_kw, solar_limit_pct, safe_mode_active"
-    ).eq(
-        "project_id", str(project_id)
+    ).in_(
+        "site_id", site_ids
     ).gte(
         "timestamp", start.isoformat()
     ).lte(
@@ -332,12 +443,25 @@ async def export_logs(
             detail="Format must be 'csv' or 'json'"
         )
 
-    # Query all logs in time range (no pagination for export)
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
+        "project_id", str(project_id)
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No sites found for this project"
+        )
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Query all logs in time range via site_id (no pagination for export)
     result = supabase.table("control_logs").select(
         "timestamp, total_load_kw, dg_power_kw, solar_output_kw, "
         "solar_limit_pct, available_headroom_kw, safe_mode_active, config_mode"
-    ).eq(
-        "project_id", str(project_id)
+    ).in_(
+        "site_id", site_ids
     ).gte(
         "timestamp", start.isoformat()
     ).lte(

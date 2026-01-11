@@ -58,7 +58,8 @@ class AlarmAcknowledge(BaseModel):
 class AlarmResponse(BaseModel):
     """Alarm response."""
     id: str
-    project_id: str
+    site_id: str
+    project_id: str  # Derived from site for backward compatibility
     alarm_type: str
     device_name: Optional[str]
     message: str
@@ -84,11 +85,25 @@ class AlarmStats(BaseModel):
 # HELPER FUNCTIONS
 # ============================================
 
-def row_to_alarm_response(row: dict) -> AlarmResponse:
-    """Convert a database row to AlarmResponse."""
+def row_to_alarm_response(row: dict, project_id: Optional[str] = None) -> AlarmResponse:
+    """Convert a database row to AlarmResponse.
+
+    Args:
+        row: Database row with alarm data
+        project_id: Optional project_id to use (for when derived from context)
+    """
+    # Get project_id from joined sites table or passed parameter
+    sites_data = row.get("sites", {})
+    derived_project_id = project_id
+    if not derived_project_id and sites_data:
+        derived_project_id = sites_data.get("project_id")
+    if not derived_project_id:
+        derived_project_id = row.get("project_id", "")  # Fallback for migration period
+
     return AlarmResponse(
         id=row["id"],
-        project_id=row["project_id"],
+        site_id=row.get("site_id", ""),
+        project_id=derived_project_id,
         alarm_type=row["alarm_type"],
         device_name=row.get("device_name"),
         message=row["message"],
@@ -105,6 +120,77 @@ def row_to_alarm_response(row: dict) -> AlarmResponse:
 # ============================================
 # ENDPOINTS - ALARM MANAGEMENT
 # ============================================
+
+@router.post("/site/{site_id}", response_model=AlarmResponse, status_code=status.HTTP_201_CREATED)
+async def create_alarm_by_site(
+    site_id: UUID,
+    alarm: AlarmCreate,
+    background_tasks: BackgroundTasks,
+    supabase=Depends(get_supabase)
+):
+    """
+    Create a new alarm for a site.
+
+    Called by the on-site controller when an alarm condition is detected.
+    The site_id is used to associate the alarm with the correct site.
+    """
+    # Validate alarm_type
+    if alarm.alarm_type not in ALARM_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid alarm_type. Must be one of: {ALARM_TYPES}"
+        )
+
+    # Validate severity
+    if alarm.severity not in SEVERITY_LEVELS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid severity. Must be one of: {SEVERITY_LEVELS}"
+        )
+
+    # Verify site exists and get project_id
+    site_result = supabase.table("sites").select("id, project_id").eq(
+        "id", str(site_id)
+    ).execute()
+
+    if not site_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Site {site_id} not found"
+        )
+
+    project_id = site_result.data[0]["project_id"]
+
+    # Create alarm record with site_id
+    alarm_data = {
+        "id": str(uuid4()),
+        "site_id": str(site_id),
+        "alarm_type": alarm.alarm_type,
+        "device_name": alarm.device_name,
+        "message": alarm.message,
+        "severity": alarm.severity,
+        "acknowledged": False,
+        "resolved": False
+    }
+
+    result = supabase.table("alarms").insert(alarm_data).execute()
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create alarm"
+        )
+
+    # Create notifications for users with project access (runs in background)
+    background_tasks.add_task(
+        create_alarm_notifications,
+        supabase,
+        alarm_data,
+        str(project_id)
+    )
+
+    return row_to_alarm_response(result.data[0], project_id=project_id)
+
 
 @router.get("/{project_id}", response_model=list[AlarmResponse])
 async def list_alarms(
@@ -127,6 +213,9 @@ async def list_alarms(
 
     Sorted by created_at descending (newest first).
     User must have access to the project.
+
+    Note: Alarms are stored by site_id. This endpoint queries all sites
+    in the project and aggregates their alarms.
     """
     # Validate severity if provided
     if severity and severity not in SEVERITY_LEVELS:
@@ -142,10 +231,20 @@ async def list_alarms(
             detail=f"Invalid alarm_type. Must be one of: {ALARM_TYPES}"
         )
 
-    # Build query
-    query = supabase.table("alarms").select("*").eq(
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
         "project_id", str(project_id)
-    )
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        return []
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Build query using site_id
+    query = supabase.table("alarms").select(
+        "*, sites!inner(project_id)"
+    ).in_("site_id", site_ids)
 
     # Apply optional filters
     if acknowledged is not None:
@@ -161,10 +260,10 @@ async def list_alarms(
     result = query.execute()
 
     # Transform to response format
-    return [row_to_alarm_response(row) for row in result.data]
+    return [row_to_alarm_response(row, project_id=str(project_id)) for row in result.data]
 
 
-@router.post("/{project_id}", response_model=AlarmResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{project_id}", response_model=AlarmResponse, status_code=status.HTTP_201_CREATED, deprecated=True)
 async def create_alarm(
     project_id: UUID,
     alarm: AlarmCreate,
@@ -172,10 +271,10 @@ async def create_alarm(
     supabase=Depends(get_supabase)
 ):
     """
-    Create a new alarm.
+    DEPRECATED: Use /site/{site_id} instead.
 
-    Called by the on-site controller when an alarm condition is detected.
-    Also used internally for system alarms (e.g., controller offline).
+    This endpoint is kept for backward compatibility with older controllers.
+    It will find the first site in the project and create the alarm for that site.
     """
     # Validate alarm_type
     if alarm.alarm_type not in ALARM_TYPES:
@@ -191,21 +290,23 @@ async def create_alarm(
             detail=f"Invalid severity. Must be one of: {SEVERITY_LEVELS}"
         )
 
-    # Verify project exists
-    project_result = supabase.table("projects").select("id").eq(
-        "id", str(project_id)
-    ).execute()
+    # Find the first site in this project
+    site_result = supabase.table("sites").select("id").eq(
+        "project_id", str(project_id)
+    ).eq("is_active", True).limit(1).execute()
 
-    if not project_result.data:
+    if not site_result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Project {project_id} not found"
+            detail=f"No active sites found for project {project_id}"
         )
 
-    # Create alarm record
+    site_id = site_result.data[0]["id"]
+
+    # Create alarm record with site_id
     alarm_data = {
         "id": str(uuid4()),
-        "project_id": str(project_id),
+        "site_id": site_id,
         "alarm_type": alarm.alarm_type,
         "device_name": alarm.device_name,
         "message": alarm.message,
@@ -223,7 +324,6 @@ async def create_alarm(
         )
 
     # Create notifications for users with project access (runs in background)
-    # This doesn't block the response - controller gets immediate confirmation
     background_tasks.add_task(
         create_alarm_notifications,
         supabase,
@@ -231,7 +331,7 @@ async def create_alarm(
         str(project_id)
     )
 
-    return row_to_alarm_response(result.data[0])
+    return row_to_alarm_response(result.data[0], project_id=str(project_id))
 
 
 @router.get("/{project_id}/{alarm_id}", response_model=AlarmResponse)
@@ -246,11 +346,23 @@ async def get_alarm(
 
     User must have access to the project.
     """
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
+        "project_id", str(project_id)
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Alarm {alarm_id} not found"
+        )
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Query alarm by id and verify it belongs to a site in the project
     result = supabase.table("alarms").select("*").eq(
         "id", str(alarm_id)
-    ).eq(
-        "project_id", str(project_id)
-    ).execute()
+    ).in_("site_id", site_ids).execute()
 
     if not result.data:
         raise HTTPException(
@@ -258,7 +370,7 @@ async def get_alarm(
             detail=f"Alarm {alarm_id} not found"
         )
 
-    return row_to_alarm_response(result.data[0])
+    return row_to_alarm_response(result.data[0], project_id=str(project_id))
 
 
 # ============================================
@@ -278,12 +390,23 @@ async def acknowledge_alarm(
     Sets acknowledged=true and records who acknowledged it.
     User must have access to the project.
     """
-    # First check if alarm exists and belongs to project
-    check_result = supabase.table("alarms").select("id, acknowledged").eq(
-        "id", str(alarm_id)
-    ).eq(
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
         "project_id", str(project_id)
-    ).execute()
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Alarm {alarm_id} not found"
+        )
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Check if alarm exists and belongs to a site in the project
+    check_result = supabase.table("alarms").select("id, acknowledged, site_id").eq(
+        "id", str(alarm_id)
+    ).in_("site_id", site_ids).execute()
 
     if not check_result.data:
         raise HTTPException(
@@ -311,7 +434,7 @@ async def acknowledge_alarm(
             detail="Failed to acknowledge alarm"
         )
 
-    return row_to_alarm_response(result.data[0])
+    return row_to_alarm_response(result.data[0], project_id=str(project_id))
 
 
 @router.post("/{project_id}/acknowledge-all")
@@ -333,9 +456,23 @@ async def acknowledge_all_alarms(
             detail=f"Invalid severity. Must be one of: {SEVERITY_LEVELS}"
         )
 
-    # Build query for unacknowledged alarms
-    query = supabase.table("alarms").select("id").eq(
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
         "project_id", str(project_id)
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        return {
+            "status": "acknowledged",
+            "count": 0,
+            "message": "No sites found for project"
+        }
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Build query for unacknowledged alarms using site_ids
+    query = supabase.table("alarms").select("id").in_(
+        "site_id", site_ids
     ).eq(
         "acknowledged", False
     )
@@ -354,22 +491,15 @@ async def acknowledge_all_alarms(
             "message": "No unacknowledged alarms found"
         }
 
-    # Build update query - use current_user.id for acknowledgment
-    update_query = supabase.table("alarms").update({
+    # Get the alarm IDs to update
+    alarm_ids = [a["id"] for a in count_result.data]
+
+    # Update alarms by ID - use current_user.id for acknowledgment
+    supabase.table("alarms").update({
         "acknowledged": True,
         "acknowledged_by": current_user.id,
         "acknowledged_at": datetime.utcnow().isoformat()
-    }).eq(
-        "project_id", str(project_id)
-    ).eq(
-        "acknowledged", False
-    )
-
-    if severity:
-        update_query = update_query.eq("severity", severity)
-
-    # Execute update
-    update_query.execute()
+    }).in_("id", alarm_ids).execute()
 
     return {
         "status": "acknowledged",
@@ -390,12 +520,23 @@ async def resolve_alarm(
     Sets resolved=true and resolved_at to current time.
     User must have access to the project.
     """
-    # First check if alarm exists and belongs to project
-    check_result = supabase.table("alarms").select("id, resolved").eq(
-        "id", str(alarm_id)
-    ).eq(
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
         "project_id", str(project_id)
-    ).execute()
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Alarm {alarm_id} not found"
+        )
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Check if alarm exists and belongs to a site in the project
+    check_result = supabase.table("alarms").select("id, resolved, site_id").eq(
+        "id", str(alarm_id)
+    ).in_("site_id", site_ids).execute()
 
     if not check_result.data:
         raise HTTPException(
@@ -422,7 +563,7 @@ async def resolve_alarm(
             detail="Failed to resolve alarm"
         )
 
-    return row_to_alarm_response(result.data[0])
+    return row_to_alarm_response(result.data[0], project_id=str(project_id))
 
 
 # ============================================
@@ -441,11 +582,27 @@ async def get_alarm_stats(
     Returns counts by severity and acknowledgment status.
     User must have access to the project.
     """
-    # Query all alarms for the project
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
+        "project_id", str(project_id)
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        return AlarmStats(
+            total_alarms=0,
+            unacknowledged=0,
+            critical_count=0,
+            warning_count=0,
+            info_count=0
+        )
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    # Query all alarms for sites in the project
     result = supabase.table("alarms").select(
         "severity, acknowledged"
-    ).eq(
-        "project_id", str(project_id)
+    ).in_(
+        "site_id", site_ids
     ).execute()
 
     if not result.data:
@@ -485,8 +642,18 @@ async def get_unacknowledged_count(
     Useful for dashboard badge display.
     User must have access to the project.
     """
-    result = supabase.table("alarms").select("id").eq(
+    # First get all site IDs for this project
+    sites_result = supabase.table("sites").select("id").eq(
         "project_id", str(project_id)
+    ).eq("is_active", True).execute()
+
+    if not sites_result.data:
+        return {"count": 0}
+
+    site_ids = [s["id"] for s in sites_result.data]
+
+    result = supabase.table("alarms").select("id").in_(
+        "site_id", site_ids
     ).eq(
         "acknowledged", False
     ).execute()
