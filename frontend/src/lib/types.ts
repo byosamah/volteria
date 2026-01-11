@@ -103,16 +103,30 @@ export interface ProjectSummary {
 // ============================================
 
 export type DeviceType =
-  | "inverter"
+  // Power generation
+  | "inverter"                      // Solar Inverter
+  | "wind_turbine"                  // Wind Turbine
+  | "bess"                          // Battery Energy Storage System
+  // Generator controllers
+  | "gas_generator_controller"      // Gas Generator Controller
+  | "diesel_generator_controller"   // Diesel Generator Controller
+  // Metering
+  | "energy_meter"                  // Energy Meter
+  | "capacitor_bank"                // Capacitor Bank
+  // Sensors
+  | "fuel_level_sensor"             // Fuel Level Sensor
+  | "fuel_flow_meter"               // Fuel Flow Meter
+  | "temperature_humidity_sensor"   // Temperature & Humidity Sensor
+  | "solar_radiation_sensor"        // Solar Radiation Sensor
+  | "wind_sensor"                   // Wind Sensor
+  // Generic
+  | "other_hardware"                // Other Hardware
+  // Legacy (backward compatibility)
   | "dg"
   | "load_meter"
-  | "sensor"  // Generic sensor (backward compatibility)
-  | "fuel_level_sensor"
-  | "temperature_humidity_sensor"
-  | "solar_radiation_sensor"
-  | "wind_sensor";
+  | "sensor";
 
-export type DeviceOperation = "solar" | "dg" | "meter" | "sensor";
+export type DeviceOperation = "solar" | "dg" | "meter" | "sensor" | "storage" | "other";
 export type Protocol = "tcp" | "rtu_gateway" | "rtu_direct";
 
 // Calculated field selection for templates

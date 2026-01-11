@@ -375,9 +375,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
             ))}
           </select>
           <p className="text-xs text-muted-foreground">
-            {formData.measurement_type
-              ? deviceTypes.find((dt) => dt.value === formData.measurement_type)?.description
-              : "Determines how this device is used in control logic and calculated fields"}
+            Used for control logic and calculated fields
           </p>
         </div>
       </div>

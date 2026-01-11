@@ -40,7 +40,19 @@
       "Bash(git -C \"C:/Users/Hp/volteria\" log --oneline -5)",
       "Bash(git -C \"C:/Users/Hp/volteria\" add \"database/migrations/053_fix_heartbeat_rls.sql\" \"frontend/src/app/api/sites/[siteId]/controller-health/route.ts\" \"frontend/src/app/api/sites/[siteId]/heartbeats/route.ts\" \"frontend/src/app/api/sites/[siteId]/status/route.ts\" \"frontend/src/app/projects/[id]/page.tsx\" \"frontend/src/components/charts/power-flow-chart.tsx\")",
       "Bash(git -C \"C:/Users/Hp/volteria\" commit -m \"$\\(cat <<''EOF''\nfix: Proper RLS policy for heartbeats instead of service key bypass\n\n- Add migration 053_fix_heartbeat_rls.sql to allow anyone to read heartbeats\n- Remove service key bypass from controller-health, heartbeats, status API routes\n- Remove service key bypass from project page\n- Fix recharts dimension warnings by adding minWidth={0} to ResponsiveContainer\n\nHeartbeats are not sensitive data \\(just controller status\\), so the proper fix\nis to update RLS policies rather than bypass them with the service key.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git -C \"C:/Users/Hp/volteria\" push origin main)"
+      "Bash(git -C \"C:/Users/Hp/volteria\" push origin main)",
+      "Bash(where:*)",
+      "Bash(sshpass:*)",
+      "Bash(dir /s /b \"C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\src\\\\app\\\\api\")",
+      "Bash(curl:*)",
+      "Bash(git -C \"C:/Users/Hp/volteria\" add \"frontend/src/app/admin/controllers/wizard/steps/step-cloud-connection.tsx\" \"frontend/src/app/admin/controllers/wizard/steps/step-download-image.tsx\" \"frontend/src/app/admin/controllers/wizard/steps/step-run-tests.tsx\")",
+      "Bash(git -C \"C:/Users/Hp/volteria\" commit -m \"$\\(cat <<''EOF''\nfeat: Update wizard to reflect 5-layer controller architecture\n\n- Step 2: Show 5 systemd services \\(system, config, device, control, logging\\)\n- Step 2: Add SSH tunnel service and SQLite database info\n- Step 5: Update config preview with services and SSH settings\n- Step 5: Add SSH tunnel establishment step\n- Step 7: Add 3 new tests \\(service health, SSH tunnel, OTA check\\)\n- Step 7: Update test explanations for all 9 tests\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(tree:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(python:*)",
+      "Bash(del C:UsersHpvolteriatest_register.sh)",
+      "Bash(PGPASSWORD=\"Solar@1996\" psql:*)"
     ]
   }
 }

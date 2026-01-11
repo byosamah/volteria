@@ -66,50 +66,97 @@ interface DeviceTemplate {
   registers?: ModbusRegister[] | null;
 }
 
-// Available device types with labels
+// Available hardware types with labels (for device templates)
 const DEVICE_TYPE_OPTIONS: { value: DeviceType; label: string }[] = [
+  { value: "gas_generator_controller", label: "Gas Generator Controller" },
+  { value: "diesel_generator_controller", label: "Diesel Generator Controller" },
+  { value: "energy_meter", label: "Energy Meter" },
+  { value: "capacitor_bank", label: "Capacitor Bank" },
   { value: "inverter", label: "Solar Inverter" },
-  { value: "load_meter", label: "Energy Meter" },
-  { value: "dg", label: "Generator Controller" },
-  { value: "sensor", label: "Sensor (Generic)" },
-  { value: "fuel_level_sensor", label: "Fuel Level Sensor" },
-  { value: "temperature_humidity_sensor", label: "Temperature & Humidity Sensor" },
   { value: "solar_radiation_sensor", label: "Solar Radiation Sensor" },
   { value: "wind_sensor", label: "Wind Sensor" },
+  { value: "wind_turbine", label: "Wind Turbine" },
+  { value: "bess", label: "Battery Energy Storage System" },
+  { value: "fuel_level_sensor", label: "Fuel Level Sensor" },
+  { value: "fuel_flow_meter", label: "Fuel Flow Meter" },
+  { value: "temperature_humidity_sensor", label: "Temperature & Humidity Sensor" },
+  { value: "other_hardware", label: "Other Hardware" },
 ];
 
-// Predefined calculated fields per device type
-const CALCULATED_FIELDS_BY_TYPE: Record<DeviceType, { field_id: string; name: string; unit: string }[]> = {
-  load_meter: [
+// Predefined calculated fields per hardware type
+const CALCULATED_FIELDS_BY_TYPE: Partial<Record<DeviceType, { field_id: string; name: string; unit: string }[]>> = {
+  // Energy meters
+  energy_meter: [
     { field_id: "daily_kwh_consumption", name: "Daily kWh Consumption", unit: "kWh" },
     { field_id: "daily_peak_load", name: "Daily Peak Load", unit: "kW" },
     { field_id: "daily_avg_load", name: "Daily Average Load", unit: "kW" },
     { field_id: "daily_phase_imbalance", name: "Daily Phase Imbalance", unit: "%" },
   ],
+  // Solar inverters
   inverter: [
     { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
     { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
     { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
   ],
-  dg: [
+  // Generator controllers
+  gas_generator_controller: [
     { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
     { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
     { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
   ],
+  diesel_generator_controller: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  // Wind turbine
+  wind_turbine: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  // Battery storage
+  bess: [
+    { field_id: "daily_kwh_charged", name: "Daily kWh Charged", unit: "kWh" },
+    { field_id: "daily_kwh_discharged", name: "Daily kWh Discharged", unit: "kWh" },
+    { field_id: "daily_avg_soc", name: "Daily Average SOC", unit: "%" },
+  ],
+  // Fuel sensors
   fuel_level_sensor: [
     { field_id: "daily_fuel_level_difference_l", name: "Daily Fuel Level Difference (L)", unit: "L" },
     { field_id: "daily_fuel_level_difference_gal", name: "Daily Fuel Level Difference (Imperial gallons)", unit: "gal" },
     { field_id: "daily_fuel_level_difference_pct", name: "Daily Fuel Level Difference (%)", unit: "%" },
   ],
+  fuel_flow_meter: [
+    { field_id: "daily_fuel_consumption_l", name: "Daily Fuel Consumption (L)", unit: "L" },
+    { field_id: "daily_fuel_consumption_gal", name: "Daily Fuel Consumption (gal)", unit: "gal" },
+  ],
+  // Environmental sensors
   temperature_humidity_sensor: [
     { field_id: "daily_peak_temp", name: "Daily Peak Temperature", unit: "°C" },
     { field_id: "daily_avg_temp", name: "Daily Average Temperature", unit: "°C" },
     { field_id: "daily_peak_humidity", name: "Daily Peak Humidity", unit: "%" },
     { field_id: "daily_avg_humidity", name: "Daily Average Humidity", unit: "%" },
   ],
-  solar_radiation_sensor: [],
-  wind_sensor: [],
-  sensor: [],  // Generic sensor has no predefined fields
+  solar_radiation_sensor: [
+    { field_id: "daily_peak_irradiance", name: "Daily Peak Irradiance", unit: "W/m²" },
+    { field_id: "daily_avg_irradiance", name: "Daily Average Irradiance", unit: "W/m²" },
+  ],
+  wind_sensor: [
+    { field_id: "daily_peak_wind_speed", name: "Daily Peak Wind Speed", unit: "m/s" },
+    { field_id: "daily_avg_wind_speed", name: "Daily Average Wind Speed", unit: "m/s" },
+  ],
+  // Legacy types (backward compatibility)
+  load_meter: [
+    { field_id: "daily_kwh_consumption", name: "Daily kWh Consumption", unit: "kWh" },
+    { field_id: "daily_peak_load", name: "Daily Peak Load", unit: "kW" },
+    { field_id: "daily_avg_load", name: "Daily Average Load", unit: "kW" },
+  ],
+  dg: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
 };
 
 /**
@@ -450,20 +497,38 @@ export function TemplateFormDialog({
         return;
       }
 
-      // Map device_type to operation (required by database)
-      // inverter -> solar, dg -> dg, load_meter -> meter, all sensors -> sensor
+      // Map hardware_type to operation (required by database)
       const getOperationFromDeviceType = (deviceType: string): string => {
         switch (deviceType) {
-          case "inverter": return "solar";
-          case "dg": return "dg";
-          case "load_meter": return "meter";
-          case "sensor":
+          // Solar/renewable generation
+          case "inverter":
+          case "wind_turbine":
+            return "solar";
+          // Generator controllers
+          case "gas_generator_controller":
+          case "diesel_generator_controller":
+          case "dg":
+            return "dg";
+          // Metering
+          case "energy_meter":
+          case "load_meter":
+          case "capacitor_bank":
+            return "meter";
+          // Storage
+          case "bess":
+            return "storage";
+          // Sensors
           case "fuel_level_sensor":
+          case "fuel_flow_meter":
           case "temperature_humidity_sensor":
           case "solar_radiation_sensor":
           case "wind_sensor":
+          case "sensor":
             return "sensor";
-          default: return "meter";
+          // Other
+          case "other_hardware":
+          default:
+            return "other";
         }
       };
 
@@ -583,11 +648,11 @@ export function TemplateFormDialog({
             />
           </div>
 
-          {/* Device Type and Template Type - side by side */}
+          {/* Hardware Type and Template Type - side by side */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="device_type">
-                Device Type <span className="text-red-500">*</span>
+                Hardware Type <span className="text-red-500">*</span>
               </Label>
               <select
                 id="device_type"

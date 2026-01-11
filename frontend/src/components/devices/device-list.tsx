@@ -790,9 +790,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  {editMeasurementType
-                    ? deviceTypes.find((dt) => dt.value === editMeasurementType)?.description
-                    : "Determines how this device is used in control logic and calculated fields"}
+                  Used for control logic and calculated fields
                 </p>
               </div>
 
