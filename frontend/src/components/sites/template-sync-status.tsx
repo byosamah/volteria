@@ -119,7 +119,7 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
 
       if (response.ok) {
         const result = await response.json();
-        toast.success(`Synchronized ${result.synced_devices} device(s)`);
+        toast.success(`Prepared ${result.synced_devices} device(s) for sync - controller will pull on next cycle`);
         // Refresh status
         await fetchStatus();
       } else {
@@ -171,10 +171,10 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
               </span>
             </div>
 
-            {/* Last synchronization */}
+            {/* Last controller sync confirmation */}
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground min-w-[180px]">
-                Last synchronization
+                Last controller sync
               </span>
               <span className={`font-medium flex items-center gap-1 ${needsSync ? "text-red-600" : ""}`}>
                 {formatDate(status?.last_sync)}
@@ -207,12 +207,12 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
             {syncing ? (
               <>
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Synchronizing...
+                Preparing...
               </>
             ) : (
               <>
                 <RefreshCw className="h-4 w-4 mr-2" />
-                Synchronize configuration
+                Prepare config for sync
               </>
             )}
           </Button>

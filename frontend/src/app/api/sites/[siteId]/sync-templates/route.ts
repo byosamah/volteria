@@ -28,7 +28,7 @@ export async function POST(
       );
     }
 
-    // Get all devices in site that have a template_id
+    // Get all ENABLED devices in site that have a template_id
     const { data: devices, error: devicesError } = await supabase
       .from("site_devices")
       .select(`
@@ -36,6 +36,7 @@ export async function POST(
         template_id
       `)
       .eq("site_id", siteId)
+      .eq("enabled", true)
       .not("template_id", "is", null);
 
     if (devicesError) {
@@ -114,18 +115,14 @@ export async function POST(
       syncedCount++;
     }
 
-    // Update site's config_synced_at to mark sync as complete
-    if (syncedCount > 0) {
-      await supabase
-        .from("sites")
-        .update({ config_synced_at: now })
-        .eq("id", siteId);
-    }
+    // NOTE: Do NOT update config_synced_at here!
+    // The controller should set this when it confirms pulling the config.
+    // This button only prepares the config in the database for the controller to pull.
 
     return NextResponse.json({
       synced_devices: syncedCount,
-      synced_at: now,
-      message: `Successfully synchronized ${syncedCount} device(s)`,
+      prepared_at: now,
+      message: `Prepared ${syncedCount} device(s) for sync - awaiting controller confirmation`,
     });
   } catch (error) {
     console.error("Sync templates error:", error);
