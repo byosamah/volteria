@@ -189,6 +189,19 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
+        # Skip logging 404 responses - these are typically:
+        # - Bot probes to non-existent endpoints
+        # - Typos/mistakes that don't affect the system
+        # Real user actions should hit existing endpoints
+        if response.status_code == 404:
+            return
+
+        # Skip logging unauthenticated requests that fail (4xx errors)
+        # These are usually bots or invalid requests, not meaningful user actions
+        auth_header = request.headers.get("authorization")
+        if not auth_header and response.status_code >= 400:
+            return
+
         # Parse resource info from path
         resource_type, resource_id = parse_resource_from_path(path)
         if not resource_type:
