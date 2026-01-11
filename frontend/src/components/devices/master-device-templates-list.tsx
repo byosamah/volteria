@@ -71,6 +71,75 @@ export const CONTROLLER_READINGS = [
   { field_id: "network_tx_bytes", name: "Network Transmitted", unit: "bytes", source: "device_info" as const, default_frequency: 600 },
 ];
 
+// Site-level alarms based on calculated fields
+// These detect site-wide issues like power outages
+export interface SiteLevelAlarm {
+  alarm_id: string;
+  name: string;
+  description: string;
+  source_field: string;          // Calculated field to monitor
+  condition: {
+    operator: "==" | "<=" | ">=" | "<" | ">" | "!=";
+    value: number;
+  };
+  severity: "info" | "warning" | "critical";
+  enabled: boolean;
+  cooldown_seconds: number;
+}
+
+export const SITE_LEVEL_ALARMS: SiteLevelAlarm[] = [
+  {
+    alarm_id: "power_outage_load",
+    name: "Suspected Power Outage (Load)",
+    description: "Triggers when total site load equals 0 kW",
+    source_field: "total_load_kw",
+    condition: { operator: "==", value: 0 },
+    severity: "critical",
+    enabled: true,
+    cooldown_seconds: 300,
+  },
+  {
+    alarm_id: "power_outage_solar",
+    name: "Suspected Power Outage (Solar)",
+    description: "Triggers when total solar generation is 0 kW during daylight",
+    source_field: "total_solar_kw",
+    condition: { operator: "==", value: 0 },
+    severity: "warning",
+    enabled: false,
+    cooldown_seconds: 300,
+  },
+  {
+    alarm_id: "power_outage_generation",
+    name: "No Power Generation",
+    description: "Triggers when total power generation (Solar + DG) is 0 or less",
+    source_field: "total_generation_kw",
+    condition: { operator: "<=", value: 0 },
+    severity: "critical",
+    enabled: false,
+    cooldown_seconds: 300,
+  },
+  {
+    alarm_id: "high_reverse_power",
+    name: "High Reverse Power to DG",
+    description: "Triggers when DG power goes negative (reverse feeding)",
+    source_field: "dg_power_kw",
+    condition: { operator: "<", value: -5 },
+    severity: "critical",
+    enabled: true,
+    cooldown_seconds: 60,
+  },
+  {
+    alarm_id: "solar_exceeds_load",
+    name: "Solar Exceeds Load",
+    description: "Triggers when solar output exceeds total load (potential reverse flow)",
+    source_field: "solar_minus_load_kw",
+    condition: { operator: ">", value: 0 },
+    severity: "warning",
+    enabled: false,
+    cooldown_seconds: 120,
+  },
+];
+
 // =============================================================================
 // TYPES
 // =============================================================================

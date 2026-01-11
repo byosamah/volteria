@@ -166,13 +166,14 @@ export default function AddMasterDevicePage({
         }
 
         // Check if site already has a controller
+        // Note: Using explicit column selection to avoid query issues
         const { data: existingMaster } = await supabase
           .from("site_master_devices")
           .select("id")
-          .eq("site_id", siteId)
+          .eq("site_id", String(siteId))
           .eq("device_type", "controller")
           .eq("is_active", true)
-          .single();
+          .maybeSingle();
 
         if (existingMaster) {
           setHasExistingController(true);
@@ -687,6 +688,9 @@ export default function AddMasterDevicePage({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
+                            <SelectItem value="1200">1200 bps</SelectItem>
+                            <SelectItem value="2400">2400 bps</SelectItem>
+                            <SelectItem value="4800">4800 bps</SelectItem>
                             <SelectItem value="9600">9600 bps</SelectItem>
                             <SelectItem value="19200">19200 bps</SelectItem>
                             <SelectItem value="38400">38400 bps</SelectItem>

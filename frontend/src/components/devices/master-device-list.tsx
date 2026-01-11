@@ -17,7 +17,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { RefreshCw } from "lucide-react";
 import { ControllerRebootAction } from "@/components/controllers/controller-reboot-action";
-import { CONTROLLER_READINGS } from "./master-device-templates-list";
+import { CONTROLLER_READINGS, SITE_LEVEL_ALARMS, type SiteLevelAlarm } from "./master-device-templates-list";
 import {
   ControllerReadingsForm,
   type ReadingSelection,
@@ -116,6 +116,7 @@ interface MasterDevice {
   modbus_slave_timeout?: number | null;
   modbus_write_function?: string | null;
   calculated_fields?: { field_id: string; enabled: boolean; storage_mode: string }[] | null;
+  site_level_alarms?: SiteLevelAlarm[] | null;
   // Gateway fields
   gateway_type: "netbiter" | "other" | null;
   netbiter_account_id: string | null;
@@ -341,6 +342,12 @@ export function MasterDeviceList({
   const [availableCalculatedFields, setAvailableCalculatedFields] = useState<CalculatedFieldDef[]>([]);
   const [loadingCalculatedFields, setLoadingCalculatedFields] = useState(false);
 
+  // Edit form state - Site-level alarms (for controllers)
+  // These detect site-wide issues like power outages based on calculated fields
+  const [editSiteLevelAlarms, setEditSiteLevelAlarms] = useState<SiteLevelAlarm[]>(
+    SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm }))
+  );
+
   // Controller template data (linked template with readings, calculated fields, alarms)
   const [controllerTemplate, setControllerTemplate] = useState<ControllerTemplateData | null>(null);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
@@ -418,6 +425,14 @@ export function MasterDeviceList({
       const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
       setEditSelectedCalculatedFields(existingFieldIds);
 
+      // Load existing site-level alarms or use defaults
+      if (device.site_level_alarms && device.site_level_alarms.length > 0) {
+        setEditSiteLevelAlarms(device.site_level_alarms);
+      } else {
+        // Use defaults from SITE_LEVEL_ALARMS
+        setEditSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
+      }
+
       // Set the selected template ID
       setEditSelectedTemplateId(device.controller_template_id || "");
 
@@ -431,7 +446,7 @@ export function MasterDeviceList({
         let hardwareTypeId: string | null = null;
         if (device.controller_id) {
           const { data: controllerData } = await supabase
-            .from("controllers_master")
+            .from("controllers")
             .select("hardware_type_id")
             .eq("id", device.controller_id)
             .maybeSingle();
@@ -632,8 +647,10 @@ export function MasterDeviceList({
         offline_severity: "critical",
         offline_timeout_seconds: 60,
       });
-      // Clear calculated fields
+      // Reset calculated fields to all selected
       setEditSelectedCalculatedFields(availableCalculatedFields.map(f => f.field_id));
+      // Reset site-level alarms to defaults
+      setEditSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
       return;
     }
 
@@ -643,7 +660,7 @@ export function MasterDeviceList({
       const supabase = createClient();
       const { data: templateData } = await supabase
         .from("controller_templates")
-        .select("id, template_id, name, registers, calculated_fields, alarm_definitions")
+        .select("id, template_id, name, registers, calculated_fields, alarm_definitions, site_level_alarms")
         .eq("id", templateId)
         .single();
 
@@ -656,6 +673,14 @@ export function MasterDeviceList({
           setEditSelectedCalculatedFields(
             templateData.calculated_fields.map((f: { field_id: string }) => f.field_id)
           );
+        }
+
+        // Update site-level alarms from template
+        if (templateData.site_level_alarms && Array.isArray(templateData.site_level_alarms)) {
+          setEditSiteLevelAlarms(templateData.site_level_alarms as SiteLevelAlarm[]);
+        } else {
+          // Template has no site-level alarms, use defaults
+          setEditSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
         }
       }
     } catch (err) {
@@ -701,6 +726,9 @@ export function MasterDeviceList({
           enabled: true,
           storage_mode: "log"
         }));
+
+        // Add site-level alarms
+        updateData.site_level_alarms = editSiteLevelAlarms;
       }
 
       // Add gateway-specific fields if this is a gateway device
@@ -1073,13 +1101,13 @@ export function MasterDeviceList({
             </DialogDescription>
           </DialogHeader>
 
-          {/* Controller uses tabs (Connection + Controller Fields + Calculated), Gateway uses simple form */}
+          {/* Controller uses tabs (Connection + Controller Fields + Site Calculations), Gateway uses simple form */}
           {editingDevice?.device_type === "controller" ? (
             <Tabs defaultValue="connection" className="w-full">
               <TabsList className="w-full grid grid-cols-3">
                 <TabsTrigger value="connection" className="text-xs sm:text-sm">Connection</TabsTrigger>
                 <TabsTrigger value="controller-fields" className="text-xs sm:text-sm">Controller Fields</TabsTrigger>
-                <TabsTrigger value="calculated" className="text-xs sm:text-sm">Calculated</TabsTrigger>
+                <TabsTrigger value="site-calculations" className="text-xs sm:text-sm">Site Calculations</TabsTrigger>
               </TabsList>
 
               {/* Connection Tab */}
@@ -1186,6 +1214,9 @@ export function MasterDeviceList({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="1200">1200 bps</SelectItem>
+                          <SelectItem value="2400">2400 bps</SelectItem>
+                          <SelectItem value="4800">4800 bps</SelectItem>
                           <SelectItem value="9600">9600 bps</SelectItem>
                           <SelectItem value="19200">19200 bps</SelectItem>
                           <SelectItem value="38400">38400 bps</SelectItem>
@@ -1325,62 +1356,132 @@ export function MasterDeviceList({
                 )}
               </TabsContent>
 
-              {/* Calculated Tab */}
-              <TabsContent value="calculated" className="space-y-4 py-4">
-                <div>
-                  <p className="text-sm font-medium">Calculated Fields</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Select which aggregations to calculate for this controller
-                  </p>
-                </div>
+              {/* Site Calculations Tab - Calculated Fields + Site Alarms */}
+              <TabsContent value="site-calculations" className="space-y-6 py-4">
+                {/* Section 1: Calculated Fields */}
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Calculated Fields</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Site-level measurements aggregated from all devices
+                    </p>
+                  </div>
 
-                {loadingCalculatedFields ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-                  </div>
-                ) : availableCalculatedFields.length === 0 ? (
-                  <div className="text-sm text-muted-foreground py-4 text-center">
-                    No calculated fields available.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {availableCalculatedFields.map((field) => (
-                      <label
-                        key={field.field_id}
-                        htmlFor={`edit-${field.field_id}`}
-                        className="flex items-start gap-3 p-3 rounded-lg border bg-muted/20 cursor-pointer hover:bg-muted/30 transition-colors"
-                      >
-                        <Checkbox
-                          id={`edit-${field.field_id}`}
-                          checked={editSelectedCalculatedFields.includes(field.field_id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setEditSelectedCalculatedFields([...editSelectedCalculatedFields, field.field_id]);
-                            } else {
-                              setEditSelectedCalculatedFields(editSelectedCalculatedFields.filter(id => id !== field.field_id));
-                            }
-                          }}
-                          className="mt-0.5"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">{field.name}</span>
-                            {field.unit && (
-                              <Badge variant="outline" className="text-xs">
-                                {field.unit}
-                              </Badge>
+                  {loadingCalculatedFields ? (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
+                    </div>
+                  ) : availableCalculatedFields.length === 0 ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">
+                      No calculated fields available.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {availableCalculatedFields.map((field) => (
+                        <label
+                          key={field.field_id}
+                          htmlFor={`edit-${field.field_id}`}
+                          className="flex items-start gap-3 p-3 rounded-lg border bg-muted/20 cursor-pointer hover:bg-muted/30 transition-colors"
+                        >
+                          <Checkbox
+                            id={`edit-${field.field_id}`}
+                            checked={editSelectedCalculatedFields.includes(field.field_id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setEditSelectedCalculatedFields([...editSelectedCalculatedFields, field.field_id]);
+                              } else {
+                                setEditSelectedCalculatedFields(editSelectedCalculatedFields.filter(id => id !== field.field_id));
+                              }
+                            }}
+                            className="mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm">{field.name}</span>
+                              {field.unit && (
+                                <Badge variant="outline" className="text-xs">
+                                  {field.unit}
+                                </Badge>
+                              )}
+                            </div>
+                            {field.description && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {field.description}
+                              </p>
                             )}
                           </div>
-                          {field.description && (
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Separator */}
+                <div className="border-t" />
+
+                {/* Section 2: Site Alarms */}
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Site Alarms</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Alarms based on site-level calculated values
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {editSiteLevelAlarms.map((alarm, index) => (
+                      <div
+                        key={alarm.alarm_id}
+                        className={`p-3 rounded-lg border transition-colors ${
+                          alarm.enabled ? "bg-muted/20" : "bg-muted/5 opacity-60"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            id={`alarm-${alarm.alarm_id}`}
+                            checked={alarm.enabled}
+                            onCheckedChange={(checked) => {
+                              const updated = [...editSiteLevelAlarms];
+                              updated[index] = { ...alarm, enabled: !!checked };
+                              setEditSiteLevelAlarms(updated);
+                            }}
+                            className="mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <label
+                                htmlFor={`alarm-${alarm.alarm_id}`}
+                                className="font-medium text-sm cursor-pointer"
+                              >
+                                {alarm.name}
+                              </label>
+                              <Badge
+                                variant="outline"
+                                className={`text-xs ${
+                                  alarm.severity === "critical"
+                                    ? "border-red-500 text-red-700"
+                                    : alarm.severity === "warning"
+                                    ? "border-amber-500 text-amber-700"
+                                    : "border-blue-500 text-blue-700"
+                                }`}
+                              >
+                                {alarm.severity}
+                              </Badge>
+                            </div>
                             <p className="text-xs text-muted-foreground mt-1">
-                              {field.description}
+                              {alarm.description}
                             </p>
-                          )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Condition: <code className="px-1 py-0.5 bg-muted rounded text-xs">
+                                {alarm.source_field} {alarm.condition.operator} {alarm.condition.value}
+                              </code>
+                            </p>
+                          </div>
                         </div>
-                      </label>
+                      </div>
                     ))}
                   </div>
-                )}
+                </div>
               </TabsContent>
 
             </Tabs>

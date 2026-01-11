@@ -36,7 +36,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import type { ControllerTemplate, SystemRegister, CalculatedFieldDefinition } from "@/lib/types";
-import { CONTROLLER_READINGS } from "./master-device-templates-list";
+import { CONTROLLER_READINGS, SITE_LEVEL_ALARMS, type SiteLevelAlarm } from "./master-device-templates-list";
+import { Badge } from "@/components/ui/badge";
 import {
   ControllerReadingsForm,
   type ReadingSelection,
@@ -206,6 +207,11 @@ export function MasterDeviceTemplateForm({
     offline_severity: "critical",
     offline_timeout_seconds: 60,
   });
+
+  // Site-level alarms (power outage detection, etc.)
+  const [siteLevelAlarms, setSiteLevelAlarms] = useState<SiteLevelAlarm[]>(
+    SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm }))
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -443,6 +449,16 @@ export function MasterDeviceTemplateForm({
             offline_timeout_seconds: 60,
           });
         }
+
+        // Parse site-level alarms from template
+        // Use type assertion since template.site_level_alarms may not be in the type yet
+        const templateSiteLevelAlarms = (template as { site_level_alarms?: SiteLevelAlarm[] }).site_level_alarms;
+        if (templateSiteLevelAlarms && Array.isArray(templateSiteLevelAlarms) && templateSiteLevelAlarms.length > 0) {
+          setSiteLevelAlarms(templateSiteLevelAlarms);
+        } else {
+          // Use defaults
+          setSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
+        }
       } else {
         // Create mode - reset to defaults
         setFormData({
@@ -486,6 +502,9 @@ export function MasterDeviceTemplateForm({
           offline_severity: "critical",
           offline_timeout_seconds: 60,
         });
+
+        // Reset site-level alarms to defaults
+        setSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
       }
     }
   }, [open, template, isDuplicating, userRole, userEnterpriseId, dbCalculatedFields]);
@@ -649,6 +668,7 @@ export function MasterDeviceTemplateForm({
         registers: selectedRegisters,
         calculated_fields: selectedCalculatedFields,
         alarm_definitions: alarmDefinitions,
+        site_level_alarms: siteLevelAlarms,
         is_active: formData.is_active,
       };
 
@@ -731,7 +751,7 @@ export function MasterDeviceTemplateForm({
           <TabsList className="w-full grid grid-cols-3">
             <TabsTrigger value="connection" className="text-xs sm:text-sm">Connection</TabsTrigger>
             <TabsTrigger value="controller-fields" className="text-xs sm:text-sm">Controller Fields</TabsTrigger>
-            <TabsTrigger value="calculated" className="text-xs sm:text-sm">Calculated</TabsTrigger>
+            <TabsTrigger value="site-calculations" className="text-xs sm:text-sm">Site Calculations</TabsTrigger>
           </TabsList>
 
           {/* Connection Tab - Basic Information */}
@@ -933,76 +953,149 @@ export function MasterDeviceTemplateForm({
             />
           </TabsContent>
 
-          {/* Calculated Tab */}
-          <TabsContent value="calculated" className="space-y-4 py-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Site-level aggregations computed by the controller.
-              </p>
-              <span className="text-xs text-muted-foreground">
-                {enabledCalculatedCount} selected
-              </span>
+          {/* Site Calculations Tab - Calculated Fields + Site Alarms */}
+          <TabsContent value="site-calculations" className="space-y-6 py-4">
+            {/* Section 1: Calculated Fields */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Calculated Fields</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Site-level measurements aggregated from all devices
+                  </p>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {enabledCalculatedCount} selected
+                </span>
+              </div>
+
+              <div className="border rounded-lg divide-y">
+                {isLoadingCalculatedFields ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    Loading calculated fields...
+                  </div>
+                ) : calculatedFields.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    No calculated fields available
+                  </div>
+                ) : (
+                  calculatedFields.map((field) => {
+                    const dbField = dbCalculatedFields.find(
+                      (f) => f.field_id === field.field_id
+                    );
+                    return (
+                      <div
+                        key={field.field_id}
+                        className="flex items-center gap-4 p-3 hover:bg-muted/30"
+                      >
+                        {/* Checkbox */}
+                        <Checkbox
+                          id={`calc-${field.field_id}`}
+                          checked={field.enabled}
+                          onCheckedChange={() => toggleCalculatedField(field.field_id)}
+                        />
+
+                        {/* Name and Unit */}
+                        <label
+                          htmlFor={`calc-${field.field_id}`}
+                          className="flex-1 text-sm cursor-pointer"
+                        >
+                          {field.name}
+                          {dbField?.unit && (
+                            <span className="text-muted-foreground ml-2">
+                              ({dbField.unit})
+                            </span>
+                          )}
+                        </label>
+
+                        {/* Storage Mode Selector */}
+                        <Select
+                          value={field.storage_mode}
+                          onValueChange={(value: StorageMode) =>
+                            updateCalculatedFieldMode(field.field_id, value)
+                          }
+                          disabled={!field.enabled}
+                        >
+                          <SelectTrigger className="w-[120px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="log">Log</SelectItem>
+                            <SelectItem value="viz_only">Viz Only</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
-            <div className="border rounded-lg divide-y">
-              {isLoadingCalculatedFields ? (
-                <div className="p-4 text-center text-muted-foreground text-sm">
-                  Loading calculated fields...
-                </div>
-              ) : calculatedFields.length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground text-sm">
-                  No calculated fields available
-                </div>
-              ) : (
-                calculatedFields.map((field) => {
-                  const dbField = dbCalculatedFields.find(
-                    (f) => f.field_id === field.field_id
-                  );
-                  return (
-                    <div
-                      key={field.field_id}
-                      className="flex items-center gap-4 p-3 hover:bg-muted/30"
-                    >
-                      {/* Checkbox */}
+            {/* Separator */}
+            <div className="border-t" />
+
+            {/* Section 2: Site Alarms */}
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium">Site Alarms</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Alarms based on site-level calculated values
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {siteLevelAlarms.map((alarm, index) => (
+                  <div
+                    key={alarm.alarm_id}
+                    className={`p-3 rounded-lg border transition-colors ${
+                      alarm.enabled ? "bg-muted/20" : "bg-muted/5 opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
                       <Checkbox
-                        id={`calc-${field.field_id}`}
-                        checked={field.enabled}
-                        onCheckedChange={() => toggleCalculatedField(field.field_id)}
+                        id={`template-alarm-${alarm.alarm_id}`}
+                        checked={alarm.enabled}
+                        onCheckedChange={(checked) => {
+                          const updated = [...siteLevelAlarms];
+                          updated[index] = { ...alarm, enabled: !!checked };
+                          setSiteLevelAlarms(updated);
+                        }}
+                        className="mt-0.5"
                       />
-
-                      {/* Name and Unit */}
-                      <label
-                        htmlFor={`calc-${field.field_id}`}
-                        className="flex-1 text-sm cursor-pointer"
-                      >
-                        {field.name}
-                        {dbField?.unit && (
-                          <span className="text-muted-foreground ml-2">
-                            ({dbField.unit})
-                          </span>
-                        )}
-                      </label>
-
-                      {/* Storage Mode Selector */}
-                      <Select
-                        value={field.storage_mode}
-                        onValueChange={(value: StorageMode) =>
-                          updateCalculatedFieldMode(field.field_id, value)
-                        }
-                        disabled={!field.enabled}
-                      >
-                        <SelectTrigger className="w-[120px] h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="log">Log</SelectItem>
-                          <SelectItem value="viz_only">Viz Only</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <label
+                            htmlFor={`template-alarm-${alarm.alarm_id}`}
+                            className="font-medium text-sm cursor-pointer"
+                          >
+                            {alarm.name}
+                          </label>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${
+                              alarm.severity === "critical"
+                                ? "border-red-500 text-red-700"
+                                : alarm.severity === "warning"
+                                ? "border-amber-500 text-amber-700"
+                                : "border-blue-500 text-blue-700"
+                            }`}
+                          >
+                            {alarm.severity}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {alarm.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Condition: <code className="px-1 py-0.5 bg-muted rounded text-xs">
+                            {alarm.source_field} {alarm.condition.operator} {alarm.condition.value}
+                          </code>
+                        </p>
+                      </div>
                     </div>
-                  );
-                })
-              )}
+                  </div>
+                ))}
+              </div>
             </div>
           </TabsContent>
         </Tabs>

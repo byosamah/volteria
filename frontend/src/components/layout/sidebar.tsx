@@ -234,9 +234,8 @@ export function Sidebar({ user }: SidebarProps) {
 
   // Fetch user role and enterprise_id only if not provided via props
   useEffect(() => {
-    // If user is empty object (loading state), skip fetch
-    // The actual page will provide full user data when it renders
-    if (!user || Object.keys(user).length === 0) {
+    // If user is an empty object (loading state from server component), wait for actual data
+    if (user && Object.keys(user).length === 0) {
       return;
     }
 
@@ -245,6 +244,7 @@ export function Sidebar({ user }: SidebarProps) {
       return;
     }
 
+    // Fetch user data if not provided via props (or only partially provided)
     const fetchUserData = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (authUser?.id) {
@@ -256,14 +256,14 @@ export function Sidebar({ user }: SidebarProps) {
         if (userData?.role && !user?.role) {
           setFetchedRole(userData.role);
         }
-        if (userData?.enterprise_id && !user?.enterprise_id) {
+        if (userData?.enterprise_id && user?.enterprise_id === undefined) {
           setFetchedEnterpriseId(userData.enterprise_id);
         }
       }
     };
 
     fetchUserData();
-  }, [user?.role, user?.enterprise_id, supabase]);
+  }, [user, supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
