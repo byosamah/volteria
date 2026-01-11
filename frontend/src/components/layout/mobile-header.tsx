@@ -13,6 +13,7 @@
  */
 
 import Image from "next/image";
+import Link from "next/link";
 import { useMobileNav } from "./mobile-nav-context";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notifications/notification-bell";
@@ -28,8 +29,8 @@ export function MobileHeader({ userId }: MobileHeaderProps) {
   return (
     // Only show on mobile (hidden on md and above)
     <header className="md:hidden sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-card px-4">
-      {/* Logo - simplified for mobile */}
-      <div className="flex items-center gap-2">
+      {/* Logo - clickable to dashboard */}
+      <Link href="/" className="flex items-center gap-2">
         <Image
           src="/logo.svg"
           alt="Volteria"
@@ -37,7 +38,7 @@ export function MobileHeader({ userId }: MobileHeaderProps) {
           height={30}
           className="h-8 w-auto"
         />
-      </div>
+      </Link>
 
       {/* Right side actions */}
       <div className="flex items-center gap-1">

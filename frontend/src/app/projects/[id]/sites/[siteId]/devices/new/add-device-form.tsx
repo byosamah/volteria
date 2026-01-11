@@ -49,16 +49,20 @@ const protocols = [
   { value: "rtu_direct", label: "Direct RTU", description: "Direct RS485 connection" },
 ];
 
-// Device type options - matches Device Templates for consistency
+// Device type options - used for control logic and calculated fields
 const deviceTypes = [
+  { value: "diesel_generator", label: "Diesel Generator", description: "Diesel generator control and monitoring" },
+  { value: "gas_generator", label: "Gas Generator", description: "Gas generator control and monitoring" },
   { value: "inverter", label: "Solar Inverter", description: "PV power conversion" },
-  { value: "load_meter", label: "Energy Meter", description: "Load measurement device" },
-  { value: "dg", label: "Generator Controller", description: "Generator control and monitoring" },
-  { value: "sensor", label: "Sensor (Generic)", description: "Generic sensor device" },
-  { value: "fuel_level_sensor", label: "Fuel Level Sensor", description: "Fuel tank level monitoring" },
+  { value: "load", label: "Load", description: "Main load measurement" },
+  { value: "subload", label: "SubLoad", description: "Sub load measurement" },
+  { value: "solar_sensor", label: "Solar Sensor", description: "Solar irradiance measurement" },
   { value: "temperature_humidity_sensor", label: "Temperature & Humidity Sensor", description: "Environmental monitoring" },
-  { value: "solar_radiation_sensor", label: "Solar Radiation Sensor", description: "Solar irradiance measurement" },
   { value: "wind_sensor", label: "Wind Sensor", description: "Wind speed and direction" },
+  { value: "wind_turbine", label: "Wind Turbine", description: "Wind turbine power generation" },
+  { value: "bess", label: "Battery Energy Storage System", description: "Battery storage system" },
+  { value: "capacitor_bank", label: "Capacitor Bank", description: "Reactive power compensation" },
+  { value: "other", label: "Other Devices", description: "Other device types" },
 ];
 
 // Auto-suggest device type based on template's device_type (same values now)
@@ -373,7 +377,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
           <p className="text-xs text-muted-foreground">
             {formData.measurement_type
               ? deviceTypes.find((dt) => dt.value === formData.measurement_type)?.description
-              : "Determines how this device is used in the control logic"}
+              : "Determines how this device is used in control logic and calculated fields"}
           </p>
         </div>
       </div>
