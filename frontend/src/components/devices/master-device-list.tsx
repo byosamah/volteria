@@ -587,9 +587,10 @@ export function MasterDeviceList({
 
   // Handle template selection change
   const handleTemplateChange = async (templateId: string) => {
-    setEditSelectedTemplateId(templateId);
+    const actualTemplateId = templateId === "none" ? "" : templateId;
+    setEditSelectedTemplateId(actualTemplateId);
 
-    if (!templateId) {
+    if (!actualTemplateId) {
       // Cleared template selection - reset to defaults
       setControllerTemplate(null);
       setEditControllerReadings(
@@ -1059,7 +1060,7 @@ export function MasterDeviceList({
                 <div className="space-y-2">
                   <Label htmlFor="edit-template">Controller Template</Label>
                   <Select
-                    value={editSelectedTemplateId}
+                    value={editSelectedTemplateId || "none"}
                     onValueChange={handleTemplateChange}
                     disabled={loadingTemplates}
                   >
@@ -1067,7 +1068,7 @@ export function MasterDeviceList({
                       <SelectValue placeholder={loadingTemplates ? "Loading..." : "Select a template"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">
+                      <SelectItem value="none">
                         <span className="text-muted-foreground">No template</span>
                       </SelectItem>
                       {availableTemplates.map((template) => (
