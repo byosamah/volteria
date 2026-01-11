@@ -59,7 +59,19 @@
       "Bash(npm run dev:*)",
       "Bash(git status:*)",
       "Bash(cat:*)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(psql:*)",
+      "Bash(npm install:*)",
+      "Bash(echo:*)",
+      "Bash(/c/Users/Hp/AppData/Roaming/npm/npm.cmd --version)",
+      "Bash(powershell.exe -Command \"npm --version\")",
+      "Bash(powershell.exe -Command \"Get-Command npm | Select-Object -ExpandProperty Source\")",
+      "Bash(powershell.exe -Command \"where.exe npm\")",
+      "Bash(powershell.exe:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\")",
+      "Bash(npm:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout 5 python:*)"
     ]
   }
 }

@@ -3,6 +3,33 @@
 > This is the knowledge base for the Volteria controller architecture.
 > Reference this file when working on controller-related features.
 
+## Implementation Plan Status
+
+**Active Plan**: `.claude/plans/purrfect-jumping-meerkat.md`
+**Full Original Plan**: `.claude/plans/compressed-jingling-cocke.md` (98KB, 21 Parts)
+
+### Current Phase: Phase 7 - Deploy to Raspberry Pi
+- Phase 1 COMPLETE: All services validated, 17/17 tests passed
+- Phase 2 COMPLETE: Database migrations created (058, 059 existed; 068 new)
+- Phase 3 COMPLETE: `main_v2.py` entry point created and tested
+- Phase 4 COMPLETE: Reboot feature (backend + frontend + controller)
+- Phase 5 COMPLETE: Wizard already updated for 5-layer architecture
+- Phase 6 DEFERRED: OTA mechanism (lower priority)
+- **Next**: Phase 7 - Deploy to Raspberry Pi, Phase 8 - Retire old code
+
+### Quick Command to Continue
+```
+Continue the controller architecture implementation plan
+```
+
+### New Entry Point
+Use `main_v2.py` for the new 5-layer architecture:
+```bash
+python main_v2.py --dry-run    # Validate config
+python main_v2.py              # Start all services
+python main_v2.py -v           # Verbose/debug mode
+```
+
 ## Quick Reference
 
 ### Service Layers (Bottom to Top)

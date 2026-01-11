@@ -385,7 +385,10 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | 50 | `050_project_devices_registers.sql` | Add registers, alarm_registers columns + make template_id nullable |
 | 51 | `051_fix_device_templates_rls.sql` | Fix RLS policies for device_templates + add sensor subtypes to constraint |
 | 52 | `052_enterprise_subscription_plan.sql` | Add subscription_plan column to enterprises (starter, advanced, pro) |
+| 58 | `058_firmware_releases.sql` | OTA firmware releases for controller updates |
+| 59 | `059_controller_updates.sql` | OTA update tracking per controller |
 | 62 | `062_rename_project_devices.sql` | Rename project_devices to site_devices, drop project_id column |
+| 68 | `068_controller_service_status.sql` | Per-service health tracking (5-layer architecture) |
 
 ### Core Tables
 | Table | Purpose | RLS |
@@ -417,6 +420,9 @@ sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
 | `api_request_logs` | API request logging | Enabled |
 | `data_retention_policies` | Data retention rules | Enabled |
 | `device_readings` | Device reading history | Enabled |
+| `firmware_releases` | OTA firmware packages | Enabled |
+| `controller_updates` | OTA update tracking | Enabled |
+| `controller_service_status` | Per-service health (5-layer) | Enabled |
 
 ### User Roles (Hierarchy)
 | Role | Level | Permissions |

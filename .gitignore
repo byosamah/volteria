@@ -49,3 +49,4 @@ npm-debug.log*
 # Playwright
 frontend/playwright-report/
 frontend/test-results/
+controller/data/

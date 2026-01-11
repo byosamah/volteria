@@ -224,3 +224,73 @@ def set_service_health(service: str, status: dict) -> None:
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     SharedState.write("service_health", health)
+
+
+def is_config_changed() -> bool:
+    """
+    Check if config has changed since last acknowledgment.
+
+    Config service sets 'config_changed' flag when new config is synced.
+    Other services should call this to detect changes.
+
+    Returns:
+        True if config has changed
+    """
+    state = SharedState.read("config_status", use_cache=False)
+    return state.get("config_changed", False)
+
+
+def get_config_version() -> str | None:
+    """
+    Get current config version (updated_at timestamp).
+
+    Returns:
+        ISO timestamp of current config, or None if not set
+    """
+    state = SharedState.read("config_status")
+    return state.get("version")
+
+
+def acknowledge_config_change(service: str) -> None:
+    """
+    Acknowledge that a service has processed the config change.
+
+    When all services have acknowledged, the config_changed flag is cleared.
+
+    Args:
+        service: Name of the service acknowledging the change
+    """
+    state = SharedState.read("config_status", use_cache=False)
+
+    # Track acknowledgments
+    acks = state.get("acknowledged_by", [])
+    if service not in acks:
+        acks.append(service)
+
+    state["acknowledged_by"] = acks
+
+    # All services that need to acknowledge
+    required_services = {"device", "control", "logging"}
+
+    # If all required services have acknowledged, clear the flag
+    if required_services.issubset(set(acks)):
+        state["config_changed"] = False
+        state["acknowledged_by"] = []
+        state["acknowledged_at"] = datetime.now(timezone.utc).isoformat()
+
+    SharedState.write("config_status", state)
+
+
+def notify_config_changed(version: str) -> None:
+    """
+    Notify that config has changed (called by config service).
+
+    Args:
+        version: New config version (updated_at timestamp)
+    """
+    SharedState.write("config_status", {
+        "config_changed": True,
+        "version": version,
+        "changed_at": datetime.now(timezone.utc).isoformat(),
+        "acknowledged_by": [],
+    })

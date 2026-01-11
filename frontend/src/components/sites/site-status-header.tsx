@@ -23,8 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { createClient } from "@/lib/supabase/client";
-import { RefreshCw, Wifi, WifiOff, Cpu, AlertCircle, Check, Clock } from "lucide-react";
+import { RefreshCw, WifiOff, Cpu, AlertCircle, Check, Clock } from "lucide-react";
 
 // Status response from API
 interface SiteStatusData {
@@ -41,6 +40,8 @@ interface SiteStatusData {
   configSync: {
     status: "synced" | "sync_needed" | "never_synced";
     lastSyncedAt: string | null;
+    cloudChangedAt: string | null;  // When config changed on web (site.updated_at)
+    localPulledAt: string | null;   // When controller last pulled config
     pendingChanges: {
       devices: number;
       settings: number;
@@ -65,6 +66,19 @@ const formatTimeSince = (timestamp: string | null): string => {
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+};
+
+// Format date for display (e.g., "Jan 11, 2:45 PM")
+const formatDate = (timestamp: string | null): string => {
+  if (!timestamp) return "Never";
+  const date = new Date(timestamp);
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 };
 
 // Connection Status Indicator
@@ -200,12 +214,16 @@ function ControlLogicStatus({
 function ConfigSyncStatus({
   status,
   lastSyncedAt,
+  cloudChangedAt,
+  localPulledAt,
   pendingChanges,
   onPushSync,
   isSyncing,
 }: {
   status: "synced" | "sync_needed" | "never_synced";
   lastSyncedAt: string | null;
+  cloudChangedAt: string | null;
+  localPulledAt: string | null;
   pendingChanges: { devices: number; settings: number } | null;
   onPushSync: () => void;
   isSyncing: boolean;
@@ -245,61 +263,77 @@ function ConfigSyncStatus({
     : null;
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex items-center gap-2 cursor-default">
-            <span className={`relative flex h-2.5 w-2.5`}>
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${config.dotColor}`}></span>
-            </span>
-            <span className={`text-sm font-medium ${config.color}`}>
-              {status === "synced" ? formatTimeSince(lastSyncedAt) : config.label}
-            </span>
-            {status === "sync_needed" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onPushSync();
-                }}
-                disabled={isSyncing}
-              >
-                {isSyncing ? (
-                  <RefreshCw className="h-3 w-3 animate-spin mr-1" />
-                ) : (
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                )}
-                Push Sync
-              </Button>
-            )}
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          <div className="text-xs">
-            <p className="font-medium">Config Sync</p>
-            {status === "synced" && (
-              <p className="text-muted-foreground">
-                Platform and controller configs match
-                {lastSyncedAt && <br />}
-                {lastSyncedAt && `Last synced: ${formatTimeSince(lastSyncedAt)}`}
-              </p>
-            )}
-            {status === "sync_needed" && (
-              <p className="text-orange-500">
-                {pendingText || "Changes pending"}
-              </p>
-            )}
-            {status === "never_synced" && (
-              <p className="text-muted-foreground">
-                Controller has never synced config
-              </p>
-            )}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <div className="flex items-center gap-2">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-2 cursor-default">
+              <span className={`relative flex h-2.5 w-2.5`}>
+                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${config.dotColor}`}></span>
+              </span>
+              <span className={`text-sm font-medium ${config.color}`}>
+                {status === "synced" ? formatTimeSince(lastSyncedAt) : config.label}
+              </span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs">
+            <div className="text-xs space-y-1.5">
+              <p className="font-medium">Config Sync Status</p>
+
+              {/* Cloud changed date */}
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Cloud changed:</span>
+                <span className="font-medium">{formatDate(cloudChangedAt)}</span>
+              </div>
+
+              {/* Local pulled date */}
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Controller synced:</span>
+                <span className="font-medium">{formatDate(localPulledAt)}</span>
+              </div>
+
+              {/* Status message */}
+              {status === "synced" && (
+                <p className="text-green-600 pt-1 border-t border-border">
+                  Platform and controller configs match
+                </p>
+              )}
+              {status === "sync_needed" && (
+                <p className="text-orange-500 pt-1 border-t border-border">
+                  {pendingText || "Changes pending - controller will pull within 5 min"}
+                </p>
+              )}
+              {status === "never_synced" && (
+                <p className="text-muted-foreground pt-1 border-t border-border">
+                  Controller has never synced config
+                </p>
+              )}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      {/* Push Sync button - always visible when sync_needed */}
+      {status === "sync_needed" && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPushSync();
+          }}
+          disabled={isSyncing}
+        >
+          {isSyncing ? (
+            <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+          ) : (
+            <RefreshCw className="h-3 w-3 mr-1" />
+          )}
+          Push Sync
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -324,17 +358,20 @@ export function SiteStatusHeader({ siteId, controlMethod }: SiteStatusHeaderProp
     }
   }, [siteId]);
 
-  // Handle push sync
+  // Handle push sync - triggers immediate config sync via API
   const handlePushSync = async () => {
     setIsSyncing(true);
     try {
-      const supabase = createClient();
-      await supabase
-        .from("sites")
-        .update({ config_synced_at: new Date().toISOString() })
-        .eq("id", siteId);
+      const res = await fetch(`/api/sites/${siteId}/sync`, {
+        method: "POST",
+      });
 
-      // Refresh status after sync
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to trigger sync");
+      }
+
+      // Refresh status after sync triggered
       await fetchStatus();
     } catch (err) {
       console.error("Failed to push sync:", err);
@@ -420,6 +457,8 @@ export function SiteStatusHeader({ siteId, controlMethod }: SiteStatusHeaderProp
       <ConfigSyncStatus
         status={status.configSync.status}
         lastSyncedAt={status.configSync.lastSyncedAt}
+        cloudChangedAt={status.configSync.cloudChangedAt}
+        localPulledAt={status.configSync.localPulledAt}
         pendingChanges={status.configSync.pendingChanges}
         onPushSync={handlePushSync}
         isSyncing={isSyncing}

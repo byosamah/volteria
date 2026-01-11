@@ -17,7 +17,7 @@ from pathlib import Path
 import yaml
 from aiohttp import web
 
-from common.state import SharedState, set_service_health, get_config
+from common.state import SharedState, set_service_health, get_config, is_config_changed, acknowledge_config_change
 from common.config import DeviceConfig, DeviceType, load_site_config
 from common.logging_setup import get_service_logger
 
@@ -68,6 +68,8 @@ class DeviceService:
         # State
         self._running = False
         self._poll_task: asyncio.Task | None = None
+        self._command_task: asyncio.Task | None = None
+        self._config_watch_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
     def _find_config_path(self) -> str:
@@ -112,6 +114,12 @@ class DeviceService:
         # Start polling task
         self._poll_task = asyncio.create_task(self._poll_loop())
 
+        # Start command queue task (processes write commands from control service)
+        self._command_task = asyncio.create_task(self._command_queue_loop())
+
+        # Start config watch task (hot-reload on config changes)
+        self._config_watch_task = asyncio.create_task(self._config_watch_loop())
+
         # Update service health to running
         set_service_health("device", {
             "status": "running",
@@ -142,6 +150,22 @@ class DeviceService:
             self._poll_task.cancel()
             try:
                 await self._poll_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel command task
+        if self._command_task:
+            self._command_task.cancel()
+            try:
+                await self._command_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel config watch task
+        if self._config_watch_task:
+            self._config_watch_task.cancel()
+            try:
+                await self._config_watch_task
             except asyncio.CancelledError:
                 pass
 
@@ -245,6 +269,121 @@ class DeviceService:
                 logger.error(f"Error in poll loop: {e}")
 
             await asyncio.sleep(poll_interval)
+
+    async def _command_queue_loop(self) -> None:
+        """
+        Process pending write commands from control service.
+
+        Control service writes commands to SharedState 'write_commands'.
+        This loop picks them up and executes them via register_writer.
+        """
+        command_interval = 0.1  # 100ms poll for commands
+
+        while self._running:
+            try:
+                # Read pending commands from SharedState
+                commands_data = SharedState.read("write_commands")
+                pending_commands = commands_data.get("commands", [])
+
+                if pending_commands:
+                    # Process each command
+                    processed_ids = []
+
+                    for cmd in pending_commands:
+                        device_id = cmd.get("device_id")
+                        command_type = cmd.get("command")
+                        value = cmd.get("value")
+                        timestamp = cmd.get("timestamp")
+
+                        if not device_id or not command_type:
+                            processed_ids.append(timestamp)
+                            continue
+
+                        try:
+                            if command_type == "write_solar_limit":
+                                success = await self.write_solar_limit(
+                                    device_id=device_id,
+                                    limit_pct=float(value),
+                                )
+                                if success:
+                                    logger.debug(
+                                        f"Executed solar limit write: {value}% to {device_id}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Failed to write solar limit to {device_id}"
+                                    )
+
+                            elif command_type == "write_register":
+                                register_address = cmd.get("register_address")
+                                verify = cmd.get("verify", True)
+                                success = await self.write_register(
+                                    device_id=device_id,
+                                    register_address=register_address,
+                                    value=int(value),
+                                    verify=verify,
+                                )
+                                if success:
+                                    logger.debug(
+                                        f"Executed register write: {register_address}={value} to {device_id}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Failed to write register {register_address} to {device_id}"
+                                    )
+
+                            processed_ids.append(timestamp)
+
+                        except Exception as e:
+                            logger.error(f"Error executing command {command_type}: {e}")
+                            processed_ids.append(timestamp)
+
+                    # Remove processed commands
+                    if processed_ids:
+                        remaining = [
+                            cmd for cmd in pending_commands
+                            if cmd.get("timestamp") not in processed_ids
+                        ]
+                        SharedState.write("write_commands", {"commands": remaining})
+
+            except Exception as e:
+                logger.error(f"Error in command queue loop: {e}")
+
+            await asyncio.sleep(command_interval)
+
+    async def _config_watch_loop(self) -> None:
+        """
+        Watch for config changes and reload when detected.
+
+        Config service sets config_changed flag when new config is synced.
+        This loop detects changes and reloads device configuration.
+        """
+        watch_interval = 5.0  # Check every 5 seconds
+
+        while self._running:
+            try:
+                if is_config_changed():
+                    logger.info("Config change detected, reloading devices...")
+
+                    # Reload configuration
+                    await self._load_config()
+
+                    # Restart polling with new devices
+                    self.register_reader.stop_polling()
+                    await self.register_reader.start_polling(self._devices)
+
+                    # Acknowledge the change
+                    acknowledge_config_change("device")
+
+                    logger.info(
+                        f"Config reloaded: {len(self._devices)} devices",
+                        extra={"device_count": len(self._devices)},
+                    )
+
+            except Exception as e:
+                logger.error(f"Error in config watch loop: {e}")
+
+            await asyncio.sleep(watch_interval)
 
     async def write_solar_limit(
         self,

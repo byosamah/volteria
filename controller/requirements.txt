@@ -3,6 +3,9 @@
 # Modbus communication
 pymodbus>=3.6.0
 
+# Async HTTP server (for service health endpoints)
+aiohttp>=3.9.0
+
 # Async support
 asyncio-mqtt>=0.16.0  # Optional: for future MQTT support
 

@@ -20,7 +20,7 @@ from collections import deque
 import yaml
 from aiohttp import web
 
-from common.state import SharedState, set_service_health, get_config, get_control_state
+from common.state import SharedState, set_service_health, get_config, get_control_state, is_config_changed, acknowledge_config_change
 from common.config import AlarmDefinition, AlarmCondition
 from common.logging_setup import get_service_logger
 
@@ -84,6 +84,7 @@ class LoggingService:
         self._cloud_sync_task: asyncio.Task | None = None
         self._retention_task: asyncio.Task | None = None
         self._buffer_task: asyncio.Task | None = None
+        self._config_watch_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
     def _find_config_path(self) -> str:
@@ -124,6 +125,7 @@ class LoggingService:
         self._local_write_task = asyncio.create_task(self._local_write_loop())
         self._cloud_sync_task = asyncio.create_task(self._cloud_sync_loop())
         self._retention_task = asyncio.create_task(self._retention_loop())
+        self._config_watch_task = asyncio.create_task(self._config_watch_loop())
 
         # Update service health to running
         set_service_health("logging", {
@@ -155,6 +157,7 @@ class LoggingService:
             self._local_write_task,
             self._cloud_sync_task,
             self._retention_task,
+            self._config_watch_task,
         ]:
             if task:
                 task.cancel()
@@ -323,6 +326,39 @@ class LoggingService:
                     logger.info(f"Retention cleanup: deleted {deleted} old records")
             except Exception as e:
                 logger.error(f"Retention cleanup error: {e}")
+
+    async def _config_watch_loop(self) -> None:
+        """
+        Watch for config changes and reload when detected.
+
+        Config service sets config_changed flag when new config is synced.
+        This loop detects changes and reloads logging configuration.
+        """
+        watch_interval = 5.0  # Check every 5 seconds
+
+        while self._running:
+            try:
+                if is_config_changed():
+                    logger.info("Config change detected, reloading logging settings...")
+
+                    # Reload configuration
+                    await self._load_config()
+
+                    # Reload alarm definitions
+                    self.alarm_evaluator.update_definitions(self._alarm_definitions)
+
+                    # Acknowledge the change
+                    acknowledge_config_change("logging")
+
+                    logger.info(
+                        f"Config reloaded: retention={self._retention_days}d, "
+                        f"{len(self._alarm_definitions)} alarm definitions",
+                    )
+
+            except Exception as e:
+                logger.error(f"Error in config watch loop: {e}")
+
+            await asyncio.sleep(watch_interval)
 
     async def _write_to_local_db(self) -> None:
         """Write buffered state to local database"""

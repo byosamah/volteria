@@ -28,6 +28,8 @@ interface SiteStatusResponse {
   configSync: {
     status: "synced" | "sync_needed" | "never_synced";
     lastSyncedAt: string | null;
+    cloudChangedAt: string | null; // When config changed on web (site.updated_at)
+    localPulledAt: string | null;  // When controller last pulled config
     pendingChanges: {
       devices: number;
       settings: number;
@@ -111,6 +113,8 @@ export async function GET(
       configSync: {
         status: "never_synced",
         lastSyncedAt: site.config_synced_at,
+        cloudChangedAt: site.updated_at,
+        localPulledAt: null, // Will be populated from heartbeat
         pendingChanges: null,
       },
       logging: {
@@ -148,6 +152,15 @@ export async function GET(
           lastError: heartbeat.last_error || null,
           activeAlarms: heartbeat.active_alarms_count || 0,
         };
+
+        // Extract config version from heartbeat metadata
+        // Controller sends config_version (updated_at of config it's using)
+        const metadata = heartbeat.metadata || {};
+        if (metadata.config_version) {
+          response.configSync.localPulledAt = metadata.config_version;
+        } else if (metadata.config_synced_at) {
+          response.configSync.localPulledAt = metadata.config_synced_at;
+        }
       }
     } else if (masterDevice?.device_type === "gateway") {
       response.connection.type = "gateway";

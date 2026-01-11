@@ -17,9 +17,8 @@ from pathlib import Path
 
 import yaml
 from aiohttp import web
-import httpx
 
-from common.state import SharedState, set_service_health, get_config, get_readings, set_control_state
+from common.state import SharedState, set_service_health, get_config, get_readings, set_control_state, is_config_changed, acknowledge_config_change
 from common.config import SafeModeSettings, SafeModeType, DeviceType
 from common.logging_setup import get_service_logger, log_control_loop
 
@@ -74,6 +73,7 @@ class ControlService:
         # State
         self._running = False
         self._control_task: asyncio.Task | None = None
+        self._config_watch_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
     def _find_config_path(self) -> str:
@@ -112,6 +112,9 @@ class ControlService:
         # Start control loop
         self._control_task = asyncio.create_task(self._control_loop())
 
+        # Start config watch task (hot-reload on config changes)
+        self._config_watch_task = asyncio.create_task(self._config_watch_loop())
+
         # Update service health to running
         set_service_health("control", {
             "status": "running",
@@ -145,6 +148,14 @@ class ControlService:
             self._control_task.cancel()
             try:
                 await self._control_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel config watch task
+        if self._config_watch_task:
+            self._config_watch_task.cancel()
+            try:
+                await self._config_watch_task
             except asyncio.CancelledError:
                 pass
 
@@ -373,17 +384,17 @@ class ControlService:
             self._current_state.write_success = True
 
     async def _write_solar_limit(self, limit_pct: float) -> bool:
-        """Write solar limit to all inverters via device service"""
+        """
+        Write solar limit to all inverters via device service.
+
+        Commands are written to SharedState 'write_commands' and
+        picked up by the device service's command queue loop.
+        """
         all_success = True
 
         for inverter_id in self._inverter_ids:
             try:
-                async with httpx.AsyncClient() as client:
-                    # Note: This would call the device service API
-                    # For now, we write directly to shared state for device service to pick up
-                    pass
-
-                # Write command to shared state
+                # Write command to shared state for device service to pick up
                 commands = SharedState.read("write_commands")
                 if "commands" not in commands:
                     commands["commands"] = []
@@ -397,11 +408,49 @@ class ControlService:
 
                 SharedState.write("write_commands", commands)
 
+                logger.debug(
+                    f"Queued solar limit command: {limit_pct}% for {inverter_id}"
+                )
+
             except Exception as e:
-                logger.error(f"Failed to write solar limit to {inverter_id}: {e}")
+                logger.error(f"Failed to queue solar limit for {inverter_id}: {e}")
                 all_success = False
 
         return all_success
+
+    async def _config_watch_loop(self) -> None:
+        """
+        Watch for config changes and reload when detected.
+
+        Config service sets config_changed flag when new config is synced.
+        This loop detects changes and reloads control configuration.
+        """
+        watch_interval = 5.0  # Check every 5 seconds
+
+        while self._running:
+            try:
+                if is_config_changed():
+                    logger.info("Config change detected, reloading control settings...")
+
+                    # Reload configuration
+                    await self._load_config()
+
+                    # Acknowledge the change
+                    acknowledge_config_change("control")
+
+                    logger.info(
+                        f"Config reloaded: mode={self._operation_mode}, "
+                        f"interval={self._control_interval_ms}ms",
+                        extra={
+                            "operation_mode": self._operation_mode,
+                            "interval_ms": self._control_interval_ms,
+                        },
+                    )
+
+            except Exception as e:
+                logger.error(f"Error in config watch loop: {e}")
+
+            await asyncio.sleep(watch_interval)
 
     async def _start_health_server(self) -> None:
         """Start the health check HTTP server"""

@@ -287,13 +287,12 @@ class ConfigService:
 
     async def _notify_config_change(self) -> None:
         """Notify other services of config change"""
-        # Write notification to shared state
-        SharedState.write("config_changed", {
-            "version": self._current_config.get("updated_at") if self._current_config else None,
-            "changed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        from common.state import notify_config_changed
 
-        logger.debug("Config change notification sent")
+        version = self._current_config.get("updated_at") if self._current_config else ""
+        notify_config_changed(version)
+
+        logger.info(f"Config change notification sent (version: {version})")
 
     async def force_sync(self) -> bool:
         """Force immediate config sync (for API trigger)"""
