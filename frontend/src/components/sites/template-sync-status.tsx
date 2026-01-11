@@ -82,6 +82,21 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
     fetchStatus();
   }, [fetchStatus]);
 
+  // Listen for device changes to auto-refresh sync status
+  useEffect(() => {
+    const handleDeviceChange = () => {
+      // Refresh sync status when a device is edited/deleted
+      fetchStatus();
+    };
+
+    // Listen for custom event dispatched by device-list
+    window.addEventListener("device-config-changed", handleDeviceChange);
+
+    return () => {
+      window.removeEventListener("device-config-changed", handleDeviceChange);
+    };
+  }, [fetchStatus]);
+
   // Handle sync button click
   const handleSync = async () => {
     setSyncing(true);

@@ -531,6 +531,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
           ? { ...d, ...updateData } as Device
           : d
       ));
+
+      // Dispatch event to notify sync status component to refresh
+      window.dispatchEvent(new CustomEvent("device-config-changed"));
     }
 
     setLoading(false);
@@ -566,6 +569,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
       // Remove from local state
       setDevices(devices.filter((d) => d.id !== deleteDevice.id));
+
+      // Dispatch event to notify sync status component to refresh
+      window.dispatchEvent(new CustomEvent("device-config-changed"));
     }
 
     setLoading(false);
