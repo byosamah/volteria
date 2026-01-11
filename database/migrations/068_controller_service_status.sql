@@ -9,7 +9,7 @@
 
 CREATE TABLE IF NOT EXISTS controller_service_status (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    controller_id UUID NOT NULL REFERENCES controllers_master(id) ON DELETE CASCADE,
+    controller_id UUID NOT NULL REFERENCES controllers(id) ON DELETE CASCADE,
     service_name TEXT NOT NULL CHECK (service_name IN (
         'system',   -- Layer 1: Heartbeat, OTA, health monitoring
         'config',   -- Layer 2: Sync, caching, versioning
@@ -76,7 +76,7 @@ CREATE POLICY "Users can view service status for their controllers"
     FOR SELECT
     USING (
         EXISTS (
-            SELECT 1 FROM controllers_master cm
+            SELECT 1 FROM controllers cm
             JOIN site_master_devices smd ON smd.controller_id = cm.id
             JOIN sites s ON s.id = smd.site_id
             JOIN user_projects up ON up.project_id = s.project_id
