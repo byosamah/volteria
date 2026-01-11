@@ -451,14 +451,19 @@ export function MasterDeviceTemplateForm({
         }
 
         // Parse site-level alarms from template
-        // Use type assertion since template.site_level_alarms may not be in the type yet
+        // Always use SITE_LEVEL_ALARMS as source of truth for definitions,
+        // only preserve enabled state from saved template data
         const templateSiteLevelAlarms = (template as { site_level_alarms?: SiteLevelAlarm[] }).site_level_alarms;
-        if (templateSiteLevelAlarms && Array.isArray(templateSiteLevelAlarms) && templateSiteLevelAlarms.length > 0) {
-          setSiteLevelAlarms(templateSiteLevelAlarms);
-        } else {
-          // Use defaults
-          setSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
-        }
+        setSiteLevelAlarms(
+          SITE_LEVEL_ALARMS.map((alarm) => {
+            // Find matching saved alarm by ID to preserve enabled state
+            const savedAlarm = templateSiteLevelAlarms?.find((a) => a.alarm_id === alarm.alarm_id);
+            return {
+              ...alarm, // Use current definition (name, description, condition, severity)
+              enabled: savedAlarm?.enabled ?? alarm.enabled, // Preserve saved enabled state
+            };
+          })
+        );
       } else {
         // Create mode - reset to defaults
         setFormData({

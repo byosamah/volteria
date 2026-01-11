@@ -425,13 +425,17 @@ export function MasterDeviceList({
       const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
       setEditSelectedCalculatedFields(existingFieldIds);
 
-      // Load existing site-level alarms or use defaults
-      if (device.site_level_alarms && device.site_level_alarms.length > 0) {
-        setEditSiteLevelAlarms(device.site_level_alarms);
-      } else {
-        // Use defaults from SITE_LEVEL_ALARMS
-        setEditSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
-      }
+      // Load existing site-level alarms - always use SITE_LEVEL_ALARMS as source of truth
+      // Only preserve enabled state from saved device data
+      setEditSiteLevelAlarms(
+        SITE_LEVEL_ALARMS.map((alarm) => {
+          const savedAlarm = device.site_level_alarms?.find((a) => a.alarm_id === alarm.alarm_id);
+          return {
+            ...alarm, // Use current definition (name, description, condition, severity)
+            enabled: savedAlarm?.enabled ?? alarm.enabled, // Preserve saved enabled state
+          };
+        })
+      );
 
       // Set the selected template ID
       setEditSelectedTemplateId(device.controller_template_id || "");
@@ -675,13 +679,18 @@ export function MasterDeviceList({
           );
         }
 
-        // Update site-level alarms from template
-        if (templateData.site_level_alarms && Array.isArray(templateData.site_level_alarms)) {
-          setEditSiteLevelAlarms(templateData.site_level_alarms as SiteLevelAlarm[]);
-        } else {
-          // Template has no site-level alarms, use defaults
-          setEditSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
-        }
+        // Update site-level alarms from template - always use SITE_LEVEL_ALARMS as source of truth
+        // Only preserve enabled state from template data
+        const templateAlarms = templateData.site_level_alarms as SiteLevelAlarm[] | undefined;
+        setEditSiteLevelAlarms(
+          SITE_LEVEL_ALARMS.map((alarm) => {
+            const savedAlarm = templateAlarms?.find((a) => a.alarm_id === alarm.alarm_id);
+            return {
+              ...alarm, // Use current definition (name, description, condition, severity)
+              enabled: savedAlarm?.enabled ?? alarm.enabled, // Preserve saved enabled state
+            };
+          })
+        );
       }
     } catch (err) {
       console.error("Failed to load selected template:", err);
