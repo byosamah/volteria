@@ -27,7 +27,7 @@ export async function GET(
       .eq("id", siteId)
       .single();
 
-    // Get all devices in site (both with and without template_id)
+    // Get all ENABLED devices in site (exclude disabled/deleted devices)
     const { data: devices, error: devicesError } = await supabase
       .from("site_devices")
       .select(`
@@ -40,7 +40,8 @@ export async function GET(
           updated_at
         )
       `)
-      .eq("site_id", siteId);
+      .eq("site_id", siteId)
+      .eq("enabled", true);
 
     if (devicesError) {
       console.error("Failed to fetch devices:", devicesError);
