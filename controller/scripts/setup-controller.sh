@@ -121,9 +121,53 @@ install_dependencies() {
         autossh \
         sshpass \
         curl \
-        jq
+        jq \
+        network-manager
 
     log_info "System dependencies installed"
+}
+
+# Configure network settings (timezone, static IP option)
+configure_network() {
+    log_step "Configuring network settings..."
+
+    # Set timezone to Asia/Dubai (UAE)
+    timedatectl set-timezone Asia/Dubai
+    log_info "Timezone set to Asia/Dubai"
+
+    # Enable NetworkManager if not already enabled
+    systemctl enable NetworkManager 2>/dev/null || true
+    systemctl start NetworkManager 2>/dev/null || true
+
+    # Check if static IP is requested via environment variable
+    # Usage: STATIC_IP=192.168.1.100 GATEWAY=192.168.1.1 ./setup-controller.sh
+    if [[ -n "${STATIC_IP}" ]]; then
+        log_info "Configuring static IP: ${STATIC_IP}"
+
+        # Get the active connection name
+        CONN_NAME=$(nmcli -t -f NAME,DEVICE con show --active | head -1 | cut -d: -f1)
+
+        if [[ -n "$CONN_NAME" ]]; then
+            GATEWAY=${GATEWAY:-$(echo $STATIC_IP | cut -d. -f1-3).1}
+            DNS=${DNS:-8.8.8.8,8.8.4.4}
+
+            nmcli con mod "$CONN_NAME" ipv4.addresses "${STATIC_IP}/24"
+            nmcli con mod "$CONN_NAME" ipv4.gateway "$GATEWAY"
+            nmcli con mod "$CONN_NAME" ipv4.dns "$DNS"
+            nmcli con mod "$CONN_NAME" ipv4.method manual
+            nmcli con up "$CONN_NAME"
+
+            log_info "Static IP configured: ${STATIC_IP}, Gateway: ${GATEWAY}"
+        else
+            log_warn "No active connection found. Static IP not configured."
+        fi
+    else
+        log_info "Using DHCP (set STATIC_IP env var for static IP)"
+    fi
+
+    # Display current IP
+    CURRENT_IP=$(hostname -I | awk '{print $1}')
+    log_info "Current IP address: ${CURRENT_IP}"
 }
 
 # Create directory structure
@@ -513,6 +557,7 @@ main() {
     check_root
     check_requirements
     install_dependencies
+    configure_network
     create_directories
     setup_controller_code
     setup_python_env

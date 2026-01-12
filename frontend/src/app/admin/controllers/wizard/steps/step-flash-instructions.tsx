@@ -138,39 +138,76 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
           <div className="flex-shrink-0 w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
             6
           </div>
-          <div>
+          <div className="flex-1">
             <h5 className="font-medium text-blue-900">Configure Settings (Important!)</h5>
-            <p className="text-sm text-blue-800 mb-2">
-              Click the <span className="font-medium">gear icon</span> or <span className="font-medium">&quot;Edit Settings&quot;</span> to configure:
+            <p className="text-sm text-blue-800 mb-3">
+              Use the <span className="font-medium">Customisation</span> menu to configure each tab:
             </p>
-            <ul className="text-sm text-blue-700 space-y-1 ml-4">
-              <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span><span className="font-medium">Enable SSH</span> - Select &quot;Use password authentication&quot;</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span><span className="font-medium">Set username:</span> <code className="bg-blue-100 px-1 rounded">pi</code></span>
-              </li>
-              <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span><span className="font-medium">Set password:</span> Choose a secure password</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span><span className="font-medium">Configure WiFi</span> (optional - Ethernet recommended)</span>
-              </li>
-            </ul>
-            <p className="text-xs text-blue-600 mt-2 font-medium">
-              These settings are required to SSH into your Pi in the next step!
+
+            {/* Standard credentials box */}
+            <div className="bg-white border border-blue-300 rounded-lg p-3 mb-3">
+              <h6 className="text-xs font-medium text-blue-900 mb-2 uppercase tracking-wide">Standard Volteria Settings</h6>
+
+              {/* Settings grid */}
+              <div className="space-y-3 text-sm">
+                {/* Hostname */}
+                <div className="flex items-center gap-2">
+                  <span className="w-24 text-blue-700 font-medium">Hostname:</span>
+                  <code className="bg-blue-100 px-2 py-0.5 rounded font-mono">volteria</code>
+                </div>
+
+                {/* Localisation */}
+                <div className="border-t border-blue-200 pt-2">
+                  <span className="text-xs text-blue-600 uppercase">Localisation</span>
+                  <div className="grid grid-cols-2 gap-1 mt-1">
+                    <span className="text-blue-700">Capital city:</span>
+                    <code className="bg-blue-100 px-1 rounded text-xs">Abu Dhabi (UAE)</code>
+                    <span className="text-blue-700">Time zone:</span>
+                    <code className="bg-blue-100 px-1 rounded text-xs">Asia/Dubai</code>
+                    <span className="text-blue-700">Keyboard:</span>
+                    <code className="bg-blue-100 px-1 rounded text-xs">us</code>
+                  </div>
+                </div>
+
+                {/* User */}
+                <div className="border-t border-blue-200 pt-2">
+                  <span className="text-xs text-blue-600 uppercase">User</span>
+                  <div className="grid grid-cols-2 gap-1 mt-1">
+                    <span className="text-blue-700">Username:</span>
+                    <code className="bg-blue-100 px-1 rounded text-xs">voltadmin</code>
+                    <span className="text-blue-700">Password:</span>
+                    <code className="bg-blue-100 px-1 rounded text-xs">Solar@1996</code>
+                  </div>
+                </div>
+
+                {/* Wi-Fi */}
+                <div className="border-t border-blue-200 pt-2">
+                  <span className="text-xs text-blue-600 uppercase">Wi-Fi</span>
+                  <div className="grid grid-cols-2 gap-1 mt-1">
+                    <span className="text-blue-700">SSID:</span>
+                    <span className="text-blue-600 text-xs italic">Your WiFi name</span>
+                    <span className="text-blue-700">Password:</span>
+                    <span className="text-blue-600 text-xs italic">Your WiFi password</span>
+                    <span className="text-blue-700">Country:</span>
+                    <code className="bg-blue-100 px-1 rounded text-xs">AE</code>
+                  </div>
+                </div>
+
+                {/* Remote access */}
+                <div className="border-t border-blue-200 pt-2">
+                  <span className="text-xs text-blue-600 uppercase">Remote Access</span>
+                  <div className="grid grid-cols-2 gap-1 mt-1">
+                    <span className="text-blue-700">Enable SSH:</span>
+                    <code className="bg-green-100 text-green-700 px-1 rounded text-xs">Yes</code>
+                    <span className="text-blue-700">Auth method:</span>
+                    <code className="bg-blue-100 px-1 rounded text-xs">Password</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-blue-600 font-medium">
+              Static IP will be configured automatically by the setup script.
             </p>
           </div>
         </div>
