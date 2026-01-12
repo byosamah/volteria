@@ -31,7 +31,7 @@ SyslogIdentifier=volteria-system
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/volteria/data /var/log/volteria
+ReadWritePaths=/opt/volteria/data /opt/volteria/backup /var/log/volteria
 PrivateTmp=yes
 
 [Install]

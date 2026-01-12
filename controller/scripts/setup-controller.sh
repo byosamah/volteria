@@ -180,6 +180,7 @@ create_directories() {
     mkdir -p "${CONFIG_DIR}"
     mkdir -p "${VOLTERIA_DIR}/updates"
     mkdir -p "${VOLTERIA_DIR}/logs"
+    mkdir -p "${VOLTERIA_DIR}/backup"
     mkdir -p /var/log/volteria
 
     log_info "Directory structure created"
@@ -274,6 +275,7 @@ create_volteria_user() {
     # Set ownership
     chown -R volteria:volteria "${VOLTERIA_DIR}"
     chown -R volteria:volteria "${DATA_DIR}"
+    chown -R volteria:volteria "${VOLTERIA_DIR}/backup"
     chown -R volteria:volteria /var/log/volteria
 
     # Add volteria to dialout group for serial access
