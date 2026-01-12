@@ -372,20 +372,17 @@ EOF
 }
 
 # Setup SSH tunnel service
+# Note: SSH tunnel is set up AFTER registration, when we have the assigned port
 setup_ssh_tunnel() {
     log_step "Setting up SSH tunnel service..."
 
-    # Get current user (the one who ran sudo)
-    REAL_USER="${SUDO_USER:-pi}"
+    # SSH credentials for central server (used by all controllers)
+    SSH_USER="volteria"
+    SSH_PASS="VolteriaTunnel2024!"
 
-    # Generate SSH key if not exists
-    if [[ ! -f "/home/${REAL_USER}/.ssh/id_rsa" ]]; then
-        log_info "Generating SSH key..."
-        sudo -u "${REAL_USER}" mkdir -p "/home/${REAL_USER}/.ssh"
-        sudo -u "${REAL_USER}" ssh-keygen -t rsa -b 4096 -N "" -f "/home/${REAL_USER}/.ssh/id_rsa"
-    fi
-
-    # Create SSH tunnel service template (port will be updated during registration)
+    # Create SSH tunnel service template
+    # Port will be set to SSH_TUNNEL_PORT (set during registration)
+    # If registration failed, tunnel won't start (port = 0)
     cat > "${SYSTEMD_DIR}/volteria-tunnel.service" << EOF
 [Unit]
 Description=Volteria SSH Reverse Tunnel
@@ -393,9 +390,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=${REAL_USER}
 Type=simple
-ExecStart=/usr/bin/autossh -M 0 -N -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" -o "ExitOnForwardFailure yes" -o "StrictHostKeyChecking no" -R 0:localhost:22 root@${CENTRAL_SERVER}
+Environment="SSHPASS=${SSH_PASS}"
+ExecStart=/usr/bin/sshpass -e /usr/bin/ssh -N -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" -o "ExitOnForwardFailure yes" -o "StrictHostKeyChecking no" -o "UserKnownHostsFile=/dev/null" -R SSH_TUNNEL_PORT:localhost:22 ${SSH_USER}@${CENTRAL_SERVER}
 Restart=always
 RestartSec=10
 
@@ -404,24 +401,11 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable volteria-tunnel.service
-
-    log_info "SSH tunnel service configured"
-
-    # Display public key for adding to central server
-    echo ""
-    echo "=============================================="
-    echo "SSH Public Key (add to central server):"
-    echo "=============================================="
-    cat "/home/${REAL_USER}/.ssh/id_rsa.pub"
-    echo ""
-    echo "Run on central server (${CENTRAL_SERVER}):"
-    echo "  echo '<key>' >> ~/.ssh/authorized_keys"
-    echo "=============================================="
-    echo ""
+    # Don't enable yet - will be enabled after registration sets the port
+    log_info "SSH tunnel service template created (will be configured during registration)"
 }
 
-# Register controller with cloud
+# Register controller with cloud and set up SSH tunnel
 register_controller() {
     log_step "Registering controller with cloud..."
 
@@ -446,29 +430,49 @@ register_controller() {
         CONTROLLER_ID=$(echo "$RESPONSE" | jq -r '.controller_id')
         SSH_PORT=$(echo "$RESPONSE" | jq -r '.ssh_tunnel_port // empty')
         SUPABASE_KEY=$(echo "$RESPONSE" | jq -r '.supabase_key // empty')
+        SUPABASE_URL=$(echo "$RESPONSE" | jq -r '.supabase_url // empty')
 
         log_info "Controller registered: ${CONTROLLER_ID}"
 
         # Update config with controller ID
         if [[ -n "$CONTROLLER_ID" ]]; then
-            sed -i "/serial_number:/a\\  id: \"${CONTROLLER_ID}\"" "${CONFIG_DIR}/config.yaml"
+            # Update the config.yaml with controller ID
+            sed -i "s/controller_id: \"\"/controller_id: \"${CONTROLLER_ID}\"/" "${CONFIG_DIR}/config.yaml" 2>/dev/null || true
         fi
 
-        # Update Supabase key if provided
-        if [[ -n "$SUPABASE_KEY" && "$SUPABASE_KEY" != "null" ]]; then
-            sed -i "s/key: \"\"/key: \"${SUPABASE_KEY}\"/" "${CONFIG_DIR}/config.yaml"
+        # Update env file with registration info
+        if [[ -n "$CONTROLLER_ID" ]]; then
+            echo "CONTROLLER_ID=${CONTROLLER_ID}" >> "${CONFIG_DIR}/env"
         fi
 
-        # Update SSH tunnel port if assigned
-        if [[ -n "$SSH_PORT" && "$SSH_PORT" != "null" ]]; then
+        # Configure and start SSH tunnel if port assigned
+        if [[ -n "$SSH_PORT" && "$SSH_PORT" != "null" && "$SSH_PORT" != "0" ]]; then
             log_info "SSH tunnel port assigned: ${SSH_PORT}"
-            sed -i "s/-R 0:localhost:22/-R ${SSH_PORT}:localhost:22/" "${SYSTEMD_DIR}/volteria-tunnel.service"
+
+            # Update the tunnel service with the actual port
+            sed -i "s/SSH_TUNNEL_PORT/${SSH_PORT}/" "${SYSTEMD_DIR}/volteria-tunnel.service"
             systemctl daemon-reload
+
+            # Enable and start the tunnel
+            systemctl enable volteria-tunnel.service
+            log_info "Starting SSH tunnel on port ${SSH_PORT}..."
+            systemctl start volteria-tunnel.service
+
+            # Wait a moment and check if tunnel started
+            sleep 3
+            if systemctl is-active --quiet volteria-tunnel.service; then
+                log_info "SSH tunnel started successfully"
+                log_info "Remote access: ssh -p ${SSH_PORT} voltadmin@${CENTRAL_SERVER}"
+            else
+                log_warn "SSH tunnel failed to start - check journalctl -u volteria-tunnel for details"
+            fi
+        else
+            log_warn "No SSH port assigned - tunnel not configured"
         fi
     else
         log_warn "Could not register with cloud automatically"
-        log_warn "Controller will register on first heartbeat"
-        log_warn "Or complete registration in the admin wizard"
+        log_warn "Response: ${RESPONSE}"
+        log_warn "Controller will need to be registered manually via the admin wizard"
     fi
 }
 
@@ -497,9 +501,13 @@ start_services() {
     systemctl start volteria-logging.service
     sleep 2
 
-    # Start SSH tunnel (may fail if key not added to central server)
-    log_info "Starting SSH tunnel..."
-    systemctl start volteria-tunnel.service 2>/dev/null || log_warn "SSH tunnel not started (key may not be on central server yet)"
+    # SSH tunnel is started during registration (register_controller function)
+    # Check if it's running
+    if systemctl is-active --quiet volteria-tunnel.service; then
+        log_info "SSH tunnel: Running"
+    else
+        log_info "SSH tunnel: Not running (will be configured after registration)"
+    fi
 
     log_info "All services started"
 }

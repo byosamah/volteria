@@ -272,11 +272,11 @@ ssh:
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
           </svg>
           <div>
-            <h4 className="font-medium text-blue-800">Cloud-First Configuration</h4>
+            <h4 className="font-medium text-blue-800">Minimal Bootstrap Configuration</h4>
             <p className="text-sm text-blue-700">
-              The local config only contains the controller ID and cloud credentials.
-              All other settings (site assignment, devices, control settings) are managed
-              through this platform and fetched automatically by the controller.
+              The local config only contains the controller ID and cloud credentials needed to connect to the platform.
+              Once this controller is assigned to a site, it will automatically fetch and cache all site settings
+              (devices, control parameters, thresholds) for local operation.
             </p>
           </div>
         </div>
