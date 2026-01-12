@@ -1,7 +1,6 @@
 # Docker Compose for Solar Diesel Controller
 # Use this for local development and testing
 
-version: '3.8'
 
 services:
   # ===========================================
@@ -51,10 +50,6 @@ services:
       - NEXT_PUBLIC_API_URL=http://backend:8000
       # Service key needed for admin API routes (invite, etc.)
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      # PageSpeed test login (for performance testing)
-      - PAGESPEED_TEST_TOKEN=${PAGESPEED_TEST_TOKEN}
-      - PAGESPEED_TEST_EMAIL=${PAGESPEED_TEST_EMAIL}
-      - PAGESPEED_TEST_PASSWORD=${PAGESPEED_TEST_PASSWORD}
     depends_on:
       backend:
         condition: service_healthy
