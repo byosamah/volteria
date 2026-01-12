@@ -68,6 +68,7 @@ export default async function ControllersPage() {
     } | null;
     last_heartbeat: string | null;
     pending_restart: boolean | null;
+    ssh_port: number | null;
   }> = [];
 
   try {
@@ -83,6 +84,7 @@ export default async function ControllersPage() {
         enterprise_id,
         created_at,
         pending_restart,
+        ssh_port,
         approved_hardware:hardware_type_id (
           name,
           hardware_type
@@ -104,6 +106,7 @@ export default async function ControllersPage() {
           ? item.enterprises[0] || null
           : item.enterprises,
         last_heartbeat: null, // Will be populated below
+        ssh_port: item.ssh_port || null,
       })) as typeof controllers;
     }
   } catch {

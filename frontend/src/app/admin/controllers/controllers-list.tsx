@@ -53,7 +53,13 @@ interface Controller {
   } | null;
   last_heartbeat: string | null;
   pending_restart: boolean | null;
+  ssh_port: number | null;
 }
+
+// Standard SSH credentials (same for all controllers)
+const SSH_USERNAME = "voltadmin";
+const SSH_PASSWORD = "Solar@1996";
+const SSH_CENTRAL_SERVER = "159.223.224.203";
 
 // Helper to determine if controller is online (heartbeat within last 90 seconds)
 // Note: Controllers send heartbeats every 30 seconds
@@ -138,6 +144,13 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
   const [restartOpen, setRestartOpen] = useState(false);
   const [restartController, setRestartController] = useState<Controller | null>(null);
   const [restartLoading, setRestartLoading] = useState(false);
+
+  // SSH password reveal state
+  const [sshPasswordOpen, setSshPasswordOpen] = useState(false);
+  const [sshPasswordController, setSshPasswordController] = useState<Controller | null>(null);
+  const [sshVerifyPassword, setSshVerifyPassword] = useState("");
+  const [sshPasswordRevealed, setSshPasswordRevealed] = useState(false);
+  const [sshPasswordLoading, setSshPasswordLoading] = useState(false);
 
   // Create form state
   const [formData, setFormData] = useState({
@@ -696,6 +709,54 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
     }
   };
 
+  // Open SSH password reveal dialog
+  const openSshPasswordDialog = (controller: Controller) => {
+    setSshPasswordController(controller);
+    setSshVerifyPassword("");
+    setSshPasswordRevealed(false);
+    setSshPasswordOpen(true);
+  };
+
+  // Handle SSH password verification
+  const handleSshPasswordVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sshPasswordController) return;
+
+    if (!sshVerifyPassword) {
+      toast.error("Please enter your password");
+      return;
+    }
+
+    setSshPasswordLoading(true);
+    try {
+      // Verify password by attempting to re-authenticate
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) {
+        toast.error("Could not verify user");
+        return;
+      }
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: sshVerifyPassword,
+      });
+
+      if (authError) {
+        toast.error("Incorrect password");
+        return;
+      }
+
+      // Password verified - reveal SSH password
+      setSshPasswordRevealed(true);
+      toast.success("SSH password revealed");
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setSshPasswordLoading(false);
+    }
+  };
+
   return (
     <>
       {/* Search and Actions */}
@@ -873,6 +934,47 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                       <p className="text-muted-foreground">Enterprise</p>
                       <p>{controller.enterprises?.name || "Not claimed"}</p>
                     </div>
+                    {controller.ssh_port && (
+                      <div className="col-span-2">
+                        <p className="text-muted-foreground">SSH Access</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <code className="bg-muted px-2 py-1 rounded text-xs">
+                            ssh {SSH_USERNAME}@{SSH_CENTRAL_SERVER} -p {controller.ssh_port}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const cmd = `ssh ${SSH_USERNAME}@${SSH_CENTRAL_SERVER} -p ${controller.ssh_port}`;
+                              navigator.clipboard.writeText(cmd);
+                              toast.success("SSH command copied");
+                            }}
+                            className="h-8 w-8 p-0"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                            </svg>
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-muted-foreground">Pass:</span>
+                          <code className="bg-muted px-1 rounded text-xs">••••••••</code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openSshPasswordDialog(controller)}
+                            className="h-6 px-2 text-xs"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 mr-1">
+                              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            View
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     {controller.passcode && (
                       <div className="col-span-2">
                         <p className="text-muted-foreground">Passcode</p>
@@ -982,6 +1084,7 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                   <TableHead>Status</TableHead>
                   <TableHead>Hardware</TableHead>
                   <TableHead>Serial Number</TableHead>
+                  <TableHead>SSH Access</TableHead>
                   <TableHead>Passcode</TableHead>
                   <TableHead>Enterprise</TableHead>
                   <TableHead>Actions</TableHead>
@@ -1030,6 +1133,71 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                     </TableCell>
                     <TableCell className="font-mono font-medium">
                       {controller.serial_number}
+                    </TableCell>
+                    <TableCell>
+                      {/* SSH Access - only show if controller has ssh_port assigned */}
+                      {controller.ssh_port ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <code className="bg-muted px-2 py-1 rounded text-xs">
+                              ssh {SSH_USERNAME}@{SSH_CENTRAL_SERVER} -p {controller.ssh_port}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const cmd = `ssh ${SSH_USERNAME}@${SSH_CENTRAL_SERVER} -p ${controller.ssh_port}`;
+                                navigator.clipboard.writeText(cmd);
+                                toast.success("SSH command copied");
+                              }}
+                              className="h-6 w-6 p-0"
+                              title="Copy SSH command"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-3 w-3"
+                              >
+                                <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                              </svg>
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <span>Pass:</span>
+                            <code className="bg-muted px-1 rounded">••••••••</code>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openSshPasswordDialog(controller)}
+                              className="h-5 px-1.5 text-xs"
+                              title="View SSH password (requires verification)"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-3 w-3 mr-1"
+                              >
+                                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                                <circle cx="12" cy="12" r="3" />
+                              </svg>
+                              View
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not configured</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {controller.passcode ? (
@@ -1602,6 +1770,147 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                   {restartLoading ? "Sending..." : "Restart Controller"}
                 </Button>
               </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* SSH Password Reveal Dialog */}
+      <Dialog open={sshPasswordOpen} onOpenChange={(open) => {
+        setSshPasswordOpen(open);
+        if (!open) {
+          setSshPasswordController(null);
+          setSshVerifyPassword("");
+          setSshPasswordRevealed(false);
+        }
+      }}>
+        <DialogContent className="mx-4 max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 text-purple-600"
+              >
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              SSH Credentials
+            </DialogTitle>
+            <DialogDescription>
+              Enter your admin password to reveal SSH credentials.
+            </DialogDescription>
+          </DialogHeader>
+
+          {sshPasswordController && (
+            <div className="space-y-4 py-4">
+              {/* Controller info */}
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Controller:</span>{" "}
+                  <span className="font-mono font-medium">{sshPasswordController.serial_number}</span>
+                </p>
+                <p className="text-sm mt-1">
+                  <span className="text-muted-foreground">SSH Command:</span>
+                </p>
+                <code className="block mt-1 bg-zinc-900 text-green-400 px-2 py-1 rounded text-xs font-mono">
+                  ssh {SSH_USERNAME}@{SSH_CENTRAL_SERVER} -p {sshPasswordController.ssh_port}
+                </code>
+              </div>
+
+              {!sshPasswordRevealed ? (
+                <form onSubmit={handleSshPasswordVerify} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="ssh_verify_password">
+                      Your Password <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="ssh_verify_password"
+                      type="password"
+                      placeholder="Enter your admin password"
+                      value={sshVerifyPassword}
+                      onChange={(e) => setSshVerifyPassword(e.target.value)}
+                      className="min-h-[44px]"
+                      autoFocus
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      For security, verify your identity to view SSH password.
+                    </p>
+                  </div>
+
+                  <DialogFooter className="flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setSshPasswordOpen(false)}
+                      className="min-h-[44px] w-full sm:w-auto"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={sshPasswordLoading || !sshVerifyPassword}
+                      className="min-h-[44px] w-full sm:w-auto bg-purple-600 hover:bg-purple-700"
+                    >
+                      {sshPasswordLoading ? "Verifying..." : "Verify & Reveal"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  {/* Revealed SSH Password */}
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg dark:bg-green-950/30 dark:border-green-900">
+                    <p className="text-sm font-medium text-green-800 dark:text-green-200 mb-2">
+                      SSH Password Revealed
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="bg-white dark:bg-zinc-900 px-3 py-2 rounded text-lg font-mono font-bold border">
+                        {SSH_PASSWORD}
+                      </code>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(SSH_PASSWORD);
+                          toast.success("SSH password copied");
+                        }}
+                        className="h-9"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4 mr-1"
+                        >
+                          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                        </svg>
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setSshPasswordOpen(false)}
+                      className="min-h-[44px] w-full sm:w-auto"
+                    >
+                      Close
+                    </Button>
+                  </DialogFooter>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

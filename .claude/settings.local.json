@@ -81,7 +81,18 @@
       "Bash(grep:*)",
       "Bash(for f in volteria-config.service volteria-control.service volteria-device.service volteria-logging.service)",
       "Bash(do sed -i '/WatchdogSec/d' \"$f\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(choco list:*)",
+      "Bash(findstr:*)",
+      "Bash(dir \"C:\\\\Program Files\\\\PuTTY\\\\plink.exe\")",
+      "Bash(dir \"C:\\\\Program Files \\(x86\\)\\\\PuTTY\\\\plink.exe\")",
+      "Bash(python3:*)",
+      "Bash(chmod:*)",
+      "Bash(icacls \"C:\\\\Users\\\\Hp\\\\.ssh\\\\volteria-deploy\" /inheritance:r /grant:r \"%USERNAME%:F\")",
+      "Bash(git -C \"C:/Users/Hp/volteria\" checkout deploy/nginx.conf)",
+      "Bash(git -C \"C:/Users/Hp/volteria\" diff deploy/nginx.conf)"
     ]
   }
 }

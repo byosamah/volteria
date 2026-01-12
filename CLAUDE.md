@@ -230,13 +230,33 @@ Admin panel at `/admin/users/` for managing users:
 - `docker-compose.yml` - Container orchestration
 - `deploy/` - Nginx config, SSL, deployment scripts
 
+## Volteria Server Access
+
+SSH Host: `volteria` (configured in ~/.ssh/config)
+URL: https://volteria.org
+
+**Commands:**
+```bash
+# Deploy
+ssh volteria "cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build"
+
+# Status
+ssh volteria "docker-compose -f /opt/solar-diesel-controller/docker-compose.yml ps"
+
+# Logs
+ssh volteria "docker logs sdc-backend --tail=50"
+ssh volteria "docker logs sdc-frontend --tail=50"
+
+# Restart nginx (for 502 errors)
+ssh volteria "docker restart sdc-nginx"
+```
+
 ## Deployment Commands
 
 ### Deploy to Production
 ```bash
 # SSH to server and pull latest changes
-sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
-  "cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build"
+ssh volteria "cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build"
 ```
 
 ### Local Development
@@ -264,16 +284,13 @@ cd simulator && python run_simulation.py
 git add . && git commit -m "message" && git push origin main
 
 # Step 2: Deploy to server
-sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
-  "cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build"
+ssh volteria "cd /opt/solar-diesel-controller && git pull && docker-compose up -d --build"
 
 # Step 3: Verify deployment (wait ~2 min for build)
-sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
-  "docker-compose -f /opt/solar-diesel-controller/docker-compose.yml ps"
+ssh volteria "docker-compose -f /opt/solar-diesel-controller/docker-compose.yml ps"
 
 # Step 4: If 502 errors, restart nginx
-sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
-  "docker restart sdc-nginx"
+ssh volteria "docker restart sdc-nginx"
 ```
 
 ### Post-Deployment Verification
@@ -317,8 +334,7 @@ docker logs sdc-backend --tail=50
 If site is completely down:
 ```bash
 # Full restart of all services
-sshpass -p '@1996SolaR' ssh root@159.223.224.203 \
-  "cd /opt/solar-diesel-controller && docker-compose down && docker-compose up -d --build"
+ssh volteria "cd /opt/solar-diesel-controller && docker-compose down && docker-compose up -d --build"
 ```
 
 ### NEVER Do These
