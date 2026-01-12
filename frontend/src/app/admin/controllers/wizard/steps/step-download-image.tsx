@@ -1,15 +1,12 @@
 "use client";
 
 /**
- * Step 2: Software Setup
+ * Step 3: Software Setup
  *
  * Guide for setting up the Volteria controller software:
- * - Hardware-specific instructions based on selected hardware type
+ * - SSH connection via WiFi
  * - NVMe boot setup for SOL564-NVME16-128
  * - One-line install command
- * - Requirements checklist
- * - What gets installed
- * - Confirmation checkbox
  */
 
 import { useState } from "react";
@@ -18,406 +15,195 @@ import { Button } from "@/components/ui/button";
 interface StepDownloadImageProps {
   onConfirm: (confirmed: boolean) => void;
   confirmed: boolean;
-  // Hardware type from Step 1 selection - determines which instructions to show
   hardwareType?: string;
 }
 
-// Hardware types that require NVMe boot setup
 const NVME_HARDWARE_TYPES = ["SOL564-NVME16-128"];
 
-// Setup configuration
-const SETUP_CONFIG = {
-  version: "2.0.0",
-  releaseUrl: "https://github.com/byosamah/volteria/tree/main/controller",
-  scriptUrl: "https://raw.githubusercontent.com/byosamah/volteria/main/controller/scripts/setup-controller.sh",
-  docsUrl: "https://github.com/byosamah/volteria/blob/main/controller/CONTROL_MASTER.md",
-};
-
-// One-line install command
-const INSTALL_COMMAND = `curl -sSL ${SETUP_CONFIG.scriptUrl} | bash`;
+const SETUP_SCRIPT_URL = "https://raw.githubusercontent.com/byosamah/volteria/main/controller/scripts/setup-controller.sh";
+const INSTALL_COMMAND = `curl -sSL ${SETUP_SCRIPT_URL} | sudo bash`;
 
 export function StepDownloadImage({ onConfirm, confirmed, hardwareType }: StepDownloadImageProps) {
-  const [copied, setCopied] = useState(false);
-  const [nvmeCopied, setNvmeCopied] = useState<string | null>(null);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
 
-  // Check if this hardware type requires NVMe boot setup
   const requiresNvmeBoot = hardwareType && NVME_HARDWARE_TYPES.includes(hardwareType);
 
-  // NVMe setup commands
-  const NVME_COMMANDS = {
-    eepromUpdate: "sudo rpi-eeprom-update -a",
-    raspiConfig: "sudo raspi-config",
-    cloneToDisk: "sudo dd if=/dev/mmcblk0 of=/dev/nvme0n1 bs=4M status=progress",
-    expandFilesystem: "sudo raspi-config --expand-rootfs",
-    reboot: "sudo reboot",
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCmd(key);
+    setTimeout(() => setCopiedCmd(null), 2000);
   };
 
-  // Copy NVMe command to clipboard
-  const handleCopyNvmeCommand = (command: string, key: string) => {
-    navigator.clipboard.writeText(command);
-    setNvmeCopied(key);
-    setTimeout(() => setNvmeCopied(null), 2000);
-  };
-
-  const handleCopyCommand = () => {
-    navigator.clipboard.writeText(INSTALL_COMMAND);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleViewRelease = () => {
-    window.open(SETUP_CONFIG.releaseUrl, "_blank");
-  };
+  const CommandBox = ({ command, cmdKey, note }: { command: string; cmdKey: string; note?: string }) => (
+    <div className="relative">
+      <pre className="bg-zinc-900 text-green-400 p-3 pr-20 rounded text-sm font-mono overflow-x-auto">
+        {command}
+      </pre>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => copyToClipboard(command, cmdKey)}
+        className="absolute top-1.5 right-1.5"
+      >
+        {copiedCmd === cmdKey ? "Copied!" : "Copy"}
+      </Button>
+      {note && <p className="text-xs text-muted-foreground mt-1">{note}</p>}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      {/* Introduction */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-medium text-blue-800 mb-2">Automated Setup Script</h3>
-        <p className="text-sm text-blue-700">
-          We provide a setup script that automatically installs everything needed
-          to run the Volteria controller on your Raspberry Pi. Just run one command!
-        </p>
-      </div>
-
-      {/* NVMe Hardware Info Banner - Only shown for NVMe hardware types */}
-      {requiresNvmeBoot && (
-        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-              <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="font-medium text-purple-800 mb-1">NVMe SSD Hardware Detected</h3>
-              <p className="text-sm text-purple-700">
-                Your hardware (<code className="bg-purple-100 px-1 rounded">{hardwareType}</code>) includes an NVMe SSD.
-                This guide includes additional steps to configure NVMe boot for faster performance.
-              </p>
-            </div>
+      {/* Step A: SSH Connection */}
+      <div className="border rounded-lg p-5 space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">A</span>
+          <div>
+            <h3 className="font-semibold">Connect via SSH</h3>
+            <p className="text-sm text-muted-foreground">Your laptop must be on the same WiFi as the Pi</p>
           </div>
         </div>
-      )}
 
-      {/* Prerequisites */}
-      <div className="border rounded-lg p-6 space-y-4">
-        <h3 className="font-semibold text-lg">Before You Begin</h3>
-        <p className="text-sm text-muted-foreground">
-          Make sure you have completed these steps:
-        </p>
-        <ul className="text-sm space-y-2">
-          <li className="flex items-start gap-3">
-            <span className="flex-shrink-0 w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-bold">1</span>
-            <div>
-              <span className="font-medium">Flash Raspberry Pi OS Lite (64-bit)</span>
-              <p className="text-muted-foreground">
-                Use <a href="https://www.raspberrypi.com/software/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Raspberry Pi Imager</a> to flash the OS to your SD card.
-                Enable SSH in the settings before flashing.
-              </p>
-            </div>
-          </li>
-          <li className="flex items-start gap-3">
-            <span className="flex-shrink-0 w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-bold">2</span>
-            <div>
-              <span className="font-medium">Boot and connect via SSH</span>
-              <p className="text-muted-foreground">
-                Insert the SD card, connect Ethernet, power on, then SSH in:
-                <code className="bg-muted px-1 rounded ml-1">ssh pi@raspberrypi.local</code>
-              </p>
-            </div>
-          </li>
-        </ul>
+        <CommandBox
+          command="ssh voltadmin@volteria.local"
+          cmdKey="ssh"
+          note="Password: Solar@1996"
+        />
       </div>
 
-      {/* NVMe Boot Setup - Only shown for NVMe hardware types */}
+      {/* Step B: NVMe Setup - Only for NVMe hardware */}
       {requiresNvmeBoot && (
-        <div className="border-2 border-purple-200 rounded-lg p-6 space-y-4 bg-purple-50/50">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-              NVMe
-            </div>
+        <div className="border-2 border-purple-200 rounded-lg p-5 space-y-4 bg-purple-50/30">
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">B</span>
             <div>
-              <h3 className="font-semibold text-lg text-purple-900">NVMe Boot Setup</h3>
-              <p className="text-sm text-purple-700">
-                Configure your Pi to boot from the NVMe SSD for faster performance
-              </p>
+              <h3 className="font-semibold text-purple-900">NVMe Boot Setup</h3>
+              <p className="text-sm text-purple-700">Configure Pi to boot from NVMe SSD</p>
             </div>
           </div>
 
           <div className="space-y-4">
-            {/* Step 1: Update EEPROM */}
+            {/* B1 */}
             <div className="bg-white rounded-lg p-4 border border-purple-200">
-              <div className="flex items-start gap-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
-                <div className="flex-1 space-y-2">
-                  <span className="font-medium text-purple-900">Update EEPROM firmware</span>
-                  <p className="text-sm text-purple-700">
-                    Run this command to update the bootloader firmware:
-                  </p>
-                  <div className="relative">
-                    <pre className="bg-zinc-900 text-green-400 p-3 rounded text-sm font-mono overflow-x-auto">
-                      {NVME_COMMANDS.eepromUpdate}
-                    </pre>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleCopyNvmeCommand(NVME_COMMANDS.eepromUpdate, "eeprom")}
-                      className="absolute top-1 right-1"
-                    >
-                      {nvmeCopied === "eeprom" ? "Copied!" : "Copy"}
-                    </Button>
-                  </div>
-                </div>
+              <p className="text-sm font-medium text-purple-900 mb-2">B1. Update EEPROM firmware, then reboot</p>
+              <CommandBox command="sudo rpi-eeprom-update -a && sudo reboot" cmdKey="eeprom" />
+              <p className="text-xs text-purple-700 mt-2">Wait 30s, then SSH back in</p>
+            </div>
+
+            {/* B2 */}
+            <div className="bg-white rounded-lg p-4 border border-purple-200">
+              <p className="text-sm font-medium text-purple-900 mb-2">B2. Set boot order to NVMe</p>
+              <CommandBox command="sudo raspi-config" cmdKey="raspi" />
+              <div className="bg-purple-100 rounded p-2 mt-2 text-xs text-purple-800">
+                Navigate: <code>Advanced Options → Boot Order → NVMe/USB Boot → OK → Finish → No</code>
               </div>
             </div>
 
-            {/* Step 2: Configure Boot Order */}
+            {/* B3 */}
             <div className="bg-white rounded-lg p-4 border border-purple-200">
-              <div className="flex items-start gap-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
-                <div className="flex-1 space-y-2">
-                  <span className="font-medium text-purple-900">Set NVMe as boot device</span>
-                  <p className="text-sm text-purple-700">
-                    Open the configuration tool:
-                  </p>
-                  <div className="relative">
-                    <pre className="bg-zinc-900 text-green-400 p-3 rounded text-sm font-mono overflow-x-auto">
-                      {NVME_COMMANDS.raspiConfig}
-                    </pre>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleCopyNvmeCommand(NVME_COMMANDS.raspiConfig, "config")}
-                      className="absolute top-1 right-1"
-                    >
-                      {nvmeCopied === "config" ? "Copied!" : "Copy"}
-                    </Button>
-                  </div>
-                  <div className="bg-purple-100 rounded p-3 text-sm text-purple-800">
-                    <p className="font-medium mb-1">Navigate to:</p>
-                    <code className="text-xs">Advanced Options → Boot Order → NVMe/USB Boot</code>
-                  </div>
-                </div>
-              </div>
+              <p className="text-sm font-medium text-purple-900 mb-2">B3. Clone SD to NVMe (5-15 minutes)</p>
+              <CommandBox command="sudo dd if=/dev/mmcblk0 of=/dev/nvme0n1 bs=4M status=progress" cmdKey="clone" />
+              <p className="text-xs text-amber-700 mt-2 font-medium">Wait for completion - do not interrupt!</p>
             </div>
 
-            {/* Step 3: Clone to NVMe */}
+            {/* B4 */}
             <div className="bg-white rounded-lg p-4 border border-purple-200">
-              <div className="flex items-start gap-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
-                <div className="flex-1 space-y-2">
-                  <span className="font-medium text-purple-900">Clone SD card to NVMe SSD</span>
-                  <p className="text-sm text-purple-700">
-                    Copy your entire SD card to the NVMe SSD (takes 5-15 minutes):
-                  </p>
-                  <div className="relative">
-                    <pre className="bg-zinc-900 text-green-400 p-3 rounded text-sm font-mono overflow-x-auto">
-                      {NVME_COMMANDS.cloneToDisk}
-                    </pre>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleCopyNvmeCommand(NVME_COMMANDS.cloneToDisk, "clone")}
-                      className="absolute top-1 right-1"
-                    >
-                      {nvmeCopied === "clone" ? "Copied!" : "Copy"}
-                    </Button>
-                  </div>
-                  <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800">
-                    <p className="font-medium">Wait for completion!</p>
-                    <p>This command shows progress. Wait until it finishes before proceeding.</p>
-                  </div>
-                </div>
+              <p className="text-sm font-medium text-purple-900 mb-2">B4. Shutdown, remove SD card, power on</p>
+              <CommandBox command="sudo shutdown -h now" cmdKey="shutdown" />
+              <div className="bg-amber-50 border border-amber-200 rounded p-3 mt-2 text-xs text-amber-800 space-y-2">
+                <p className="font-medium">LED Guide:</p>
+                <ul className="space-y-1 ml-2">
+                  <li>• <span className="text-red-600 font-medium">Red LED</span> = Power (stays on while plugged in)</li>
+                  <li>• <span className="text-green-600 font-medium">Green LED</span> = Activity (stops blinking when shutdown complete)</li>
+                </ul>
               </div>
-            </div>
-
-            {/* Step 4: Remove SD and Reboot */}
-            <div className="bg-white rounded-lg p-4 border border-purple-200">
-              <div className="flex items-start gap-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">4</span>
-                <div className="flex-1 space-y-2">
-                  <span className="font-medium text-purple-900">Remove SD card and reboot</span>
-                  <p className="text-sm text-purple-700">
-                    Shutdown the Pi, physically remove the SD card, then power on to boot from NVMe:
-                  </p>
-                  <div className="relative">
-                    <pre className="bg-zinc-900 text-green-400 p-3 rounded text-sm font-mono overflow-x-auto">
-                      sudo shutdown -h now
-                    </pre>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleCopyNvmeCommand("sudo shutdown -h now", "shutdown")}
-                      className="absolute top-1 right-1"
-                    >
-                      {nvmeCopied === "shutdown" ? "Copied!" : "Copy"}
-                    </Button>
-                  </div>
-                  <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-800">
-                    <p className="font-medium">After removing SD card:</p>
-                    <p>Power on the Pi. It will now boot from the NVMe SSD!</p>
-                  </div>
-                </div>
+              <div className="bg-green-50 border border-green-200 rounded p-3 mt-2 text-xs text-green-800">
+                <p className="font-medium mb-1">Physical steps:</p>
+                <ol className="space-y-1 ml-2 list-decimal list-inside">
+                  <li>Wait for <span className="text-green-600 font-medium">green LED</span> to stop blinking</li>
+                  <li>Unplug power cable</li>
+                  <li>Remove SD card (keep it as recovery backup)</li>
+                  <li>Plug power back in</li>
+                </ol>
               </div>
+              <p className="text-xs text-purple-700 mt-2">Wait 60-90s, then SSH back in. Pi now boots from NVMe!</p>
             </div>
-          </div>
-
-          <div className="border-t border-purple-200 pt-4">
-            <p className="text-sm text-purple-700">
-              After completing NVMe setup, reconnect via SSH and continue with the software installation below.
-            </p>
           </div>
         </div>
       )}
 
-      {/* Install Command */}
-      <div className="border rounded-lg p-6 space-y-4 bg-muted/30">
-        <div className="flex items-start justify-between">
+      {/* Step C: Run Setup Script */}
+      <div className="border-2 border-green-200 rounded-lg p-5 space-y-4 bg-green-50/30">
+        <div className="flex items-center gap-3">
+          <span className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold">C</span>
           <div>
-            <h3 className="font-semibold text-lg">One-Line Install</h3>
-            <p className="text-sm text-muted-foreground">
-              Version {SETUP_CONFIG.version} for Raspberry Pi 5 / Pi 4
-            </p>
+            <h3 className="font-semibold text-green-900">Run Setup Script</h3>
+            <p className="text-sm text-green-700">Installs all Volteria controller software (5-10 minutes)</p>
           </div>
-          <span className="text-sm font-medium bg-green-100 text-green-800 px-2 py-1 rounded">
-            v{SETUP_CONFIG.version}
-          </span>
         </div>
 
-        {/* Command box */}
-        <div className="relative">
-          <div className="scroll-fade-right">
-            <pre className="bg-zinc-900 text-green-400 p-4 rounded-lg text-sm font-mono overflow-x-auto">
-              {INSTALL_COMMAND}
-            </pre>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleCopyCommand}
-            className="absolute top-2 right-2"
-          >
-            {copied ? (
-              <>
-                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Copied!
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Copy
-              </>
-            )}
-          </Button>
-        </div>
+        <CommandBox command={INSTALL_COMMAND} cmdKey="install" />
 
-        <p className="text-xs text-muted-foreground">
-          Paste this command in your SSH session and press Enter. The script takes about 5-10 minutes to complete.
-        </p>
-      </div>
-
-      {/* What gets installed */}
-      <div className="bg-muted rounded-lg p-4">
-        <h4 className="font-medium mb-3">What the script installs:</h4>
-        <ul className="text-sm space-y-2 text-muted-foreground">
-          <li className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            Python 3.11 with pymodbus, supabase, and dependencies
-          </li>
-          <li className="flex items-start gap-2">
-            <svg className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            <div>
-              <span className="font-medium text-foreground">5-Layer Service Architecture:</span>
-              <ul className="mt-1 ml-4 space-y-1 text-xs">
-                <li><code className="bg-background px-1 rounded">volteria-system</code> - Heartbeat, OTA updates, health monitoring</li>
-                <li><code className="bg-background px-1 rounded">volteria-config</code> - Cloud sync, versioning, local cache</li>
-                <li><code className="bg-background px-1 rounded">volteria-device</code> - Modbus I/O, polling, writes</li>
-                <li><code className="bg-background px-1 rounded">volteria-control</code> - Zero-feeding algorithm</li>
-                <li><code className="bg-background px-1 rounded">volteria-logging</code> - Data logging, cloud sync, alarms</li>
-              </ul>
-            </div>
-          </li>
-          <li className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            <div>
-              <span className="font-medium text-foreground">SSH Tunnel Service</span>
-              <span className="text-xs ml-1">(autossh for remote access)</span>
-            </div>
-          </li>
-          <li className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            Local SQLite database for offline operation
-          </li>
-          <li className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            Configuration at /etc/volteria/config.yaml
-          </li>
-        </ul>
-      </div>
-
-      {/* View release button */}
-      <Button variant="outline" onClick={handleViewRelease} className="w-full">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="w-5 h-5 mr-2"
-        >
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          <polyline points="15 3 21 3 21 9" />
-          <line x1="10" y1="14" x2="21" y2="3" />
-        </svg>
-        View Release on GitHub
-      </Button>
-
-      {/* Alternative: Manual setup */}
-      <details className="border rounded-lg">
-        <summary className="px-4 py-3 cursor-pointer font-medium hover:bg-muted/50">
-          Alternative: Download Script Manually
-        </summary>
-        <div className="px-4 pb-4 pt-2 text-sm text-muted-foreground space-y-3">
-          <p>If you prefer to download and inspect the script first:</p>
-          <ol className="list-decimal list-inside space-y-2">
-            <li>
-              Download the script:
-              <div className="scroll-fade-right mt-1">
-                <code className="bg-muted px-2 py-1 rounded block overflow-x-auto whitespace-nowrap">
-                  wget {SETUP_CONFIG.scriptUrl}
-                </code>
+        {/* What gets installed */}
+        <div className="bg-white border border-green-200 rounded-lg p-4 space-y-3">
+          <h4 className="font-medium text-green-900">What the script installs:</h4>
+          <ul className="text-sm space-y-2 text-green-800">
+            <li className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Python 3.11 with pymodbus, supabase, and dependencies
+            </li>
+            <li className="flex items-start gap-2">
+              <svg className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <div>
+                <span className="font-medium">5-Layer Service Architecture:</span>
+                <ul className="mt-1 ml-4 space-y-0.5 text-xs text-green-700">
+                  <li><code className="bg-green-100 px-1 rounded">volteria-system</code> - Heartbeat, OTA updates, health monitoring</li>
+                  <li><code className="bg-green-100 px-1 rounded">volteria-config</code> - Cloud sync, versioning, local cache</li>
+                  <li><code className="bg-green-100 px-1 rounded">volteria-device</code> - Modbus I/O, polling, writes</li>
+                  <li><code className="bg-green-100 px-1 rounded">volteria-control</code> - Zero-feeding algorithm</li>
+                  <li><code className="bg-green-100 px-1 rounded">volteria-logging</code> - Data logging, cloud sync, alarms</li>
+                </ul>
               </div>
             </li>
-            <li>
-              Make it executable:
-              <code className="bg-muted px-2 py-1 rounded block mt-1">chmod +x setup-controller.sh</code>
+            <li className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span><span className="font-medium">SSH Tunnel Service</span> <span className="text-xs">(autossh for remote access)</span></span>
             </li>
-            <li>
-              Run it:
-              <code className="bg-muted px-2 py-1 rounded block mt-1">./setup-controller.sh</code>
+            <li className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Local SQLite database for offline operation
             </li>
-          </ol>
+            <li className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Configuration at /etc/volteria/config.yaml
+            </li>
+          </ul>
         </div>
-      </details>
 
-      {/* Confirmation checkbox */}
+        {/* GitHub link */}
+        <a
+          href="https://github.com/byosamah/volteria/tree/main/controller"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 w-full p-3 border rounded-lg hover:bg-muted/50 text-sm font-medium"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+          View Release on GitHub
+        </a>
+      </div>
+
+      {/* Confirmation */}
       <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-muted/50">
         <input
           type="checkbox"
@@ -426,7 +212,7 @@ export function StepDownloadImage({ onConfirm, confirmed, hardwareType }: StepDo
           className="w-5 h-5 rounded border-gray-300"
         />
         <span className="text-sm">
-          I have run the setup script and it completed successfully
+          I have completed the setup and the script finished successfully
         </span>
       </label>
     </div>
