@@ -350,6 +350,7 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
         enterprises: null,
         last_heartbeat: null, // New controllers haven't sent heartbeats yet
         pending_restart: null, // New controllers don't have pending restart
+        ssh_port: null, // SSH port assigned by setup script
       };
       setControllers([newController, ...controllers]);
       setCreateOpen(false);
