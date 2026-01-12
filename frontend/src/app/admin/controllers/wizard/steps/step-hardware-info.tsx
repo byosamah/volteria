@@ -57,46 +57,6 @@ export function StepHardwareInfo({
         </p>
       </div>
 
-      {/* Serial Number */}
-      <div className="space-y-2">
-        <Label htmlFor="serial_number">
-          Pi Serial Number <span className="text-muted-foreground text-xs">(optional)</span>
-        </Label>
-        <Input
-          id="serial_number"
-          name="serial_number"
-          placeholder="e.g., 10000000abcd1234"
-          value={data.serial_number}
-          onChange={handleChange}
-          className="min-h-[44px] font-mono"
-          disabled={isExisting}
-        />
-        <p className="text-xs text-muted-foreground">
-          Enter the Raspberry Pi&apos;s hardware serial number for pre-registration.
-          If left empty, the Pi will self-register when you run the setup script.
-        </p>
-      </div>
-
-      {/* How to find Pi serial */}
-      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-        <h4 className="font-medium text-purple-800 mb-2 flex items-center gap-2">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          How to find your Pi&apos;s serial number
-        </h4>
-        <div className="text-sm text-purple-700 space-y-2">
-          <p><strong>Option 1:</strong> Check the sticker on your Raspberry Pi board</p>
-          <p><strong>Option 2:</strong> If Pi is already running, SSH in and run:</p>
-          <div className="bg-purple-100 rounded p-2 font-mono text-xs overflow-x-auto">
-            cat /proc/cpuinfo | grep Serial
-          </div>
-          <p className="text-xs text-purple-600 mt-2">
-            The serial number is a 16-character hex string like: <code className="bg-purple-100 px-1 rounded">10000000abcd1234</code>
-          </p>
-        </div>
-      </div>
-
       {/* Hardware Type */}
       <div className="space-y-2">
         <Label htmlFor="hardware_type_id">
@@ -123,21 +83,26 @@ export function StepHardwareInfo({
         </p>
       </div>
 
-      {/* Firmware Version */}
+      {/* Serial Number */}
       <div className="space-y-2">
-        <Label htmlFor="firmware_version">Firmware Version</Label>
+        <Label htmlFor="serial_number">
+          Pi Serial Number <span className="text-muted-foreground text-xs">(optional)</span>
+        </Label>
         <Input
-          id="firmware_version"
-          name="firmware_version"
-          placeholder="e.g., 1.0.0"
-          value={data.firmware_version}
+          id="serial_number"
+          name="serial_number"
+          placeholder="e.g., 10000000abcd1234"
+          value={data.serial_number}
           onChange={handleChange}
-          className="min-h-[44px]"
+          className="min-h-[44px] font-mono"
+          disabled={isExisting}
         />
         <p className="text-xs text-muted-foreground">
-          Optional. The firmware version will be detected automatically when the controller connects.
+          Enter the Raspberry Pi&apos;s hardware serial number for pre-registration.
+          If left empty, the Pi will self-register when you run the setup script.
         </p>
       </div>
+
 
       {/* Notes */}
       <div className="space-y-2">

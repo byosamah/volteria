@@ -5,8 +5,8 @@
 
 ## Implementation Plan Status
 
-**Active Plan**: `.claude/plans/purrfect-jumping-meerkat.md`
-**Full Original Plan**: `.claude/plans/compressed-jingling-cocke.md` (98KB, 21 Parts)
+**Active Plan**: `.claude/plans/noble-dazzling-valley.md` (Phase 9 Walkthrough)
+**Previous Plans**: `.claude/plans/purrfect-jumping-meerkat.md`, `.claude/plans/compressed-jingling-cocke.md`
 
 ### Current Phase: Phase 9 - Re-flash Controller & Follow Wizard
 - Phase 1 COMPLETE: All services validated, 17/17 tests passed
@@ -17,7 +17,10 @@
 - Phase 6 DEFERRED: OTA mechanism (lower priority)
 - Phase 6b COMPLETE: Sync widget enhancement (cloud/local dates)
 - Phase 7 COMPLETE: Deployed to Raspberry Pi, all 5 services running
-- **Phase 9 READY**: Re-flash controller and follow wizard (before Phase 8)
+- **Phase 9 IN PROGRESS**: Re-flash controller and follow wizard
+  - Plan: `C:\Users\Hp\.claude\plans\noble-dazzling-valley.md`
+  - Hardware: Pi 5 + SD card + NVMe SSD
+  - Approach: Flash SD → Clone to NVMe → Boot from NVMe
 - Phase 8 PENDING: Retire old code (after Phase 9 validates wizard)
 
 ### Wizard Fixes (2026-01-11)
