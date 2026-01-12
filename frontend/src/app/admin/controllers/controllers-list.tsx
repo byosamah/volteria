@@ -54,6 +54,7 @@ interface Controller {
   last_heartbeat: string | null;
   pending_restart: boolean | null;
   ssh_port: number | null;
+  wizard_step: number | null;
 }
 
 // Standard SSH credentials (same for all controllers)
@@ -1021,18 +1022,36 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                         Back to Draft
                       </Button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEditDialog(controller)}
-                      disabled={controller.status === "deployed"}
-                      className="min-h-[44px] min-w-[44px]"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                        <path d="m15 5 4 4" />
-                      </svg>
-                    </Button>
+                    {/* Edit/Resume Wizard button - mobile */}
+                    {controller.wizard_step != null ? (
+                      <Link href={`/admin/controllers/wizard?id=${controller.id}`}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="min-h-[44px] text-blue-600 border-blue-600 hover:bg-blue-50"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <path d="m9 15 2 2 4-4" />
+                          </svg>
+                          Resume
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditDialog(controller)}
+                        disabled={controller.status === "deployed"}
+                        className="min-h-[44px] min-w-[44px]"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                          <path d="m15 5 4 4" />
+                        </svg>
+                      </Button>
+                    )}
                     {/* Reboot button - mobile (for ready, claimed, deployed) */}
                     {REBOOTABLE_STATUSES.includes(controller.status) && (
                       <ControllerRebootAction
@@ -1258,29 +1277,55 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                           </Button>
                         )}
 
-                        {/* Edit button - disabled when deployed */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditDialog(controller)}
-                          disabled={controller.status === "deployed"}
-                          title={controller.status === "deployed" ? "Cannot edit deployed controller" : "Edit controller"}
-                          className="h-8 w-8 p-0"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-4 w-4"
+                        {/* Edit/Resume Wizard button - desktop */}
+                        {controller.wizard_step != null ? (
+                          <Link href={`/admin/controllers/wizard?id=${controller.id}`}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-4 w-4 mr-1"
+                              >
+                                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <path d="m9 15 2 2 4-4" />
+                              </svg>
+                              Resume Wizard
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditDialog(controller)}
+                            disabled={controller.status === "deployed"}
+                            title={controller.status === "deployed" ? "Cannot edit deployed controller" : "Edit controller"}
+                            className="h-8 w-8 p-0"
                           >
-                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                            <path d="m15 5 4 4" />
-                          </svg>
-                        </Button>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4"
+                            >
+                              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                              <path d="m15 5 4 4" />
+                            </svg>
+                          </Button>
+                        )}
 
                         {/* Reboot button - for ready, claimed, deployed controllers */}
                         {REBOOTABLE_STATUSES.includes(controller.status) && (
