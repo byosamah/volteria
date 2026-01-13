@@ -16,7 +16,11 @@ from ..dependencies.auth import get_current_user, require_role
 router = APIRouter(prefix="/ssh-test", tags=["SSH Tests"])
 
 # SSH connection settings
-SSH_HOST = "localhost"  # Tunnels terminate on same server
+# Tunnels terminate on host machine - use Docker gateway or host IP
+# 172.17.0.1 is the default Docker bridge gateway (Linux)
+# If that fails, use the public IP as fallback
+import os
+SSH_HOST = os.getenv("SSH_TUNNEL_HOST", "172.17.0.1")
 CONTROLLER_USER = "voltadmin"
 CONTROLLER_PASSWORD = "Solar@1996"
 SSH_TIMEOUT = 15  # seconds

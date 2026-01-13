@@ -135,7 +135,7 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
         if (apiResult) {
           return {
             ...test,
-            status: apiResult.status === "skipped" ? "passed" : apiResult.status,
+            status: apiResult.status as TestResult["status"],
             message: apiResult.message,
           };
         }
