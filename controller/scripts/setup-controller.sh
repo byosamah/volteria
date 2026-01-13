@@ -471,7 +471,12 @@ register_controller() {
 
         # Update env file with registration info
         if [[ -n "$CONTROLLER_ID" ]]; then
-            echo "CONTROLLER_ID=${CONTROLLER_ID}" >> "${CONFIG_DIR}/env"
+            sed -i "s/^CONTROLLER_ID=$/CONTROLLER_ID=${CONTROLLER_ID}/" "${CONFIG_DIR}/env"
+            log_info "Controller ID set in env file"
+        fi
+        if [[ -n "$SUPABASE_KEY" ]]; then
+            sed -i "s/^SUPABASE_SERVICE_KEY=$/SUPABASE_SERVICE_KEY=${SUPABASE_KEY}/" "${CONFIG_DIR}/env"
+            log_info "Supabase key set in env file"
         fi
 
         # Configure and start SSH tunnel if port assigned
