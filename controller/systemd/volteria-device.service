@@ -16,6 +16,7 @@ RestartSec=10
 
 # Environment
 Environment=PYTHONUNBUFFERED=1
+Environment=VOLTERIA_STATE_DIR=/run/volteria/state
 EnvironmentFile=/etc/volteria/env
 
 # Logging
@@ -27,7 +28,7 @@ SyslogIdentifier=volteria-device
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/volteria/data /var/log/volteria
+ReadWritePaths=/opt/volteria/data /var/log/volteria /run/volteria
 PrivateTmp=yes
 
 [Install]

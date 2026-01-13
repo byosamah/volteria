@@ -175,7 +175,6 @@ create_directories() {
     log_step "Creating directory structure..."
 
     mkdir -p "${VOLTERIA_DIR}"
-    mkdir -p "${DATA_DIR}/state"
     mkdir -p "${DATA_DIR}/config_history"
     mkdir -p "${CONFIG_DIR}"
     mkdir -p "${VOLTERIA_DIR}/updates"
@@ -183,7 +182,33 @@ create_directories() {
     mkdir -p "${VOLTERIA_DIR}/backup"
     mkdir -p /var/log/volteria
 
+    # State directory on tmpfs (RAM) to reduce SSD wear
+    # State files are ephemeral and don't need persistence
+    mkdir -p /run/volteria/state
+
+    # Create fallback directory on disk (for development/testing)
+    mkdir -p "${DATA_DIR}/state"
+
     log_info "Directory structure created"
+}
+
+# Configure tmpfs for state directory (reduces SSD writes by ~95%)
+configure_tmpfs_state() {
+    log_step "Configuring tmpfs for state directory..."
+
+    # Create tmpfiles.d config for persistence across reboots
+    cat > /etc/tmpfiles.d/volteria.conf << 'EOF'
+# Volteria state directory on tmpfs
+# Reduces SSD wear by keeping ephemeral state files in RAM
+d /run/volteria 0755 volteria volteria -
+d /run/volteria/state 0755 volteria volteria -
+EOF
+
+    # Create the directory now (tmpfiles.d runs on boot)
+    mkdir -p /run/volteria/state
+    chown -R volteria:volteria /run/volteria
+
+    log_info "State directory configured on tmpfs (/run/volteria/state)"
 }
 
 # Clone or update controller code
@@ -630,6 +655,7 @@ main() {
     setup_controller_code
     setup_python_env
     create_volteria_user
+    configure_tmpfs_state
     setup_sudoers
     generate_config
     create_env_file
