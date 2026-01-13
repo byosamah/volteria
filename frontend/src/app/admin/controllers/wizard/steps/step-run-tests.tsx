@@ -23,7 +23,8 @@ interface TestResult {
   message?: string;
 }
 
-const INITIAL_TESTS: TestResult[] = [
+// Real tests that verify actual controller functionality
+const REAL_TESTS: TestResult[] = [
   {
     name: "service_health",
     description: "Service Health (5 Services)",
@@ -45,6 +46,15 @@ const INITIAL_TESTS: TestResult[] = [
     status: "pending",
   },
   {
+    name: "ota_check",
+    description: "OTA Update Mechanism",
+    status: "pending",
+  },
+];
+
+// Simulated tests (no real devices connected during wizard)
+const SIMULATION_TESTS: TestResult[] = [
+  {
     name: "load_meter",
     description: "Load Meter Reading",
     status: "pending",
@@ -61,15 +71,12 @@ const INITIAL_TESTS: TestResult[] = [
   },
   {
     name: "control_logic",
-    description: "Generator Zero Feed Control Logic",
-    status: "pending",
-  },
-  {
-    name: "ota_check",
-    description: "OTA Update Mechanism",
+    description: "Zero Feed Control Logic",
     status: "pending",
   },
 ];
+
+const INITIAL_TESTS: TestResult[] = [...REAL_TESTS, ...SIMULATION_TESTS];
 
 interface ApiTestResult {
   name: string;
@@ -217,34 +224,86 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
         </div>
       )}
 
-      {/* Test list */}
-      <div className="border rounded-lg divide-y">
-        {tests.map((test) => (
-          <div key={test.name} className="p-4 flex items-center gap-4">
-            {getStatusIcon(test.status)}
-            <div className="flex-1">
-              <h4 className="font-medium">{test.description}</h4>
-              {test.message && (
-                <p
-                  className={`text-sm ${
-                    test.status === "passed"
-                      ? "text-green-600"
-                      : test.status === "failed"
-                      ? "text-red-600"
-                      : test.status === "skipped"
-                      ? "text-yellow-600"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {test.message}
-                </p>
-              )}
-            </div>
-            <div className="text-sm text-muted-foreground capitalize">
-              {test.status}
-            </div>
-          </div>
-        ))}
+      {/* Real Tests Section */}
+      <div>
+        <h4 className="text-sm font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+          System Tests
+        </h4>
+        <div className="border rounded-lg divide-y">
+          {tests
+            .filter((t) => REAL_TESTS.some((rt) => rt.name === t.name))
+            .map((test) => (
+              <div key={test.name} className="p-4 flex items-center gap-4">
+                {getStatusIcon(test.status)}
+                <div className="flex-1">
+                  <h4 className="font-medium">{test.description}</h4>
+                  {test.message && (
+                    <p
+                      className={`text-sm ${
+                        test.status === "passed"
+                          ? "text-green-600"
+                          : test.status === "failed"
+                          ? "text-red-600"
+                          : test.status === "skipped"
+                          ? "text-yellow-600"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {test.message}
+                    </p>
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground capitalize">
+                  {test.status}
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      {/* Simulation Tests Section */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Device Simulations
+          </h4>
+          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+            No real devices connected
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground mb-2">
+          These tests use simulated device values. Real device testing will occur after site assignment.
+        </p>
+        <div className="border rounded-lg divide-y bg-muted/30">
+          {tests
+            .filter((t) => SIMULATION_TESTS.some((st) => st.name === t.name))
+            .map((test) => (
+              <div key={test.name} className="p-4 flex items-center gap-4">
+                {getStatusIcon(test.status)}
+                <div className="flex-1">
+                  <h4 className="font-medium">{test.description}</h4>
+                  {test.message && (
+                    <p
+                      className={`text-sm ${
+                        test.status === "passed"
+                          ? "text-green-600"
+                          : test.status === "failed"
+                          ? "text-red-600"
+                          : test.status === "skipped"
+                          ? "text-yellow-600"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {test.message}
+                    </p>
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground capitalize">
+                  {test.status}
+                </div>
+              </div>
+            ))}
+        </div>
       </div>
 
       {/* Run tests button */}
