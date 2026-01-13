@@ -341,6 +341,7 @@ generate_config() {
 # Hardware: ${HARDWARE}
 
 controller:
+  id: ""
   serial_number: "${SERIAL}"
   hardware_type: "${HARDWARE}"
   firmware_version: "${VOLTERIA_VERSION}"
@@ -436,8 +437,9 @@ register_controller() {
 
         # Update config with controller ID
         if [[ -n "$CONTROLLER_ID" ]]; then
-            # Update the config.yaml with controller ID
-            sed -i "s/controller_id: \"\"/controller_id: \"${CONTROLLER_ID}\"/" "${CONFIG_DIR}/config.yaml" 2>/dev/null || true
+            # Update the config.yaml with controller ID (under controller: section)
+            sed -i "s/^  id: \"\"$/  id: \"${CONTROLLER_ID}\"/" "${CONFIG_DIR}/config.yaml" 2>/dev/null || true
+            log_info "Controller ID set in config: ${CONTROLLER_ID}"
         fi
 
         # Update env file with registration info

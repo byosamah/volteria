@@ -17,13 +17,17 @@ interface StepVerifyOnlineProps {
 
 interface HeartbeatData {
   timestamp: string;
+  controller_id?: string;
   firmware_version?: string;
-  ip_address?: string;
   uptime_seconds?: number;
+  cpu_usage_pct?: number;
+  memory_usage_pct?: number;
+  disk_usage_pct?: number;
   metadata?: {
     config_version?: string;
     services?: Record<string, string>;
     pending_ota?: { status: string; version?: string };
+    cpu_temp_celsius?: number;
   };
 }
 
@@ -84,21 +88,14 @@ export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVer
     // Start polling for heartbeat
     const checkHeartbeat = async () => {
       try {
-        // Query for heartbeats from this controller via site_master_devices
-        const { data, error: queryError } = await supabase
-          .from("site_master_devices")
-          .select(`
-            sites (
-              controller_heartbeats (
-                timestamp,
-                firmware_version,
-                ip_address,
-                uptime_seconds
-              )
-            )
-          `)
+        // Query heartbeats directly by controller_id
+        // At wizard step 6, controller hasn't been assigned to a site yet,
+        // so we query the controller_heartbeats table directly
+        const { data: heartbeatData, error: queryError } = await supabase
+          .from("controller_heartbeats")
+          .select("timestamp, controller_id, firmware_version, uptime_seconds, cpu_usage_pct, memory_usage_pct, disk_usage_pct, metadata")
           .eq("controller_id", controllerId)
-          .order("created_at", { ascending: false })
+          .order("timestamp", { ascending: false })
           .limit(1);
 
         if (queryError) {
@@ -106,38 +103,8 @@ export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVer
           return;
         }
 
-        // Also check direct heartbeats table (in case controller sends heartbeat before site assignment)
-        const { data: directHeartbeat } = await supabase
-          .from("controller_heartbeats")
-          .select("timestamp, firmware_version, ip_address, uptime_seconds, metadata")
-          .eq("metadata->>controller_id", controllerId)
-          .order("timestamp", { ascending: false })
-          .limit(1);
-
         // Check if we have a recent heartbeat
-        let latestHeartbeat: HeartbeatData | null = null;
-
-        // Check site-based heartbeats
-        if (data && data.length > 0) {
-          const sites = data[0].sites;
-          const site = Array.isArray(sites) ? sites[0] : sites;
-          if (site?.controller_heartbeats) {
-            const hbs = Array.isArray(site.controller_heartbeats)
-              ? site.controller_heartbeats
-              : [site.controller_heartbeats];
-            if (hbs.length > 0 && hbs[0]?.timestamp) {
-              latestHeartbeat = hbs[0];
-            }
-          }
-        }
-
-        // Check direct heartbeats
-        if (directHeartbeat && directHeartbeat.length > 0) {
-          const dh = directHeartbeat[0];
-          if (!latestHeartbeat || new Date(dh.timestamp) > new Date(latestHeartbeat.timestamp)) {
-            latestHeartbeat = dh;
-          }
-        }
+        const latestHeartbeat: HeartbeatData | null = heartbeatData?.[0] ?? null;
 
         if (latestHeartbeat) {
           const heartbeatTime = new Date(latestHeartbeat.timestamp).getTime();
@@ -353,10 +320,16 @@ export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVer
                 <span className="ml-2 font-medium">{heartbeat.firmware_version}</span>
               </div>
             )}
-            {heartbeat.ip_address && (
+            {heartbeat.cpu_usage_pct !== undefined && (
               <div>
-                <span className="text-muted-foreground">IP Address:</span>
-                <span className="ml-2 font-mono">{heartbeat.ip_address}</span>
+                <span className="text-muted-foreground">CPU Usage:</span>
+                <span className="ml-2 font-medium">{heartbeat.cpu_usage_pct.toFixed(1)}%</span>
+              </div>
+            )}
+            {heartbeat.memory_usage_pct !== undefined && (
+              <div>
+                <span className="text-muted-foreground">Memory:</span>
+                <span className="ml-2 font-medium">{heartbeat.memory_usage_pct.toFixed(1)}%</span>
               </div>
             )}
             {heartbeat.uptime_seconds && (
@@ -390,11 +363,11 @@ export function StepVerifyOnline({ controllerId, onVerified, verified }: StepVer
             </li>
             <li className="flex items-start gap-2">
               <span className="text-primary">•</span>
-              Try restarting the controller: <code className="bg-background px-1 rounded">sudo systemctl restart volteria-controller</code>
+              Try restarting the controller: <code className="bg-background px-1 rounded">sudo systemctl restart volteria</code>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-primary">•</span>
-              Check logs: <code className="bg-background px-1 rounded">journalctl -u volteria-controller -f</code>
+              Check logs: <code className="bg-background px-1 rounded">sudo journalctl -u volteria -f</code>
             </li>
           </ul>
         </div>
