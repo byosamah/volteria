@@ -83,11 +83,28 @@ export async function POST(request: NextRequest) {
     if (!controller) {
       // No matching controller found - create a new one
       // This handles the case where setup script runs before wizard
+
+      // Look up hardware_type_id from approved_hardware table
+      let hardwareTypeId: string | null = null;
+      if (hardware_type) {
+        const { data: hardwareData } = await supabase
+          .from("approved_hardware")
+          .select("id")
+          .eq("hardware_type", hardware_type)
+          .single();
+
+        if (hardwareData) {
+          hardwareTypeId = hardwareData.id;
+        }
+      }
+
       const { data: newController, error: createError } = await supabase
         .from("controllers")
         .insert({
           serial_number,
           status: "draft",
+          hardware_type_id: hardwareTypeId,
+          firmware_version: firmware_version || null,
         })
         .select("id, serial_number, ssh_port, status, wizard_step")
         .single();

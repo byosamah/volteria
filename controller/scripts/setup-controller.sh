@@ -421,8 +421,8 @@ generate_ssh_key() {
         log_info "SSH key already exists: ${SSH_KEY_PATH}"
     fi
 
-    # Read public key
-    SSH_PUBLIC_KEY=$(cat "${SSH_KEY_PATH}.pub" 2>/dev/null || echo "")
+    # Read public key (trim whitespace/newlines)
+    SSH_PUBLIC_KEY=$(cat "${SSH_KEY_PATH}.pub" 2>/dev/null | tr -d '\n\r' || echo "")
     echo "$SSH_PUBLIC_KEY"
 }
 
