@@ -14,6 +14,10 @@ ExecStart=/opt/volteria/venv/bin/python -m services.system.service
 Restart=always
 RestartSec=5
 
+# Graceful shutdown - allow time for cleanup before SIGKILL
+TimeoutStopSec=30
+KillMode=mixed
+
 # High priority - heartbeats must always run
 OOMScoreAdjust=-500
 Nice=-5

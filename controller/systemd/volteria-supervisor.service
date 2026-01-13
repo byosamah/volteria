@@ -13,6 +13,10 @@ ExecStart=/opt/volteria/venv/bin/python -m supervisor
 Restart=always
 RestartSec=5
 
+# Graceful shutdown - allow time for cleanup before SIGKILL
+TimeoutStopSec=30
+KillMode=mixed
+
 # High priority - master process should always run
 OOMScoreAdjust=-1000
 Nice=-10

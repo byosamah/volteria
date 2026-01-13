@@ -14,6 +14,10 @@ ExecStart=/opt/volteria/venv/bin/python -m services.control.service
 Restart=on-failure
 RestartSec=10
 
+# Graceful shutdown - allow time for cleanup before SIGKILL
+TimeoutStopSec=30
+KillMode=mixed
+
 # Environment
 Environment=PYTHONUNBUFFERED=1
 Environment=VOLTERIA_STATE_DIR=/run/volteria/state
