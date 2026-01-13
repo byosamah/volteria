@@ -1082,14 +1082,16 @@ async def reboot_controller(
 
     Requires:
     - User to be authenticated
-    - User to have control access to the site where the controller is assigned
-      (or be a super_admin/backend_admin/admin)
     - Controller must have SSH credentials configured
+    - One of the following permissions:
+      - User is super_admin, backend_admin, or admin
+      - User's enterprise owns the controller (via enterprise_id)
+      - User has can_control access to the site where controller is assigned
     """
     try:
-        # 1. Get controller with SSH credentials
+        # 1. Get controller with SSH credentials and enterprise_id
         controller_result = db.table("controllers").select(
-            "id, serial_number, ssh_tunnel_port, ssh_username, ssh_password"
+            "id, serial_number, ssh_tunnel_port, ssh_username, ssh_password, enterprise_id"
         ).eq("id", str(controller_id)).execute()
 
         if not controller_result.data:
@@ -1107,36 +1109,55 @@ async def reboot_controller(
                 detail="Controller SSH credentials not configured. Complete the setup wizard first."
             )
 
-        # 2. Find the site where this controller is assigned
-        site_assignment = db.table("site_master_devices").select(
-            "site_id, sites:site_id (id, project_id)"
-        ).eq("controller_id", str(controller_id)).execute()
+        # 2. Check permissions - multiple ways to authorize
+        is_admin = current_user.role in ["super_admin", "backend_admin", "admin"]
+        can_reboot = is_admin
 
-        if not site_assignment.data:
+        # 3. If not admin, check if user's enterprise owns this controller
+        if not can_reboot and controller.get("enterprise_id"):
+            user_result = db.table("users").select("enterprise_id").eq("id", current_user.id).execute()
+            if user_result.data:
+                user_enterprise = user_result.data[0].get("enterprise_id")
+                if user_enterprise and user_enterprise == controller.get("enterprise_id"):
+                    can_reboot = True
+
+        # 4. If still not allowed, check site assignment for project-level access
+        site_id = None
+        project_id = None
+        if not can_reboot:
+            site_assignment = db.table("site_master_devices").select(
+                "site_id, sites:site_id (id, project_id)"
+            ).eq("controller_id", str(controller_id)).execute()
+
+            if site_assignment.data:
+                site_data = site_assignment.data[0]
+                site_id = site_data["site_id"]
+                project_id = site_data.get("sites", {}).get("project_id")
+
+                # Check project access
+                access_result = db.table("user_projects").select(
+                    "can_control"
+                ).eq("user_id", current_user.id).eq("project_id", str(project_id)).execute()
+
+                if access_result.data and access_result.data[0].get("can_control"):
+                    can_reboot = True
+
+        # 5. If still not allowed, deny access
+        if not can_reboot:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Controller is not assigned to any site"
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to reboot this controller"
             )
 
-        site_data = site_assignment.data[0]
-        site_id = site_data["site_id"]
-        project_id = site_data.get("sites", {}).get("project_id")
+        # 6. Get site_id for audit log if we haven't already looked it up
+        if site_id is None and (is_admin or can_reboot):
+            site_assignment = db.table("site_master_devices").select(
+                "site_id"
+            ).eq("controller_id", str(controller_id)).execute()
+            if site_assignment.data:
+                site_id = site_assignment.data[0]["site_id"]
 
-        # 3. Check user permissions
-        is_admin = current_user.role in ["super_admin", "backend_admin", "admin"]
-
-        if not is_admin:
-            access_result = db.table("user_projects").select(
-                "can_control"
-            ).eq("user_id", current_user.id).eq("project_id", str(project_id)).execute()
-
-            if not access_result.data or not access_result.data[0].get("can_control"):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You don't have permission to control this site"
-                )
-
-        # 4. Execute SSH reboot
+        # 7. Execute SSH reboot
         # Use host.docker.internal to reach SSH tunnels on the host machine
         # The reverse SSH tunnels listen on localhost of the host, accessible via Docker's host-gateway
         SSH_HOST = "host.docker.internal"
@@ -1148,7 +1169,7 @@ async def reboot_controller(
             password=controller.get("ssh_password", "")
         )
 
-        # 5. Log the action to audit_logs
+        # 8. Log the action to audit_logs
         db.table("audit_logs").insert({
             "user_id": current_user.id,
             "action": "reboot",
@@ -1157,7 +1178,7 @@ async def reboot_controller(
             "resource_id": str(controller_id),
             "resource_name": controller['serial_number'],
             "metadata": {
-                "site_id": str(site_id),
+                "site_id": str(site_id) if site_id else None,
                 "ssh_port": controller["ssh_tunnel_port"],
                 "success": success,
                 "message": message
