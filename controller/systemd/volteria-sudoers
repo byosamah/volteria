@@ -1,7 +1,7 @@
 # Sudoers configuration for Volteria Controller
 # Install to: /etc/sudoers.d/volteria
 
-# Allow volteria user to reboot the system
+# Allow volteria user (service account) to reboot the system
 volteria ALL=(ALL) NOPASSWD: /sbin/reboot
 
 # Allow volteria user to manage volteria services
@@ -12,3 +12,15 @@ volteria ALL=(ALL) NOPASSWD: /bin/systemctl status volteria-*
 
 # Allow volteria user to reload systemd daemon
 volteria ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
+
+# Allow voltadmin user (SSH admin) to reboot the system
+voltadmin ALL=(ALL) NOPASSWD: /sbin/reboot
+
+# Allow voltadmin user to manage volteria services
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl restart volteria-*
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl stop volteria-*
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl start volteria-*
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl status volteria-*
+
+# Allow voltadmin user to reload systemd daemon
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload

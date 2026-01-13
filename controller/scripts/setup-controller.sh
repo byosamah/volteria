@@ -312,12 +312,21 @@ setup_sudoers() {
     log_step "Setting up sudoers..."
 
     cat > /etc/sudoers.d/volteria << 'EOF'
-# Volteria controller permissions
+# Volteria controller permissions - service user
 volteria ALL=(ALL) NOPASSWD: /sbin/reboot
 volteria ALL=(ALL) NOPASSWD: /bin/systemctl restart volteria-*
 volteria ALL=(ALL) NOPASSWD: /bin/systemctl stop volteria-*
 volteria ALL=(ALL) NOPASSWD: /bin/systemctl start volteria-*
 volteria ALL=(ALL) NOPASSWD: /bin/systemctl status volteria-*
+volteria ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
+
+# Volteria admin user (SSH access) - for remote management
+voltadmin ALL=(ALL) NOPASSWD: /sbin/reboot
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl restart volteria-*
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl stop volteria-*
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl start volteria-*
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl status volteria-*
+voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
 EOF
 
     chmod 440 /etc/sudoers.d/volteria
