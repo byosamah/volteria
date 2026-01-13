@@ -379,7 +379,7 @@ setup_ssh_tunnel() {
 
     # SSH credentials for central server (used by all controllers)
     SSH_USER="volteria"
-    SSH_PASS="VolteriaTunnel2024!"
+    SSH_PASS="VolteriaTunnel2024"
 
     # Create SSH tunnel service template
     # Port will be set to SSH_TUNNEL_PORT (set during registration)
