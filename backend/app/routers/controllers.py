@@ -1091,7 +1091,7 @@ async def reboot_controller(
     try:
         # 1. Get controller with SSH credentials and enterprise_id
         controller_result = db.table("controllers").select(
-            "id, serial_number, ssh_tunnel_port, ssh_username, ssh_password, enterprise_id"
+            "id, serial_number, ssh_port, ssh_username, ssh_password, enterprise_id"
         ).eq("id", str(controller_id)).execute()
 
         if not controller_result.data:
@@ -1103,7 +1103,7 @@ async def reboot_controller(
         controller = controller_result.data[0]
 
         # Check SSH credentials are available
-        if not controller.get("ssh_tunnel_port") or not controller.get("ssh_username"):
+        if not controller.get("ssh_port") or not controller.get("ssh_username"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Controller SSH credentials not configured. Complete the setup wizard first."
@@ -1164,7 +1164,7 @@ async def reboot_controller(
 
         success, message = execute_ssh_reboot(
             host=SSH_HOST,
-            port=controller["ssh_tunnel_port"],
+            port=controller["ssh_port"],
             username=controller["ssh_username"],
             password=controller.get("ssh_password", "")
         )
@@ -1179,7 +1179,7 @@ async def reboot_controller(
             "resource_name": controller['serial_number'],
             "metadata": {
                 "site_id": str(site_id) if site_id else None,
-                "ssh_port": controller["ssh_tunnel_port"],
+                "ssh_port": controller["ssh_port"],
                 "success": success,
                 "message": message
             },
