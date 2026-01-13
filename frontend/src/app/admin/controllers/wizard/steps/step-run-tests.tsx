@@ -226,9 +226,17 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
 
       {/* Real Tests Section */}
       <div>
-        <h4 className="text-sm font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
-          System Tests
-        </h4>
+        <div className="flex items-center gap-2 mb-2">
+          <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            System Tests
+          </h4>
+          <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
+            Live checks
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground mb-2">
+          These tests verify real data from the controller&apos;s heartbeat.
+        </p>
         <div className="border rounded-lg divide-y">
           {tests
             .filter((t) => REAL_TESTS.some((rt) => rt.name === t.name))

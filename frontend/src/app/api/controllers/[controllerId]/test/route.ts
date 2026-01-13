@@ -134,67 +134,73 @@ export async function POST(
         : "SSH tunnel not configured",
     });
 
-    // Test 5: Load Meter Reading (Simulated - real device not connected during wizard)
-    const hasLoadReading = typeof liveReadings.total_load_kw === "number";
+    // For simulated tests during wizard, we show example scenarios
+    // since no real devices are connected. These demonstrate what will be tested
+    // once the controller is deployed with real Modbus devices.
+
+    // Generate example simulation values (random but realistic)
+    const simLoadKw = Math.round((150 + Math.random() * 200) * 10) / 10;  // 150-350 kW
+    const simSolarKw = Math.round((80 + Math.random() * 120) * 10) / 10;  // 80-200 kW
+    const simDgKw = Math.round((simLoadKw - simSolarKw + 20 + Math.random() * 30) * 10) / 10; // Load - Solar + reserve
+    const simDgReserve = 50; // Example DG reserve
+    const simSolarLimit = Math.max(0, Math.round((simLoadKw - simDgReserve) / 1.5)); // Example limit calculation
+
+    // Test 5: Load Meter Reading (Simulation Demo)
+    const hasLoadReading = typeof liveReadings.total_load_kw === "number" && liveReadings.total_load_kw > 0;
     results.push({
       name: "load_meter",
-      status: hasLoadReading ? "passed" : heartbeat ? "passed" : "skipped",
+      status: heartbeat ? "passed" : "skipped",
       message: hasLoadReading
-        ? `[Simulated] Read value: ${liveReadings.total_load_kw.toFixed(1)} kW`
+        ? `Read value: ${liveReadings.total_load_kw.toFixed(1)} kW`
         : heartbeat
-        ? "[Simulated] No real device - will read from simulator"
+        ? `[Demo] Example: ${simLoadKw.toFixed(1)} kW (real values after site deployment)`
         : "No heartbeat data",
     });
 
-    // Test 6: Inverter Reading (Simulated - real device not connected during wizard)
-    const hasSolarReading = typeof liveReadings.solar_output_kw === "number";
+    // Test 6: Inverter Reading (Simulation Demo)
+    const hasSolarReading = typeof liveReadings.solar_output_kw === "number" && liveReadings.solar_output_kw > 0;
     results.push({
       name: "inverter",
-      status: hasSolarReading ? "passed" : heartbeat ? "passed" : "skipped",
+      status: heartbeat ? "passed" : "skipped",
       message: hasSolarReading
-        ? `[Simulated] Read: ${liveReadings.solar_output_kw.toFixed(1)} kW, Limit: ${
+        ? `Read: ${liveReadings.solar_output_kw.toFixed(1)} kW, Limit: ${
             liveReadings.solar_limit_pct !== null
               ? `${liveReadings.solar_limit_pct}%`
               : "N/A"
           }`
         : heartbeat
-        ? "[Simulated] No real device - will read from simulator"
+        ? `[Demo] Example: ${simSolarKw.toFixed(1)} kW output, ${simSolarLimit}% limit`
         : "No heartbeat data",
     });
 
-    // Test 7: Generator Controller Reading (Simulated - real device not connected during wizard)
-    const hasDgReading = typeof liveReadings.dg_power_kw === "number";
+    // Test 7: Generator Controller Reading (Simulation Demo)
+    const hasDgReading = typeof liveReadings.dg_power_kw === "number" && liveReadings.dg_power_kw > 0;
     results.push({
       name: "dg_controller",
-      status: hasDgReading ? "passed" : heartbeat ? "passed" : "skipped",
+      status: heartbeat ? "passed" : "skipped",
       message: hasDgReading
-        ? `[Simulated] Read value: ${liveReadings.dg_power_kw.toFixed(1)} kW`
+        ? `Read value: ${liveReadings.dg_power_kw.toFixed(1)} kW`
         : heartbeat
-        ? "[Simulated] No real device - will read from simulator"
+        ? `[Demo] Example: ${simDgKw.toFixed(1)} kW`
         : "No heartbeat data",
     });
 
-    // Test 8: Zero Feed Control Logic (Simulated)
+    // Test 8: Zero Feed Control Logic (Simulation Demo)
     const controlServiceRunning =
       services.control === "running" || services.control === "healthy";
-    const hasReadings = hasLoadReading || hasSolarReading || hasDgReading;
 
-    // Calculate expected solar limit based on zero-feed logic
-    // Solar limit = Load - DG Reserve (prevents reverse feed to DG)
-    const load = liveReadings.total_load_kw || 0;
-    const dgPower = liveReadings.dg_power_kw || 0;
-    const solarOutput = liveReadings.solar_output_kw || 0;
-    const solarLimit = liveReadings.solar_limit_pct;
+    // Show example control logic calculation
+    const exampleLoad = simLoadKw;
+    const exampleDgReserve = simDgReserve;
+    const exampleAvailableForSolar = Math.max(0, exampleLoad - exampleDgReserve);
+    const exampleSolarCapacity = 150; // kW
+    const exampleLimitPct = Math.min(100, Math.round((exampleAvailableForSolar / exampleSolarCapacity) * 100));
 
     results.push({
       name: "control_logic",
       status: controlServiceRunning ? "passed" : "failed",
       message: controlServiceRunning
-        ? hasReadings
-          ? `[Simulated] Load=${load.toFixed(1)}kW, DG=${dgPower.toFixed(1)}kW, Solar=${solarOutput.toFixed(1)}kW → Limit=${
-              solarLimit !== null ? `${solarLimit}%` : "N/A"
-            }`
-          : "[Simulated] Control service running - awaiting simulated device data"
+        ? `[Demo] Load=${exampleLoad.toFixed(0)}kW - Reserve=${exampleDgReserve}kW = Available=${exampleAvailableForSolar.toFixed(0)}kW → Limit=${exampleLimitPct}%`
         : "Control service not running",
     });
 
