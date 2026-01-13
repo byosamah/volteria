@@ -345,6 +345,8 @@ install_systemd_services() {
     systemctl daemon-reload
 
     # Enable services (but don't start yet)
+    # The supervisor manages the other services, so it must be enabled
+    systemctl enable volteria-supervisor.service
     systemctl enable volteria-system.service
     systemctl enable volteria-config.service
     systemctl enable volteria-device.service
