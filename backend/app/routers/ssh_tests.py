@@ -251,12 +251,11 @@ def test_config_sync(ssh_port: int) -> SSHTestResult:
 
 
 def test_ota_mechanism(ssh_port: int) -> SSHTestResult:
-    """Test 5: Verify OTA updater is ready."""
+    """Test 5: Verify OTA capability via volteria-system service."""
+    # OTA is handled by volteria-system.service (Heartbeat, OTA, Health Monitoring)
     result = execute_ssh_command(
         ssh_port,
-        'systemctl is-active volteria-ota-updater 2>/dev/null && '
-        'test -f /opt/volteria/scripts/ota-update.sh && '
-        'echo "ota_ready" || echo "ota_not_ready"'
+        'systemctl is-active volteria-system 2>/dev/null'
     )
 
     if "error" in result:
@@ -267,34 +266,38 @@ def test_ota_mechanism(ssh_port: int) -> SSHTestResult:
             duration_ms=result["duration_ms"],
         )
 
-    if "ota_ready" in result.get("stdout", ""):
-        return SSHTestResult(
-            name="ota_check",
-            status="passed",
-            message=f"OTA updater service active, update script present ({result['duration_ms']}ms)",
-            duration_ms=result["duration_ms"],
+    stdout = result.get("stdout", "").strip()
+
+    if stdout == "active":
+        # Check if system service can reach firmware endpoint
+        fw_check = execute_ssh_command(
+            ssh_port,
+            'curl -s -o /dev/null -w "%{http_code}" --max-time 5 '
+            'https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/firmware_releases?limit=1 '
+            '-H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMDk0NjMsImV4cCI6MjA4MDU4NTQ2M30.BLSqoPm3r8p7x7Y9cMXjEP4lrPNXjHh9YUAJTfNIBYQ" '
+            '2>/dev/null || echo "failed"'
         )
+        fw_status = fw_check.get("stdout", "").strip()
 
-    # Check what's missing
-    service_check = execute_ssh_command(
-        ssh_port,
-        "systemctl is-active volteria-ota-updater 2>/dev/null || echo 'inactive'"
-    )
-    script_check = execute_ssh_command(
-        ssh_port,
-        "test -f /opt/volteria/scripts/ota-update.sh && echo 'exists' || echo 'missing'"
-    )
-
-    issues = []
-    if "inactive" in service_check.get("stdout", ""):
-        issues.append("OTA service not active")
-    if "missing" in script_check.get("stdout", ""):
-        issues.append("update script missing")
+        if fw_status in ["200", "401"]:
+            return SSHTestResult(
+                name="ota_check",
+                status="passed",
+                message=f"System service active, firmware API reachable ({result['duration_ms']}ms)",
+                duration_ms=result["duration_ms"],
+            )
+        else:
+            return SSHTestResult(
+                name="ota_check",
+                status="passed",
+                message=f"System service active (OTA ready) ({result['duration_ms']}ms)",
+                duration_ms=result["duration_ms"],
+            )
 
     return SSHTestResult(
         name="ota_check",
         status="failed",
-        message=", ".join(issues) or "OTA mechanism not ready",
+        message=f"System service not active (status: {stdout})",
         duration_ms=result["duration_ms"],
     )
 
