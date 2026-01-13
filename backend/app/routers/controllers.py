@@ -245,20 +245,29 @@ async def register_from_setup_script(
 
         hardware_type_id = hardware_result.data[0]["id"] if hardware_result.data else None
 
-        # Allocate SSH tunnel port (find next available in range 10000-20000)
-        port_result = db.table("controllers").select("ssh_tunnel_port").order(
-            "ssh_tunnel_port", desc=True
+        # Allocate SSH port (find next available in range 10000-20000)
+        # Use ssh_port as the primary field for the reverse tunnel port
+        port_result = db.table("controllers").select("ssh_port").order(
+            "ssh_port", desc=True
         ).limit(1).execute()
 
         next_port = 10000
-        if port_result.data and port_result.data[0].get("ssh_tunnel_port"):
-            next_port = port_result.data[0]["ssh_tunnel_port"] + 1
+        if port_result.data and port_result.data[0].get("ssh_port"):
+            next_port = port_result.data[0]["ssh_port"] + 1
+
+        # SSH credentials for controller access
+        # voltadmin user is created on Pi during setup with standard password
+        SSH_USERNAME = "voltadmin"
+        SSH_PASSWORD = "Solar@1996"
 
         # Create new controller
         new_controller = {
             "serial_number": request.serial_number,
             "firmware_version": request.firmware_version,
-            "ssh_tunnel_port": next_port,
+            "ssh_port": next_port,
+            "ssh_tunnel_port": next_port,  # Keep for backward compatibility
+            "ssh_username": SSH_USERNAME,
+            "ssh_password": SSH_PASSWORD,
             "status": "draft",
             "is_active": True,
             "notes": f"Auto-registered by setup script v{request.firmware_version}"
@@ -358,9 +367,26 @@ async def register_by_serial(
         if hardware_result.data:
             hardware_type_id = hardware_result.data[0]["id"]
 
+        # Allocate SSH port (find next available in range 10000-20000)
+        port_result = db.table("controllers").select("ssh_port").order(
+            "ssh_port", desc=True
+        ).limit(1).execute()
+
+        next_port = 10000
+        if port_result.data and port_result.data[0].get("ssh_port"):
+            next_port = port_result.data[0]["ssh_port"] + 1
+
+        # SSH credentials for controller access
+        SSH_USERNAME = "voltadmin"
+        SSH_PASSWORD = "Solar@1996"
+
         # Create new controller in draft status
         new_controller = {
             "serial_number": serial,
+            "ssh_port": next_port,
+            "ssh_tunnel_port": next_port,
+            "ssh_username": SSH_USERNAME,
+            "ssh_password": SSH_PASSWORD,
             "status": "draft",
             "is_active": True,
             "notes": "Auto-registered by setup script"

@@ -69,6 +69,8 @@ export default async function ControllersPage() {
     last_heartbeat: string | null;
     pending_restart: boolean | null;
     ssh_port: number | null;
+    ssh_username: string | null;
+    ssh_password: string | null;
     wizard_step: number | null;
   }> = [];
 
@@ -86,6 +88,8 @@ export default async function ControllersPage() {
         created_at,
         pending_restart,
         ssh_port,
+        ssh_username,
+        ssh_password,
         wizard_step,
         approved_hardware:hardware_type_id (
           name,
@@ -109,6 +113,8 @@ export default async function ControllersPage() {
           : item.enterprises,
         last_heartbeat: null, // Will be populated below
         ssh_port: item.ssh_port || null,
+        ssh_username: item.ssh_username || null,
+        ssh_password: item.ssh_password || null,
         wizard_step: item.wizard_step || null,
       })) as typeof controllers;
     }

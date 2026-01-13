@@ -54,12 +54,12 @@ interface Controller {
   last_heartbeat: string | null;
   pending_restart: boolean | null;
   ssh_port: number | null;
+  ssh_username: string | null;
+  ssh_password: string | null;
   wizard_step: number | null;
 }
 
-// Standard SSH credentials (same for all controllers)
-const SSH_USERNAME = "voltadmin";
-const SSH_PASSWORD = "Solar@1996";
+// Central server for SSH connections (same for all controllers)
 const SSH_CENTRAL_SERVER = "159.223.224.203";
 
 // Helper to determine if controller is online (heartbeat within last 90 seconds)
@@ -352,6 +352,8 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
         last_heartbeat: null, // New controllers haven't sent heartbeats yet
         pending_restart: null, // New controllers don't have pending restart
         ssh_port: null, // SSH port assigned by setup script
+        ssh_username: null, // SSH username assigned during registration
+        ssh_password: null, // SSH password assigned during registration
         wizard_step: null, // New controllers created here haven't gone through wizard
       };
       setControllers([newController, ...controllers]);
@@ -937,18 +939,18 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                       <p className="text-muted-foreground">Enterprise</p>
                       <p>{controller.enterprises?.name || "Not claimed"}</p>
                     </div>
-                    {controller.ssh_port && (
+                    {controller.ssh_port && controller.ssh_username && (
                       <div className="col-span-2">
                         <p className="text-muted-foreground">SSH Access</p>
                         <div className="flex items-center gap-2 flex-wrap">
                           <code className="bg-muted px-2 py-1 rounded text-xs">
-                            ssh {SSH_USERNAME}@{SSH_CENTRAL_SERVER} -p {controller.ssh_port}
+                            ssh {controller.ssh_username}@{SSH_CENTRAL_SERVER} -p {controller.ssh_port}
                           </code>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              const cmd = `ssh ${SSH_USERNAME}@${SSH_CENTRAL_SERVER} -p ${controller.ssh_port}`;
+                              const cmd = `ssh ${controller.ssh_username}@${SSH_CENTRAL_SERVER} -p ${controller.ssh_port}`;
                               navigator.clipboard.writeText(cmd);
                               toast.success("SSH command copied");
                             }}
@@ -1156,18 +1158,18 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                       {controller.serial_number}
                     </TableCell>
                     <TableCell>
-                      {/* SSH Access - only show if controller has ssh_port assigned */}
-                      {controller.ssh_port ? (
+                      {/* SSH Access - only show if controller has ssh_port and username assigned */}
+                      {controller.ssh_port && controller.ssh_username ? (
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <code className="bg-muted px-2 py-1 rounded text-xs">
-                              ssh {SSH_USERNAME}@{SSH_CENTRAL_SERVER} -p {controller.ssh_port}
+                              ssh {controller.ssh_username}@{SSH_CENTRAL_SERVER} -p {controller.ssh_port}
                             </code>
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => {
-                                const cmd = `ssh ${SSH_USERNAME}@${SSH_CENTRAL_SERVER} -p ${controller.ssh_port}`;
+                                const cmd = `ssh ${controller.ssh_username}@${SSH_CENTRAL_SERVER} -p ${controller.ssh_port}`;
                                 navigator.clipboard.writeText(cmd);
                                 toast.success("SSH command copied");
                               }}
@@ -1866,7 +1868,7 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                   <span className="text-muted-foreground">SSH Command:</span>
                 </p>
                 <code className="block mt-1 bg-zinc-900 text-green-400 px-2 py-1 rounded text-xs font-mono">
-                  ssh {SSH_USERNAME}@{SSH_CENTRAL_SERVER} -p {sshPasswordController.ssh_port}
+                  ssh {sshPasswordController.ssh_username}@{SSH_CENTRAL_SERVER} -p {sshPasswordController.ssh_port}
                 </code>
               </div>
 
@@ -1918,14 +1920,16 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
                     </p>
                     <div className="flex items-center gap-2">
                       <code className="bg-white dark:bg-zinc-900 px-3 py-2 rounded text-lg font-mono font-bold border">
-                        {SSH_PASSWORD}
+                        {sshPasswordController.ssh_password || "Not set"}
                       </code>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          navigator.clipboard.writeText(SSH_PASSWORD);
-                          toast.success("SSH password copied");
+                          if (sshPasswordController.ssh_password) {
+                            navigator.clipboard.writeText(sshPasswordController.ssh_password);
+                            toast.success("SSH password copied");
+                          }
                         }}
                         className="h-9"
                       >
