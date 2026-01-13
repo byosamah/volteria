@@ -1,0 +1,15 @@
+[Unit]
+Description=Volteria First Boot Setup
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/opt/volteria/.first-boot-complete
+
+[Service]
+Type=oneshot
+ExecStart=/opt/volteria/first-boot-setup.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

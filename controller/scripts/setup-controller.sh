@@ -377,13 +377,13 @@ EOF
 setup_ssh_tunnel() {
     log_step "Setting up SSH tunnel service..."
 
-    # SSH credentials for central server (used by all controllers)
+    # SSH user for central server (key-based auth, key synced from database)
     SSH_USER="volteria"
-    SSH_PASS="VolteriaTunnel2024"
+    SSH_KEY_PATH="/root/.ssh/volteria_tunnel"
 
     # Create SSH tunnel service template
     # Port will be set to SSH_TUNNEL_PORT (set during registration)
-    # If registration failed, tunnel won't start (port = 0)
+    # Uses key-based authentication (key authorized via database sync on central server)
     cat > "${SYSTEMD_DIR}/volteria-tunnel.service" << EOF
 [Unit]
 Description=Volteria SSH Reverse Tunnel
@@ -392,8 +392,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment="SSHPASS=${SSH_PASS}"
-ExecStart=/usr/bin/sshpass -e /usr/bin/ssh -N -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" -o "ExitOnForwardFailure yes" -o "StrictHostKeyChecking no" -o "UserKnownHostsFile=/dev/null" -R SSH_TUNNEL_PORT:localhost:22 ${SSH_USER}@${CENTRAL_SERVER}
+ExecStart=/usr/bin/ssh -N -i ${SSH_KEY_PATH} -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" -o "ExitOnForwardFailure yes" -o "StrictHostKeyChecking no" -o "UserKnownHostsFile=/dev/null" -R SSH_TUNNEL_PORT:localhost:22 ${SSH_USER}@${CENTRAL_SERVER}
 Restart=always
 RestartSec=10
 
@@ -406,6 +405,27 @@ EOF
     log_info "SSH tunnel service template created (will be configured during registration)"
 }
 
+# Generate SSH key for remote access
+generate_ssh_key() {
+    log_step "Generating SSH key for remote access..."
+
+    SSH_KEY_PATH="/root/.ssh/volteria_tunnel"
+
+    # Generate key if it doesn't exist
+    if [[ ! -f "${SSH_KEY_PATH}" ]]; then
+        mkdir -p /root/.ssh
+        chmod 700 /root/.ssh
+        ssh-keygen -t ed25519 -f "${SSH_KEY_PATH}" -N "" -C "volteria-$(get_serial_number)"
+        log_info "SSH key generated: ${SSH_KEY_PATH}"
+    else
+        log_info "SSH key already exists: ${SSH_KEY_PATH}"
+    fi
+
+    # Read public key
+    SSH_PUBLIC_KEY=$(cat "${SSH_KEY_PATH}.pub" 2>/dev/null || echo "")
+    echo "$SSH_PUBLIC_KEY"
+}
+
 # Register controller with cloud and set up SSH tunnel
 register_controller() {
     log_step "Registering controller with cloud..."
@@ -416,6 +436,12 @@ register_controller() {
     log_info "Serial Number: ${SERIAL}"
     log_info "Hardware Type: ${HARDWARE}"
 
+    # Generate SSH key for remote access
+    SSH_PUBLIC_KEY=$(generate_ssh_key)
+    if [[ -n "$SSH_PUBLIC_KEY" ]]; then
+        log_info "SSH public key ready for registration"
+    fi
+
     # Try to register with cloud API
     REGISTER_URL="https://volteria.org/api/controllers/register"
 
@@ -424,7 +450,8 @@ register_controller() {
         -d "{
             \"serial_number\": \"${SERIAL}\",
             \"hardware_type\": \"${HARDWARE}\",
-            \"firmware_version\": \"${VOLTERIA_VERSION}\"
+            \"firmware_version\": \"${VOLTERIA_VERSION}\",
+            \"ssh_public_key\": \"${SSH_PUBLIC_KEY}\"
         }" 2>/dev/null || echo '{"error": "Connection failed"}')
 
     if echo "$RESPONSE" | jq -e '.controller_id' > /dev/null 2>&1; then
