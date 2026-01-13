@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware, sites, usage, dashboards
+from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware, sites, usage, dashboards, ssh_tests
 from app.middleware.audit import AuditLoggingMiddleware
 
 
@@ -202,6 +202,13 @@ app.include_router(
     dashboards.router,
     prefix="/api/dashboards",
     tags=["Dashboards"]
+)
+
+# SSH Tests router - real SSH-based controller testing
+app.include_router(
+    ssh_tests.router,
+    prefix="/api",
+    tags=["SSH Tests"]
 )
 
 
