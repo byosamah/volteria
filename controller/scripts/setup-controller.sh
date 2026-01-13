@@ -356,6 +356,19 @@ install_systemd_services() {
     log_info "Systemd services installed and enabled"
 }
 
+# Disable cloud-init (causes shutdown issues, not needed for controller)
+disable_cloud_init() {
+    log_step "Disabling cloud-init..."
+
+    # Cloud-init interferes with clean shutdown/reboot and isn't needed
+    # This prevents kernel panic during reboot
+    touch /etc/cloud/cloud-init.disabled 2>/dev/null || true
+    systemctl mask cloud-init cloud-init-local cloud-config cloud-final 2>/dev/null || true
+    systemctl disable cloud-init cloud-init-local cloud-config cloud-final 2>/dev/null || true
+
+    log_info "Cloud-init disabled"
+}
+
 # Generate configuration file
 generate_config() {
     log_step "Generating configuration..."
@@ -671,6 +684,7 @@ main() {
     generate_config
     create_env_file
     install_systemd_services
+    disable_cloud_init
     setup_ssh_tunnel
     register_controller
     start_services

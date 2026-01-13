@@ -1053,7 +1053,8 @@ class RebootResponse(BaseModel):
 
 def execute_ssh_reboot(host: str, port: int, username: str, password: str) -> tuple[bool, str]:
     """
-    Execute reboot command via SSH.
+    Execute GRACEFUL reboot command via SSH.
+    Stops services and syncs filesystem before rebooting to prevent corruption.
     Returns (success, message).
     """
     import paramiko
@@ -1074,14 +1075,27 @@ def execute_ssh_reboot(host: str, port: int, username: str, password: str) -> tu
             auth_timeout=10
         )
 
-        # Execute reboot command
-        # Using 'sudo reboot' - the volteria user has NOPASSWD sudo for reboot
-        stdin, stdout, stderr = client.exec_command("sudo reboot", timeout=5)
+        # GRACEFUL SHUTDOWN SEQUENCE:
+        # 1. Stop all Volteria services (gives them time to cleanup SQLite, logs, etc.)
+        # 2. Sync filesystem to ensure all writes are flushed to disk
+        # 3. Small delay for final cleanup
+        # 4. Reboot
+        # This prevents kernel panic and filesystem corruption from abrupt shutdown
+        graceful_reboot_cmd = (
+            "sudo systemctl stop volteria-supervisor volteria-logging volteria-control "
+            "volteria-device volteria-config volteria-system 2>/dev/null; "
+            "sleep 2; "
+            "sync; "
+            "sleep 1; "
+            "sudo reboot"
+        )
+
+        stdin, stdout, stderr = client.exec_command(graceful_reboot_cmd, timeout=30)
 
         # Don't wait for output - reboot will kill the connection
         client.close()
 
-        return True, "Reboot command executed successfully"
+        return True, "Graceful reboot command executed successfully"
 
     except paramiko.AuthenticationException:
         return False, "SSH authentication failed"
