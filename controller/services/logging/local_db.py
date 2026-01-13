@@ -137,9 +137,13 @@ class LocalDatabase:
 
     @contextmanager
     def _get_connection(self):
-        """Get database connection with context manager"""
+        """Get database connection with context manager and WAL mode"""
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
+        # Enable WAL mode for reduced SSD write amplification
+        # WAL mode writes to a separate log file instead of rewriting the main DB
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")  # Safe with WAL, reduces fsyncs
         try:
             yield conn
         finally:
