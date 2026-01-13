@@ -3,14 +3,13 @@
 /**
  * Controller Setup Wizard Component
  *
- * Multi-step wizard with 7 steps:
+ * Multi-step wizard with 6 steps:
  * 1. Hardware Info - Enter serial number, select hardware type
  * 2. Flash Image - Write Raspberry Pi OS to SD card (Balena Etcher)
  * 3. Software Setup - Run setup script (+ NVMe boot config if applicable)
- * 4. Network Setup - WiFi/Ethernet configuration
- * 5. Cloud Connection - Generate & download config.yaml
- * 6. Verify Online - Wait for heartbeat
- * 7. Run Tests - Simulated device tests
+ * 4. Cloud Connection - Generate & download config.yaml
+ * 5. Verify Online - Wait for heartbeat
+ * 6. Run Tests - Real SSH-based diagnostic tests
  */
 
 import { useState, useEffect } from "react";
@@ -24,7 +23,6 @@ import { toast } from "sonner";
 import { StepHardwareInfo } from "./steps/step-hardware-info";
 import { StepDownloadImage } from "./steps/step-download-image";
 import { StepFlashInstructions } from "./steps/step-flash-instructions";
-import { StepNetworkSetup } from "./steps/step-network-setup";
 import { StepCloudConnection } from "./steps/step-cloud-connection";
 import { StepVerifyOnline } from "./steps/step-verify-online";
 import { StepRunTests } from "./steps/step-run-tests";
@@ -32,14 +30,14 @@ import { StepRunTests } from "./steps/step-run-tests";
 // Step definitions
 // NOTE: Step 2 and 3 were swapped to match the physical process:
 // First flash the OS to SD card, THEN run the setup script
+// Network setup was removed (implied - setup script requires network)
 const STEPS = [
   { number: 1, name: "Hardware Info", description: "Enter controller details" },
   { number: 2, name: "Flash Image", description: "Write image to SD card" },
   { number: 3, name: "Software Setup", description: "Install controller software" },
-  { number: 4, name: "Network Setup", description: "Connect to network" },
-  { number: 5, name: "Cloud Connection", description: "Configure cloud access" },
-  { number: 6, name: "Verify Online", description: "Confirm controller is online" },
-  { number: 7, name: "Run Tests", description: "Test controller functionality" },
+  { number: 4, name: "Cloud Connection", description: "Configure cloud access" },
+  { number: 5, name: "Verify Online", description: "Confirm controller is online" },
+  { number: 6, name: "Run Tests", description: "Test controller functionality" },
 ];
 
 interface HardwareType {
@@ -292,13 +290,6 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
         );
       case 4:
         return (
-          <StepNetworkSetup
-            onConfirm={setStepConfirmed}
-            confirmed={stepConfirmed}
-          />
-        );
-      case 5:
-        return (
           <StepCloudConnection
             controllerId={controllerId}
             serialNumber={controllerData.serial_number}
@@ -306,7 +297,7 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
             confirmed={stepConfirmed}
           />
         );
-      case 6:
+      case 5:
         return (
           <StepVerifyOnline
             controllerId={controllerId}
@@ -314,7 +305,7 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
             verified={stepConfirmed}
           />
         );
-      case 7:
+      case 6:
         return (
           <StepRunTests
             controllerId={controllerId}
@@ -332,8 +323,8 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
       // Only hardware_type_id is required - serial_number is optional (Pi self-registers)
       return !!controllerData.hardware_type_id;
     }
-    if (currentStep === 7) {
-      return false; // Step 7 has its own completion flow
+    if (currentStep === 6) {
+      return false; // Step 6 (Run Tests) has its own completion flow
     }
     return stepConfirmed;
   };
@@ -446,7 +437,7 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
           Back
         </Button>
 
-        {currentStep < 7 && (
+        {currentStep < 6 && (
           <Button onClick={handleNextStep} disabled={!canProceed() || loading}>
             {loading ? "Saving..." : "Continue"}
             <svg
