@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
       central_server: CENTRAL_SERVER_IP,
       central_server_user: CENTRAL_SERVER_USER,
       supabase_url: supabaseUrl,
-      supabase_key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+      supabase_key: supabaseServiceKey,  // Service key needed for heartbeat insertion
     });
 
   } catch (error) {
