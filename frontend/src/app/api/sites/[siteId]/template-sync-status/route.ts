@@ -23,9 +23,12 @@ export async function GET(
     // Get site's config_changed_at for config sync tracking (tracks actual config changes)
     const { data: site } = await supabase
       .from("sites")
-      .select("config_changed_at, config_synced_at")
+      .select("config_changed_at, config_synced_at, config_sync_interval_s")
       .eq("id", siteId)
       .single();
+
+    // Sync interval in seconds (default 300 = 5 minutes)
+    const syncIntervalSeconds = (site as Record<string, unknown>)?.config_sync_interval_s as number | null ?? 300;
 
     // Get all ENABLED devices in site (exclude disabled/deleted devices)
     const { data: devices, error: devicesError } = await supabase
@@ -82,6 +85,7 @@ export async function GET(
         needs_sync: needsSync,
         total_devices: 0,
         devices_needing_sync: 0,
+        sync_interval_seconds: syncIntervalSeconds,
       });
     }
 
@@ -137,6 +141,7 @@ export async function GET(
       needs_sync: needsSync,
       total_devices: devices.length,
       devices_needing_sync: devicesNeedingSync,
+      sync_interval_seconds: syncIntervalSeconds,
     });
   } catch (error) {
     console.error("Template sync status error:", error);

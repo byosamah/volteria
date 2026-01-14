@@ -247,6 +247,55 @@ ssh:
         </div>
       </div>
 
+      {/* Default Network Settings */}
+      <div className="space-y-2">
+        <h4 className="font-medium flex items-center gap-2">
+          <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+          </svg>
+          Default Network Settings
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          The setup script configures the following network settings automatically:
+        </p>
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-4">
+          {/* Ethernet Settings */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
+              </svg>
+              <span className="font-medium text-sm">Ethernet (eth0) - Static IP</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs ml-6">
+              <div className="text-muted-foreground">IP Address:</div>
+              <div className="font-mono font-medium">192.168.1.100</div>
+              <div className="text-muted-foreground">Gateway:</div>
+              <div className="font-mono font-medium">192.168.1.1</div>
+              <div className="text-muted-foreground">Subnet Mask:</div>
+              <div className="font-mono font-medium">255.255.255.0</div>
+              <div className="text-muted-foreground">DNS Servers:</div>
+              <div className="font-mono font-medium">8.8.8.8, 8.8.4.4</div>
+            </div>
+          </div>
+          {/* WiFi Settings */}
+          <div className="border-t border-slate-200 pt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.14 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+              </svg>
+              <span className="font-medium text-sm">WiFi (wlan0) - DHCP</span>
+            </div>
+            <p className="text-xs text-muted-foreground ml-6">
+              WiFi is configured via Raspberry Pi Imager (Step 2). The controller will obtain an IP address automatically via DHCP when connected to your WiFi network.
+            </p>
+          </div>
+        </div>
+        <p className="text-xs text-amber-600">
+          Note: If your network uses a different IP range (e.g., 10.x.x.x or 172.x.x.x), you may need to manually adjust the static IP after setup.
+        </p>
+      </div>
+
       {/* Config preview */}
       <div className="space-y-2">
         <h4 className="font-medium flex items-center gap-2">

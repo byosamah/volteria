@@ -15,7 +15,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { RefreshCw, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { RefreshCw, CheckCircle2, XCircle, AlertCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 interface TemplateSyncStatusProps {
@@ -28,7 +28,24 @@ interface SyncStatus {
   needs_sync: boolean;
   total_devices: number;
   devices_needing_sync: number;
+  sync_interval_seconds: number;
 }
+
+// Format sync interval for display
+const formatSyncInterval = (seconds: number): string => {
+  if (seconds < 60) {
+    return `${seconds} second${seconds !== 1 ? "s" : ""}`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
+};
+
+// Calculate next sync time
+const getNextSyncTime = (lastSync: string | null, intervalSeconds: number): Date | null => {
+  if (!lastSync) return null;
+  const lastSyncDate = new Date(lastSync);
+  return new Date(lastSyncDate.getTime() + intervalSeconds * 1000);
+};
 
 export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
@@ -46,6 +63,15 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
+    });
+  };
+
+  // Format time only for next sync
+  const formatTime = (date: Date | null) => {
+    if (!date) return "Unknown";
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -157,6 +183,8 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
   }
 
   const needsSync = status?.needs_sync || false;
+  const syncInterval = status?.sync_interval_seconds ?? 300;
+  const nextSyncTime = getNextSyncTime(status?.last_sync ?? null, syncInterval);
 
   return (
     <Card>
@@ -186,6 +214,17 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
                 ) : status?.last_sync ? (
                   <CheckCircle2 className="h-4 w-4 text-green-600" />
                 ) : null}
+              </span>
+            </div>
+
+            {/* Next auto-sync time */}
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground min-w-[180px]">
+                Next auto-sync
+              </span>
+              <span className="text-muted-foreground text-xs flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {nextSyncTime ? formatTime(nextSyncTime) : "Not scheduled"} (every {formatSyncInterval(syncInterval)})
               </span>
             </div>
 

@@ -127,7 +127,7 @@ install_dependencies() {
     log_info "System dependencies installed"
 }
 
-# Configure network settings (timezone, static IP option)
+# Configure network settings (timezone, static IP for ethernet)
 configure_network() {
     log_step "Configuring network settings..."
 
@@ -139,35 +139,50 @@ configure_network() {
     systemctl enable NetworkManager 2>/dev/null || true
     systemctl start NetworkManager 2>/dev/null || true
 
-    # Check if static IP is requested via environment variable
-    # Usage: STATIC_IP=192.168.1.100 GATEWAY=192.168.1.1 ./setup-controller.sh
-    if [[ -n "${STATIC_IP}" ]]; then
-        log_info "Configuring static IP: ${STATIC_IP}"
+    # Default static IP settings for ethernet (eth0)
+    ETH_STATIC_IP="192.168.1.100"
+    ETH_GATEWAY="192.168.1.1"
+    ETH_DNS="8.8.8.8,8.8.4.4"
+    ETH_SUBNET="24"
 
-        # Get the active connection name
-        CONN_NAME=$(nmcli -t -f NAME,DEVICE con show --active | head -1 | cut -d: -f1)
+    # Configure static IP on ethernet (eth0) - always applied
+    log_info "Configuring static IP on ethernet..."
 
-        if [[ -n "$CONN_NAME" ]]; then
-            GATEWAY=${GATEWAY:-$(echo $STATIC_IP | cut -d. -f1-3).1}
-            DNS=${DNS:-8.8.8.8,8.8.4.4}
+    # Check if eth0 connection exists
+    ETH_CONN=$(nmcli -t -f NAME,DEVICE con show | grep "eth0" | head -1 | cut -d: -f1)
 
-            nmcli con mod "$CONN_NAME" ipv4.addresses "${STATIC_IP}/24"
-            nmcli con mod "$CONN_NAME" ipv4.gateway "$GATEWAY"
-            nmcli con mod "$CONN_NAME" ipv4.dns "$DNS"
-            nmcli con mod "$CONN_NAME" ipv4.method manual
-            nmcli con up "$CONN_NAME"
-
-            log_info "Static IP configured: ${STATIC_IP}, Gateway: ${GATEWAY}"
-        else
-            log_warn "No active connection found. Static IP not configured."
-        fi
+    if [[ -z "$ETH_CONN" ]]; then
+        # Create new ethernet connection if none exists
+        log_info "Creating ethernet connection profile..."
+        nmcli con add type ethernet con-name "Wired Volteria" ifname eth0 \
+            ipv4.addresses "${ETH_STATIC_IP}/${ETH_SUBNET}" \
+            ipv4.gateway "${ETH_GATEWAY}" \
+            ipv4.dns "${ETH_DNS}" \
+            ipv4.method manual \
+            connection.autoconnect yes
+        ETH_CONN="Wired Volteria"
     else
-        log_info "Using DHCP (set STATIC_IP env var for static IP)"
+        # Modify existing ethernet connection
+        log_info "Configuring existing ethernet connection: ${ETH_CONN}"
+        nmcli con mod "$ETH_CONN" ipv4.addresses "${ETH_STATIC_IP}/${ETH_SUBNET}"
+        nmcli con mod "$ETH_CONN" ipv4.gateway "${ETH_GATEWAY}"
+        nmcli con mod "$ETH_CONN" ipv4.dns "${ETH_DNS}"
+        nmcli con mod "$ETH_CONN" ipv4.method manual
+        nmcli con mod "$ETH_CONN" connection.autoconnect yes
     fi
 
-    # Display current IP
-    CURRENT_IP=$(hostname -I | awk '{print $1}')
-    log_info "Current IP address: ${CURRENT_IP}"
+    # Bring up ethernet if cable is connected
+    nmcli con up "$ETH_CONN" 2>/dev/null || log_info "Ethernet cable not connected (will auto-connect when plugged in)"
+
+    log_info "Ethernet configured: IP=${ETH_STATIC_IP}, Gateway=${ETH_GATEWAY}"
+
+    # WiFi remains on DHCP (configured via Raspberry Pi Imager)
+    log_info "WiFi remains enabled (DHCP - configured via Raspberry Pi Imager)"
+
+    # Display current IPs
+    sleep 2
+    CURRENT_IPS=$(hostname -I)
+    log_info "Current IP addresses: ${CURRENT_IPS}"
 }
 
 # Create directory structure
