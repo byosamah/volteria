@@ -2,7 +2,11 @@
 Configuration Sync
 
 Fetches complete site configuration from cloud.
-Syncs every 5 minutes or on demand.
+Syncs every 60 minutes or on demand.
+
+Optimized for low CPU usage:
+- Reuses single HTTP client (no connection overhead per request)
+- Fetches data in parallel where possible
 """
 
 import asyncio
@@ -36,6 +40,20 @@ class ConfigSync:
         self.site_id = site_id
         self.supabase_url = supabase_url
         self.supabase_key = supabase_key
+        # Reusable HTTP client - avoids connection overhead per request
+        self._client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create reusable HTTP client"""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=30.0)
+        return self._client
+
+    async def close(self) -> None:
+        """Close HTTP client"""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def fetch_site_config(self) -> dict[str, Any] | None:
         """
@@ -45,40 +63,43 @@ class ConfigSync:
             Complete site config dict, or None on error
         """
         try:
-            async with httpx.AsyncClient() as client:
-                # 1. Fetch site settings
-                site = await self._fetch_site(client)
-                if not site:
-                    return None
+            client = await self._get_client()
 
-                # 2. Fetch devices with registers
-                devices = await self._fetch_devices(client)
+            # 1. Fetch site settings first (need to confirm site exists)
+            site = await self._fetch_site(client)
+            if not site:
+                return None
 
-                # 3. Fetch calculated field definitions
-                calculated_fields = await self._fetch_calculated_fields(client)
+            # 2. Fetch remaining data IN PARALLEL for efficiency
+            devices_task = self._fetch_devices(client)
+            calc_fields_task = self._fetch_calculated_fields(client)
+            alarm_overrides_task = self._fetch_alarm_overrides(client)
 
-                # 4. Fetch alarm overrides for this site
-                alarm_overrides = await self._fetch_alarm_overrides(client)
+            devices, calculated_fields, alarm_overrides = await asyncio.gather(
+                devices_task,
+                calc_fields_task,
+                alarm_overrides_task,
+            )
 
-                # 5. Build complete config
-                config = self._build_config(
-                    site=site,
-                    devices=devices,
-                    calculated_fields=calculated_fields,
-                    alarm_overrides=alarm_overrides,
-                )
+            # 3. Build complete config
+            config = self._build_config(
+                site=site,
+                devices=devices,
+                calculated_fields=calculated_fields,
+                alarm_overrides=alarm_overrides,
+            )
 
-                logger.info(
-                    f"Config synced: {len(devices)} devices, "
-                    f"{len(calculated_fields)} calculated fields",
-                    extra={
-                        "site_id": self.site_id,
-                        "device_count": len(devices),
-                        "calc_field_count": len(calculated_fields),
-                    },
-                )
+            logger.info(
+                f"Config synced: {len(devices)} devices, "
+                f"{len(calculated_fields)} calculated fields",
+                extra={
+                    "site_id": self.site_id,
+                    "device_count": len(devices),
+                    "calc_field_count": len(calculated_fields),
+                },
+            )
 
-                return config
+            return config
 
         except httpx.HTTPError as e:
             logger.error(f"HTTP error syncing config: {e}")
@@ -98,28 +119,28 @@ class ConfigSync:
             True if updates are available
         """
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.supabase_url}/rest/v1/sites",
-                    params={
-                        "id": f"eq.{self.site_id}",
-                        "select": "updated_at",
-                    },
-                    headers=self._headers(),
-                    timeout=10.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+            client = await self._get_client()
+            response = await client.get(
+                f"{self.supabase_url}/rest/v1/sites",
+                params={
+                    "id": f"eq.{self.site_id}",
+                    "select": "updated_at",
+                },
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            data = response.json()
 
-                if not data:
-                    return False
+            if not data:
+                return False
 
-                cloud_updated_at = data[0].get("updated_at")
+            cloud_updated_at = data[0].get("updated_at")
 
-                if not current_updated_at:
-                    return True
+            if not current_updated_at:
+                return True
 
-                return cloud_updated_at != current_updated_at
+            return cloud_updated_at != current_updated_at
 
         except Exception as e:
             logger.warning(f"Error checking for updates: {e}")
@@ -152,7 +173,7 @@ class ConfigSync:
             params={
                 "site_id": f"eq.{self.site_id}",
                 "enabled": "eq.true",
-                "select": "*,device_templates(id,template_id,name,device_type,brand,model,alarm_registers)",
+                "select": "*,device_templates(id,template_id,name,device_type,brand,model,alarm_registers,registers)",
             },
             headers=self._headers(),
             timeout=30.0,
@@ -160,31 +181,50 @@ class ConfigSync:
         response.raise_for_status()
         devices = response.json()
 
-        # Process each device to include full register info
+        # Collect template IDs that need register fetching
+        template_ids_to_fetch = []
+        for device in devices:
+            if not device.get("registers"):
+                template = device.get("device_templates") or {}
+                if not template.get("registers") and device.get("template_id"):
+                    template_ids_to_fetch.append(device["template_id"])
+
+        # Fetch all needed template registers IN PARALLEL
+        template_registers_map = {}
+        if template_ids_to_fetch:
+            unique_ids = list(set(template_ids_to_fetch))
+            fetch_tasks = [
+                self._fetch_template_registers(client, tid)
+                for tid in unique_ids
+            ]
+            results = await asyncio.gather(*fetch_tasks)
+            template_registers_map = dict(zip(unique_ids, results))
+
+        # Process each device
         processed_devices = []
         for device in devices:
+            template = device.get("device_templates") or {}
+
+            # Determine registers: device > template join > fetched template
+            registers = device.get("registers") or []
+            if not registers:
+                registers = template.get("registers") or []
+            if not registers and device.get("template_id"):
+                registers = template_registers_map.get(device["template_id"], [])
+
             processed = {
                 "id": device["id"],
                 "name": device["name"],
-                "device_type": device.get("device_type") or (device.get("device_templates") or {}).get("device_type"),
+                "device_type": device.get("device_type") or template.get("device_type"),
                 "protocol": device.get("protocol", "tcp"),
                 "host": device.get("host") or device.get("gateway_ip", ""),
                 "port": device.get("port") or device.get("gateway_port", 502),
                 "slave_id": device.get("slave_id", 1),
                 "rated_power_kw": device.get("rated_power_kw"),
                 "rated_power_kva": device.get("rated_power_kva"),
-                # Get registers from device or template
-                "registers": device.get("registers") or [],
-                # Use device's alarm_registers, fallback to template's alarm_registers
-                "alarm_registers": device.get("alarm_registers") or (device.get("device_templates") or {}).get("alarm_registers") or [],
+                "registers": registers,
+                "alarm_registers": device.get("alarm_registers") or template.get("alarm_registers") or [],
             }
-
-            # If device has a template and no custom registers, fetch template registers
-            if not processed["registers"] and device.get("template_id"):
-                template_registers = await self._fetch_template_registers(
-                    client, device["template_id"]
-                )
-                processed["registers"] = template_registers
 
             processed_devices.append(processed)
 

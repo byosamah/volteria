@@ -30,8 +30,8 @@ logger = get_service_logger("config")
 
 # Health server port
 HEALTH_PORT = 8082
-# Sync interval in seconds (5 minutes)
-SYNC_INTERVAL_SECONDS = 300
+# Sync interval in seconds (60 minutes)
+SYNC_INTERVAL_SECONDS = 3600
 # Command poll interval (check for sync commands every 5 seconds)
 COMMAND_POLL_INTERVAL_SECONDS = 5
 
