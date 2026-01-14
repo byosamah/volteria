@@ -34,6 +34,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import Link from "next/link";
 import { RegisterForm, type ModbusRegister } from "./register-form";
@@ -86,6 +94,84 @@ const deviceTypes = [
   { value: "capacitor_bank", label: "Capacitor Bank", description: "Reactive power compensation" },
   { value: "other", label: "Other Devices", description: "Other device types" },
 ];
+
+// Predefined calculated fields per device type (matches template-form-dialog.tsx)
+const CALCULATED_FIELDS_BY_TYPE: Record<string, { field_id: string; name: string; unit: string }[]> = {
+  // Load meters
+  load: [
+    { field_id: "daily_kwh_consumption", name: "Daily kWh Consumption", unit: "kWh" },
+    { field_id: "daily_peak_load", name: "Daily Peak Load", unit: "kW" },
+    { field_id: "daily_avg_load", name: "Daily Average Load", unit: "kW" },
+  ],
+  load_meter: [
+    { field_id: "daily_kwh_consumption", name: "Daily kWh Consumption", unit: "kWh" },
+    { field_id: "daily_peak_load", name: "Daily Peak Load", unit: "kW" },
+    { field_id: "daily_avg_load", name: "Daily Average Load", unit: "kW" },
+  ],
+  energy_meter: [
+    { field_id: "daily_kwh_consumption", name: "Daily kWh Consumption", unit: "kWh" },
+    { field_id: "daily_peak_load", name: "Daily Peak Load", unit: "kW" },
+    { field_id: "daily_avg_load", name: "Daily Average Load", unit: "kW" },
+  ],
+  // Solar inverters
+  inverter: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  // Generator controllers
+  diesel_generator: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  gas_generator: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  dg: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  // Wind turbine
+  wind_turbine: [
+    { field_id: "daily_kwh_production", name: "Daily kWh Production", unit: "kWh" },
+    { field_id: "daily_peak_kw", name: "Daily Peak kW", unit: "kW" },
+    { field_id: "daily_avg_kw", name: "Daily Average kW", unit: "kW" },
+  ],
+  // Battery storage
+  bess: [
+    { field_id: "daily_kwh_charged", name: "Daily kWh Charged", unit: "kWh" },
+    { field_id: "daily_kwh_discharged", name: "Daily kWh Discharged", unit: "kWh" },
+    { field_id: "daily_avg_soc", name: "Daily Average SOC", unit: "%" },
+  ],
+  // Fuel sensors
+  fuel_level_sensor: [
+    { field_id: "daily_fuel_level_difference_l", name: "Daily Fuel Level Difference (L)", unit: "L" },
+    { field_id: "daily_fuel_level_difference_pct", name: "Daily Fuel Level Difference (%)", unit: "%" },
+  ],
+  // Environmental sensors
+  temperature_humidity_sensor: [
+    { field_id: "daily_peak_temp", name: "Daily Peak Temperature", unit: "°C" },
+    { field_id: "daily_avg_temp", name: "Daily Average Temperature", unit: "°C" },
+    { field_id: "daily_peak_humidity", name: "Daily Peak Humidity", unit: "%" },
+    { field_id: "daily_avg_humidity", name: "Daily Average Humidity", unit: "%" },
+  ],
+  solar_sensor: [
+    { field_id: "daily_peak_irradiance", name: "Daily Peak Irradiance", unit: "W/m²" },
+    { field_id: "daily_avg_irradiance", name: "Daily Average Irradiance", unit: "W/m²" },
+  ],
+  solar_radiation_sensor: [
+    { field_id: "daily_peak_irradiance", name: "Daily Peak Irradiance", unit: "W/m²" },
+    { field_id: "daily_avg_irradiance", name: "Daily Average Irradiance", unit: "W/m²" },
+  ],
+  wind_sensor: [
+    { field_id: "daily_peak_wind_speed", name: "Daily Peak Wind Speed", unit: "m/s" },
+    { field_id: "daily_avg_wind_speed", name: "Daily Average Wind Speed", unit: "m/s" },
+  ],
+};
 
 // Calculated field selection for devices
 interface CalculatedFieldSelection {
@@ -1280,7 +1366,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 <div>
                   <p className="text-sm font-medium">Alarm Registers</p>
                   <p className="text-xs text-muted-foreground">
-                    Device-specific alarm registers for monitoring faults and warnings
+                    Event-based alarms with threshold conditions
                   </p>
                 </div>
                 <Button
@@ -1309,7 +1395,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                           <th className="px-3 py-2 text-left font-medium">Name</th>
                           <th className="px-3 py-2 text-left font-medium">Type</th>
                           <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Datatype</th>
-                          <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Logging</th>
+                          <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Thresholds</th>
                           <th className="px-3 py-2 text-right font-medium">Actions</th>
                         </tr>
                       </thead>
@@ -1326,8 +1412,14 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                               </span>
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
-                              {formatLoggingFrequency(reg.logging_frequency)}
+                            <td className="px-3 py-2 hidden lg:table-cell">
+                              {reg.thresholds && reg.thresholds.length > 0 ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                  {reg.thresholds.length} configured
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">None</span>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-right">
                               <div className="flex items-center justify-end gap-1">
@@ -1381,50 +1473,62 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 </p>
               </div>
 
-              {/* Calculated fields list */}
-              <div className="space-y-2">
-                {editCalculatedFields.length > 0 ? (
-                  <>
-                    {editCalculatedFields.map((field) => (
-                      <div
-                        key={field.field_id}
-                        className="flex items-center justify-between p-3 rounded-lg border bg-primary/5"
-                      >
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleCalculatedField(field.field_id, field.name)}
-                            className="p-1 rounded hover:bg-red-100 transition-colors"
-                            title="Remove field"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-                              <line x1="18" y1="6" x2="6" y2="18"/>
-                              <line x1="6" y1="6" x2="18" y2="18"/>
-                            </svg>
-                          </button>
-                          <div>
-                            <p className="text-sm font-medium">{field.name}</p>
-                            <p className="text-xs text-muted-foreground">{field.field_id}</p>
+              {/* Calculated fields list - show all available fields with checkboxes */}
+              {(() => {
+                const deviceType = editMeasurementType || editDevice?.measurement_type || "";
+                const availableFields = CALCULATED_FIELDS_BY_TYPE[deviceType] || [];
+
+                if (availableFields.length > 0) {
+                  return (
+                    <div className="border rounded-md divide-y">
+                      {availableFields.map((field) => {
+                        const isSelected = editCalculatedFields.some((f) => f.field_id === field.field_id);
+                        const selectedField = editCalculatedFields.find((f) => f.field_id === field.field_id);
+                        return (
+                          <div key={field.field_id} className="flex items-center justify-between p-3 hover:bg-muted/30">
+                            <div className="flex items-center gap-3">
+                              <Checkbox
+                                id={`calc-${field.field_id}`}
+                                checked={isSelected}
+                                onCheckedChange={() => handleToggleCalculatedField(field.field_id, field.name)}
+                              />
+                              <label htmlFor={`calc-${field.field_id}`} className="text-sm cursor-pointer">
+                                <span className="font-medium">{field.name}</span>
+                                <span className="text-xs text-muted-foreground ml-2">({field.unit})</span>
+                              </label>
+                            </div>
+                            {isSelected && (
+                              <Select
+                                value={selectedField?.storage_mode || "log"}
+                                onValueChange={(value) => handleChangeFieldStorageMode(field.field_id, value as "log" | "viz_only")}
+                              >
+                                <SelectTrigger className="w-[110px] h-8">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="log">Log to DB</SelectItem>
+                                  <SelectItem value="viz_only">Viz Only</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
                           </div>
-                        </div>
-                        <select
-                          value={field.storage_mode}
-                          onChange={(e) => handleChangeFieldStorageMode(field.field_id, e.target.value as "log" | "viz_only")}
-                          className="text-xs px-2 py-1 rounded border bg-background"
-                        >
-                          <option value="log">Log to DB</option>
-                          <option value="viz_only">Viz Only</option>
-                        </select>
-                      </div>
-                    ))}
-                  </>
-                ) : (
-                  <div className="border rounded-md p-6 text-center text-muted-foreground">
-                    <p className="text-sm">No calculated fields selected.</p>
-                    <p className="text-xs mt-1">Calculated fields will be synced from the device template when you synchronize.</p>
-                  </div>
-                )}
-              </div>
+                        );
+                      })}
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="border rounded-md p-6 text-center text-muted-foreground">
+                      <p className="text-sm">No calculated fields available for this device type.</p>
+                      <p className="text-xs mt-1">
+                        {deviceType
+                          ? `Device type "${deviceType}" does not have predefined calculated fields.`
+                          : "Select a device type in the Connection tab to see available calculated fields."}
+                      </p>
+                    </div>
+                  );
+                }
+              })()}
 
               {/* Info about template sync */}
               {editDevice?.template_id && (
@@ -1471,6 +1575,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         open={alarmRegisterFormOpen}
         onOpenChange={setAlarmRegisterFormOpen}
         onSave={handleSaveAlarmRegister}
+        isAlarmRegister={true}
       />
 
       {/* Visualization Register Form Dialog (nested) - for adding/editing visualization registers */}
