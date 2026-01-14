@@ -146,11 +146,12 @@ class ConfigSync:
         return data[0]
 
     async def _fetch_devices(self, client: httpx.AsyncClient) -> list[dict]:
-        """Fetch all devices assigned to site with registers"""
+        """Fetch enabled devices assigned to site with registers"""
         response = await client.get(
             f"{self.supabase_url}/rest/v1/site_devices",
             params={
                 "site_id": f"eq.{self.site_id}",
+                "enabled": "eq.true",
                 "select": "*,device_templates(id,template_id,name,device_type,brand,model,alarm_registers)",
             },
             headers=self._headers(),
