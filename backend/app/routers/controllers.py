@@ -341,13 +341,35 @@ async def register_by_serial(
 
     try:
         # Check if controller with this serial already exists
-        existing = db.table("controllers").select("id, serial_number, status").eq(
+        existing = db.table("controllers").select("id, serial_number, status, ssh_port, ssh_username").eq(
             "serial_number", serial
         ).execute()
 
         if existing.data:
-            # Controller already exists - return its config
+            # Controller already exists - check if SSH credentials need to be set
             controller = existing.data[0]
+
+            # Set SSH credentials if missing (wizard creates controllers without them)
+            if not controller.get("ssh_port") or not controller.get("ssh_username"):
+                port_result = db.table("controllers").select("ssh_port").order(
+                    "ssh_port", desc=True
+                ).limit(1).execute()
+
+                next_port = 10000
+                if port_result.data and port_result.data[0].get("ssh_port"):
+                    next_port = port_result.data[0]["ssh_port"] + 1
+
+                # SSH credentials for controller access
+                SSH_USERNAME = "voltadmin"
+                SSH_PASSWORD = "Solar@1996"
+
+                db.table("controllers").update({
+                    "ssh_port": next_port,
+                    "ssh_tunnel_port": next_port,
+                    "ssh_username": SSH_USERNAME,
+                    "ssh_password": SSH_PASSWORD,
+                }).eq("id", controller["id"]).execute()
+
             return SerialRegisterResponse(
                 controller_id=str(controller["id"]),
                 serial_number=controller["serial_number"],
