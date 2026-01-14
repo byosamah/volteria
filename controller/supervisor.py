@@ -12,6 +12,7 @@ import asyncio
 import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,9 @@ class ServiceProcess:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
+
+            # Small delay to let process initialize
+            time.sleep(0.1)
 
             logger.info(f"Started service {self.name} (PID: {self.process.pid})")
             return True
@@ -187,6 +191,10 @@ class Supervisor:
         # Start services in order
         await self._start_all_services()
 
+        # Grace period to let all services fully initialize before monitoring
+        logger.info("Waiting for services to stabilize...")
+        await asyncio.sleep(5)
+
         # Start monitoring loop
         monitor_task = asyncio.create_task(self._monitor_loop())
 
@@ -221,6 +229,9 @@ class Supervisor:
                     await self._trigger_safe_mode(f"Critical service {name} failed to start")
                 continue
 
+            # Wait a bit for process to initialize before health checks
+            await asyncio.sleep(2)
+
             # Wait for service to become healthy
             healthy = await self._wait_for_health(service, timeout=STARTUP_TIMEOUT_S)
 
@@ -229,8 +240,8 @@ class Supervisor:
                 if service.critical:
                     await self._trigger_safe_mode(f"Critical service {name} not healthy")
 
-            # Small delay between service starts
-            await asyncio.sleep(1)
+            # Delay between service starts to avoid race conditions
+            await asyncio.sleep(2)
 
     async def _stop_all_services(self, graceful: bool = True) -> None:
         """Stop all services in reverse order"""
@@ -259,21 +270,23 @@ class Supervisor:
         while self._running:
             try:
                 for name, service in self._services.items():
-                    # Check if process is running
-                    if not service.is_running():
-                        logger.warning(f"Service {name} not running")
-                        await self._handle_service_failure(service, restart_counts)
-                        continue
-
-                    # Check health endpoint
+                    # First check health endpoint - this is the most reliable indicator
                     is_healthy = await service.check_health()
 
-                    if not is_healthy:
-                        logger.warning(f"Service {name} unhealthy")
+                    if is_healthy:
+                        # Service is healthy, reset restart count
+                        restart_counts[name] = 0
+                        service.is_healthy = True
+                        continue
+
+                    # Health check failed - check if process is at least running
+                    if not service.is_running():
+                        logger.warning(f"Service {name} not running and not healthy")
                         await self._handle_service_failure(service, restart_counts)
                     else:
-                        # Reset restart count on healthy
-                        restart_counts[name] = 0
+                        # Process running but unhealthy - might be starting up
+                        logger.warning(f"Service {name} unhealthy (process running)")
+                        await self._handle_service_failure(service, restart_counts)
 
                 # Update overall status
                 self._update_status()
