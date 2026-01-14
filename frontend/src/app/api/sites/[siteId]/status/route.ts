@@ -28,7 +28,7 @@ interface SiteStatusResponse {
   configSync: {
     status: "synced" | "sync_needed" | "never_synced";
     lastSyncedAt: string | null;
-    cloudChangedAt: string | null; // When config changed on web (site.updated_at)
+    cloudChangedAt: string | null; // When config changed on web (config_changed_at)
     localPulledAt: string | null;  // When controller last pulled config
     pendingChanges: {
       devices: number;
@@ -61,7 +61,7 @@ export async function GET(
       .from("sites")
       .select(`
         id,
-        updated_at,
+        config_changed_at,
         config_synced_at,
         control_method,
         platform_config_version,
@@ -113,7 +113,7 @@ export async function GET(
       configSync: {
         status: "never_synced",
         lastSyncedAt: site.config_synced_at,
-        cloudChangedAt: site.updated_at,
+        cloudChangedAt: (site as Record<string, unknown>)?.config_changed_at as string | null,
         localPulledAt: null, // Will be populated from heartbeat
         pendingChanges: null,
       },

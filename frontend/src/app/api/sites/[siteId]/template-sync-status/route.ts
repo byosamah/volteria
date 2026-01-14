@@ -20,10 +20,10 @@ export async function GET(
     const { siteId } = await params;
     const supabase = await createClient();
 
-    // Get site's updated_at for config sync tracking
+    // Get site's config_changed_at for config sync tracking (tracks actual config changes)
     const { data: site } = await supabase
       .from("sites")
-      .select("updated_at, config_synced_at")
+      .select("config_changed_at, config_synced_at")
       .eq("id", siteId)
       .single();
 
@@ -52,16 +52,17 @@ export async function GET(
     }
 
     // Calculate last_config_update from multiple sources:
-    // 1. Site updated_at (when site settings changed)
+    // 1. Site config_changed_at (when site settings changed)
     // 2. Device updated_at (when device connection settings changed)
     // 3. Template updated_at (when templates were modified)
     let lastConfigUpdate: Date | null = null;
     let lastSync: Date | null = null;
     let devicesNeedingSync = 0;
 
-    // Include site config update time
-    if (site?.updated_at) {
-      lastConfigUpdate = new Date(site.updated_at);
+    // Include site config change time (config_changed_at only updates on actual config changes)
+    const siteConfigChangedAt = (site as Record<string, unknown>)?.config_changed_at as string | null;
+    if (siteConfigChangedAt) {
+      lastConfigUpdate = new Date(siteConfigChangedAt);
     }
 
     // Use site's config_synced_at as the sync baseline
@@ -71,9 +72,9 @@ export async function GET(
 
     if (!devices || devices.length === 0) {
       // Even with no devices, check if site config changed
-      const needsSync = site?.updated_at && site?.config_synced_at
-        ? new Date(site.updated_at) > new Date(site.config_synced_at)
-        : site?.updated_at ? true : false;
+      const needsSync = siteConfigChangedAt && site?.config_synced_at
+        ? new Date(siteConfigChangedAt) > new Date(site.config_synced_at)
+        : siteConfigChangedAt ? true : false;
 
       return NextResponse.json({
         last_config_update: lastConfigUpdate?.toISOString() || null,
@@ -124,9 +125,9 @@ export async function GET(
     }
 
     // Also check site-level config change
-    const siteNeedsSync = site?.updated_at && lastSync
-      ? new Date(site.updated_at) > lastSync
-      : site?.updated_at ? true : false;
+    const siteNeedsSync = siteConfigChangedAt && lastSync
+      ? new Date(siteConfigChangedAt) > lastSync
+      : siteConfigChangedAt ? true : false;
 
     const needsSync = devicesNeedingSync > 0 || siteNeedsSync;
 
