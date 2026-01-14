@@ -130,8 +130,8 @@ export async function GET(
       }
     }
 
-    // Reverse to get newest first (for consistency with previous behavior)
-    const heartbeats = allHeartbeats.reverse();
+    // Keep ascending order (oldest first) for proper left-to-right chart display
+    const heartbeats = allHeartbeats;
 
     // Step 4: Transform data for the chart
     const dataPoints: HeartbeatDataPoint[] = (heartbeats || []).map((hb) => ({
