@@ -57,6 +57,12 @@ class ConfigService:
             # Try environment variable
             self.site_id = os.environ.get("VOLTERIA_SITE_ID")
 
+        # If still no site_id, try to fetch from cloud using controller_id
+        if not self.site_id:
+            controller_id = self.local_config.get("controller", {}).get("id")
+            if controller_id:
+                self.site_id = self._fetch_site_id_from_cloud(controller_id)
+
         # Cloud configuration
         cloud_config = self.local_config.get("cloud", {})
         self.supabase_url = cloud_config.get("url") or os.environ.get("SUPABASE_URL", "")
@@ -111,6 +117,44 @@ class ConfigService:
         except yaml.YAMLError as e:
             logger.error(f"Error parsing config: {e}")
             return {}
+
+    def _fetch_site_id_from_cloud(self, controller_id: str) -> str | None:
+        """Fetch site_id from cloud using controller_id.
+
+        When a controller is assigned to a site via the web UI, the site_id
+        is stored in the controllers table. This method fetches it automatically
+        so the controller doesn't need manual configuration.
+        """
+        cloud_config = self.local_config.get("cloud", {})
+        url = cloud_config.get("url") or os.environ.get("SUPABASE_URL", "")
+        key = cloud_config.get("key") or os.environ.get("SUPABASE_SERVICE_KEY", "")
+
+        if not url or not key:
+            logger.warning("Cannot fetch site_id: missing cloud credentials")
+            return None
+
+        try:
+            response = httpx.get(
+                f"{url}/rest/v1/controllers",
+                params={"id": f"eq.{controller_id}", "select": "site_id"},
+                headers={
+                    "apikey": key,
+                    "Authorization": f"Bearer {key}",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data and data[0].get("site_id"):
+                site_id = data[0]["site_id"]
+                logger.info(f"Auto-discovered site_id from cloud: {site_id}")
+                return site_id
+            else:
+                logger.info("Controller not yet assigned to a site")
+        except Exception as e:
+            logger.warning(f"Failed to fetch site_id from cloud: {e}")
+
+        return None
 
     async def start(self) -> None:
         """Start the config service"""
