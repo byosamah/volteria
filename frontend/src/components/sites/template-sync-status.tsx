@@ -12,7 +12,6 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { RefreshCw, CheckCircle2, XCircle, AlertCircle, Clock } from "lucide-react";
@@ -22,6 +21,21 @@ interface TemplateSyncStatusProps {
   siteId: string;
 }
 
+// Response from the unified /api/sites/[siteId]/status endpoint
+interface SiteStatusResponse {
+  configSync: {
+    status: "synced" | "sync_needed" | "never_synced";
+    lastSyncedAt: string | null;
+    cloudChangedAt: string | null;
+    localPulledAt: string | null;
+    lastConfigUpdate: string | null;
+    syncIntervalSeconds: number;
+    totalDevices: number;
+    devicesNeedingSync: number;
+  };
+}
+
+// Mapped status for internal use
 interface SyncStatus {
   last_config_update: string | null;
   last_sync: string | null;
@@ -75,26 +89,24 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
     });
   };
 
-  // Fetch sync status
+  // Fetch sync status from unified /api/sites/[siteId]/status endpoint
+  // This is the same endpoint used by SiteStatusHeader for consistency
   const fetchStatus = useCallback(async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        setLoading(false);
-        return;
-      }
-
-      const response = await fetch(`/api/sites/${siteId}/template-sync-status`, {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
+      const response = await fetch(`/api/sites/${siteId}/status`);
 
       if (response.ok) {
-        const data = await response.json();
-        setStatus(data);
+        const data: SiteStatusResponse = await response.json();
+
+        // Map the unified response to our internal format
+        setStatus({
+          last_config_update: data.configSync.lastConfigUpdate,
+          last_sync: data.configSync.lastSyncedAt,
+          needs_sync: data.configSync.status === "sync_needed" || data.configSync.status === "never_synced",
+          total_devices: data.configSync.totalDevices,
+          devices_needing_sync: data.configSync.devicesNeedingSync,
+          sync_interval_seconds: data.configSync.syncIntervalSeconds,
+        });
       }
     } catch (error) {
       console.error("Failed to fetch sync status:", error);
@@ -127,18 +139,9 @@ export function TemplateSyncStatus({ siteId }: TemplateSyncStatusProps) {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        toast.error("Not authenticated");
-        return;
-      }
-
       const response = await fetch(`/api/sites/${siteId}/sync-templates`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
       });

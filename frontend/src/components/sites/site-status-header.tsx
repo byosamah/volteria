@@ -40,12 +40,12 @@ interface SiteStatusData {
   configSync: {
     status: "synced" | "sync_needed" | "never_synced";
     lastSyncedAt: string | null;
-    cloudChangedAt: string | null;  // When config changed on web (site.updated_at)
+    cloudChangedAt: string | null;  // When config changed on web (config_changed_at)
     localPulledAt: string | null;   // When controller last pulled config
-    pendingChanges: {
-      devices: number;
-      settings: number;
-    } | null;
+    lastConfigUpdate: string | null; // Max of site/device/template updated_at
+    syncIntervalSeconds: number;     // Auto-sync interval
+    totalDevices: number;
+    devicesNeedingSync: number;
   };
 }
 
@@ -216,7 +216,8 @@ function ConfigSyncStatus({
   lastSyncedAt,
   cloudChangedAt,
   localPulledAt,
-  pendingChanges,
+  syncIntervalSeconds,
+  devicesNeedingSync,
   onPushSync,
   isSyncing,
 }: {
@@ -224,7 +225,8 @@ function ConfigSyncStatus({
   lastSyncedAt: string | null;
   cloudChangedAt: string | null;
   localPulledAt: string | null;
-  pendingChanges: { devices: number; settings: number } | null;
+  syncIntervalSeconds: number;
+  devicesNeedingSync: number;
   onPushSync: () => void;
   isSyncing: boolean;
 }) {
@@ -252,15 +254,14 @@ function ConfigSyncStatus({
   // Fallback to 'never_synced' for any unexpected status values
   const config = statusConfig[status] || statusConfig.never_synced;
 
-  // Format pending changes for display
-  const pendingText = pendingChanges
-    ? [
-        pendingChanges.devices > 0 ? `${pendingChanges.devices} device${pendingChanges.devices > 1 ? "s" : ""}` : null,
-        pendingChanges.settings > 0 ? `${pendingChanges.settings} setting${pendingChanges.settings > 1 ? "s" : ""}` : null,
-      ]
-        .filter(Boolean)
-        .join(", ")
-    : null;
+  // Format sync interval for display
+  const formatInterval = (seconds: number): string => {
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h`;
+  };
 
   return (
     <div className="flex items-center gap-2">
@@ -311,7 +312,9 @@ function ConfigSyncStatus({
               {status === "sync_needed" && (
                 <p className="text-red-500 pt-1 border-t border-border">
                   <X className="h-3 w-3 inline mr-1" />
-                  Changes pending - will auto-sync within 5 min
+                  {devicesNeedingSync > 0
+                    ? `${devicesNeedingSync} device${devicesNeedingSync > 1 ? "s" : ""} pending sync`
+                    : "Changes pending"} - auto-sync every {formatInterval(syncIntervalSeconds)}
                 </p>
               )}
               {status === "never_synced" && (
@@ -322,7 +325,7 @@ function ConfigSyncStatus({
 
               {/* Auto-sync note */}
               <p className="text-muted-foreground text-[10px] pt-1 border-t border-border italic">
-                Controller automatically checks for changes every 5 minutes
+                Controller automatically checks for changes every {formatInterval(syncIntervalSeconds)}
               </p>
             </div>
           </TooltipContent>
@@ -475,7 +478,8 @@ export function SiteStatusHeader({ siteId, controlMethod }: SiteStatusHeaderProp
         lastSyncedAt={status.configSync.lastSyncedAt}
         cloudChangedAt={status.configSync.cloudChangedAt}
         localPulledAt={status.configSync.localPulledAt}
-        pendingChanges={status.configSync.pendingChanges}
+        syncIntervalSeconds={status.configSync.syncIntervalSeconds}
+        devicesNeedingSync={status.configSync.devicesNeedingSync}
         onPushSync={handlePushSync}
         isSyncing={isSyncing}
       />

@@ -30,10 +30,10 @@ interface SiteStatusResponse {
     lastSyncedAt: string | null;
     cloudChangedAt: string | null; // When config changed on web (config_changed_at)
     localPulledAt: string | null;  // When controller last pulled config
-    pendingChanges: {
-      devices: number;
-      settings: number;
-    } | null;
+    lastConfigUpdate: string | null; // Max of site/device/template updated_at
+    syncIntervalSeconds: number; // Auto-sync interval
+    totalDevices: number;
+    devicesNeedingSync: number;
   };
   // Logging status for Control Logs viewer
   logging: {
@@ -63,6 +63,7 @@ export async function GET(
         id,
         config_changed_at,
         config_synced_at,
+        config_sync_interval_s,
         control_method,
         platform_config_version,
         controller_config_version
@@ -102,6 +103,9 @@ export async function GET(
       );
     }
 
+    // Get sync interval (default 60 minutes = 3600 seconds)
+    const syncIntervalSeconds = (site as Record<string, unknown>)?.config_sync_interval_s as number | null ?? 3600;
+
     // Initialize response with defaults
     const response: SiteStatusResponse = {
       connection: {
@@ -115,7 +119,10 @@ export async function GET(
         lastSyncedAt: site.config_synced_at,
         cloudChangedAt: (site as Record<string, unknown>)?.config_changed_at as string | null,
         localPulledAt: null, // Will be populated from heartbeat
-        pendingChanges: null,
+        lastConfigUpdate: null, // Will be calculated from devices/templates
+        syncIntervalSeconds,
+        totalDevices: 0,
+        devicesNeedingSync: 0,
       },
       logging: {
         hasLogs: false,
@@ -171,41 +178,13 @@ export async function GET(
       // Control logic is not applicable for gateways (stays null)
     }
 
-    // Step 4: Determine config sync status
-    // We consider "synced" if config_synced_at exists and is recent (within 5 minutes)
-    // OR if the controller_config_version matches what we expect
-    // Note: We don't use updated_at because it auto-updates when config_synced_at changes
-    if (site.config_synced_at) {
-      response.configSync.lastSyncedAt = site.config_synced_at;
-
-      const syncedAt = new Date(site.config_synced_at).getTime();
-      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-
-      // Consider synced if:
-      // 1. Sync happened in the last 5 minutes (covers the auto-sync case)
-      // 2. OR controller has the same config version we sent
-      const hasRecentSync = syncedAt > fiveMinutesAgo;
-      const controllerVersion = site.controller_config_version;
-      const platformVersion = site.platform_config_version;
-
-      // If versions exist and match, consider synced
-      // If versions don't exist but sync is recent, consider synced
-      const versionsMatch = controllerVersion && platformVersion &&
-        controllerVersion === platformVersion;
-
-      if (hasRecentSync || versionsMatch) {
-        response.configSync.status = "synced";
-      } else {
-        // Sync is old and versions don't match
-        response.configSync.status = "sync_needed";
-        response.configSync.pendingChanges = await calculatePendingChanges(
-          supabase,
-          siteId
-        );
-      }
-    } else {
-      response.configSync.status = "never_synced";
-    }
+    // Step 4: Determine config sync status using strict timestamp comparison
+    // This matches the logic in template-sync-status for consistency
+    const configSyncResult = await calculateConfigSyncStatus(supabase, siteId, site);
+    response.configSync.status = configSyncResult.status;
+    response.configSync.lastConfigUpdate = configSyncResult.lastConfigUpdate;
+    response.configSync.totalDevices = configSyncResult.totalDevices;
+    response.configSync.devicesNeedingSync = configSyncResult.devicesNeedingSync;
 
     // Step 5: Get logging status (for Control Logs viewer)
     const { data: lastLog, count: logCount } = await supabase
@@ -234,29 +213,120 @@ export async function GET(
 }
 
 /**
- * Calculate pending changes between platform and controller config.
- * Returns category-level counts for display.
+ * Calculate config sync status using strict timestamp comparison.
+ * Checks site config, device settings, and template updates against last sync time.
+ * This is the single source of truth for sync status (used by both header and widget).
  */
-async function calculatePendingChanges(
+async function calculateConfigSyncStatus(
   supabase: SupabaseClient,
-  siteId: string
-): Promise<{ devices: number; settings: number } | null> {
+  siteId: string,
+  site: { config_changed_at?: string | null; config_synced_at?: string | null }
+): Promise<{
+  status: "synced" | "sync_needed" | "never_synced";
+  lastConfigUpdate: string | null;
+  totalDevices: number;
+  devicesNeedingSync: number;
+}> {
   try {
-    // Count devices that may need syncing
-    // For a simple implementation, we can count total devices
-    // A more sophisticated approach would track sync status per device
-    const { count: deviceCount } = await supabase
-      .from("site_devices")
-      .select("*", { count: "exact", head: true })
-      .eq("site_id", siteId);
+    const configChangedAt = (site as Record<string, unknown>)?.config_changed_at as string | null;
+    const configSyncedAt = site.config_synced_at;
+    const lastSync = configSyncedAt ? new Date(configSyncedAt) : null;
 
-    // For now, we return a simple count
-    // In a full implementation, we'd compare platform config with controller-reported config
+    // Get all ENABLED devices in site with their templates
+    const { data: devices } = await supabase
+      .from("site_devices")
+      .select(`
+        id,
+        template_id,
+        updated_at,
+        device_templates (
+          id,
+          updated_at
+        )
+      `)
+      .eq("site_id", siteId)
+      .eq("enabled", true);
+
+    // Calculate last_config_update from multiple sources
+    let lastConfigUpdate: Date | null = null;
+    let devicesNeedingSync = 0;
+
+    // Include site config change time
+    if (configChangedAt) {
+      lastConfigUpdate = new Date(configChangedAt);
+    }
+
+    const totalDevices = devices?.length || 0;
+
+    if (devices && devices.length > 0) {
+      for (const device of devices) {
+        // Check device's own updated_at
+        if (device.updated_at) {
+          const deviceUpdated = new Date(device.updated_at);
+          if (!lastConfigUpdate || deviceUpdated > lastConfigUpdate) {
+            lastConfigUpdate = deviceUpdated;
+          }
+        }
+
+        // Handle Supabase join which can return array or single object
+        const templateData = device.device_templates;
+        const template = Array.isArray(templateData)
+          ? (templateData[0] as { id: string; updated_at: string } | undefined)
+          : (templateData as { id: string; updated_at: string } | null);
+
+        if (template?.updated_at) {
+          const templateUpdated = new Date(template.updated_at);
+          if (!lastConfigUpdate || templateUpdated > lastConfigUpdate) {
+            lastConfigUpdate = templateUpdated;
+          }
+        }
+
+        // Check if device needs sync
+        if (lastSync) {
+          if (device.updated_at && new Date(device.updated_at) > lastSync) {
+            devicesNeedingSync++;
+            continue;
+          }
+          if (template?.updated_at && new Date(template.updated_at) > lastSync) {
+            devicesNeedingSync++;
+          }
+        } else {
+          // No sync has ever happened - all devices need sync
+          devicesNeedingSync++;
+        }
+      }
+    }
+
+    // Determine status using strict timestamp comparison
+    if (!configSyncedAt) {
+      return {
+        status: "never_synced",
+        lastConfigUpdate: lastConfigUpdate?.toISOString() || null,
+        totalDevices,
+        devicesNeedingSync,
+      };
+    }
+
+    // Check if site-level config changed after last sync
+    const siteNeedsSync = configChangedAt && lastSync
+      ? new Date(configChangedAt) > lastSync
+      : false;
+
+    const needsSync = devicesNeedingSync > 0 || siteNeedsSync;
+
     return {
-      devices: deviceCount || 0,
-      settings: 1, // Placeholder - would compare actual settings
+      status: needsSync ? "sync_needed" : "synced",
+      lastConfigUpdate: lastConfigUpdate?.toISOString() || null,
+      totalDevices,
+      devicesNeedingSync,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    console.error("Error calculating config sync status:", error);
+    return {
+      status: "never_synced",
+      lastConfigUpdate: null,
+      totalDevices: 0,
+      devicesNeedingSync: 0,
+    };
   }
 }

@@ -90,8 +90,8 @@ const CHART_COLORS = {
 const OFFLINE_THRESHOLD_SECONDS = 90;
 
 // Minimum offline duration (in seconds) to count as a "disconnection"
-// Brief gaps (< 10s) are likely timing variations, not real disconnections
-const MIN_DISCONNECTION_SECONDS = 10;
+// Brief gaps (< 5s) are likely timing variations, not real disconnections
+const MIN_DISCONNECTION_SECONDS = 5;
 
 // Tolerance for uptime comparison (accounts for timing variations)
 // If uptime drops by more than this much from expected, it's a reboot
@@ -403,8 +403,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   // Reboot detected! Calculate exact offline period
                   // Boot time = current heartbeat time - current uptime
                   const bootTime = currentTime - (hb.uptime_seconds * 1000);
-                  // Offline started shortly after last heartbeat (give some buffer)
-                  const offlineStartTime = prevTime + 5000; // 5 seconds after last heartbeat
+                  // Offline started shortly after last heartbeat (1s buffer for timing variations)
+                  const offlineStartTime = prevTime + 1000; // 1 second after last heartbeat
                   const offlineDurationMs = Math.max(0, bootTime - offlineStartTime);
 
                   if (offlineDurationMs >= MIN_DISCONNECTION_SECONDS * 1000) {
@@ -419,7 +419,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     totalOfflineMs += offlineDurationMs;
                     offlineEvents++;
                     // Online time is from prev heartbeat to offline start, plus boot to current
-                    totalOnlineMs += 5000; // Time before offline
+                    totalOnlineMs += 1000; // Time before offline
                     totalOnlineMs += hb.uptime_seconds * 1000; // Time since boot
                   } else {
                     // Very brief reboot - count as online
