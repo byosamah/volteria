@@ -172,40 +172,31 @@ export async function GET(
     }
 
     // Step 4: Determine config sync status
-    // Note: site.updated_at has an auto-update trigger, so we can't rely on it
-    // for detecting config changes. Instead, we use config_synced_at and the
-    // controller's reported config_version from heartbeats.
+    // We consider "synced" if config_synced_at exists and is recent (within 5 minutes)
+    // OR if the controller_config_version matches what we expect
+    // Note: We don't use updated_at because it auto-updates when config_synced_at changes
     if (site.config_synced_at) {
       response.configSync.lastSyncedAt = site.config_synced_at;
 
-      // If controller has reported a config_version that matches what it synced,
-      // and sync was recent (within last hour), consider it synced
       const syncedAt = new Date(site.config_synced_at).getTime();
-      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
 
-      // Check if controller's config matches what we have
-      const controllerConfigVersion = response.configSync.localPulledAt;
-      const hasRecentSync = syncedAt > oneHourAgo;
-      const versionMatches = controllerConfigVersion && site.controller_config_version === controllerConfigVersion;
+      // Consider synced if:
+      // 1. Sync happened in the last 5 minutes (covers the auto-sync case)
+      // 2. OR controller has the same config version we sent
+      const hasRecentSync = syncedAt > fiveMinutesAgo;
+      const controllerVersion = site.controller_config_version;
+      const platformVersion = site.platform_config_version;
 
-      if (hasRecentSync || versionMatches) {
-        // If there are explicit version hashes and they differ, still show sync_needed
-        if (
-          site.platform_config_version &&
-          site.controller_config_version &&
-          site.platform_config_version !== site.controller_config_version &&
-          !site.platform_config_version.includes("-") // Skip if timestamp format (not hash)
-        ) {
-          response.configSync.status = "sync_needed";
-          response.configSync.pendingChanges = await calculatePendingChanges(
-            supabase,
-            siteId
-          );
-        } else {
-          response.configSync.status = "synced";
-        }
+      // If versions exist and match, consider synced
+      // If versions don't exist but sync is recent, consider synced
+      const versionsMatch = controllerVersion && platformVersion &&
+        controllerVersion === platformVersion;
+
+      if (hasRecentSync || versionsMatch) {
+        response.configSync.status = "synced";
       } else {
-        // Sync is old or controller hasn't reported matching version
+        // Sync is old and versions don't match
         response.configSync.status = "sync_needed";
         response.configSync.pendingChanges = await calculatePendingChanges(
           supabase,

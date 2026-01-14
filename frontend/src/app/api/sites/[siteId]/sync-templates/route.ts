@@ -165,14 +165,38 @@ export async function POST(
     }
 
     // Timeout - controller didn't respond in time
-    // Update command status to indicate timeout
+    // But first check one more time if controller completed while we were waiting
+    const { data: finalCheck } = await supabase
+      .from("control_commands")
+      .select("status, executed_at")
+      .eq("id", command.id)
+      .single();
+
+    if (finalCheck?.status === "completed") {
+      // Controller actually completed, but we didn't see it in time
+      // Update site's config_synced_at since controller confirmed
+      await supabase
+        .from("sites")
+        .update({ config_synced_at: new Date().toISOString() })
+        .eq("id", siteId);
+
+      return NextResponse.json({
+        success: true,
+        synced_devices: deviceCount,
+        message: `Successfully synced ${deviceCount} device(s) to controller`,
+        executed_at: finalCheck?.executed_at,
+      });
+    }
+
+    // Only update to timeout if status is still pending/in_progress
     await supabase
       .from("control_commands")
       .update({
         status: "timeout",
         error_message: "Controller did not respond within 30 seconds",
       })
-      .eq("id", command.id);
+      .eq("id", command.id)
+      .in("status", ["pending", "in_progress"]);
 
     return NextResponse.json({
       success: false,
