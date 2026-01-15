@@ -215,7 +215,6 @@ function formatDevice(device: Record<string, unknown>) {
     gateway_ip: device.gateway_ip,
     gateway_port: device.gateway_port,
     slave_id: device.slave_id,
-    device_type: device.device_type,
     rated_power_kw: device.rated_power_kw,
     rated_power_kva: device.rated_power_kva,
     template: template?.template_id,
