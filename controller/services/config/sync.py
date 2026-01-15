@@ -215,22 +215,40 @@ class ConfigSync:
             processed = {
                 "id": device["id"],
                 "name": device["name"],
-                "device_type": device.get("device_type") or device.get("measurement_type") or template.get("device_type"),
-                "measurement_type": device.get("measurement_type"),
-                "protocol": device.get("protocol", "tcp"),
-                "host": device.get("ip_address") or device.get("host") or device.get("gateway_ip", ""),
-                "port": device.get("port") or device.get("gateway_port", 502),
-                "slave_id": device.get("slave_id", 1),
+                # Use device_type (mapped from measurement_type in DB)
+                "device_type": device.get("measurement_type") or device.get("device_type") or template.get("device_type"),
+                "enabled": device.get("enabled", True),
+                # Modbus connection settings
+                "modbus": {
+                    "protocol": device.get("protocol", "tcp"),
+                    # TCP connection
+                    "host": device.get("ip_address") or device.get("host", ""),
+                    "port": device.get("port", 502),
+                    # RTU Gateway connection
+                    "gateway_ip": device.get("gateway_ip"),
+                    "gateway_port": device.get("gateway_port"),
+                    # RTU Direct (serial) connection
+                    "serial_port": device.get("serial_port"),
+                    "baudrate": device.get("baudrate"),
+                    # Common
+                    "slave_id": device.get("slave_id", 1),
+                },
+                # Device specs
                 "rated_power_kw": device.get("rated_power_kw"),
                 "rated_power_kva": device.get("rated_power_kva"),
-                "enabled": device.get("enabled", True),
+                # Registers - each register has: name, type, address, datatype, scale, unit, access, logging_frequency (optional)
                 "registers": registers,
-                "alarm_registers": device.get("alarm_registers") or template.get("alarm_registers") or [],
                 "visualization_registers": device.get("visualization_registers") or template.get("visualization_registers") or [],
+                "alarm_registers": device.get("alarm_registers") or template.get("alarm_registers") or [],
+                # Device logging settings
                 "logging_interval_ms": device.get("logging_interval_ms", 1000),
+                # Calculated fields for this device
                 "calculated_fields": device.get("calculated_fields") or [],
-                "connection_alarm_enabled": device.get("connection_alarm_enabled", True),
-                "connection_timeout_multiplier": device.get("connection_timeout_multiplier", 3.0),
+                # Connection alarm settings
+                "connection_alarm": {
+                    "enabled": device.get("connection_alarm_enabled", True),
+                    "timeout_multiplier": device.get("connection_timeout_multiplier", 3.0),
+                },
             }
 
             processed_devices.append(processed)
