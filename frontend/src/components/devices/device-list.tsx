@@ -184,7 +184,7 @@ interface CalculatedFieldSelection {
 interface Device {
   id: string;
   name: string;
-  measurement_type: string | null;  // Device type: inverter, load_meter, dg, sensor, etc.
+  device_type: string | null;  // Device type: inverter, load_meter, dg, sensor, etc.
   protocol: string;
   slave_id: number;
   // TCP fields
@@ -309,7 +309,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   // Edit form state - Connection tab
   const [editName, setEditName] = useState("");
   const [editProtocol, setEditProtocol] = useState("tcp");
-  const [editMeasurementType, setEditMeasurementType] = useState("");
+  const [editDeviceType, setEditDeviceType] = useState("");
   const [editSlaveId, setEditSlaveId] = useState(1);
   // TCP fields
   const [editIpAddress, setEditIpAddress] = useState("");
@@ -354,7 +354,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     // Basic info
     setEditName(device.name);
     setEditProtocol(device.protocol || "tcp");
-    setEditMeasurementType(device.measurement_type || "");
+    setEditDeviceType(device.device_type || "");
     setEditSlaveId(device.slave_id);
     // TCP fields
     setEditIpAddress(device.ip_address || "");
@@ -562,7 +562,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     const updateData: Record<string, unknown> = {
       name: editName.trim(),
       protocol: editProtocol,
-      measurement_type: editMeasurementType || null,
+      device_type: editDeviceType || null,
       slave_id: editSlaveId,
       registers: editRegisters.length > 0 ? editRegisters : null,
       visualization_registers: editVisualizationRegisters.length > 0 ? editVisualizationRegisters : null,
@@ -667,7 +667,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   // Group devices by device type (matches Device Templates)
   const devicesByType = devices.reduce(
     (acc, device) => {
-      const type = device.measurement_type || "unknown";
+      const type = device.device_type || "unknown";
       if (!acc[type]) acc[type] = [];
       acc[type].push(device);
       return acc;
@@ -743,12 +743,12 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 </Badge>
               )}
               {/* Device type badge - matches Device Templates */}
-              {device.measurement_type && deviceTypeConfig[device.measurement_type] && (
+              {device.device_type && deviceTypeConfig[device.device_type] && (
                 <Badge
                   variant="outline"
-                  className={`flex-shrink-0 text-xs ${deviceTypeConfig[device.measurement_type].color}`}
+                  className={`flex-shrink-0 text-xs ${deviceTypeConfig[device.device_type].color}`}
                 >
-                  {deviceTypeConfig[device.measurement_type].label}
+                  {deviceTypeConfig[device.device_type].label}
                 </Badge>
               )}
               {/* Show reading badge if available and device is online */}
@@ -960,8 +960,8 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 <Label htmlFor="edit-device-type">Device Type</Label>
                 <select
                   id="edit-device-type"
-                  value={editMeasurementType}
-                  onChange={(e) => setEditMeasurementType(e.target.value)}
+                  value={editDeviceType}
+                  onChange={(e) => setEditDeviceType(e.target.value)}
                   className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
                 >
                   <option value="">Select device type...</option>
@@ -1475,7 +1475,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
               {/* Calculated fields list - show all available fields with checkboxes */}
               {(() => {
-                const deviceType = editMeasurementType || editDevice?.measurement_type || "";
+                const deviceType = editDeviceType || editDevice?.device_type || "";
                 const availableFields = CALCULATED_FIELDS_BY_TYPE[deviceType] || [];
 
                 if (availableFields.length > 0) {

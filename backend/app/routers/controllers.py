@@ -993,7 +993,7 @@ async def get_controller_config(
                 "slave_id": device.get("slave_id"),
                 "rated_power_kw": template.get("rated_power_kw"),
                 "rated_power_kva": template.get("rated_power_kva"),
-                "measurement_type": device.get("measurement_type"),
+                "device_type": device.get("device_type"),
                 # Use logging_registers if available, fall back to legacy registers
                 "registers": template.get("logging_registers") or template.get("registers", [])
             }

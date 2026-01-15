@@ -34,7 +34,7 @@ interface Device {
   name: string;
   site_id: string;
   device_type: string;
-  measurement_type: string | null;
+  device_type: string | null;
 }
 
 export default async function HistoricalDataPage() {
@@ -111,7 +111,7 @@ export default async function HistoricalDataPage() {
         id,
         name,
         site_id,
-        measurement_type,
+        device_type,
         device_templates(device_type)
       `)
       .in("site_id", siteIds)
@@ -128,7 +128,7 @@ export default async function HistoricalDataPage() {
           name: d.name,
           site_id: d.site_id,
           device_type: (template as { device_type: string } | null)?.device_type || "unknown",
-          measurement_type: d.measurement_type,
+          device_type: d.device_type,
         };
       });
     }

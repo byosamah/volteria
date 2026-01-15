@@ -81,7 +81,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [formData, setFormData] = useState({
     name: "",
-    measurement_type: "",  // What the device measures: load, sub_load, solar, generator, fuel
+    device_type: "",  // What the device measures: load, sub_load, solar, generator, fuel
     protocol: "tcp",
     // TCP fields
     ip_address: "",
@@ -119,7 +119,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
     const templateId = e.target.value;
     setSelectedTemplateId(templateId);
 
-    // Auto-fill device name and measurement_type based on template
+    // Auto-fill device name and device_type based on template
     if (templateId) {
       const template = templates.find((t) => t.id === templateId);
       if (template) {
@@ -128,7 +128,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
           // Auto-fill name if empty
           name: prev.name || `${template.brand} ${template.model}`,
           // Auto-suggest device type based on template (user can change)
-          measurement_type: suggestDeviceType(template.device_type),
+          device_type: suggestDeviceType(template.device_type),
         }));
       }
     }
@@ -196,7 +196,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
         return;
       }
 
-      if (!formData.measurement_type) {
+      if (!formData.device_type) {
         toast.error("Please select what this device measures");
         setLoading(false);
         return;
@@ -242,7 +242,7 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
         // (empty string would fail foreign key constraint)
         template_id: selectedTemplateId || null,
         name: formData.name.trim(),
-        measurement_type: formData.measurement_type,  // What this device measures for control logic
+        device_type: formData.device_type,  // What this device measures for control logic
         protocol: formData.protocol,
         ip_address: formData.protocol === "tcp" ? formData.ip_address.trim() : null,
         port: formData.protocol === "tcp" ? formData.port : null,
@@ -355,14 +355,14 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
 
         {/* Device Type - matches Device Templates for consistency */}
         <div className="space-y-2">
-          <Label htmlFor="measurement_type">
+          <Label htmlFor="device_type">
             Device Type <span className="text-red-500">*</span>
           </Label>
           {/* MOBILE-FRIENDLY: 44px touch target */}
           <select
-            id="measurement_type"
-            name="measurement_type"
-            value={formData.measurement_type}
+            id="device_type"
+            name="device_type"
+            value={formData.device_type}
             onChange={handleChange}
             className="w-full min-h-[44px] px-3 rounded-md border border-input bg-background"
             required

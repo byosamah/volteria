@@ -634,7 +634,7 @@ async def get_site_config(
         site = site_result.data[0]
         project = site.get("projects", {})
 
-        # Get devices for this site with measurement_type
+        # Get devices for this site with device_type
         devices_result = db.table("site_devices").select(
             "*, device_templates(*)"
         ).eq("site_id", str(site_id)).eq("enabled", True).execute()
@@ -685,7 +685,7 @@ async def get_site_config(
             device_config = {
                 "id": str(device["id"]),  # Device ID for reference
                 "name": device["name"],
-                "measurement_type": device.get("measurement_type", "unknown"),  # What device measures
+                "device_type": device.get("device_type", "unknown"),  # Device type for control logic
                 "template": template.get("template_id", "unknown"),
                 "protocol": device.get("protocol", "tcp"),
                 "slave_id": device.get("slave_id", 1)

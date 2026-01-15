@@ -215,8 +215,9 @@ class ConfigSync:
             processed = {
                 "id": device["id"],
                 "name": device["name"],
-                # Use device_type (mapped from measurement_type in DB)
-                "device_type": device.get("measurement_type") or device.get("device_type") or template.get("device_type"),
+                "template_id": device.get("template_id"),
+                # device_type defines what the device is (load, inverter, generator, sensor, etc.)
+                "device_type": device.get("device_type") or template.get("device_type"),
                 "enabled": device.get("enabled", True),
                 # Modbus connection settings
                 "modbus": {

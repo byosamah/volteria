@@ -170,7 +170,7 @@ export default async function SiteDetailPage({
   let devices: Array<{
     id: string;
     name: string;
-    measurement_type: string | null;  // What the device measures for control logic
+    device_type: string | null;  // What the device measures for control logic
     protocol: string;
     slave_id: number;
     ip_address: string | null;
@@ -202,7 +202,7 @@ export default async function SiteDetailPage({
       .select(`
         id,
         name,
-        measurement_type,
+        device_type,
         protocol,
         slave_id,
         ip_address,

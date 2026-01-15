@@ -59,7 +59,7 @@ interface Device {
   name: string;
   site_id: string;
   device_type: string;
-  measurement_type: string | null;
+  device_type: string | null;
 }
 
 // Register definition from API
