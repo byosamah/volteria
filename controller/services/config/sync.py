@@ -215,15 +215,22 @@ class ConfigSync:
             processed = {
                 "id": device["id"],
                 "name": device["name"],
-                "device_type": device.get("device_type") or template.get("device_type"),
+                "device_type": device.get("device_type") or device.get("measurement_type") or template.get("device_type"),
+                "measurement_type": device.get("measurement_type"),
                 "protocol": device.get("protocol", "tcp"),
                 "host": device.get("ip_address") or device.get("host") or device.get("gateway_ip", ""),
                 "port": device.get("port") or device.get("gateway_port", 502),
                 "slave_id": device.get("slave_id", 1),
                 "rated_power_kw": device.get("rated_power_kw"),
                 "rated_power_kva": device.get("rated_power_kva"),
+                "enabled": device.get("enabled", True),
                 "registers": registers,
                 "alarm_registers": device.get("alarm_registers") or template.get("alarm_registers") or [],
+                "visualization_registers": device.get("visualization_registers") or template.get("visualization_registers") or [],
+                "logging_interval_ms": device.get("logging_interval_ms", 1000),
+                "calculated_fields": device.get("calculated_fields") or [],
+                "connection_alarm_enabled": device.get("connection_alarm_enabled", True),
+                "connection_timeout_multiplier": device.get("connection_timeout_multiplier", 3.0),
             }
 
             processed_devices.append(processed)
@@ -313,10 +320,17 @@ class ConfigSync:
 
         return {
             "id": site["id"],
+            "project_id": site.get("project_id"),
             "name": site.get("name", ""),
+            "location": site.get("location"),
+            "description": site.get("description"),
             "operation_mode": operation_mode,
             "config_mode": site.get("config_mode", "full_system"),
+            "control_method": site.get("control_method", "onsite_controller"),
+            "control_method_backup": site.get("control_method_backup"),
+            "grid_connection": site.get("grid_connection", "off_grid"),
             "control_interval_ms": site.get("control_interval_ms", 1000),
+            "dg_reserve_kw": site.get("dg_reserve_kw", 0),
             "mode_settings": mode_settings,
             "logging": {
                 "local_write_interval_s": site.get("logging_local_interval_ms", 10000) // 1000,
@@ -324,6 +338,8 @@ class ConfigSync:
                 "aggregation_method": "last",
                 "include_min_max": True,
                 "local_retention_days": site.get("logging_local_retention_days", 7),
+                "cloud_enabled": site.get("logging_cloud_enabled", True),
+                "gateway_enabled": site.get("logging_gateway_enabled", False),
                 "instant_sync_alarms": True,
             },
             "safe_mode": {
@@ -334,6 +350,7 @@ class ConfigSync:
                 "threshold_pct": site.get("safe_mode_threshold_pct", 80.0),
                 "power_limit_kw": site.get("safe_mode_power_limit_kw", 0.0),
             },
+            "config_sync_interval_s": site.get("config_sync_interval_s", 3600),
             "devices": devices,
             "calculated_fields": [
                 {
