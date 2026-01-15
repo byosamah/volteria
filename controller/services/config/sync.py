@@ -226,6 +226,15 @@ class ConfigSync:
             if not registers and device.get("template_id"):
                 registers = template_registers_map.get(device["template_id"], [])
 
+            # Get visualization and alarm registers
+            viz_registers = device.get("visualization_registers") or template.get("visualization_registers") or []
+            alarm_registers = device.get("alarm_registers") or template.get("alarm_registers") or []
+
+            # Normalize all register types with complete field set
+            normalized_registers = [self._normalize_register(r) for r in registers]
+            normalized_viz = [self._normalize_register(r) for r in viz_registers]
+            normalized_alarms = [self._normalize_register(r) for r in alarm_registers]
+
             processed = {
                 "id": device["id"],
                 "name": device["name"],
@@ -251,10 +260,10 @@ class ConfigSync:
                 # Device specs
                 "rated_power_kw": device.get("rated_power_kw"),
                 "rated_power_kva": device.get("rated_power_kva"),
-                # Registers - each register has: name, type, address, datatype, scale, unit, access, logging_frequency (optional)
-                "registers": registers,
-                "visualization_registers": device.get("visualization_registers") or template.get("visualization_registers") or [],
-                "alarm_registers": device.get("alarm_registers") or template.get("alarm_registers") or [],
+                # Registers - normalized with all fields
+                "registers": normalized_registers,
+                "visualization_registers": normalized_viz,
+                "alarm_registers": normalized_alarms,
                 # Device logging settings
                 "logging_interval_ms": device.get("logging_interval_ms", 1000),
                 # Calculated fields for this device
@@ -291,6 +300,54 @@ class ConfigSync:
         if data and data[0].get("registers"):
             return data[0]["registers"]
         return []
+
+    def _normalize_register(self, reg: dict) -> dict:
+        """
+        Normalize a register with all fields and defaults.
+
+        This ensures the controller has complete register specs for:
+        - Reading/writing Modbus values
+        - Applying scale/offset transformations
+        - Validating min/max ranges
+        - Displaying with proper decimals
+        - Using in control logic via register_role
+        """
+        return {
+            # Required fields
+            "address": reg.get("address", 0),
+            "name": reg.get("name", ""),
+            "type": reg.get("type", "input"),  # input or holding
+            "access": reg.get("access", "read"),  # read, write, readwrite
+            "datatype": reg.get("datatype", "uint16"),  # uint16, int16, uint32, int32, float32
+
+            # Transformation fields
+            "scale": reg.get("scale", 1.0),  # Multiplier
+            "offset": reg.get("offset", 0.0),  # Addition (can be negative)
+            "scale_order": reg.get("scale_order", "multiply_first"),  # multiply_first or add_first
+
+            # Display fields
+            "unit": reg.get("unit"),
+            "decimals": reg.get("decimals"),  # Display precision
+            "group": reg.get("group"),  # Grouping for UI
+            "description": reg.get("description"),
+
+            # Validation fields
+            "min": reg.get("min"),  # Minimum valid value
+            "max": reg.get("max"),  # Maximum valid value
+
+            # Control logic
+            "register_role": reg.get("register_role"),  # e.g., solar_active_power, load_active_power
+
+            # Logging
+            "logging_frequency": reg.get("logging_frequency"),  # In seconds
+
+            # Advanced fields
+            "mask": reg.get("mask"),  # Bit mask config
+            "values": reg.get("values"),  # Enumeration mapping
+
+            # Alarm thresholds (for alarm registers)
+            "thresholds": reg.get("thresholds"),
+        }
 
     async def _fetch_controller_device(self, client: httpx.AsyncClient) -> dict | None:
         """Fetch the controller master device with its calculated_fields and site_level_alarms"""
