@@ -6,7 +6,7 @@ Collects system metrics for heartbeat payload:
 - Memory usage
 - Disk usage
 - CPU temperature
-- Uptime
+- Uptime (actual system uptime, not service uptime)
 """
 
 import os
@@ -30,7 +30,7 @@ class MetricsCollector:
     """Collects system metrics from the Raspberry Pi"""
 
     def __init__(self):
-        self._start_time = time.time()
+        self._service_start_time = time.time()
 
     def collect(self) -> SystemMetrics:
         """Collect current system metrics"""
@@ -39,7 +39,7 @@ class MetricsCollector:
             memory_usage_pct=self._get_memory_usage(),
             disk_usage_pct=self._get_disk_usage(),
             cpu_temp_celsius=self._get_cpu_temp(),
-            uptime_seconds=int(time.time() - self._start_time),
+            uptime_seconds=self._get_system_uptime(),
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -144,9 +144,33 @@ class MetricsCollector:
 
         return None
 
+    def _get_system_uptime(self) -> int:
+        """Get actual system uptime in seconds (time since boot)"""
+        # Method 1: Use psutil (cross-platform)
+        try:
+            import psutil
+            return int(time.time() - psutil.boot_time())
+        except ImportError:
+            pass
+
+        # Method 2: Read from /proc/uptime (Linux only)
+        try:
+            with open("/proc/uptime", "r") as f:
+                uptime_str = f.read().split()[0]
+                return int(float(uptime_str))
+        except (FileNotFoundError, IOError, IndexError, ValueError):
+            pass
+
+        # Fallback: Return service uptime if system uptime unavailable
+        return int(time.time() - self._service_start_time)
+
     def get_uptime_seconds(self) -> int:
-        """Get service uptime in seconds"""
-        return int(time.time() - self._start_time)
+        """Get actual system uptime in seconds"""
+        return self._get_system_uptime()
+
+    def get_service_uptime_seconds(self) -> int:
+        """Get service uptime in seconds (since MetricsCollector started)"""
+        return int(time.time() - self._service_start_time)
 
     def to_dict(self) -> dict:
         """Get metrics as dictionary"""
