@@ -33,7 +33,6 @@ interface Device {
   id: string;
   name: string;
   site_id: string;
-  device_type: string;
   device_type: string | null;
 }
 
