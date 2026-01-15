@@ -217,7 +217,7 @@ class ConfigSync:
                 "name": device["name"],
                 "device_type": device.get("device_type") or template.get("device_type"),
                 "protocol": device.get("protocol", "tcp"),
-                "host": device.get("host") or device.get("gateway_ip", ""),
+                "host": device.get("ip_address") or device.get("host") or device.get("gateway_ip", ""),
                 "port": device.get("port") or device.get("gateway_port", 502),
                 "slave_id": device.get("slave_id", 1),
                 "rated_power_kw": device.get("rated_power_kw"),
