@@ -126,8 +126,7 @@ export default async function HistoricalDataPage() {
           id: d.id,
           name: d.name,
           site_id: d.site_id,
-          device_type: (template as { device_type: string } | null)?.device_type || "unknown",
-          device_type: d.device_type,
+          device_type: d.device_type || (template as { device_type: string } | null)?.device_type || "unknown",
         };
       });
     }
