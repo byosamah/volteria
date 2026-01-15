@@ -233,14 +233,17 @@ class DeviceService:
                 )
                 continue
 
+            # Extract modbus settings (can be nested under "modbus" or at root level)
+            modbus_config = device_data.get("modbus", {})
+
             device = DeviceConfig(
                 id=device_data["id"],
                 name=device_data["name"],
                 device_type=device_type,
-                protocol=device_data.get("protocol", "tcp"),
-                host=device_data.get("host", ""),
-                port=device_data.get("port", 502),
-                slave_id=device_data.get("slave_id", 1),
+                protocol=modbus_config.get("protocol") or device_data.get("protocol", "tcp"),
+                host=modbus_config.get("host") or device_data.get("host", ""),
+                port=modbus_config.get("port") or device_data.get("port", 502),
+                slave_id=modbus_config.get("slave_id") or device_data.get("slave_id", 1),
                 registers=[],
                 rated_power_kw=device_data.get("rated_power_kw"),
                 rated_power_kva=device_data.get("rated_power_kva"),
@@ -263,6 +266,7 @@ class DeviceService:
 
             self._devices.append(device)
             self.device_manager.register_device(device)
+            logger.info(f"Registered device: {device.name} host={device.host} port={device.port} slave_id={device.slave_id}")
 
         logger.info(f"Loaded {len(self._devices)} devices from config")
 

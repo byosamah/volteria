@@ -72,6 +72,11 @@ class LoggingService:
         self._instant_sync_alarms = True
         self._alarm_definitions: list[AlarmDefinition] = []
 
+        # Logging register tracking: {device_id: {register_name: {config, last_logged}}}
+        self._logging_registers: dict[str, dict[str, dict]] = {}
+        # Calculated fields to log: {field_id: {config, last_logged}}
+        self._calculated_fields_to_log: dict[str, dict] = {}
+
         self._start_time = datetime.now(timezone.utc)
 
         # Health server
@@ -226,6 +231,56 @@ class LoggingService:
             for alarm_def in device.get("alarm_definitions", []):
                 self._alarm_definitions.append(self._parse_alarm_definition(alarm_def))
 
+        # Load logging registers from device configs
+        self._logging_registers = {}
+        for device in config.get("devices", []):
+            device_id = device.get("id")
+            if not device_id:
+                continue
+
+            device_registers = {}
+            for reg in device.get("registers", []):
+                reg_name = reg.get("name")
+                if not reg_name:
+                    continue
+                # Default logging_frequency is 60 seconds if not specified
+                logging_freq = reg.get("logging_frequency", 60)
+                device_registers[reg_name] = {
+                    "config": reg,
+                    "logging_frequency": logging_freq,
+                    "last_logged": None,
+                }
+
+            if device_registers:
+                self._logging_registers[device_id] = device_registers
+
+            # Load device-level calculated fields to log
+            for calc_field in device.get("calculated_fields", []):
+                if calc_field.get("storage_mode") == "log":
+                    field_id = calc_field.get("field_id")
+                    if field_id:
+                        self._calculated_fields_to_log[f"{device_id}:{field_id}"] = {
+                            "config": calc_field,
+                            "device_id": device_id,
+                            "last_logged": None,
+                        }
+
+        # Load site-level calculated fields
+        for calc_field in config.get("calculated_fields", []):
+            if calc_field.get("storage_mode", "log") == "log":
+                field_id = calc_field.get("field_id")
+                if field_id:
+                    self._calculated_fields_to_log[f"site:{field_id}"] = {
+                        "config": calc_field,
+                        "device_id": None,
+                        "last_logged": None,
+                    }
+
+        logger.info(
+            f"Loaded logging config: {sum(len(regs) for regs in self._logging_registers.values())} registers, "
+            f"{len(self._calculated_fields_to_log)} calculated fields"
+        )
+
         # Initialize cloud sync
         cloud_config = SharedState.read("controller_config")
         supabase_url = cloud_config.get("supabase_url") or os.environ.get("SUPABASE_URL", "")
@@ -361,44 +416,85 @@ class LoggingService:
 
     async def _write_to_local_db(self) -> None:
         """Write buffered state to local database"""
-        if not self._state_buffer:
-            return
+        # Get device readings from shared state and filter by logging frequency
+        readings_state = SharedState.read("readings")
+        device_readings = {}
+        now = datetime.now(timezone.utc)
 
-        # Get aggregated state (last value)
-        state = self._state_buffer[-1]
+        if readings_state and readings_state.get("devices"):
+            for device_id, device_data in readings_state.get("devices", {}).items():
+                # Check if we have logging config for this device
+                device_log_config = self._logging_registers.get(device_id, {})
+                logger.debug(f"Device {device_id}: {len(device_log_config)} logging registers")
 
-        # Calculate min/max
+                for register_name, reading in device_data.get("readings", {}).items():
+                    # Check if this register is configured for logging
+                    reg_config = device_log_config.get(register_name)
+                    if not reg_config:
+                        continue
+
+                    # Check if it's time to log this register
+                    logging_freq = reg_config.get("logging_frequency", 60)
+                    last_logged = reg_config.get("last_logged")
+
+                    if last_logged is not None:
+                        elapsed = (now - last_logged).total_seconds()
+                        if elapsed < logging_freq:
+                            continue
+
+                    # Log this register
+                    key = f"{device_id}:{register_name}"
+                    device_readings[key] = {
+                        "value": reading.get("value"),
+                        "timestamp": reading.get("timestamp"),
+                        "unit": reg_config.get("config", {}).get("unit", ""),
+                    }
+                    logger.debug(f"Logging register {register_name}: value={reading.get('value')}")
+
+                    # Update last_logged time
+                    reg_config["last_logged"] = now
+
+        # Add calculated fields that are due for logging
+        # TODO: Implement calculated field logging when calculations are ready
+
+        logger.debug(f"Device readings to log: {len(device_readings)} entries")
+
+        # Get state from buffer or use empty state
+        state = self._state_buffer[-1] if self._state_buffer else {}
+
+        # Calculate min/max from buffers
         load_min = min(self._load_buffer) if self._load_buffer else state.get("total_load_kw", 0)
         load_max = max(self._load_buffer) if self._load_buffer else state.get("total_load_kw", 0)
         solar_min = min(self._solar_buffer) if self._solar_buffer else state.get("solar_output_kw", 0)
         solar_max = max(self._solar_buffer) if self._solar_buffer else state.get("solar_output_kw", 0)
 
-        # Insert into database
-        self.local_db.insert_control_log(
-            timestamp=state.get("timestamp", datetime.now(timezone.utc).isoformat()),
-            site_id=self._site_id,
-            total_load_kw=state.get("total_load_kw", 0),
-            solar_output_kw=state.get("solar_output_kw", 0),
-            dg_power_kw=state.get("dg_power_kw", 0),
-            solar_limit_pct=state.get("solar_limit_pct", 100),
-            solar_limit_kw=state.get("solar_limit_kw", 0),
-            safe_mode_active=state.get("safe_mode_active", False),
-            config_mode=state.get("config_mode", "full_system"),
-            operation_mode=state.get("operation_mode", "zero_dg_reverse"),
-            load_meters_online=state.get("load_meters_online", 0),
-            inverters_online=state.get("inverters_online", 0),
-            generators_online=state.get("generators_online", 0),
-            execution_time_ms=state.get("execution_time_ms", 0),
-            load_min_max=(load_min, load_max),
-            solar_min_max=(solar_min, solar_max),
-        )
+        # Only write to database if we have data to log
+        if device_readings or self._state_buffer:
+            self.local_db.insert_control_log(
+                timestamp=state.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                site_id=self._site_id,
+                total_load_kw=state.get("total_load_kw", 0),
+                solar_output_kw=state.get("solar_output_kw", 0),
+                dg_power_kw=state.get("dg_power_kw", 0),
+                solar_limit_pct=state.get("solar_limit_pct", 100),
+                solar_limit_kw=state.get("solar_limit_kw", 0),
+                safe_mode_active=state.get("safe_mode_active", False),
+                config_mode=state.get("config_mode", "full_system"),
+                operation_mode=state.get("operation_mode", "zero_dg_reverse"),
+                load_meters_online=state.get("load_meters_online", 0),
+                inverters_online=state.get("inverters_online", 0),
+                generators_online=state.get("generators_online", 0),
+                execution_time_ms=state.get("execution_time_ms", 0),
+                device_readings=device_readings if device_readings else None,
+                load_min_max=(load_min, load_max),
+                solar_min_max=(solar_min, solar_max),
+            )
+            logger.debug(f"Wrote control log with {len(device_readings)} device readings")
 
         # Clear buffers
         self._state_buffer.clear()
         self._load_buffer.clear()
         self._solar_buffer.clear()
-
-        logger.debug("Wrote control log to local database")
 
     async def _evaluate_alarms(self, state: dict) -> None:
         """Evaluate alarms against current state"""
