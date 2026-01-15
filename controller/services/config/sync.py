@@ -72,12 +72,10 @@ class ConfigSync:
 
             # 2. Fetch remaining data IN PARALLEL for efficiency
             devices_task = self._fetch_devices(client)
-            calc_fields_task = self._fetch_calculated_fields(client)
             alarm_overrides_task = self._fetch_alarm_overrides(client)
 
-            devices, calculated_fields, alarm_overrides = await asyncio.gather(
+            devices, alarm_overrides = await asyncio.gather(
                 devices_task,
-                calc_fields_task,
                 alarm_overrides_task,
             )
 
@@ -85,17 +83,14 @@ class ConfigSync:
             config = self._build_config(
                 site=site,
                 devices=devices,
-                calculated_fields=calculated_fields,
                 alarm_overrides=alarm_overrides,
             )
 
             logger.info(
-                f"Config synced: {len(devices)} devices, "
-                f"{len(calculated_fields)} calculated fields",
+                f"Config synced: {len(devices)} devices",
                 extra={
                     "site_id": self.site_id,
                     "device_count": len(devices),
-                    "calc_field_count": len(calculated_fields),
                 },
             )
 
@@ -212,6 +207,19 @@ class ConfigSync:
             if not registers and device.get("template_id"):
                 registers = template_registers_map.get(device["template_id"], [])
 
+            # Ensure each register has logging_frequency (default 60s if not set)
+            for reg in registers:
+                if "logging_frequency" not in reg:
+                    reg["logging_frequency"] = 60  # Default 60 seconds
+
+            # Calculate connection alarm timeout from min register frequency
+            timeout_multiplier = device.get("connection_timeout_multiplier", 3.0)
+            if registers:
+                min_freq = min(reg.get("logging_frequency", 60) for reg in registers)
+            else:
+                min_freq = 60  # Default if no registers
+            calculated_timeout_s = min_freq * timeout_multiplier
+
             processed = {
                 "id": device["id"],
                 "name": device["name"],
@@ -248,7 +256,9 @@ class ConfigSync:
                 # Connection alarm settings
                 "connection_alarm": {
                     "enabled": device.get("connection_alarm_enabled", True),
-                    "timeout_multiplier": device.get("connection_timeout_multiplier", 3.0),
+                    "timeout_multiplier": timeout_multiplier,
+                    "min_frequency_s": min_freq,
+                    "calculated_timeout_s": calculated_timeout_s,
                 },
             }
 
@@ -278,20 +288,6 @@ class ConfigSync:
             return data[0]["registers"]
         return []
 
-    async def _fetch_calculated_fields(self, client: httpx.AsyncClient) -> list[dict]:
-        """Fetch calculated field definitions"""
-        response = await client.get(
-            f"{self.supabase_url}/rest/v1/calculated_field_definitions",
-            params={
-                "is_system": "eq.true",
-                "select": "*",
-            },
-            headers=self._headers(),
-            timeout=10.0,
-        )
-        response.raise_for_status()
-        return response.json()
-
     async def _fetch_alarm_overrides(self, client: httpx.AsyncClient) -> list[dict]:
         """Fetch site-specific alarm overrides (optional table)"""
         try:
@@ -317,7 +313,6 @@ class ConfigSync:
         self,
         site: dict,
         devices: list[dict],
-        calculated_fields: list[dict],
         alarm_overrides: list[dict],
     ) -> dict[str, Any]:
         """Build complete configuration dictionary"""
@@ -371,18 +366,8 @@ class ConfigSync:
             },
             "config_sync_interval_s": site.get("config_sync_interval_s", 3600),
             "devices": devices,
-            "calculated_fields": [
-                {
-                    "field_id": cf["field_id"],
-                    "name": cf["name"],
-                    "calculation_type": cf["calculation_type"],
-                    "source_devices": cf.get("source_devices", []),
-                    "source_register": cf.get("source_register", ""),
-                    "unit": cf.get("unit", ""),
-                    "time_window": cf.get("time_window"),
-                }
-                for cf in calculated_fields
-            ],
+            # Controller-level calculated fields (selected per site)
+            "calculated_fields": site.get("controller_calculated_fields") or [],
             "alarm_overrides": {
                 override["alarm_definition_id"]: {
                     "enabled": override.get("enabled"),

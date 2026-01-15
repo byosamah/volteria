@@ -7,7 +7,7 @@
  * Sites are physical locations with controllers.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,21 @@ function InfoIcon() {
   );
 }
 
+// Calculated field definition from database
+interface CalculatedFieldDefinition {
+  field_id: string;
+  name: string;
+  calculation_type: string;
+  unit: string | null;
+  scope: string;
+}
+
+// Calculated field selection type
+interface SelectedCalculatedField {
+  field_id: string;
+  storage_mode: "log" | "viz_only";
+}
+
 // Site type (matches database schema for sites table)
 interface Site {
   id: string;
@@ -72,6 +87,8 @@ interface Site {
   safe_mode_rolling_window_min: number;
   safe_mode_threshold_pct: number;
   safe_mode_power_limit_kw: number | null;
+  // Controller calculated fields
+  controller_calculated_fields: SelectedCalculatedField[] | null;
 }
 
 interface SiteSettingsFormProps {
@@ -82,6 +99,28 @@ interface SiteSettingsFormProps {
 export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
   const router = useRouter();
   const supabase = createClient();
+
+  // Available controller-level calculated fields
+  const [availableCalcFields, setAvailableCalcFields] = useState<CalculatedFieldDefinition[]>([]);
+  const [loadingCalcFields, setLoadingCalcFields] = useState(true);
+
+  // Fetch controller-level calculated fields on mount
+  useEffect(() => {
+    async function fetchCalcFields() {
+      const { data, error } = await supabase
+        .from("calculated_field_definitions")
+        .select("field_id, name, calculation_type, unit, scope")
+        .eq("scope", "controller")
+        .eq("is_active", true)
+        .order("name");
+
+      if (!error && data) {
+        setAvailableCalcFields(data);
+      }
+      setLoadingCalcFields(false);
+    }
+    fetchCalcFields();
+  }, [supabase]);
 
   // Form state
   const [loading, setLoading] = useState(false);
@@ -112,7 +151,52 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
     safe_mode_rolling_window_min: site.safe_mode_rolling_window_min || 5,
     safe_mode_threshold_pct: site.safe_mode_threshold_pct || 80,
     safe_mode_power_limit_kw: site.safe_mode_power_limit_kw || 0,
+    // Controller calculated fields
+    controller_calculated_fields: (site.controller_calculated_fields || []) as SelectedCalculatedField[],
   });
+
+  // Helper functions for calculated fields
+  const isFieldSelected = (fieldId: string) => {
+    return formData.controller_calculated_fields.some((f) => f.field_id === fieldId);
+  };
+
+  const getFieldStorageMode = (fieldId: string): "log" | "viz_only" => {
+    const field = formData.controller_calculated_fields.find((f) => f.field_id === fieldId);
+    return field?.storage_mode || "log";
+  };
+
+  const toggleField = (fieldId: string) => {
+    setFormData((prev) => {
+      const existing = prev.controller_calculated_fields.find((f) => f.field_id === fieldId);
+      if (existing) {
+        // Remove field
+        return {
+          ...prev,
+          controller_calculated_fields: prev.controller_calculated_fields.filter(
+            (f) => f.field_id !== fieldId
+          ),
+        };
+      } else {
+        // Add field with default storage mode
+        return {
+          ...prev,
+          controller_calculated_fields: [
+            ...prev.controller_calculated_fields,
+            { field_id: fieldId, storage_mode: "log" as const },
+          ],
+        };
+      }
+    });
+  };
+
+  const updateFieldStorageMode = (fieldId: string, mode: "log" | "viz_only") => {
+    setFormData((prev) => ({
+      ...prev,
+      controller_calculated_fields: prev.controller_calculated_fields.map((f) =>
+        f.field_id === fieldId ? { ...f, storage_mode: mode } : f
+      ),
+    }));
+  };
 
   // Handle input changes
   const handleChange = (
@@ -173,6 +257,8 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
           safe_mode_rolling_window_min: formData.safe_mode_rolling_window_min,
           safe_mode_threshold_pct: formData.safe_mode_threshold_pct,
           safe_mode_power_limit_kw: formData.safe_mode_power_limit_kw || null,
+          // Controller calculated fields
+          controller_calculated_fields: formData.controller_calculated_fields,
           updated_at: new Date().toISOString(),
         })
         .eq("id", site.id);
@@ -663,6 +749,76 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
                 value={formData.safe_mode_power_limit_kw}
                 onChange={handleChange}
               />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
+      {/* Controller Calculated Fields */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium flex items-center gap-1.5">
+          Controller Calculated Fields
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span><InfoIcon /></span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              <p>Select which aggregated metrics to calculate at the controller level. These combine data from multiple devices (e.g., total solar from all inverters).</p>
+            </TooltipContent>
+          </Tooltip>
+        </h3>
+
+        {loadingCalcFields ? (
+          <div className="text-sm text-muted-foreground">Loading calculated fields...</div>
+        ) : availableCalcFields.length === 0 ? (
+          <div className="text-sm text-muted-foreground">No controller-level calculated fields available.</div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Select calculated fields to enable for this site. Choose &quot;Log to DB&quot; to store values for historical analysis, or &quot;Viz Only&quot; for live display only.
+            </p>
+            <div className="border rounded-md divide-y">
+              {availableCalcFields.map((field) => {
+                const selected = isFieldSelected(field.field_id);
+                return (
+                  <div
+                    key={field.field_id}
+                    className="flex items-center justify-between p-3 hover:bg-muted/50"
+                  >
+                    <label className="flex items-center gap-3 flex-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleField(field.field_id)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <div>
+                        <span className="text-sm font-medium">{field.name}</span>
+                        {field.unit && (
+                          <span className="text-sm text-muted-foreground ml-1">({field.unit})</span>
+                        )}
+                        <span className="text-xs text-muted-foreground ml-2 capitalize">
+                          [{field.calculation_type}]
+                        </span>
+                      </div>
+                    </label>
+                    {selected && (
+                      <select
+                        value={getFieldStorageMode(field.field_id)}
+                        onChange={(e) =>
+                          updateFieldStorageMode(field.field_id, e.target.value as "log" | "viz_only")
+                        }
+                        className="h-8 px-2 text-sm rounded-md border border-input bg-background"
+                      >
+                        <option value="log">Log to DB</option>
+                        <option value="viz_only">Viz Only</option>
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
