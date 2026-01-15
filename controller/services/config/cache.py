@@ -48,8 +48,23 @@ class ConfigCache:
             "_cached_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Save to shared state (for other services)
-        SharedState.write("config", config_with_meta)
+        # Save to state file directly (bypass SharedState to avoid issues)
+        state_file = Path("/opt/volteria/data/state/config.json")
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Write config directly to state file
+            with open(state_file, "w", encoding="utf-8") as f:
+                json.dump(config_with_meta, f, indent=2)
+
+            logger.info(f"Config saved to state file: {state_file}")
+
+            # Also update SharedState in-memory cache
+            SharedState._cache["config"] = (config_with_meta, __import__("time").time())
+
+        except Exception as e:
+            logger.error(f"Failed to save config to state file: {e}", exc_info=True)
+            raise  # Re-raise to fail the sync properly
 
         # Save versioned copy
         version_timestamp = config.get("updated_at", datetime.now(timezone.utc).isoformat())

@@ -52,8 +52,20 @@ class SharedState:
             key: State key (becomes filename without .json)
             data: Dictionary to serialize as JSON
         """
+        import sys
+
+        # DEBUG: Log entry
+        pid = os.getpid()
+        print(f"[DEBUG] SharedState.write START: key={key}, pid={pid}", file=sys.stderr, flush=True)
+
         cls._ensure_dir()
         path = cls._get_path(key)
+
+        # DEBUG: Log path
+        print(f"[DEBUG] SharedState.write: path={path}, exists={path.exists()}", file=sys.stderr, flush=True)
+        if path.exists():
+            stat = path.stat()
+            print(f"[DEBUG] SharedState.write: BEFORE mtime={stat.st_mtime}, size={stat.st_size}", file=sys.stderr, flush=True)
 
         # Add metadata
         data_with_meta = {
@@ -61,25 +73,49 @@ class SharedState:
             "_updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        if os.name == "nt":
-            # Windows: write to temp file, then rename (atomic on same filesystem)
-            temp_path = path.with_suffix(".tmp")
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(data_with_meta, f, indent=2)
-            temp_path.replace(path)
-        else:
-            # Unix: use file locking
-            import fcntl
-            with open(path, "w", encoding="utf-8") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                try:
+        try:
+            if os.name == "nt":
+                # Windows: write to temp file, then rename (atomic on same filesystem)
+                temp_path = path.with_suffix(".tmp")
+                with open(temp_path, "w", encoding="utf-8") as f:
                     json.dump(data_with_meta, f, indent=2)
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                temp_path.replace(path)
+                print(f"[DEBUG] SharedState.write: Windows write complete", file=sys.stderr, flush=True)
+            else:
+                # Unix: use file locking
+                import fcntl
+                print(f"[DEBUG] SharedState.write: opening file for write...", file=sys.stderr, flush=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    print(f"[DEBUG] SharedState.write: file opened, fd={f.fileno()}, acquiring lock...", file=sys.stderr, flush=True)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    print(f"[DEBUG] SharedState.write: lock acquired, writing JSON...", file=sys.stderr, flush=True)
+                    try:
+                        json.dump(data_with_meta, f, indent=2)
+                        f.flush()  # Ensure data is written
+                        os.fsync(f.fileno())  # Force write to disk
+                        print(f"[DEBUG] SharedState.write: JSON written and flushed", file=sys.stderr, flush=True)
+                    finally:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                        print(f"[DEBUG] SharedState.write: lock released", file=sys.stderr, flush=True)
+
+            # DEBUG: Verify write
+            if path.exists():
+                stat = path.stat()
+                print(f"[DEBUG] SharedState.write: AFTER mtime={stat.st_mtime}, size={stat.st_size}", file=sys.stderr, flush=True)
+            else:
+                print(f"[DEBUG] SharedState.write: ERROR - file does not exist after write!", file=sys.stderr, flush=True)
+
+        except Exception as e:
+            print(f"[DEBUG] SharedState.write: EXCEPTION: {e}", file=sys.stderr, flush=True)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            raise
 
         # Update cache
         with cls._lock:
             cls._cache[key] = (data_with_meta, time.time())
+
+        print(f"[DEBUG] SharedState.write: COMPLETE for key={key}", file=sys.stderr, flush=True)
 
     @classmethod
     def read(cls, key: str, use_cache: bool = True) -> dict:

@@ -72,21 +72,35 @@ class ConfigSync:
 
             # 2. Fetch remaining data IN PARALLEL for efficiency
             devices_task = self._fetch_devices(client)
-            calc_fields_task = self._fetch_calculated_fields(client)
+            controller_task = self._fetch_controller_device(client)
             alarm_overrides_task = self._fetch_alarm_overrides(client)
 
-            devices, calculated_fields, alarm_overrides = await asyncio.gather(
+            devices, controller_device, alarm_overrides = await asyncio.gather(
                 devices_task,
-                calc_fields_task,
+                controller_task,
                 alarm_overrides_task,
             )
 
-            # 3. Build complete config
+            # 3. Fetch calculated field definitions for selected fields from controller
+            selected_field_ids = []
+            if controller_device:
+                for cf in controller_device.get("calculated_fields") or []:
+                    if cf.get("enabled", True):
+                        selected_field_ids.append(cf.get("field_id"))
+
+            calculated_fields = []
+            if selected_field_ids:
+                calculated_fields = await self._fetch_calculated_field_definitions(
+                    client, selected_field_ids, controller_device.get("calculated_fields") or []
+                )
+
+            # 4. Build complete config
             config = self._build_config(
                 site=site,
                 devices=devices,
                 calculated_fields=calculated_fields,
                 alarm_overrides=alarm_overrides,
+                controller_device=controller_device,
             )
 
             logger.info(
@@ -278,19 +292,69 @@ class ConfigSync:
             return data[0]["registers"]
         return []
 
-    async def _fetch_calculated_fields(self, client: httpx.AsyncClient) -> list[dict]:
-        """Fetch calculated field definitions"""
+    async def _fetch_controller_device(self, client: httpx.AsyncClient) -> dict | None:
+        """Fetch the controller master device with its calculated_fields and site_level_alarms"""
+        response = await client.get(
+            f"{self.supabase_url}/rest/v1/site_master_devices",
+            params={
+                "site_id": f"eq.{self.site_id}",
+                "device_type": "eq.controller",
+                "select": "id,name,calculated_fields,site_level_alarms",
+            },
+            headers=self._headers(),
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if data:
+            return data[0]
+        return None
+
+    async def _fetch_calculated_field_definitions(
+        self,
+        client: httpx.AsyncClient,
+        field_ids: list[str],
+        controller_selections: list[dict],
+    ) -> list[dict]:
+        """Fetch calculated field definitions for selected field_ids and merge with controller settings"""
+        if not field_ids:
+            return []
+
+        # Fetch definitions for selected fields
         response = await client.get(
             f"{self.supabase_url}/rest/v1/calculated_field_definitions",
             params={
-                "is_system": "eq.true",
+                "field_id": f"in.({','.join(field_ids)})",
                 "select": "*",
             },
             headers=self._headers(),
             timeout=10.0,
         )
         response.raise_for_status()
-        return response.json()
+        definitions = response.json()
+
+        # Create lookup for controller selections (storage_mode, enabled)
+        selection_map = {s["field_id"]: s for s in controller_selections}
+
+        # Merge definitions with controller settings
+        result = []
+        for defn in definitions:
+            field_id = defn.get("field_id")
+            selection = selection_map.get(field_id, {})
+            result.append({
+                "field_id": field_id,
+                "name": defn.get("name"),
+                "calculation_type": defn.get("calculation_type"),
+                "source_devices": defn.get("source_devices", []),
+                "source_register": defn.get("source_register", ""),
+                "unit": defn.get("unit", ""),
+                "time_window": defn.get("time_window"),
+                # Controller-specific settings
+                "storage_mode": selection.get("storage_mode", "log"),
+                "enabled": selection.get("enabled", True),
+            })
+
+        return result
 
     async def _fetch_alarm_overrides(self, client: httpx.AsyncClient) -> list[dict]:
         """Fetch site-specific alarm overrides (optional table)"""
@@ -319,6 +383,7 @@ class ConfigSync:
         devices: list[dict],
         calculated_fields: list[dict],
         alarm_overrides: list[dict],
+        controller_device: dict | None = None,
     ) -> dict[str, Any]:
         """Build complete configuration dictionary"""
         project = site.get("projects", {})
@@ -371,18 +436,10 @@ class ConfigSync:
             },
             "config_sync_interval_s": site.get("config_sync_interval_s", 3600),
             "devices": devices,
-            "calculated_fields": [
-                {
-                    "field_id": cf["field_id"],
-                    "name": cf["name"],
-                    "calculation_type": cf["calculation_type"],
-                    "source_devices": cf.get("source_devices", []),
-                    "source_register": cf.get("source_register", ""),
-                    "unit": cf.get("unit", ""),
-                    "time_window": cf.get("time_window"),
-                }
-                for cf in calculated_fields
-            ],
+            # Site-level calculated fields (from controller device selection)
+            "calculated_fields": calculated_fields,
+            # Site-level alarms (from controller device)
+            "site_level_alarms": (controller_device.get("site_level_alarms") or []) if controller_device else [],
             "alarm_overrides": {
                 override["alarm_definition_id"]: {
                     "enabled": override.get("enabled"),
