@@ -214,19 +214,45 @@ async def register_from_setup_script(
     try:
         # Check if controller with this serial already exists
         existing = db.table("controllers").select(
-            "id, serial_number, status, ssh_tunnel_port"
+            "id, serial_number, status, ssh_port, ssh_tunnel_port"
         ).eq("serial_number", request.serial_number).execute()
 
         if existing.data:
             # Controller already registered
             controller = existing.data[0]
 
+            # Check if SSH credentials need to be set (wizard creates controllers without them)
+            ssh_tunnel_port = controller.get("ssh_tunnel_port")
+            if not controller.get("ssh_port") or not controller.get("ssh_tunnel_port"):
+                # Allocate SSH port (find next available in range 10000-20000)
+                port_result = db.table("controllers").select("ssh_port").order(
+                    "ssh_port", desc=True
+                ).limit(1).execute()
+
+                next_port = 10000
+                if port_result.data and port_result.data[0].get("ssh_port"):
+                    next_port = port_result.data[0]["ssh_port"] + 1
+
+                # SSH credentials for controller access
+                SSH_USERNAME = "voltadmin"
+                SSH_PASSWORD = "Solar@1996"
+
+                # Update controller with SSH credentials
+                db.table("controllers").update({
+                    "ssh_port": next_port,
+                    "ssh_tunnel_port": next_port,
+                    "ssh_username": SSH_USERNAME,
+                    "ssh_password": SSH_PASSWORD,
+                }).eq("id", controller["id"]).execute()
+
+                ssh_tunnel_port = next_port
+
             # Get Supabase anon key for cloud sync
             supabase_key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
             return SetupScriptRegisterResponse(
                 controller_id=str(controller["id"]),
-                ssh_tunnel_port=controller.get("ssh_tunnel_port"),
+                ssh_tunnel_port=ssh_tunnel_port,
                 supabase_key=supabase_key,
                 status="registered",
                 message="Controller already registered"
