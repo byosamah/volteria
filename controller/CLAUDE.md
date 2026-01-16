@@ -41,6 +41,71 @@ controller/
 
 > **Note**: Device-specific handlers (Sungrow, Meatrol, ComAp) are currently embedded within `control_loop.py`. The `devices/` folder is a placeholder for future modularization.
 
+## Services Architecture (5-Layer)
+
+Entry point: `main_v2.py` (use this, not legacy `main.py`)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 5: LOGGING SERVICE                                   │
+│  alarm_evaluator, cloud_sync, local_db                      │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 4: CONTROL SERVICE                                   │
+│  algorithm, calculated_fields, safe_mode, state             │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 3: DEVICE SERVICE                                    │
+│  modbus_client, connection_pool, register_reader/writer     │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 2: CONFIG SERVICE                                    │
+│  cache, sync, validator                                     │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 1: SYSTEM SERVICE (always alive)                     │
+│  heartbeat, health_monitor, metrics_collector, ota_updater  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Service Modules
+
+| Service | Path | Files | Purpose |
+|---------|------|-------|---------|
+| **System** | `services/system/` | 6 | Heartbeat, health, OTA, reboot |
+| **Config** | `services/config/` | 4 | Sync, cache, validation |
+| **Device** | `services/device/` | 6 | Modbus I/O, connection pool |
+| **Control** | `services/control/` | 5 | Algorithm, safe mode, state |
+| **Logging** | `services/logging/` | 4 | Local DB, cloud sync, alarms |
+
+### Key Service Files
+
+**System Service** (`services/system/`)
+- `heartbeat.py` - Send status to cloud every 30s
+- `health_monitor.py` - Track 5-layer service health
+- `ota_updater.py` - Firmware update handling
+- `reboot_handler.py` - Safe reboot procedures
+
+**Device Service** (`services/device/`)
+- `modbus_client.py` - Modbus TCP/RTU communication
+- `connection_pool.py` - Connection management
+- `register_reader.py` - Read device registers
+- `register_writer.py` - Write to inverters
+
+**Control Service** (`services/control/`)
+- `algorithm.py` - Zero-feeding calculation
+- `safe_mode.py` - Emergency mode logic
+- `calculated_fields.py` - Totals, energy metrics
+
+**Logging Service** (`services/logging/`)
+- `local_db.py` - SQLite storage
+- `cloud_sync.py` - Supabase upload
+- `alarm_evaluator.py` - Threshold checking
+
+### Running Services
+
+```bash
+python main_v2.py              # Start all 5 services
+python main_v2.py --dry-run    # Validate config only
+python main_v2.py -v           # Verbose/debug mode
+```
+
 ## Control Algorithm (Zero-Feeding)
 ```python
 # Core algorithm

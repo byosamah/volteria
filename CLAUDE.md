@@ -149,6 +149,8 @@ ssh volteria "docker logs sdc-frontend --tail=50"
 | Controller | [controller/CLAUDE.md](./controller/CLAUDE.md) + [CONTROL_MASTER.md](./controller/CONTROL_MASTER.md) |
 | Backend API | [backend/CLAUDE.md](./backend/CLAUDE.md) |
 | Frontend | [frontend/CLAUDE.md](./frontend/CLAUDE.md) |
+| Database | [database/CLAUDE.md](./database/CLAUDE.md) |
+| Deploy | [deploy/CLAUDE.md](./deploy/CLAUDE.md) |
 | Simulator | [simulator/CLAUDE.md](./simulator/CLAUDE.md) |
 | Documentation | [docs/CLAUDE.md](./docs/CLAUDE.md) |
 
