@@ -92,7 +92,9 @@
       "Bash(chmod:*)",
       "Bash(icacls \"C:\\\\Users\\\\Hp\\\\.ssh\\\\volteria-deploy\" /inheritance:r /grant:r \"%USERNAME%:F\")",
       "Bash(git -C \"C:/Users/Hp/volteria\" checkout deploy/nginx.conf)",
-      "Bash(git -C \"C:/Users/Hp/volteria\" diff deploy/nginx.conf)"
+      "Bash(git -C \"C:/Users/Hp/volteria\" diff deploy/nginx.conf)",
+      "mcp__plugin_supabase_supabase__execute_sql",
+      "mcp__plugin_supabase_supabase__apply_migration"
     ]
   }
 }

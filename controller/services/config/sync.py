@@ -479,6 +479,7 @@ class ConfigSync:
                 "aggregation_method": "last",
                 "include_min_max": True,
                 "local_retention_days": site.get("logging_local_retention_days", 7),
+                "local_enabled": site.get("logging_local_enabled", True),
                 "cloud_enabled": site.get("logging_cloud_enabled", True),
                 "gateway_enabled": site.get("logging_gateway_enabled", False),
                 "instant_sync_alarms": True,

@@ -63,6 +63,7 @@ interface Site {
   logging_local_interval_ms: number;
   logging_cloud_interval_ms: number;
   logging_local_retention_days: number;
+  logging_local_enabled: boolean;
   logging_cloud_enabled: boolean;
   logging_gateway_enabled: boolean;
   // Safe mode settings
@@ -103,6 +104,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
     logging_local_interval_ms: site.logging_local_interval_ms || 1000,
     logging_cloud_interval_ms: site.logging_cloud_interval_ms || 5000,
     logging_local_retention_days: site.logging_local_retention_days || 30,
+    logging_local_enabled: site.logging_local_enabled ?? true,
     logging_cloud_enabled: site.logging_cloud_enabled ?? true,
     logging_gateway_enabled: site.logging_gateway_enabled ?? false,
     // Safe mode settings
@@ -164,6 +166,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
           logging_local_interval_ms: formData.logging_local_interval_ms,
           logging_cloud_interval_ms: formData.logging_cloud_interval_ms,
           logging_local_retention_days: formData.logging_local_retention_days,
+          logging_local_enabled: formData.logging_local_enabled,
           logging_cloud_enabled: formData.logging_cloud_enabled,
           logging_gateway_enabled: formData.logging_gateway_enabled,
           // Safe mode settings
@@ -507,8 +510,29 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
           </div>
         </div>
 
-        {/* Cloud Logging Toggles */}
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* Logging Toggles */}
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label className="flex items-center gap-2 p-3 border rounded-md cursor-pointer hover:bg-muted/50">
+            <input
+              type="checkbox"
+              name="logging_local_enabled"
+              checked={formData.logging_local_enabled}
+              onChange={handleChange}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium">Local Logging</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span><InfoIcon /></span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Enable local SQLite logging on the controller. Stores all readings at the local interval for offline buffering and backup.</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </label>
+
           <label className="flex items-center gap-2 p-3 border rounded-md cursor-pointer hover:bg-muted/50">
             <input
               type="checkbox"
@@ -518,13 +542,13 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
               className="h-4 w-4 rounded border-gray-300"
             />
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium">Cloud Logging (via Controller)</span>
+              <span className="text-sm font-medium">Cloud Logging</span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span><InfoIcon /></span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
-                  <p>Enable cloud sync through the on-site controller. Data is sent directly from the controller to the cloud platform.</p>
+                  <p>Enable cloud sync through the on-site controller. Data is sent to the cloud platform based on per-register logging frequency.</p>
                 </TooltipContent>
               </Tooltip>
             </div>

@@ -70,11 +70,14 @@ class LoggingService:
         self._cloud_sync_interval = CLOUD_SYNC_INTERVAL_S
         self._retention_days = 7
         self._instant_sync_alarms = True
+        self._local_enabled = True  # Enable local SQLite logging
+        self._cloud_enabled = True  # Enable cloud sync
         self._alarm_definitions: list[AlarmDefinition] = []
 
-        # Logging register tracking: {device_id: {register_name: {config, last_logged}}}
+        # Logging register tracking: {device_id: {register_name: {config, last_cloud_synced}}}
+        # Used for tracking per-register cloud sync frequency
         self._logging_registers: dict[str, dict[str, dict]] = {}
-        # Calculated fields to log: {field_id: {config, last_logged}}
+        # Calculated fields to log: {field_id: {config, last_cloud_synced}}
         self._calculated_fields_to_log: dict[str, dict] = {}
 
         self._start_time = datetime.now(timezone.utc)
@@ -224,6 +227,8 @@ class LoggingService:
         self._cloud_sync_interval = logging_config.get("cloud_sync_interval_s", 120)
         self._retention_days = logging_config.get("local_retention_days", 7)
         self._instant_sync_alarms = logging_config.get("instant_sync_alarms", True)
+        self._local_enabled = logging_config.get("local_enabled", True)
+        self._cloud_enabled = logging_config.get("cloud_enabled", True)
 
         # Load alarm definitions
         self._alarm_definitions = []
@@ -243,12 +248,12 @@ class LoggingService:
                 reg_name = reg.get("name")
                 if not reg_name:
                     continue
-                # Default logging_frequency is 60 seconds if not specified
+                # Default logging_frequency is 60 seconds if not specified (for cloud sync)
                 logging_freq = reg.get("logging_frequency", 60)
                 device_registers[reg_name] = {
                     "config": reg,
                     "logging_frequency": logging_freq,
-                    "last_logged": None,
+                    "last_cloud_synced": None,
                 }
 
             if device_registers:
@@ -262,7 +267,7 @@ class LoggingService:
                         self._calculated_fields_to_log[f"{device_id}:{field_id}"] = {
                             "config": calc_field,
                             "device_id": device_id,
-                            "last_logged": None,
+                            "last_cloud_synced": None,
                         }
 
         # Load site-level calculated fields
@@ -273,12 +278,13 @@ class LoggingService:
                     self._calculated_fields_to_log[f"site:{field_id}"] = {
                         "config": calc_field,
                         "device_id": None,
-                        "last_logged": None,
+                        "last_cloud_synced": None,
                     }
 
         logger.info(
             f"Loaded logging config: {sum(len(regs) for regs in self._logging_registers.values())} registers, "
-            f"{len(self._calculated_fields_to_log)} calculated fields"
+            f"{len(self._calculated_fields_to_log)} calc fields, "
+            f"local={self._local_enabled}, cloud={self._cloud_enabled}"
         )
 
         # Initialize cloud sync
@@ -348,6 +354,14 @@ class LoggingService:
         while self._running:
             await asyncio.sleep(self._local_write_interval)
 
+            # Skip if local logging is disabled
+            if not self._local_enabled:
+                # Still clear buffers to prevent memory growth
+                self._state_buffer.clear()
+                self._load_buffer.clear()
+                self._solar_buffer.clear()
+                continue
+
             try:
                 await self._write_to_local_db()
             except Exception as e:
@@ -357,6 +371,10 @@ class LoggingService:
         """Sync local data to cloud"""
         while self._running:
             await asyncio.sleep(self._cloud_sync_interval)
+
+            # Skip if cloud sync is disabled
+            if not self._cloud_enabled:
+                continue
 
             if self.cloud_sync:
                 try:
@@ -415,49 +433,35 @@ class LoggingService:
             await asyncio.sleep(watch_interval)
 
     async def _write_to_local_db(self) -> None:
-        """Write buffered state to local database"""
-        # Get device readings from shared state and filter by logging frequency
+        """
+        Write buffered state to local database.
+
+        LOCAL LOGGING writes ALL readings at the site's local_write_interval.
+        No per-register filtering - that's only for cloud sync.
+        """
+        # Get ALL device readings from shared state (no filtering)
         readings_state = SharedState.read("readings")
         device_readings = {}
-        now = datetime.now(timezone.utc)
 
         if readings_state and readings_state.get("devices"):
             for device_id, device_data in readings_state.get("devices", {}).items():
-                # Check if we have logging config for this device
+                # Get register config for unit lookups
                 device_log_config = self._logging_registers.get(device_id, {})
-                logger.debug(f"Device {device_id}: {len(device_log_config)} logging registers")
 
                 for register_name, reading in device_data.get("readings", {}).items():
-                    # Check if this register is configured for logging
-                    reg_config = device_log_config.get(register_name)
-                    if not reg_config:
-                        continue
-
-                    # Check if it's time to log this register
-                    logging_freq = reg_config.get("logging_frequency", 60)
-                    last_logged = reg_config.get("last_logged")
-
-                    if last_logged is not None:
-                        elapsed = (now - last_logged).total_seconds()
-                        if elapsed < logging_freq:
-                            continue
-
-                    # Log this register
+                    # Include ALL readings in local log
                     key = f"{device_id}:{register_name}"
+                    reg_config = device_log_config.get(register_name, {})
                     device_readings[key] = {
                         "value": reading.get("value"),
                         "timestamp": reading.get("timestamp"),
                         "unit": reg_config.get("config", {}).get("unit", ""),
                     }
-                    logger.debug(f"Logging register {register_name}: value={reading.get('value')}")
 
-                    # Update last_logged time
-                    reg_config["last_logged"] = now
-
-        # Add calculated fields that are due for logging
+        # Add calculated fields
         # TODO: Implement calculated field logging when calculations are ready
 
-        logger.debug(f"Device readings to log: {len(device_readings)} entries")
+        logger.debug(f"Local log: {len(device_readings)} device readings")
 
         # Get state from buffer or use empty state
         state = self._state_buffer[-1] if self._state_buffer else {}
