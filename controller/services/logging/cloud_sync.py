@@ -58,24 +58,42 @@ class CloudSync:
         if not logs:
             return 0
 
-        # Transform for Supabase
+        # Transform for Supabase (must match control_logs table columns)
+        # Deduplicate by (site_id, timestamp) to avoid UNIQUE constraint violations
+        seen_keys = set()
         records = []
         for log in logs:
+            site_id = log.get("site_id") or self.site_id
+            timestamp = log["timestamp"]
+            key = (site_id, timestamp)
+
+            # Skip duplicates within this batch
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+
             record = {
-                "site_id": log.get("site_id") or self.site_id,
-                "timestamp": log["timestamp"],
+                "site_id": site_id,
+                "timestamp": timestamp,
                 "total_load_kw": log.get("total_load_kw"),
                 "solar_output_kw": log.get("solar_output_kw"),
                 "dg_power_kw": log.get("dg_power_kw"),
                 "solar_limit_pct": log.get("solar_limit_pct"),
                 "safe_mode_active": bool(log.get("safe_mode_active")),
                 "config_mode": log.get("config_mode"),
-                "operation_mode": log.get("operation_mode"),
+                # Note: operation_mode not in control_logs table
                 "load_meters_online": log.get("load_meters_online"),
                 "inverters_online": log.get("inverters_online"),
                 "generators_online": log.get("generators_online"),
             }
             records.append(record)
+
+        if not records:
+            # All records were duplicates
+            log_ids = [log["id"] for log in logs]
+            self.local_db.mark_logs_synced(log_ids)
+            logger.debug(f"All {len(logs)} logs were duplicates, marked as synced")
+            return 0
 
         # Upload with retry
         success = await self._upload_with_retry(
@@ -173,7 +191,8 @@ class CloudSync:
                             "apikey": self.supabase_key,
                             "Authorization": f"Bearer {self.supabase_key}",
                             "Content-Type": "application/json",
-                            "Prefer": "return=minimal",
+                            # Ignore duplicates (UNIQUE constraint violations)
+                            "Prefer": "resolution=ignore-duplicates,return=minimal",
                         },
                         timeout=30.0,
                     )
@@ -181,8 +200,18 @@ class CloudSync:
                     return True
 
             except httpx.HTTPStatusError as e:
+                # Log response body for debugging
+                try:
+                    error_body = e.response.text
+                except Exception:
+                    error_body = "Could not read response body"
+
+                # 409 Conflict = records already exist, treat as success
+                if e.response.status_code == 409:
+                    logger.info(f"Records already exist in {table} (409), marking as synced")
+                    return True
                 logger.warning(
-                    f"Upload failed (attempt {attempt + 1}): HTTP {e.response.status_code}"
+                    f"Upload failed (attempt {attempt + 1}): HTTP {e.response.status_code} - {error_body[:200]}"
                 )
             except httpx.TimeoutException:
                 logger.warning(f"Upload timeout (attempt {attempt + 1})")

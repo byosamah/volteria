@@ -474,8 +474,11 @@ class LoggingService:
 
         # Only write to database if we have data to log
         if device_readings or self._state_buffer:
+            # Always use current timestamp for log entries (ensures uniqueness)
+            # Device/reading timestamps are stored in device_readings JSON
+            current_timestamp = datetime.now(timezone.utc).isoformat()
             self.local_db.insert_control_log(
-                timestamp=state.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                timestamp=current_timestamp,
                 site_id=self._site_id,
                 total_load_kw=state.get("total_load_kw", 0),
                 solar_output_kw=state.get("solar_output_kw", 0),
