@@ -127,7 +127,7 @@ install_dependencies() {
     log_info "System dependencies installed"
 }
 
-# Configure network settings (timezone + ethernet static IP without gateway)
+# Configure network settings (timezone only)
 configure_network() {
     log_step "Configuring network settings..."
 
@@ -135,35 +135,20 @@ configure_network() {
     timedatectl set-timezone Asia/Dubai
     log_info "Timezone set to Asia/Dubai"
 
-    # Static IP for ethernet (NO gateway - keeps WiFi as default route for internet)
-    ETH_STATIC_IP="192.168.1.100"
-    ETH_SUBNET="24"
-
-    # Check if "Wired Volteria" connection already exists
-    if nmcli con show "Wired Volteria" &>/dev/null; then
-        log_info "Ethernet connection 'Wired Volteria' already exists, updating..."
-        nmcli con mod "Wired Volteria" ipv4.addresses "${ETH_STATIC_IP}/${ETH_SUBNET}"
-        nmcli con mod "Wired Volteria" ipv4.gateway ""
-        nmcli con mod "Wired Volteria" ipv4.method manual
-        nmcli con mod "Wired Volteria" connection.autoconnect yes
-    else
-        # Create ethernet connection WITHOUT gateway (critical for WiFi to remain default route)
-        log_info "Creating ethernet connection with static IP (no gateway)..."
-        nmcli con add type ethernet con-name "Wired Volteria" ifname eth0 \
-            ipv4.addresses "${ETH_STATIC_IP}/${ETH_SUBNET}" \
-            ipv4.method manual \
-            connection.autoconnect yes
-    fi
-
-    # Bring up ethernet (won't affect WiFi since no gateway set)
-    nmcli con up "Wired Volteria" 2>/dev/null || log_info "Ethernet cable not connected (will auto-connect when plugged in)"
-
-    log_info "Ethernet configured: IP=${ETH_STATIC_IP} (no gateway - WiFi remains default route)"
+    # WiFi: Configured via Raspberry Pi Imager (DHCP) - don't touch
+    # Ethernet: NOT configured here - each site has different requirements
+    #
+    # To manually configure ethernet later (example):
+    #   sudo nmcli con add type ethernet con-name "Modbus" ifname eth0 \
+    #       ipv4.addresses "192.168.1.100/24" ipv4.method manual
+    #   sudo nmcli con up "Modbus"
+    #
+    # Note: Don't set gateway on ethernet if using WiFi for internet
 
     # Display current IPs
-    sleep 1
     CURRENT_IPS=$(hostname -I)
     log_info "Current IP addresses: ${CURRENT_IPS}"
+    log_info "Ethernet not configured (set up manually per site requirements)"
 }
 
 # Create directory structure
