@@ -17,10 +17,20 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE?select=*" \
 
 ```
 database/
-├── migrations/     # 80 migration files (001-074)
-├── schema.sql      # Consolidated schema reference
-└── run_schema.py   # Schema runner utility
+└── migrations/     # 75 migration files (001-075)
 ```
+
+### Supabase CLI Commands
+
+```bash
+# Push migrations to remote database
+supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:[PASSWORD]@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+
+# Dump schema from live DB
+supabase db dump --linked -p [PASSWORD] > schema_dump.sql
+```
+
+> **Note**: Password stored in `.env` as `SUPABASE_DB_PASSWORD`
 
 ## Core Tables
 
@@ -76,7 +86,7 @@ database/
 | 026-040 | Alarms & fields | thresholds, calculated fields |
 | 041-050 | Dashboards | widgets, retention policies |
 | 051-060 | Enterprise | subscriptions, firmware/OTA |
-| 061-074 | Refinements | constraints, FK fixes, SSH |
+| 061-075 | Refinements | constraints, FK fixes, cleanup |
 
 ## Key Patterns
 

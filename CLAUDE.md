@@ -102,9 +102,15 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE?select=*&limit=1
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I"
 ```
 
-**Credentials**: URL `https://usgxhzdctzthcqxyxfxl.supabase.co` | DB Password `Solar@1996`
+**Credentials**: URL `https://usgxhzdctzthcqxyxfxl.supabase.co` | DB Password in `.env`
 
-**Schema changes**: Use [Supabase SQL Editor](https://supabase.com/dashboard/project/usgxhzdctzthcqxyxfxl/sql), save migration in `database/migrations/`
+**Run migrations** (Supabase CLI):
+```bash
+# From project root
+supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_DB_PASSWORD@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+```
+
+**Schema changes**: Use Supabase CLI (`supabase db push`) or [SQL Editor](https://supabase.com/dashboard/project/usgxhzdctzthcqxyxfxl/sql)
 
 ### Key Tables
 | Table | Purpose |
