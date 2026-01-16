@@ -196,24 +196,43 @@ EOF
 setup_controller_code() {
     log_step "Setting up controller code..."
 
-    if [[ -d "${CONTROLLER_DIR}/.git" ]]; then
-        log_info "Updating existing installation..."
+    # Check if we have the full git repo (preferred for updates)
+    if [[ -d "${VOLTERIA_DIR}/.git" ]]; then
+        log_info "Updating existing installation via git pull..."
+        cd "${VOLTERIA_DIR}"
+        git fetch origin
+        git reset --hard origin/main
+        git pull origin main
+    elif [[ -d "${CONTROLLER_DIR}/.git" ]]; then
+        # Old-style installation with just controller dir
+        log_info "Updating legacy installation..."
         cd "${CONTROLLER_DIR}"
         git fetch origin
         git reset --hard origin/main
         git pull origin main
     else
-        log_info "Fresh installation - cloning repository..."
-        rm -rf "${CONTROLLER_DIR}"
+        log_info "Fresh installation - cloning full repository..."
+        # Backup existing data if present
+        if [[ -d "${DATA_DIR}" ]]; then
+            cp -a "${DATA_DIR}" "/tmp/volteria_data_backup" 2>/dev/null || true
+        fi
 
-        # Clone full repo then extract controller
-        TEMP_DIR=$(mktemp -d)
-        git clone --depth 1 "${GITHUB_REPO}" "${TEMP_DIR}"
-        mv "${TEMP_DIR}/controller" "${CONTROLLER_DIR}"
-        rm -rf "${TEMP_DIR}"
+        # Clone full repo (enables future git pull updates)
+        rm -rf "${VOLTERIA_DIR}"
+        git clone --depth 1 "${GITHUB_REPO}" "${VOLTERIA_DIR}"
+
+        # Restore data directory
+        if [[ -d "/tmp/volteria_data_backup" ]]; then
+            mkdir -p "${DATA_DIR}"
+            cp -a /tmp/volteria_data_backup/* "${DATA_DIR}/" 2>/dev/null || true
+            rm -rf /tmp/volteria_data_backup
+        fi
     fi
 
-    log_info "Controller code ready"
+    # Set CONTROLLER_DIR to point to the controller subdirectory
+    CONTROLLER_DIR="${VOLTERIA_DIR}/controller"
+
+    log_info "Controller code ready at ${CONTROLLER_DIR}"
 }
 
 # Setup Python virtual environment
@@ -308,6 +327,8 @@ voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl stop volteria-*
 voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl start volteria-*
 voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl status volteria-*
 voltadmin ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
+voltadmin ALL=(ALL) NOPASSWD: /usr/bin/git
+voltadmin ALL=(ALL) NOPASSWD: /bin/chown -R voltadmin\:voltadmin /opt/volteria
 EOF
 
     chmod 440 /etc/sudoers.d/volteria
