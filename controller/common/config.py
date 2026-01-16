@@ -37,6 +37,7 @@ class DeviceType(str, Enum):
     LOAD_METER = "load_meter"
     DG = "dg"
     SENSOR = "sensor"
+    TEMPERATURE_HUMIDITY_SENSOR = "temperature_humidity_sensor"
 
 
 class Protocol(str, Enum):
