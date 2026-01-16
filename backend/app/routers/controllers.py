@@ -1139,13 +1139,15 @@ def execute_ssh_command(host: str, port: int, username: str, password: str, comm
         )
 
         stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+        exit_code = stdout.channel.recv_exit_status()
         output = stdout.read().decode('utf-8')
         error = stderr.read().decode('utf-8')
 
         client.close()
 
-        if error and not output:
-            return False, f"Command error: {error[:200]}", error
+        # Check exit code - git writes progress to stderr even on success
+        if exit_code != 0:
+            return False, f"Command failed (exit {exit_code}): {error[:200] or output[:200]}", error or output
         return True, "Command executed successfully", output + (f"\n{error}" if error else "")
 
     except paramiko.AuthenticationException:
