@@ -75,7 +75,7 @@ python main_v2.py -v             # Verbose/debug mode
 | Concept | Description |
 |---------|-------------|
 | **Zero-feeding** | Limits solar output to prevent reverse power to DG (reserve min: 0 kW) |
-| **Device Types** | Load Meters, Solar Inverters, DG Controllers |
+| **Device Types** | Load Meters, Solar Inverters, DG Controllers, Temperature Sensors |
 | **Config Modes** | `meter_inverter`, `dg_inverter`, `full_system` |
 | **Sites** | Projects contain Sites; each Site has own devices + settings |
 | **Heartbeat** | Controller → cloud every 30s; offline after 1 min silence |
@@ -191,25 +191,41 @@ SUPABASE_SERVICE_KEY=your-service-key
 ## Recent Updates (2026-01-17)
 
 ### Logging System Improvements
-- **Local vs Cloud Logging Separation**: Local logging writes ALL readings at site interval; cloud sync filters by per-register `logging_frequency`
-- **New Toggle**: Site settings now has "Local Logging" checkbox (migration 077: `logging_local_enabled` column)
+- **Local vs Cloud Separation**: Local writes ALL readings; cloud filters by per-register `logging_frequency`
+- **Local Logging Toggle**: Site settings checkbox (migration 077: `logging_local_enabled`)
+- **Unique Timestamps**: Each log entry uses `datetime.now()` (not state timestamp)
 - **Data Flow**:
   ```
   Device Service → SharedState
        ↓
   LOCAL (if enabled): Every logging_local_interval_ms → Write ALL to SQLite
        ↓
-  CLOUD (if enabled): Every logging_cloud_interval_ms → Filter by register frequency → Supabase
+  CLOUD (if enabled): Every logging_cloud_interval_ms → Filter by frequency → Supabase
   ```
 
-### Reboot API Authentication
-- **Controller Self-Auth**: Reboot endpoint now accepts `controller_secret` (SSH password) for authentication
-- **Use Case**: OTA updates, wizard automation, maintenance scripts
-- **Example**: `curl -X POST ".../reboot" -d '{"controller_secret": "..."}'`
+### Cloud Sync Fixes
+- **HTTP 400 Fix**: Removed `operation_mode` field (not in `control_logs` table)
+- **HTTP 409 Fix**: Deduplication by `(site_id, timestamp)` before upload
+- **Conflict Handling**: `Prefer: resolution=ignore-duplicates` header + graceful 409 handling
+- **AlarmEvaluator**: Added missing `update_definitions()` method
 
-### Config Sync Fix
-- Controller config service uses SharedState consistently for caching
-- Config syncs to `/run/volteria/state/config.json`
+### Reboot API Authentication
+- **Controller Self-Auth**: Accepts `controller_secret` (SSH password) without user JWT
+- **Use Case**: OTA updates, wizard automation, maintenance scripts
+- **Null User Fix**: Audit log handles missing user for controller-initiated reboots
+
+### Controller Setup
+- **SSH Auto-Assign**: `/register` endpoint auto-assigns SSH credentials to existing controllers
+- **Simplified Ethernet**: Setup script skips ethernet gateway config (WiFi primary)
+- **SharedState Caching**: Config service uses SharedState consistently
+
+### New Database Migrations
+- **075**: Cleanup users table
+- **076**: Add phone column to users
+- **077**: Add `logging_local_enabled` to sites
+
+### Device Types
+- **Temperature Sensor**: Added `sensor` device type for environmental monitoring
 
 ## Never Do
 
