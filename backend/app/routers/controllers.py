@@ -26,6 +26,7 @@ from app.services.supabase import get_supabase
 from app.dependencies.auth import (
     CurrentUser,
     get_current_user,
+    get_current_user_optional,
     require_role,
 )
 
@@ -1099,6 +1100,11 @@ class RebootResponse(BaseModel):
     message: str
 
 
+class RebootRequest(BaseModel):
+    """Optional request body for reboot with controller auth."""
+    controller_secret: Optional[str] = None  # SSH password for controller self-auth
+
+
 def execute_ssh_reboot(host: str, port: int, username: str, password: str) -> tuple[bool, str]:
     """
     Execute reboot command via SSH using standard Linux systemctl.
@@ -1143,7 +1149,8 @@ def execute_ssh_reboot(host: str, port: int, username: str, password: str) -> tu
 @router.post("/{controller_id}/reboot", response_model=RebootResponse)
 async def reboot_controller(
     controller_id: UUID,
-    current_user: CurrentUser = Depends(get_current_user),
+    request: Optional[RebootRequest] = None,
+    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
     db: Client = Depends(get_supabase)
 ):
     """
@@ -1152,13 +1159,14 @@ async def reboot_controller(
     The reboot is executed immediately by connecting to the controller
     via its SSH reverse tunnel and running 'sudo reboot'.
 
-    Requires:
-    - User to be authenticated
-    - Controller must have SSH credentials configured
-    - One of the following permissions:
-      - User is super_admin, backend_admin, or admin
-      - User's enterprise owns the controller (via enterprise_id)
-      - User has can_control access to the site where controller is assigned
+    Authentication options (one required):
+    1. User JWT token (standard auth)
+    2. controller_secret in request body (matches controller's SSH password)
+
+    Permissions (if using user auth):
+    - User is super_admin, backend_admin, or admin
+    - User's enterprise owns the controller (via enterprise_id)
+    - User has can_control access to the site where controller is assigned
     """
     try:
         # 1. Get controller with SSH credentials and enterprise_id
@@ -1182,21 +1190,45 @@ async def reboot_controller(
             )
 
         # 2. Check permissions - multiple ways to authorize
-        is_admin = current_user.role in ["super_admin", "backend_admin", "admin"]
-        can_reboot = is_admin
+        can_reboot = False
+        is_admin = False
+        auth_method = None
 
-        # 3. If not admin, check if user's enterprise owns this controller
-        if not can_reboot and controller.get("enterprise_id"):
-            user_result = db.table("users").select("enterprise_id").eq("id", current_user.id).execute()
-            if user_result.data:
-                user_enterprise = user_result.data[0].get("enterprise_id")
-                if user_enterprise and user_enterprise == controller.get("enterprise_id"):
-                    can_reboot = True
+        # Option A: Controller self-auth via secret (SSH password)
+        if request and request.controller_secret:
+            if request.controller_secret == controller.get("ssh_password"):
+                can_reboot = True
+                auth_method = "controller_secret"
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid controller secret"
+                )
 
-        # 4. If still not allowed, check site assignment for project-level access
+        # Option B: User authentication
+        if not can_reboot:
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required. Provide JWT token or controller_secret."
+                )
+
+            is_admin = current_user.role in ["super_admin", "backend_admin", "admin"]
+            can_reboot = is_admin
+            auth_method = "user_jwt"
+
+            # 3. If not admin, check if user's enterprise owns this controller
+            if not can_reboot and controller.get("enterprise_id"):
+                user_result = db.table("users").select("enterprise_id").eq("id", current_user.id).execute()
+                if user_result.data:
+                    user_enterprise = user_result.data[0].get("enterprise_id")
+                    if user_enterprise and user_enterprise == controller.get("enterprise_id"):
+                        can_reboot = True
+
+        # 4. If still not allowed with user auth, check site assignment for project-level access
         site_id = None
         project_id = None
-        if not can_reboot:
+        if not can_reboot and current_user:
             site_assignment = db.table("site_master_devices").select(
                 "site_id, sites:site_id (id, project_id)"
             ).eq("controller_id", str(controller_id)).execute()

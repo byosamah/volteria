@@ -7,9 +7,9 @@ import { createClient } from "@/lib/supabase/server";
  * Proxy to backend API which executes SSH reboot on the controller.
  * The backend connects via the controller's reverse SSH tunnel and executes 'sudo reboot'.
  *
- * Requires:
- * - User to be authenticated
- * - User to have access to the site where the controller is assigned
+ * Authentication options (one required):
+ * 1. User JWT token (standard auth via session)
+ * 2. controller_secret in request body (matches controller's SSH password)
  */
 export async function POST(
   request: NextRequest,
@@ -18,22 +18,32 @@ export async function POST(
   const { controllerId } = await params;
 
   try {
-    // Get the session from Supabase
-    const supabase = await createClient();
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    // Parse request body for optional controller_secret
+    let body: { controller_secret?: string } = {};
+    try {
+      body = await request.json();
+    } catch {
+      // No body or invalid JSON is fine
+    }
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Get the session from Supabase (optional now)
+    const supabase = await createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+
+    // Build headers - include auth token if we have a session
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
     }
 
     // Call backend API which handles SSH reboot
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://backend:8000";
     const response = await fetch(`${backendUrl}/api/controllers/${controllerId}/reboot`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session.access_token}`,
-      },
+      headers,
+      body: JSON.stringify(body),
     });
 
     const data = await response.json();
