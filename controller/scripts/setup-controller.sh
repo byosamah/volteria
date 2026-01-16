@@ -127,7 +127,7 @@ install_dependencies() {
     log_info "System dependencies installed"
 }
 
-# Configure network settings (timezone, static IP for ethernet)
+# Configure network settings (timezone only - ethernet configured separately if needed)
 configure_network() {
     log_step "Configuring network settings..."
 
@@ -135,54 +135,16 @@ configure_network() {
     timedatectl set-timezone Asia/Dubai
     log_info "Timezone set to Asia/Dubai"
 
-    # Enable NetworkManager if not already enabled
-    systemctl enable NetworkManager 2>/dev/null || true
-    systemctl start NetworkManager 2>/dev/null || true
-
-    # Default static IP settings for ethernet (eth0)
-    ETH_STATIC_IP="192.168.1.100"
-    ETH_GATEWAY="192.168.1.1"
-    ETH_DNS="8.8.8.8,8.8.4.4"
-    ETH_SUBNET="24"
-
-    # Configure static IP on ethernet (eth0) - always applied
-    log_info "Configuring static IP on ethernet..."
-
-    # Check if eth0 connection exists
-    ETH_CONN=$(nmcli -t -f NAME,DEVICE con show | grep "eth0" | head -1 | cut -d: -f1)
-
-    if [[ -z "$ETH_CONN" ]]; then
-        # Create new ethernet connection if none exists
-        log_info "Creating ethernet connection profile..."
-        nmcli con add type ethernet con-name "Wired Volteria" ifname eth0 \
-            ipv4.addresses "${ETH_STATIC_IP}/${ETH_SUBNET}" \
-            ipv4.gateway "${ETH_GATEWAY}" \
-            ipv4.dns "${ETH_DNS}" \
-            ipv4.method manual \
-            connection.autoconnect yes
-        ETH_CONN="Wired Volteria"
-    else
-        # Modify existing ethernet connection
-        log_info "Configuring existing ethernet connection: ${ETH_CONN}"
-        nmcli con mod "$ETH_CONN" ipv4.addresses "${ETH_STATIC_IP}/${ETH_SUBNET}"
-        nmcli con mod "$ETH_CONN" ipv4.gateway "${ETH_GATEWAY}"
-        nmcli con mod "$ETH_CONN" ipv4.dns "${ETH_DNS}"
-        nmcli con mod "$ETH_CONN" ipv4.method manual
-        nmcli con mod "$ETH_CONN" connection.autoconnect yes
-    fi
-
-    # Bring up ethernet if cable is connected
-    nmcli con up "$ETH_CONN" 2>/dev/null || log_info "Ethernet cable not connected (will auto-connect when plugged in)"
-
-    log_info "Ethernet configured: IP=${ETH_STATIC_IP}, Gateway=${ETH_GATEWAY}"
-
-    # WiFi remains on DHCP (configured via Raspberry Pi Imager)
-    log_info "WiFi remains enabled (DHCP - configured via Raspberry Pi Imager)"
+    # WiFi is configured via Raspberry Pi Imager - don't touch it
+    # Ethernet static IP can be configured manually later if needed:
+    #   sudo nmcli con add type ethernet con-name "Wired Volteria" ifname eth0 \
+    #       ipv4.addresses "192.168.1.100/24" ipv4.method manual connection.autoconnect yes
+    # Note: Don't set gateway on ethernet to avoid hijacking WiFi's default route
 
     # Display current IPs
-    sleep 2
     CURRENT_IPS=$(hostname -I)
     log_info "Current IP addresses: ${CURRENT_IPS}"
+    log_info "Network configuration preserved (WiFi from Pi Imager)"
 }
 
 # Create directory structure
