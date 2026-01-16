@@ -1275,7 +1275,7 @@ async def reboot_controller(
 
         # 8. Log the action to audit_logs
         db.table("audit_logs").insert({
-            "user_id": current_user.id,
+            "user_id": current_user.id if current_user else None,
             "action": "reboot",
             "action_category": "control",
             "resource_type": "controller",
@@ -1285,7 +1285,8 @@ async def reboot_controller(
                 "site_id": str(site_id) if site_id else None,
                 "ssh_port": controller["ssh_port"],
                 "success": success,
-                "message": message
+                "message": message,
+                "auth_method": auth_method  # Track how the reboot was authorized
             },
             "status": "success" if success else "failed"
         }).execute()
