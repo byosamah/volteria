@@ -113,6 +113,21 @@ class LocalDatabase:
                 )
             """)
 
+            # Device readings table (separate from control_logs)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS device_readings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    register_name TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    unit TEXT,
+                    timestamp TEXT NOT NULL,
+                    synced_at TEXT,
+                    created_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
+
             # Create indexes
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_logs_timestamp
@@ -129,6 +144,14 @@ class LocalDatabase:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_alarms_unsynced
                 ON alarms(synced_at) WHERE synced_at IS NULL
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_device_readings_timestamp
+                ON device_readings(timestamp)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_device_readings_unsynced
+                ON device_readings(synced_at) WHERE synced_at IS NULL
             """)
 
             conn.commit()
@@ -336,16 +359,23 @@ class LocalDatabase:
             """, (cutoff_str,))
             alarms_deleted = cursor.rowcount
 
+            # Delete old device readings
+            cursor.execute("""
+                DELETE FROM device_readings
+                WHERE timestamp < ? AND synced_at IS NOT NULL
+            """, (cutoff_str,))
+            readings_deleted = cursor.rowcount
+
             conn.commit()
 
             # Vacuum to reclaim space
             cursor.execute("VACUUM")
 
-            total_deleted = logs_deleted + alarms_deleted
+            total_deleted = logs_deleted + alarms_deleted + readings_deleted
             if total_deleted > 0:
                 logger.info(
-                    f"Cleaned up {logs_deleted} logs, {alarms_deleted} alarms "
-                    f"older than {retention_days} days"
+                    f"Cleaned up {logs_deleted} logs, {alarms_deleted} alarms, "
+                    f"{readings_deleted} device readings older than {retention_days} days"
                 )
 
             return total_deleted
@@ -367,10 +397,103 @@ class LocalDatabase:
             cursor.execute("SELECT COUNT(*) FROM alarms WHERE synced_at IS NULL")
             unsynced_alarms = cursor.fetchone()[0]
 
+            cursor.execute("SELECT COUNT(*) FROM device_readings")
+            total_device_readings = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM device_readings WHERE synced_at IS NULL")
+            unsynced_device_readings = cursor.fetchone()[0]
+
             return {
                 "total_logs": total_logs,
                 "unsynced_logs": unsynced_logs,
                 "total_alarms": total_alarms,
                 "unsynced_alarms": unsynced_alarms,
+                "total_device_readings": total_device_readings,
+                "unsynced_device_readings": unsynced_device_readings,
                 "db_size_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
             }
+
+    def insert_device_reading(
+        self,
+        site_id: str,
+        device_id: str,
+        register_name: str,
+        value: float,
+        timestamp: str,
+        unit: str | None = None,
+    ) -> int:
+        """Insert a single device reading"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                INSERT INTO device_readings (
+                    site_id, device_id, register_name, value, unit, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, (site_id, device_id, register_name, value, unit, timestamp))
+
+            conn.commit()
+            return cursor.lastrowid
+
+    def insert_device_readings_batch(
+        self,
+        readings: list[dict],
+    ) -> int:
+        """Insert multiple device readings in a batch"""
+        if not readings:
+            return 0
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.executemany("""
+                INSERT INTO device_readings (
+                    site_id, device_id, register_name, value, unit, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, [
+                (
+                    r["site_id"],
+                    r["device_id"],
+                    r["register_name"],
+                    r["value"],
+                    r.get("unit"),
+                    r["timestamp"],
+                )
+                for r in readings
+            ])
+
+            conn.commit()
+            return cursor.rowcount
+
+    def get_unsynced_device_readings(self, limit: int = 100) -> list[dict]:
+        """Get device readings that haven't been synced"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT * FROM device_readings
+                WHERE synced_at IS NULL
+                ORDER BY timestamp ASC
+                LIMIT ?
+            """, (limit,))
+
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def mark_device_readings_synced(self, reading_ids: list[int]) -> None:
+        """Mark device readings as synced"""
+        if not reading_ids:
+            return
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+
+            placeholders = ",".join("?" for _ in reading_ids)
+            cursor.execute(f"""
+                UPDATE device_readings
+                SET synced_at = ?
+                WHERE id IN ({placeholders})
+            """, [now] + reading_ids)
+
+            conn.commit()

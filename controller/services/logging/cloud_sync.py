@@ -156,6 +156,48 @@ class CloudSync:
 
         return 0
 
+    async def sync_device_readings(self) -> int:
+        """
+        Sync unsynced device readings to cloud.
+
+        Returns:
+            Number of readings synced
+        """
+        readings = self.local_db.get_unsynced_device_readings(limit=self.BATCH_SIZE)
+
+        if not readings:
+            return 0
+
+        # Transform for Supabase (must match device_readings table columns)
+        records = []
+        for reading in readings:
+            record = {
+                "site_id": reading.get("site_id") or self.site_id,
+                "device_id": reading["device_id"],
+                "register_name": reading["register_name"],
+                "value": reading["value"],
+                "unit": reading.get("unit"),
+                "timestamp": reading["timestamp"],
+            }
+            records.append(record)
+
+        # Upload with retry
+        success = await self._upload_with_retry(
+            table="device_readings",
+            records=records,
+        )
+
+        if success:
+            # Mark as synced
+            reading_ids = [reading["id"] for reading in readings]
+            self.local_db.mark_device_readings_synced(reading_ids)
+            self._sync_count += len(readings)
+
+            logger.debug(f"Synced {len(readings)} device readings")
+            return len(readings)
+
+        return 0
+
     async def sync_all(self) -> dict:
         """
         Sync all pending data.
@@ -165,13 +207,15 @@ class CloudSync:
         """
         logs_synced = await self.sync_logs()
         alarms_synced = await self.sync_alarms()
+        device_readings_synced = await self.sync_device_readings()
 
         self._last_sync = datetime.now(timezone.utc)
 
         return {
             "logs_synced": logs_synced,
             "alarms_synced": alarms_synced,
-            "total_synced": logs_synced + alarms_synced,
+            "device_readings_synced": device_readings_synced,
+            "total_synced": logs_synced + alarms_synced + device_readings_synced,
             "timestamp": self._last_sync.isoformat(),
         }
 

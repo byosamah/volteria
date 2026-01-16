@@ -382,7 +382,8 @@ class LoggingService:
                     if result["total_synced"] > 0:
                         logger.info(
                             f"Cloud sync: {result['logs_synced']} logs, "
-                            f"{result['alarms_synced']} alarms"
+                            f"{result['alarms_synced']} alarms, "
+                            f"{result.get('device_readings_synced', 0)} device readings"
                         )
                 except Exception as e:
                     logger.error(f"Cloud sync error: {e}")
@@ -472,11 +473,11 @@ class LoggingService:
         solar_min = min(self._solar_buffer) if self._solar_buffer else state.get("solar_output_kw", 0)
         solar_max = max(self._solar_buffer) if self._solar_buffer else state.get("solar_output_kw", 0)
 
-        # Only write to database if we have data to log
-        if device_readings or self._state_buffer:
-            # Always use current timestamp for log entries (ensures uniqueness)
-            # Device/reading timestamps are stored in device_readings JSON
-            current_timestamp = datetime.now(timezone.utc).isoformat()
+        # Always use current timestamp for log entries (ensures uniqueness)
+        current_timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Write control log if we have state data
+        if self._state_buffer:
             self.local_db.insert_control_log(
                 timestamp=current_timestamp,
                 site_id=self._site_id,
@@ -496,7 +497,29 @@ class LoggingService:
                 load_min_max=(load_min, load_max),
                 solar_min_max=(solar_min, solar_max),
             )
-            logger.debug(f"Wrote control log with {len(device_readings)} device readings")
+            logger.debug(f"Wrote control log")
+
+        # Write device readings to separate table (for cloud sync)
+        if device_readings and readings_state:
+            readings_batch = []
+            for key, reading in device_readings.items():
+                # Parse device_id:register_name from key
+                if ":" not in key:
+                    continue
+                device_id, register_name = key.split(":", 1)
+
+                readings_batch.append({
+                    "site_id": self._site_id,
+                    "device_id": device_id,
+                    "register_name": register_name,
+                    "value": reading.get("value"),
+                    "unit": reading.get("unit"),
+                    "timestamp": reading.get("timestamp") or current_timestamp,
+                })
+
+            if readings_batch:
+                count = self.local_db.insert_device_readings_batch(readings_batch)
+                logger.debug(f"Wrote {count} device readings to local DB")
 
         # Clear buffers
         self._state_buffer.clear()
