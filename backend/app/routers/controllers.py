@@ -1105,6 +1105,57 @@ class RebootRequest(BaseModel):
     controller_secret: Optional[str] = None  # SSH password for controller self-auth
 
 
+class UpdateRequest(BaseModel):
+    """Request body for update command."""
+    controller_secret: Optional[str] = None  # SSH password for controller self-auth
+
+
+class UpdateResponse(BaseModel):
+    """Response for update command."""
+    success: bool
+    message: str
+    output: Optional[str] = None
+
+
+def execute_ssh_command(host: str, port: int, username: str, password: str, command: str, timeout: int = 60) -> tuple[bool, str, str]:
+    """
+    Execute arbitrary command via SSH.
+    Returns (success, message, output).
+    """
+    import paramiko
+
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        client.connect(
+            hostname=host,
+            port=port,
+            username=username,
+            password=password,
+            timeout=10,
+            banner_timeout=10,
+            auth_timeout=10
+        )
+
+        stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+        output = stdout.read().decode('utf-8')
+        error = stderr.read().decode('utf-8')
+
+        client.close()
+
+        if error and not output:
+            return False, f"Command error: {error[:200]}", error
+        return True, "Command executed successfully", output + (f"\n{error}" if error else "")
+
+    except paramiko.AuthenticationException:
+        return False, "SSH authentication failed", ""
+    except paramiko.SSHException as e:
+        return False, f"SSH error: {str(e)}", ""
+    except Exception as e:
+        return False, f"Failed to connect: {str(e)}", ""
+
+
 def execute_ssh_reboot(host: str, port: int, username: str, password: str) -> tuple[bool, str]:
     """
     Execute reboot command via SSH using standard Linux systemctl.
@@ -1308,4 +1359,140 @@ async def reboot_controller(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reboot controller: {str(e)}"
+        )
+
+
+# ============================================
+# ENDPOINTS - UPDATE CONTROLLER SOFTWARE
+# ============================================
+
+@router.post("/{controller_id}/update", response_model=UpdateResponse)
+async def update_controller(
+    controller_id: UUID,
+    request: Optional[UpdateRequest] = None,
+    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Update controller software via SSH (git pull + service restart).
+
+    Executes:
+    1. cd /opt/volteria && sudo git pull origin main
+    2. sudo systemctl restart volteria-logging volteria-control volteria-device volteria-config
+
+    Authentication: Same as reboot endpoint (controller_secret or user JWT).
+    """
+    try:
+        # 1. Get controller with SSH credentials
+        controller_result = db.table("controllers").select(
+            "id, serial_number, ssh_port, ssh_username, ssh_password, enterprise_id"
+        ).eq("id", str(controller_id)).execute()
+
+        if not controller_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Controller {controller_id} not found"
+            )
+
+        controller = controller_result.data[0]
+
+        if not controller.get("ssh_port") or not controller.get("ssh_username"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Controller SSH credentials not configured."
+            )
+
+        # 2. Check permissions (same as reboot)
+        can_update = False
+        auth_method = None
+
+        # Option A: Controller self-auth via secret
+        if request and request.controller_secret:
+            if request.controller_secret == controller.get("ssh_password"):
+                can_update = True
+                auth_method = "controller_secret"
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid controller secret"
+                )
+
+        # Option B: User authentication (admin only for updates)
+        if not can_update:
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required. Provide JWT token or controller_secret."
+                )
+
+            is_admin = current_user.role in ["super_admin", "backend_admin", "admin"]
+            can_update = is_admin
+            auth_method = "user_jwt"
+
+        if not can_update:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins can update controller software"
+            )
+
+        # 3. Execute SSH commands
+        SSH_HOST = "host.docker.internal"
+
+        # Git pull
+        success, message, output = execute_ssh_command(
+            host=SSH_HOST,
+            port=controller["ssh_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", ""),
+            command="cd /opt/volteria && sudo git pull origin main",
+            timeout=60
+        )
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Git pull failed: {message}"
+            )
+
+        git_output = output
+
+        # Restart services
+        success, message, output = execute_ssh_command(
+            host=SSH_HOST,
+            port=controller["ssh_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", ""),
+            command="sudo systemctl restart volteria-logging volteria-control volteria-device volteria-config",
+            timeout=30
+        )
+
+        # 4. Log the action
+        db.table("audit_logs").insert({
+            "user_id": current_user.id if current_user else None,
+            "action": "software_update",
+            "action_category": "control",
+            "resource_type": "controller",
+            "resource_id": str(controller_id),
+            "resource_name": controller['serial_number'],
+            "metadata": {
+                "ssh_port": controller["ssh_port"],
+                "success": success,
+                "git_output": git_output[:500] if git_output else None,
+                "auth_method": auth_method
+            },
+            "status": "success" if success else "failed"
+        }).execute()
+
+        return UpdateResponse(
+            success=True,
+            message=f"Updated {controller['serial_number']}. Services restarting.",
+            output=git_output[:1000] if git_output else None
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update controller: {str(e)}"
         )
