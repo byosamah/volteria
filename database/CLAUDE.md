@@ -17,7 +17,7 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE?select=*" \
 
 ```
 database/
-└── migrations/     # 75 migration files (001-075)
+└── migrations/     # 80+ migration files
 ```
 
 ### Supabase CLI Commands
@@ -86,7 +86,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 026-040 | Alarms & fields | thresholds, calculated fields |
 | 041-050 | Dashboards | widgets, retention policies |
 | 051-060 | Enterprise | subscriptions, firmware/OTA |
-| 061-075 | Refinements | constraints, FK fixes, cleanup |
+| 061-081 | Refinements | constraints, FK fixes, cleanup |
 
 ## Key Patterns
 

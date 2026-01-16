@@ -123,7 +123,7 @@ supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_
 | `controller_heartbeats` | Controller status |
 | `controller_service_status` | 5-layer health tracking |
 
-> **Full schema**: See `database/migrations/` (68+ migration files)
+> **Full schema**: See `database/migrations/` (80+ migration files)
 
 ## Deployment
 
