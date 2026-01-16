@@ -52,6 +52,17 @@ class AlarmEvaluator:
 
     def __init__(self):
         self._alarm_states: dict[str, AlarmState] = {}
+        self._definitions: list[AlarmDefinition] = []
+
+    def update_definitions(self, definitions: list[AlarmDefinition]) -> None:
+        """
+        Update the alarm definitions.
+
+        Args:
+            definitions: New list of alarm definitions
+        """
+        self._definitions = definitions
+        logger.debug(f"Updated alarm definitions: {len(definitions)} definitions")
 
     def evaluate(
         self,
