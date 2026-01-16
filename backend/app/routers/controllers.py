@@ -1438,20 +1438,33 @@ async def update_controller(
         # 3. Execute SSH commands
         SSH_HOST = "host.docker.internal"
 
-        # Git pull
+        # Git pull (or clone if not a git repo)
+        # First check if it's a git repo, if not, clone it
+        git_command = """
+cd /opt/volteria
+if [ -d .git ]; then
+    sudo git pull origin main
+else
+    cd /opt
+    sudo rm -rf volteria.old
+    sudo mv volteria volteria.old 2>/dev/null || true
+    sudo git clone https://github.com/byosamah/volteria.git
+    sudo chown -R voltadmin:voltadmin volteria
+fi
+"""
         success, message, output = execute_ssh_command(
             host=SSH_HOST,
             port=controller["ssh_port"],
             username=controller["ssh_username"],
             password=controller.get("ssh_password", ""),
-            command="cd /opt/volteria && sudo git pull origin main",
-            timeout=60
+            command=git_command,
+            timeout=120
         )
 
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Git pull failed: {message}"
+                detail=f"Git update failed: {message}"
             )
 
         git_output = output
