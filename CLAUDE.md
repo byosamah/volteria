@@ -123,7 +123,7 @@ supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_
 | `controller_heartbeats` | Controller status |
 | `controller_service_status` | 5-layer health tracking |
 
-> **Full schema**: See `database/migrations/` (80+ migration files)
+> **Full schema**: See `database/migrations/` (77+ migration files)
 
 ## Deployment
 
@@ -187,6 +187,29 @@ SUPABASE_SERVICE_KEY=your-service-key
 6. **DG reserve**: Minimum is 0 kW (never negative)
 
 7. **Invite flow**: Uses URL fragments (`#access_token=...`), handled by login page
+
+## Recent Updates (2026-01-17)
+
+### Logging System Improvements
+- **Local vs Cloud Logging Separation**: Local logging writes ALL readings at site interval; cloud sync filters by per-register `logging_frequency`
+- **New Toggle**: Site settings now has "Local Logging" checkbox (migration 077: `logging_local_enabled` column)
+- **Data Flow**:
+  ```
+  Device Service → SharedState
+       ↓
+  LOCAL (if enabled): Every logging_local_interval_ms → Write ALL to SQLite
+       ↓
+  CLOUD (if enabled): Every logging_cloud_interval_ms → Filter by register frequency → Supabase
+  ```
+
+### Reboot API Authentication
+- **Controller Self-Auth**: Reboot endpoint now accepts `controller_secret` (SSH password) for authentication
+- **Use Case**: OTA updates, wizard automation, maintenance scripts
+- **Example**: `curl -X POST ".../reboot" -d '{"controller_secret": "..."}'`
+
+### Config Sync Fix
+- Controller config service uses SharedState consistently for caching
+- Config syncs to `/run/volteria/state/config.json`
 
 ## Never Do
 
