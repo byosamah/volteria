@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 
-DB_PATH = "/data/controller.db"
+DB_PATH = "/opt/volteria/data/controller.db"
 
 # Conservative limits to protect controller performance
 MAX_RECORDS = 10000      # Hard limit on query results
