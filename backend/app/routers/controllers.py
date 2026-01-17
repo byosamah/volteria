@@ -18,7 +18,9 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
@@ -1804,17 +1806,35 @@ class LocalHistoricalResponse(BaseModel):
 async def query_local_historical(
     controller_id: UUID,
     request: LocalHistoricalRequest,
-    current_user: CurrentUser = Depends(require_role(["super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"])),
+    x_service_key: Optional[str] = Header(None, alias="X-Service-Key"),
+    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
     db: Client = Depends(get_supabase)
 ):
     """
     Query historical data from controller's local SQLite database.
 
     Executes historical_cli.py on the controller via SSH.
-    Requires configurator role or higher.
+    Requires configurator role or higher, OR valid service key for internal API calls.
 
     Max range: 7 days (enforced by frontend).
     """
+    # Check authentication - either service key or user JWT
+    service_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    is_service_auth = x_service_key and x_service_key == service_key
+
+    if not is_service_auth:
+        # Require user authentication with proper role
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required"
+            )
+        allowed_roles = ["super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"]
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
     try:
         # 1. Get controller details
         result = db.table("controllers").select(
