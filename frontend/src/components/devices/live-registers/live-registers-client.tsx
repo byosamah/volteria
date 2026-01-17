@@ -7,7 +7,7 @@
  * Manages state and connects to real API for register operations.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,14 @@ import type {
   RegisterSection as SectionType,
   RegisterGroup,
 } from "./types";
+
+// Write queue item type
+interface WriteQueueItem {
+  section: SectionType;
+  register: ModbusRegister;
+  value: string;
+  key: string;
+}
 
 // Toggle for mock data vs real API calls (set to false for production)
 const USE_MOCK_DATA = false;
@@ -97,6 +105,10 @@ export function LiveRegistersClient({
   const [pendingWrites, setPendingWrites] = useState<PendingWritesMap>(new Map());
   const [writeStatus, setWriteStatus] = useState<WriteStatusMap>(new Map());
 
+  // Write queue state - process writes sequentially to avoid Modbus conflicts
+  const writeQueueRef = useRef<WriteQueueItem[]>([]);
+  const isProcessingQueueRef = useRef(false);
+
   // Check if controller is available for real API calls
   const hasController = !!controllerId;
 
@@ -115,139 +127,10 @@ export function LiveRegistersClient({
   const getRegisterKey = (section: SectionType, address: number) =>
     `${section}-${address}`;
 
-  // Request data for a group of registers
-  const handleRequestData = useCallback(
-    async (
-      section: SectionType,
-      groupName: string,
-      registers: ModbusRegister[]
-    ) => {
-      const groupKey = `${section}-${groupName}`;
-
-      // Mark group as loading
-      setLoadingGroups((prev) => new Set(prev).add(groupKey));
-
-      try {
-        if (USE_MOCK_DATA) {
-          // Simulate network delay
-          await new Promise((resolve) =>
-            setTimeout(resolve, 800 + Math.random() * 400)
-          );
-
-          // Generate mock values
-          const now = new Date().toISOString();
-          const newValues = new Map(registerValues);
-
-          for (const reg of registers) {
-            const rawValue = generateMockValue(reg);
-            const scale = reg.scale ?? 1;
-            const offset = reg.offset ?? 0;
-            const scaleOrder = reg.scale_order ?? "multiply_first";
-
-            let scaledValue: number;
-            if (scaleOrder === "multiply_first") {
-              scaledValue = rawValue * scale + offset;
-            } else {
-              scaledValue = (rawValue + offset) * scale;
-            }
-
-            newValues.set(getRegisterKey(section, reg.address), {
-              raw_value: rawValue,
-              scaled_value: scaledValue,
-              timestamp: now,
-            });
-          }
-
-          setRegisterValues(newValues);
-          toast.success(`Read ${registers.length} registers`);
-        } else {
-          // Real API call
-          if (!controllerId) {
-            toast.error("No controller connected to this site");
-            return;
-          }
-
-          const response = await fetch(`/api/controllers/${controllerId}/registers`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "read",
-              device_id: device.id,
-              addresses: registers.map((r) => r.address),
-            }),
-          });
-
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || result.detail || "Request failed");
-          }
-
-          if (!result.success) {
-            const errorMsg = result.errors?.join(", ") || "Failed to read registers";
-            toast.error(errorMsg);
-            return;
-          }
-
-          // Update values from response
-          const newValues = new Map(registerValues);
-          for (const [addr, data] of Object.entries(result.readings)) {
-            const reading = data as { raw_value: number; scaled_value: number; timestamp: string };
-            newValues.set(getRegisterKey(section, parseInt(addr)), {
-              raw_value: reading.raw_value,
-              scaled_value: reading.scaled_value,
-              timestamp: reading.timestamp,
-            });
-          }
-
-          setRegisterValues(newValues);
-          const readCount = Object.keys(result.readings).length;
-          toast.success(`Read ${readCount} register${readCount !== 1 ? "s" : ""}`);
-
-          // Show any partial errors
-          if (result.errors && result.errors.length > 0) {
-            toast.warning(result.errors.join("; "));
-          }
-        }
-      } catch (error) {
-        console.error("Error reading registers:", error);
-        toast.error(error instanceof Error ? error.message : "Failed to read registers");
-      } finally {
-        // Remove loading state
-        setLoadingGroups((prev) => {
-          const next = new Set(prev);
-          next.delete(groupKey);
-          return next;
-        });
-      }
-    },
-    [registerValues, device.id, controllerId]
-  );
-
-  // Write value to a register
-  const handleWriteValue = useCallback(
-    async (section: SectionType, register: ModbusRegister, value: string) => {
-      const key = getRegisterKey(section, register.address);
+  // Execute a single write operation (internal function)
+  const executeWrite = useCallback(
+    async (section: SectionType, register: ModbusRegister, value: string, key: string) => {
       const numValue = parseFloat(value);
-
-      // Validate value
-      if (isNaN(numValue)) {
-        toast.error("Invalid value - must be a number");
-        return;
-      }
-
-      // Check min/max
-      if (register.min !== undefined && numValue < register.min) {
-        toast.error(`Value must be at least ${register.min}`);
-        return;
-      }
-      if (register.max !== undefined && numValue > register.max) {
-        toast.error(`Value must be at most ${register.max}`);
-        return;
-      }
-
-      // Mark as pending
-      setWriteStatus((prev) => new Map(prev).set(key, "pending"));
 
       try {
         if (USE_MOCK_DATA) {
@@ -388,6 +271,188 @@ export function LiveRegistersClient({
       }
     },
     [device.id, controllerId]
+  );
+
+  // Process write queue sequentially
+  const processWriteQueue = useCallback(async () => {
+    if (isProcessingQueueRef.current) return;
+    if (writeQueueRef.current.length === 0) return;
+
+    isProcessingQueueRef.current = true;
+
+    while (writeQueueRef.current.length > 0) {
+      const item = writeQueueRef.current.shift()!;
+
+      // Execute the write
+      await executeWrite(item.section, item.register, item.value, item.key);
+
+      // Wait 500ms before next write to let Modbus device settle
+      if (writeQueueRef.current.length > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+
+    isProcessingQueueRef.current = false;
+  }, [executeWrite]);
+
+  // Request data for a group of registers
+  const handleRequestData = useCallback(
+    async (
+      section: SectionType,
+      groupName: string,
+      registers: ModbusRegister[]
+    ) => {
+      const groupKey = `${section}-${groupName}`;
+
+      // Mark group as loading
+      setLoadingGroups((prev) => new Set(prev).add(groupKey));
+
+      try {
+        if (USE_MOCK_DATA) {
+          // Simulate network delay
+          await new Promise((resolve) =>
+            setTimeout(resolve, 800 + Math.random() * 400)
+          );
+
+          // Generate mock values
+          const now = new Date().toISOString();
+          const newValues = new Map(registerValues);
+
+          for (const reg of registers) {
+            const rawValue = generateMockValue(reg);
+            const scale = reg.scale ?? 1;
+            const offset = reg.offset ?? 0;
+            const scaleOrder = reg.scale_order ?? "multiply_first";
+
+            let scaledValue: number;
+            if (scaleOrder === "multiply_first") {
+              scaledValue = rawValue * scale + offset;
+            } else {
+              scaledValue = (rawValue + offset) * scale;
+            }
+
+            newValues.set(getRegisterKey(section, reg.address), {
+              raw_value: rawValue,
+              scaled_value: scaledValue,
+              timestamp: now,
+            });
+          }
+
+          setRegisterValues(newValues);
+          toast.success(`Read ${registers.length} registers`);
+        } else {
+          // Real API call
+          if (!controllerId) {
+            toast.error("No controller connected to this site");
+            return;
+          }
+
+          const response = await fetch(`/api/controllers/${controllerId}/registers`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "read",
+              device_id: device.id,
+              addresses: registers.map((r) => r.address),
+            }),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.error || result.detail || "Request failed");
+          }
+
+          if (!result.success) {
+            const errorMsg = result.errors?.join(", ") || "Failed to read registers";
+            toast.error(errorMsg);
+            return;
+          }
+
+          // Update values from response
+          const newValues = new Map(registerValues);
+          for (const [addr, data] of Object.entries(result.readings)) {
+            const reading = data as { raw_value: number; scaled_value: number; timestamp: string };
+            newValues.set(getRegisterKey(section, parseInt(addr)), {
+              raw_value: reading.raw_value,
+              scaled_value: reading.scaled_value,
+              timestamp: reading.timestamp,
+            });
+          }
+
+          setRegisterValues(newValues);
+          const readCount = Object.keys(result.readings).length;
+          toast.success(`Read ${readCount} register${readCount !== 1 ? "s" : ""}`);
+
+          // Show any partial errors
+          if (result.errors && result.errors.length > 0) {
+            toast.warning(result.errors.join("; "));
+          }
+        }
+      } catch (error) {
+        console.error("Error reading registers:", error);
+        toast.error(error instanceof Error ? error.message : "Failed to read registers");
+      } finally {
+        // Remove loading state
+        setLoadingGroups((prev) => {
+          const next = new Set(prev);
+          next.delete(groupKey);
+          return next;
+        });
+      }
+    },
+    [registerValues, device.id, controllerId]
+  );
+
+  // Write value to a register (queues the write for sequential processing)
+  const handleWriteValue = useCallback(
+    async (section: SectionType, register: ModbusRegister, value: string) => {
+      const key = getRegisterKey(section, register.address);
+      const numValue = parseFloat(value);
+
+      // Validate value
+      if (isNaN(numValue)) {
+        toast.error("Invalid value - must be a number");
+        return;
+      }
+
+      // Check min/max
+      if (register.min !== undefined && numValue < register.min) {
+        toast.error(`Value must be at least ${register.min}`);
+        return;
+      }
+      if (register.max !== undefined && numValue > register.max) {
+        toast.error(`Value must be at most ${register.max}`);
+        return;
+      }
+
+      // Check if this register is already queued (prevent duplicates)
+      const alreadyQueued = writeQueueRef.current.some(item => item.key === key);
+      if (alreadyQueued) {
+        // Update the value in the queue instead of adding a duplicate
+        writeQueueRef.current = writeQueueRef.current.map(item =>
+          item.key === key ? { ...item, value } : item
+        );
+        toast.info(`Updated queued write for ${register.name}`);
+        return;
+      }
+
+      // Mark as pending (shows "queued" visual state)
+      setWriteStatus((prev) => new Map(prev).set(key, "pending"));
+
+      // Add to queue
+      writeQueueRef.current.push({ section, register, value, key });
+
+      // Show queue position if there are other writes waiting
+      const queueLength = writeQueueRef.current.length;
+      if (queueLength > 1) {
+        toast.info(`Queued write to ${register.name} (${queueLength} pending)`);
+      }
+
+      // Start processing queue (no-op if already processing)
+      processWriteQueue();
+    },
+    [processWriteQueue]
   );
 
   // Update pending write value
