@@ -48,17 +48,18 @@ export default async function ControllerWizardPage({ searchParams }: PageProps) 
     redirect("/");
   }
 
-  // Fetch hardware types for the form
+  // Fetch hardware types for the form (including features for NVMe boot detection)
   let hardwareTypes: Array<{
     id: string;
     name: string;
     hardware_type: string;
+    features: Record<string, unknown> | null;
   }> = [];
 
   try {
     const { data } = await supabase
       .from("approved_hardware")
-      .select("id, name, hardware_type")
+      .select("id, name, hardware_type, features")
       .eq("is_active", true)
       .order("name");
 

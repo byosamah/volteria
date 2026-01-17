@@ -44,6 +44,7 @@ interface HardwareType {
   id: string;
   name: string;
   hardware_type: string;
+  features: Record<string, unknown> | null;
 }
 
 interface ExistingController {
@@ -286,6 +287,7 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
             onConfirm={setStepConfirmed}
             confirmed={stepConfirmed}
             hardwareType={selectedHardware?.hardware_type || ""}
+            hardwareFeatures={selectedHardware?.features || null}
           />
         );
       case 4:

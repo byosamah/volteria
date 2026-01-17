@@ -16,17 +16,17 @@ interface StepDownloadImageProps {
   onConfirm: (confirmed: boolean) => void;
   confirmed: boolean;
   hardwareType?: string;
+  hardwareFeatures?: Record<string, unknown> | null;
 }
-
-const NVME_HARDWARE_TYPES = ["SOL564-NVME16-128"];
 
 const SETUP_SCRIPT_URL = "https://raw.githubusercontent.com/byosamah/volteria/main/controller/scripts/setup-controller.sh";
 const INSTALL_COMMAND = `curl -sSL ${SETUP_SCRIPT_URL} | sudo bash`;
 
-export function StepDownloadImage({ onConfirm, confirmed, hardwareType }: StepDownloadImageProps) {
+export function StepDownloadImage({ onConfirm, confirmed, hardwareType, hardwareFeatures }: StepDownloadImageProps) {
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
 
-  const requiresNvmeBoot = hardwareType && NVME_HARDWARE_TYPES.includes(hardwareType);
+  // Check if hardware requires NVMe boot setup from database features
+  const requiresNvmeBoot = hardwareFeatures?.nvme_boot === true;
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
