@@ -1511,3 +1511,247 @@ fi
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update controller: {str(e)}"
         )
+
+
+# ============================================
+# ENDPOINTS - LIVE REGISTER READ/WRITE
+# ============================================
+
+class RegisterReadRequest(BaseModel):
+    """Request to read registers."""
+    device_id: str = Field(..., description="Device UUID")
+    addresses: list[int] = Field(..., description="List of register addresses to read")
+
+
+class RegisterReading(BaseModel):
+    """Single register reading."""
+    raw_value: float
+    scaled_value: float
+    timestamp: str
+
+
+class RegisterReadResponse(BaseModel):
+    """Response from register read."""
+    success: bool
+    device_id: str
+    readings: dict[str, RegisterReading] = {}
+    errors: list[str] = []
+
+
+class RegisterWriteRequest(BaseModel):
+    """Request to write a register."""
+    device_id: str = Field(..., description="Device UUID")
+    address: int = Field(..., description="Register address")
+    value: int = Field(..., description="Value to write")
+    verify: bool = Field(True, description="Verify by reading back")
+
+
+class RegisterWriteResponse(BaseModel):
+    """Response from register write."""
+    success: bool
+    device_id: str
+    address: int
+    written_value: int
+    verified: bool = False
+    read_back_value: Optional[int] = None
+    error: Optional[str] = None
+
+
+@router.post("/{controller_id}/registers/read", response_model=RegisterReadResponse)
+async def read_registers(
+    controller_id: UUID,
+    request: RegisterReadRequest,
+    current_user: CurrentUser = Depends(require_role(["super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Read live register values from a device via the controller.
+
+    Executes a command on the controller to read Modbus registers directly.
+    Requires configurator role or higher.
+    """
+    try:
+        # 1. Get controller details
+        result = db.table("controllers").select(
+            "id, serial_number, ssh_port, ssh_username, ssh_password, status"
+        ).eq("id", str(controller_id)).single().execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Controller not found"
+            )
+
+        controller = result.data
+
+        # 2. Check controller is deployed
+        if controller["status"] not in ("deployed", "ready"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Controller is not deployed (status: {controller['status']})"
+            )
+
+        # 3. Check SSH credentials
+        if not controller.get("ssh_port") or not controller.get("ssh_username"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Controller SSH not configured"
+            )
+
+        # 4. Build the command
+        addresses_str = ",".join(str(a) for a in request.addresses)
+        command = f"cd /opt/volteria/controller && python3 register_cli.py read --device-id {request.device_id} --addresses {addresses_str}"
+
+        # 5. Execute via SSH
+        SSH_HOST = "host.docker.internal"
+        success, message, output = execute_ssh_command(
+            host=SSH_HOST,
+            port=controller["ssh_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", ""),
+            command=command,
+            timeout=30
+        )
+
+        if not success:
+            return RegisterReadResponse(
+                success=False,
+                device_id=request.device_id,
+                readings={},
+                errors=[f"SSH command failed: {message}"]
+            )
+
+        # 6. Parse JSON output
+        try:
+            import json
+            result_data = json.loads(output.strip())
+
+            # Convert readings to proper format
+            readings = {}
+            for addr, data in result_data.get("readings", {}).items():
+                readings[addr] = RegisterReading(
+                    raw_value=data["raw_value"],
+                    scaled_value=data["scaled_value"],
+                    timestamp=data["timestamp"]
+                )
+
+            return RegisterReadResponse(
+                success=result_data.get("success", False),
+                device_id=request.device_id,
+                readings=readings,
+                errors=result_data.get("errors", [])
+            )
+
+        except json.JSONDecodeError as e:
+            return RegisterReadResponse(
+                success=False,
+                device_id=request.device_id,
+                readings={},
+                errors=[f"Failed to parse response: {str(e)}", f"Output: {output[:200]}"]
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read registers: {str(e)}"
+        )
+
+
+@router.post("/{controller_id}/registers/write", response_model=RegisterWriteResponse)
+async def write_register(
+    controller_id: UUID,
+    request: RegisterWriteRequest,
+    current_user: CurrentUser = Depends(require_role(["super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Write a value to a register via the controller.
+
+    Executes a command on the controller to write a Modbus register directly.
+    Requires configurator role or higher.
+    """
+    try:
+        # 1. Get controller details
+        result = db.table("controllers").select(
+            "id, serial_number, ssh_port, ssh_username, ssh_password, status"
+        ).eq("id", str(controller_id)).single().execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Controller not found"
+            )
+
+        controller = result.data
+
+        # 2. Check controller is deployed
+        if controller["status"] not in ("deployed", "ready"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Controller is not deployed (status: {controller['status']})"
+            )
+
+        # 3. Check SSH credentials
+        if not controller.get("ssh_port") or not controller.get("ssh_username"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Controller SSH not configured"
+            )
+
+        # 4. Build the command
+        verify_flag = "" if request.verify else "--no-verify"
+        command = f"cd /opt/volteria/controller && python3 register_cli.py write --device-id {request.device_id} --address {request.address} --value {request.value} {verify_flag}".strip()
+
+        # 5. Execute via SSH
+        SSH_HOST = "host.docker.internal"
+        success, message, output = execute_ssh_command(
+            host=SSH_HOST,
+            port=controller["ssh_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", ""),
+            command=command,
+            timeout=30
+        )
+
+        if not success:
+            return RegisterWriteResponse(
+                success=False,
+                device_id=request.device_id,
+                address=request.address,
+                written_value=request.value,
+                error=f"SSH command failed: {message}"
+            )
+
+        # 6. Parse JSON output
+        try:
+            import json
+            result_data = json.loads(output.strip())
+
+            return RegisterWriteResponse(
+                success=result_data.get("success", False),
+                device_id=request.device_id,
+                address=request.address,
+                written_value=request.value,
+                verified=result_data.get("verified", False),
+                read_back_value=result_data.get("read_back_value"),
+                error=result_data.get("error")
+            )
+
+        except json.JSONDecodeError as e:
+            return RegisterWriteResponse(
+                success=False,
+                device_id=request.device_id,
+                address=request.address,
+                written_value=request.value,
+                error=f"Failed to parse response: {str(e)}"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to write register: {str(e)}"
+        )

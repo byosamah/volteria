@@ -785,6 +785,23 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
           <Button
             variant="ghost"
             size="sm"
+            asChild
+            className="min-w-[44px] min-h-[44px]"
+            title="Live Registers"
+          >
+            <Link href={`/projects/${projectId}/sites/${siteId}/devices/${device.id}/live-registers`}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <circle cx="12" cy="12" r="2" />
+                <path d="M4.93 4.93a10 10 0 0 1 14.14 0" />
+                <path d="M19.07 19.07a10 10 0 0 1-14.14 0" />
+                <path d="M7.76 7.76a6 6 0 0 1 8.48 0" />
+                <path d="M16.24 16.24a6 6 0 0 1-8.48 0" />
+              </svg>
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => openEditDialog(device)}
             className="min-w-[44px] min-h-[44px]"
           >
