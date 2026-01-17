@@ -40,6 +40,7 @@ interface HistoricalChartProps {
     aggregationType?: AggregationType;
     originalPoints?: number;
   };
+  timezone?: string; // IANA timezone for display (e.g., "Asia/Dubai")
 }
 
 // Modern legend component with site name
@@ -110,6 +111,7 @@ export function HistoricalChart({
   onExportPNG,
   emptyMessage = "Add parameters to visualize data",
   metadata,
+  timezone,
 }: HistoricalChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -439,7 +441,7 @@ export function HistoricalChart({
             vertical={false}
           />
 
-          {/* X-Axis with dynamic formatting based on zoom level */}
+          {/* X-Axis with dynamic formatting and smart tick interval */}
           <XAxis
             dataKey="timestamp"
             tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
@@ -447,6 +449,8 @@ export function HistoricalChart({
             tickLine={false}
             axisLine={false}
             dy={8}
+            // Smart interval: show ~8-12 ticks regardless of data density
+            interval={Math.max(0, Math.floor(displayData.length / 10) - 1)}
             tickFormatter={(timestamp: string) => {
               if (!timestamp) return "";
               const date = new Date(timestamp);
@@ -459,16 +463,25 @@ export function HistoricalChart({
               const rangeMs = new Date(lastTs).getTime() - new Date(firstTs).getTime();
               const rangeHours = rangeMs / (1000 * 60 * 60);
 
-              // Format based on zoom level
-              if (rangeHours <= 6) {
-                // Very zoomed in: show time only
-                return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-              } else if (rangeHours <= 48) {
-                // Medium zoom: show day + time
-                return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit" });
+              // Format options with timezone
+              const tzOptions = timezone ? { timeZone: timezone } : {};
+
+              // Format based on data range
+              if (rangeHours <= 2) {
+                // Very short range: time with minutes
+                return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, ...tzOptions });
+              } else if (rangeHours <= 24) {
+                // Within a day: time only
+                return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, ...tzOptions });
+              } else if (rangeHours <= 72) {
+                // 1-3 days: day + time
+                return date.toLocaleString("en-US", { day: "numeric", hour: "2-digit", hour12: false, ...tzOptions });
+              } else if (rangeHours <= 168) {
+                // Up to 7 days: weekday + day
+                return date.toLocaleDateString("en-US", { weekday: "short", day: "numeric", ...tzOptions });
               } else {
-                // Wide view: show date only
-                return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                // More than 7 days: month + day
+                return date.toLocaleDateString("en-US", { month: "short", day: "numeric", ...tzOptions });
               }
             }}
           />
@@ -550,6 +563,7 @@ export function HistoricalChart({
               width={chartDimensions.width}
               height={chartDimensions.height}
               showTooltip={true} // Always show overlay tooltip (overlay blocks Recharts events)
+              timezone={timezone}
             />
           )}
         </div>

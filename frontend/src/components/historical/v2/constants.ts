@@ -5,8 +5,16 @@
 // Maximum parameters allowed on chart
 export const MAX_PARAMETERS = 10;
 
-// Maximum date range in days
-export const MAX_DATE_RANGE_DAYS = 7;
+// Maximum date range per aggregation level (in days)
+// Enforced by server-side RPC function (get_historical_readings)
+export const MAX_DATE_RANGE = {
+  raw: 7,      // 7 days max for raw data (~10,000-20,000 points/device)
+  hourly: 90,  // 90 days max for hourly (~2,160 points/device)
+  daily: 730,  // 2 years max for daily (~730 points/device)
+} as const;
+
+// Default max date range (for backward compatibility)
+export const MAX_DATE_RANGE_DAYS = MAX_DATE_RANGE.raw;
 
 // Predefined color palette for parameters (softer, more vibrant variants)
 export const COLOR_PALETTE = [
@@ -49,10 +57,22 @@ export const AGGREGATION_OPTIONS = [
 
 // Auto-select thresholds (in hours)
 export const AGGREGATION_THRESHOLDS = {
-  raw: 6,           // < 6 hours → raw data
-  hourly: 72,       // 6h - 3 days → hourly
-  daily: Infinity,  // > 3 days → daily
+  raw: 24,          // < 24 hours → raw data
+  hourly: 168,      // 24h - 7 days → hourly
+  daily: Infinity,  // > 7 days → daily
 };
+
+// Get available aggregation groups based on date range (in days)
+export function getAvailableAggregations(days: number): ("raw" | "hourly" | "daily")[] {
+  if (days <= MAX_DATE_RANGE.raw) return ["raw", "hourly", "daily"];
+  if (days <= MAX_DATE_RANGE.hourly) return ["hourly", "daily"];
+  return ["daily"];
+}
+
+// Get max date range for an aggregation level
+export function getMaxDateRange(aggregation: "raw" | "hourly" | "daily"): number {
+  return MAX_DATE_RANGE[aggregation];
+}
 
 // Chart type options
 export const CHART_TYPE_OPTIONS = [
@@ -61,7 +81,7 @@ export const CHART_TYPE_OPTIONS = [
   { value: "bar", label: "Bar" },
 ] as const;
 
-// Date range preset options
+// Date range preset options (quick filters for common ranges)
 export const DATE_PRESETS = [
   { value: "24h", label: "24h", days: 1 },
   { value: "3d", label: "3d", days: 3 },

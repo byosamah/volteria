@@ -111,12 +111,20 @@ export default async function ProjectSettingsPage({
               Irreversible actions for this project
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-md p-3">
+              <p className="text-sm text-red-800">
+                <strong>Warning:</strong> Deleting this project will permanently remove all data from the database including sites, devices, control logs, and historical readings. This action cannot be undone.
+              </p>
+              <p className="text-sm text-red-700 mt-2">
+                If you just want to hide this project from views, use the <strong>Active toggle</strong> above instead.
+              </p>
+            </div>
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Delete this project</p>
                 <p className="text-sm text-muted-foreground">
-                  Once deleted, all data will be permanently removed
+                  Permanently removes all project data
                 </p>
               </div>
               <DeleteProjectButton

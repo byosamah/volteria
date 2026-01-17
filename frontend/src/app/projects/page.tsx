@@ -9,10 +9,9 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ProjectCard } from "@/components/projects/project-card";
+import { ProjectsList } from "./projects-list";
 
 export default async function ProjectsPage() {
   const supabase = await createClient();
@@ -46,6 +45,7 @@ export default async function ProjectsPage() {
     description: string | null;
     created_at: string;
     enterprise_id: string | null;
+    is_active: boolean;
     enterprises: { id: string; name: string } | null;
   }> = [];
 
@@ -55,6 +55,7 @@ export default async function ProjectsPage() {
 
     // Build the base query with enterprise join
     // Using explicit FK syntax to avoid ambiguity
+    // Fetch ALL projects (including inactive) - client component handles filtering
     let query = supabase
       .from("projects")
       .select(`
@@ -64,9 +65,9 @@ export default async function ProjectsPage() {
         description,
         created_at,
         enterprise_id,
+        is_active,
         enterprises!projects_enterprise_id_fkey (id, name)
-      `)
-      .eq("is_active", true);
+      `);
 
     // Apply role-based filtering
     if (userRole === "super_admin" || userRole === "backend_admin" || userRole === "admin") {
@@ -200,6 +201,7 @@ export default async function ProjectsPage() {
     deviceCount: deviceCountMap[project.id] || 0,
     siteCount: siteCountMap[project.id] || 0,
     controllerCount: controllerCountMap[project.id] || 0,
+    is_active: project.is_active,
     enterprises: project.enterprises,
   }));
 
@@ -232,32 +234,8 @@ export default async function ProjectsPage() {
           </Button>
         </div>
 
-        {/* Projects Grid */}
-        {projectsWithCounts.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-muted-foreground">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                  <polyline points="9 22 9 12 15 12 15 22" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold mb-2">No projects yet</h3>
-              <p className="text-muted-foreground text-center max-w-sm mb-4">
-                Create your first project to start monitoring your hybrid energy system.
-              </p>
-              <Button asChild>
-                <Link href="/projects/new">Create Project</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {projectsWithCounts.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
-          </div>
-        )}
+        {/* Projects List with Filter */}
+        <ProjectsList projects={projectsWithCounts} />
       </div>
     </DashboardLayout>
   );

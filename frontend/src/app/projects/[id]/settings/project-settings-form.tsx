@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 // Project type (basic fields only)
@@ -22,6 +23,7 @@ interface Project {
   location: string | null;
   description: string | null;
   timezone: string | null;
+  is_active: boolean;
 }
 
 interface ProjectSettingsFormProps {
@@ -38,7 +40,8 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
     name: project.name,
     location: project.location || "",
     description: project.description || "",
-    timezone: project.timezone || "UTC",
+    timezone: project.timezone || "", // Empty = use browser timezone
+    is_active: project.is_active,
   });
 
   // Handle input changes
@@ -69,7 +72,8 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
           name: formData.name.trim(),
           location: formData.location.trim() || null,
           description: formData.description.trim() || null,
-          timezone: formData.timezone,
+          timezone: formData.timezone || null, // null = use browser timezone
+          is_active: formData.is_active,
         })
         .eq("id", project.id);
 
@@ -131,16 +135,14 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="timezone">
-            Timezone <span className="text-red-500">*</span>
-          </Label>
+          <Label htmlFor="timezone">Timezone</Label>
           <select
             id="timezone"
             value={formData.timezone}
             onChange={(e) => setFormData((prev) => ({ ...prev, timezone: e.target.value }))}
             className="w-full h-10 px-3 rounded-md border border-input bg-background min-h-[44px]"
-            required
           >
+            <option value="">Browser Timezone (auto-detect based on your device)</option>
             <optgroup label="Common Timezones">
               <option value="UTC">UTC (Coordinated Universal Time)</option>
               <option value="Asia/Dubai">Asia/Dubai (Gulf Standard Time, UTC+4)</option>
@@ -184,8 +186,39 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
             </optgroup>
           </select>
           <p className="text-xs text-muted-foreground">
-            Timezone for data logging and analysis
+            Timezone for charts and data analysis. &quot;Browser Timezone&quot; uses your device&apos;s local timezone automatically.
           </p>
+        </div>
+      </div>
+
+      {/* Status - Deactivate Project */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium">Project Status</h3>
+
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="is_active" className="text-base">Active</Label>
+              <p className="text-sm text-muted-foreground">
+                Control whether this project is operational
+              </p>
+            </div>
+            <Switch
+              id="is_active"
+              checked={formData.is_active}
+              onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, is_active: checked }))}
+            />
+          </div>
+          {!formData.is_active && (
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+              <p className="text-sm text-amber-800">
+                <strong>Warning:</strong> Deactivating this project will stop all services for all sites within this project including control loops, data logging, and cloud sync. All sites will become non-operational.
+              </p>
+              <p className="text-sm text-amber-700 mt-2">
+                Historical data will be preserved in the database and can be viewed in Historical Data page.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

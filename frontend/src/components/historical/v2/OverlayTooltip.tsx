@@ -10,6 +10,7 @@ interface OverlayTooltipProps {
   parameters: AxisParameter[];
   containerWidth: number;
   containerHeight: number;
+  timezone?: string; // IANA timezone for display
 }
 
 export function OverlayTooltip({
@@ -19,6 +20,7 @@ export function OverlayTooltip({
   parameters,
   containerWidth,
   containerHeight,
+  timezone,
 }: OverlayTooltipProps) {
   // Extract values for each parameter from the data point
   const entries = useMemo(() => {
@@ -69,13 +71,16 @@ export function OverlayTooltip({
         willChange: "transform",
       }}
     >
-      {/* Timestamp - show full date and time */}
+      {/* Timestamp - show full date, time with seconds */}
       <p className="text-[11px] text-muted-foreground mb-2.5 pb-2 border-b border-border/50 font-medium">
         {new Date(dataPoint.timestamp).toLocaleString("en-US", {
           month: "short",
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+          ...(timezone ? { timeZone: timezone } : {}),
         })}
       </p>
 

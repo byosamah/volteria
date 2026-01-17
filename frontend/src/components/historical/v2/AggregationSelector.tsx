@@ -7,6 +7,7 @@ interface AggregationSelectorProps {
   value: AggregationType;
   onChange: (value: AggregationType) => void;
   isAuto: boolean;
+  availableGroups?: AggregationGroup[]; // Groups available for current date range
 }
 
 // Parse aggregation type into group and method
@@ -22,10 +23,18 @@ function buildAggregation(group: AggregationGroup, method: AggregationMethod | n
   return `${group}_${method || "avg"}` as AggregationType;
 }
 
-export function AggregationSelector({ value, onChange, isAuto }: AggregationSelectorProps) {
+export function AggregationSelector({
+  value,
+  onChange,
+  isAuto,
+  availableGroups = ["raw", "hourly", "daily"],
+}: AggregationSelectorProps) {
   const { group: selectedGroup, method: selectedMethod } = parseAggregation(value);
 
   const handleGroupChange = (newGroup: AggregationGroup) => {
+    // Don't allow selecting unavailable groups
+    if (!availableGroups.includes(newGroup)) return;
+
     if (newGroup === "raw") {
       onChange("raw");
     } else {
@@ -39,6 +48,8 @@ export function AggregationSelector({ value, onChange, isAuto }: AggregationSele
       onChange(buildAggregation(selectedGroup, newMethod));
     }
   };
+
+  const allGroups: AggregationGroup[] = ["raw", "hourly", "daily"];
 
   return (
     <div className="space-y-1.5">
@@ -54,20 +65,33 @@ export function AggregationSelector({ value, onChange, isAuto }: AggregationSele
       <div className="flex items-center gap-1.5">
         {/* Time period selector */}
         <div className="flex items-center p-0.5 bg-muted/50 rounded-lg">
-          {(["raw", "hourly", "daily"] as AggregationGroup[]).map((group) => (
-            <button
-              key={group}
-              onClick={() => handleGroupChange(group)}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
-                selectedGroup === group
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {group === "raw" ? "Raw" : group === "hourly" ? "Hourly" : "Daily"}
-            </button>
-          ))}
+          {allGroups.map((group) => {
+            const isAvailable = availableGroups.includes(group);
+            const isSelected = selectedGroup === group;
+
+            return (
+              <button
+                key={group}
+                onClick={() => handleGroupChange(group)}
+                disabled={!isAvailable}
+                title={
+                  !isAvailable
+                    ? `${group === "raw" ? "Raw" : group === "hourly" ? "Hourly" : "Daily"} not available for this date range`
+                    : undefined
+                }
+                className={cn(
+                  "px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
+                  isSelected
+                    ? "bg-background text-foreground shadow-sm"
+                    : isAvailable
+                    ? "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground/40 cursor-not-allowed line-through"
+                )}
+              >
+                {group === "raw" ? "Raw" : group === "hourly" ? "Hourly" : "Daily"}
+              </button>
+            );
+          })}
         </div>
 
         {/* Method selector (only when not raw) */}

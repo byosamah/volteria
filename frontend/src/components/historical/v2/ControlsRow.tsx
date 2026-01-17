@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   Select,
   SelectContent,
@@ -12,7 +13,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Cloud, HardDrive, Download, Play, Filter } from "lucide-react";
 import { DateRangeSelector } from "./DateRangeSelector";
 import { AggregationSelector } from "./AggregationSelector";
-import type { Project, Site, DateRange, DataSource, ActiveFilter, AggregationType } from "./types";
+import { getAvailableAggregations } from "./constants";
+import type { Project, Site, DateRange, DataSource, ActiveFilter, AggregationType, AggregationGroup } from "./types";
 
 interface ControlsRowProps {
   projects: Project[];
@@ -64,6 +66,14 @@ export function ControlsRow({
   const filteredSites = selectedProjectId
     ? sites.filter((s) => s.project_id === selectedProjectId)
     : [];
+
+  // Calculate available aggregation groups based on date range
+  const availableAggregationGroups = useMemo((): AggregationGroup[] => {
+    const days = Math.ceil(
+      (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    return getAvailableAggregations(days);
+  }, [dateRange]);
 
   return (
     <div className="space-y-4">
@@ -133,6 +143,7 @@ export function ControlsRow({
             value={aggregationType}
             onChange={onAggregationChange}
             isAuto={isAutoAggregation}
+            availableGroups={availableAggregationGroups}
           />
         </div>
 

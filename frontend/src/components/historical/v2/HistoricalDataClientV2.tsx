@@ -28,8 +28,9 @@ import {
   DUMMY_SITES,
   SITE_CONTROLLER_ID,
   generateDummyChartData,
-  MAX_DATE_RANGE_DAYS,
+  MAX_DATE_RANGE,
   AGGREGATION_THRESHOLDS,
+  getAvailableAggregations,
 } from "./constants";
 import type {
   HistoricalDataClientV2Props,
@@ -119,83 +120,6 @@ export function HistoricalDataClientV2({
     setAggregationType(type);
     setIsAutoAggregation(false); // Disable auto when user manually selects
   }, []);
-
-  // Aggregate data helper
-  const aggregateData = useCallback(
-    (data: ChartDataPoint[], type: AggregationType, params: AxisParameter[]): ChartDataPoint[] => {
-      if (type === "raw" || data.length === 0) return data;
-
-      // Parse aggregation type
-      const isHourly = type.startsWith("hourly_");
-      const method = type.split("_")[1] as "avg" | "min" | "max";
-
-      // Group by time bucket
-      const buckets = new Map<string, ChartDataPoint[]>();
-
-      data.forEach((point) => {
-        const date = new Date(point.timestamp);
-        let bucketKey: string;
-
-        if (isHourly) {
-          // Bucket by hour
-          bucketKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}`;
-        } else {
-          // Bucket by day
-          bucketKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-        }
-
-        if (!buckets.has(bucketKey)) {
-          buckets.set(bucketKey, []);
-        }
-        buckets.get(bucketKey)!.push(point);
-      });
-
-      // Aggregate each bucket
-      const aggregated: ChartDataPoint[] = [];
-
-      buckets.forEach((points) => {
-        if (points.length === 0) return;
-
-        // Use first point's timestamp for the bucket
-        const firstPoint = points[0];
-        const result: ChartDataPoint = {
-          timestamp: firstPoint.timestamp,
-          formattedTime: firstPoint.formattedTime,
-        };
-
-        // Aggregate each parameter
-        params.forEach((param) => {
-          const key = `${param.deviceId}:${param.registerName}`;
-          const values = points
-            .map((p) => p[key])
-            .filter((v): v is number => typeof v === "number");
-
-          if (values.length > 0) {
-            switch (method) {
-              case "min":
-                result[key] = Math.min(...values);
-                break;
-              case "max":
-                result[key] = Math.max(...values);
-                break;
-              case "avg":
-              default:
-                result[key] = values.reduce((a, b) => a + b, 0) / values.length;
-                break;
-            }
-          }
-        });
-
-        aggregated.push(result);
-      });
-
-      // Sort by timestamp
-      return aggregated.sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
-    },
-    []
-  );
 
   // Filter projects by active status
   const filteredProjects = useMemo(() => {
@@ -339,98 +263,41 @@ export function HistoricalDataClientV2({
     setSelectedDeviceId(deviceId);
   }, []);
 
-  // Validate date range (max 7 days)
+  // Validate date range and auto-update aggregation if needed
   const handleDateRangeChange = useCallback((range: DateRange) => {
-    // Use floor to calculate days (7d preset spans 7.99 days, should be treated as 7)
-    const diffDays = Math.floor(
+    const diffDays = Math.ceil(
       (range.end.getTime() - range.start.getTime()) / (1000 * 60 * 60 * 24)
     );
-    if (diffDays > MAX_DATE_RANGE_DAYS) {
-      // Adjust start date to keep within limit, preserving time
+
+    // Enforce max date range (daily = 2 years)
+    const maxDays = MAX_DATE_RANGE.daily;
+    if (diffDays > maxDays) {
       const adjustedStart = new Date(range.end);
-      adjustedStart.setDate(adjustedStart.getDate() - MAX_DATE_RANGE_DAYS);
-      adjustedStart.setHours(0, 0, 0, 0); // Keep midnight for presets
+      adjustedStart.setDate(adjustedStart.getDate() - maxDays);
+      adjustedStart.setHours(0, 0, 0, 0);
       setDateRange({ start: adjustedStart, end: range.end });
     } else {
       setDateRange(range);
     }
-  }, []);
 
-  // Fetch data from API
-  const fetchData = useCallback(async () => {
-    const allParams = [...leftAxisParams, ...rightAxisParams];
-    if (allParams.length === 0) return;
+    // Auto-switch to higher aggregation if current one is unavailable for new range
+    if (!isAutoAggregation) {
+      const availableGroups = getAvailableAggregations(diffDays);
+      const currentGroup = aggregationType === "raw" ? "raw" : aggregationType.startsWith("hourly") ? "hourly" : "daily";
 
-    setIsLoading(true);
-
-    try {
-      // Collect unique site IDs and device IDs from parameters
-      const siteIds = [...new Set(allParams.map((p) => p.siteId).filter(Boolean))];
-      const deviceIds = [...new Set(allParams.map((p) => p.deviceId).filter(Boolean))];
-      const registerNames = [...new Set(allParams.map((p) => p.registerName))];
-
-      // If using dummy data (no real site IDs yet), fall back to dummy generation
-      if (siteIds.length === 0 || siteIds.some((id) => !id || id === "site-controller")) {
-        // Fall back to dummy data for development
-        const rawData = generateDummyChartData(
-          allParams.map((p) => ({
-            deviceId: p.deviceId,
-            registerName: p.registerName,
-          })),
-          dateRange.start,
-          dateRange.end
-        );
-        const processedData = aggregateData(rawData, aggregationType, allParams);
-        setChartData(processedData);
-        setMetadata({
-          totalPoints: processedData.length,
-          downsampled: processedData.length < rawData.length,
-          aggregationType: aggregationType,
-          originalPoints: rawData.length,
-        });
-        return;
+      if (!availableGroups.includes(currentGroup)) {
+        // Switch to the first available group
+        const newGroup = availableGroups[0];
+        if (newGroup === "raw") {
+          setAggregationType("raw");
+        } else if (newGroup === "hourly") {
+          setAggregationType("hourly_avg");
+        } else {
+          setAggregationType("daily_avg");
+        }
       }
-
-      // Build API query params
-      const params = new URLSearchParams({
-        siteIds: siteIds.join(","),
-        deviceIds: deviceIds.join(","),
-        registers: registerNames.join(","),
-        start: dateRange.start.toISOString(),
-        end: dateRange.end.toISOString(),
-        source: "device",
-        limit: "10000",
-      });
-
-      const response = await fetch(`/api/historical?${params}`);
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      // Transform API response to ChartDataPoint format
-      const rawData = transformApiToChartData(data.deviceReadings, allParams);
-
-      // Apply aggregation
-      const processedData = aggregateData(rawData, aggregationType, allParams);
-
-      setChartData(processedData);
-      setMetadata({
-        totalPoints: processedData.length,
-        downsampled: data.metadata?.downsampled || processedData.length < rawData.length,
-        aggregationType: aggregationType,
-        originalPoints: rawData.length,
-      });
-    } catch (error) {
-      console.error("Failed to fetch data:", error);
-      // Show error to user
-      setChartData([]);
-      setMetadata(undefined);
-    } finally {
-      setIsLoading(false);
     }
-  }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, aggregateData]);
+  }, [isAutoAggregation, aggregationType]);
 
   // Transform API device readings to chart data format
   const transformApiToChartData = useCallback(
@@ -442,6 +309,10 @@ export function HistoricalDataClientV2({
       }>,
       params: AxisParameter[]
     ): ChartDataPoint[] => {
+      if (!deviceReadings || deviceReadings.length === 0) {
+        return [];
+      }
+
       // Collect all unique timestamps
       const timestampSet = new Set<string>();
       deviceReadings.forEach((reading) => {
@@ -488,6 +359,83 @@ export function HistoricalDataClientV2({
     []
   );
 
+  // Fetch data from API (better for large datasets - server-side control)
+  const fetchData = useCallback(async () => {
+    const allParams = [...leftAxisParams, ...rightAxisParams];
+    if (allParams.length === 0) return;
+
+    setIsLoading(true);
+
+    try {
+      // Collect unique site IDs and device IDs from parameters
+      const siteIds = [...new Set(allParams.map((p) => p.siteId).filter(Boolean))];
+      const deviceIds = [...new Set(allParams.map((p) => p.deviceId).filter((id) => id && id !== SITE_CONTROLLER_ID))];
+      const registerNames = [...new Set(allParams.map((p) => p.registerName))];
+
+      // Convert aggregationType to simple form for API (raw, hourly, daily)
+      const apiAggregation = aggregationType === "raw"
+        ? "raw"
+        : aggregationType.startsWith("hourly")
+        ? "hourly"
+        : "daily";
+
+      // If using dummy data (no real site IDs or device IDs), fall back to dummy generation
+      if (siteIds.length === 0 || deviceIds.length === 0) {
+        // Fall back to dummy data for development/Site Controller
+        const dummyData = generateDummyChartData(
+          allParams.map((p) => ({
+            deviceId: p.deviceId,
+            registerName: p.registerName,
+          })),
+          dateRange.start,
+          dateRange.end
+        );
+        setChartData(dummyData);
+        setMetadata({
+          totalPoints: dummyData.length,
+          downsampled: false,
+          aggregationType: aggregationType,
+        });
+        return;
+      }
+
+      // Build API query params - aggregation is now done server-side
+      const params = new URLSearchParams({
+        siteIds: siteIds.join(","),
+        deviceIds: deviceIds.join(","),
+        registers: registerNames.join(","),
+        start: dateRange.start.toISOString(),
+        end: dateRange.end.toISOString(),
+        source: "device",
+        aggregation: apiAggregation,
+      });
+
+      const response = await fetch(`/api/historical?${params}`);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Transform API response to ChartDataPoint format (already aggregated server-side)
+      const chartPoints = transformApiToChartData(data.deviceReadings || [], allParams);
+
+      setChartData(chartPoints);
+      setMetadata({
+        totalPoints: chartPoints.length,
+        downsampled: data.metadata?.downsampled || false,
+        aggregationType: data.metadata?.aggregationType || aggregationType,
+      });
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+      // Show error to user
+      setChartData([]);
+      setMetadata(undefined);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, transformApiToChartData]);
+
   // Clear chart data when all parameters are removed (but don't auto-fetch)
   useEffect(() => {
     const allParams = [...leftAxisParams, ...rightAxisParams];
@@ -497,15 +445,66 @@ export function HistoricalDataClientV2({
     }
   }, [leftAxisParams, rightAxisParams]);
 
-  // Export CSV
+  // Format timestamp in a specific timezone (CSV-safe, no commas)
+  const formatTimestampForCSV = useCallback((isoString: string, timezone: string): string => {
+    try {
+      const date = new Date(isoString);
+      // Format as YYYY-MM-DD HH:MM:SS (no commas for CSV safety)
+      const year = date.toLocaleString("en-US", { timeZone: timezone, year: "numeric" });
+      const month = date.toLocaleString("en-US", { timeZone: timezone, month: "2-digit" });
+      const day = date.toLocaleString("en-US", { timeZone: timezone, day: "2-digit" });
+      const hour = date.toLocaleString("en-US", { timeZone: timezone, hour: "2-digit", hour12: false });
+      const minute = date.toLocaleString("en-US", { timeZone: timezone, minute: "2-digit" });
+      const second = date.toLocaleString("en-US", { timeZone: timezone, second: "2-digit" });
+      return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+    } catch {
+      return isoString;
+    }
+  }, []);
+
+  // Get selected project's timezone (or browser timezone if not set)
+  const selectedProject = useMemo(() => {
+    return projects.find((p) => p.id === selectedProjectId);
+  }, [projects, selectedProjectId]);
+
+  // Detect browser timezone
+  const browserTimezone = useMemo(() => {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }, []);
+
+  // Use project timezone if set, otherwise browser timezone
+  const displayTimezone = selectedProject?.timezone || browserTimezone;
+  const isUsingBrowserTimezone = !selectedProject?.timezone;
+
+  // Helper to escape CSV values (quote if contains comma, quote, or newline)
+  const escapeCSV = useCallback((value: string): string => {
+    if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+  }, []);
+
+  // Export CSV with UTC and local time columns
   const exportCSV = useCallback(() => {
     if (chartData.length === 0) return;
 
     const allParams = [...leftAxisParams, ...rightAxisParams];
-    const headers = ["timestamp", ...allParams.map((p) => `${p.deviceName} - ${p.registerName} (${p.unit})`)];
+
+    // Headers: datetime_utc, datetime_local (timezone), then data columns
+    const headers = [
+      "datetime_utc",
+      `datetime_local (${displayTimezone})`,
+      ...allParams.map((p) => escapeCSV(`${p.deviceName} - ${p.registerName} (${p.unit})`)),
+    ];
 
     const rows = chartData.map((point) => {
-      const row = [point.timestamp];
+      // Format local time as YYYY-MM-DD HH:MM:SS (no commas)
+      const localTime = formatTimestampForCSV(point.timestamp, displayTimezone);
+
+      const row = [
+        point.timestamp, // UTC ISO string
+        localTime,       // Clean formatted local time (YYYY-MM-DD HH:MM:SS)
+      ];
       for (const param of allParams) {
         const key = `${param.deviceId}:${param.registerName}`;
         row.push(String(point[key] ?? ""));
@@ -521,7 +520,7 @@ export function HistoricalDataClientV2({
     link.download = `historical-data-${selectedSiteId}-${dateRange.start.toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [chartData, leftAxisParams, rightAxisParams, selectedSiteId, dateRange]);
+  }, [chartData, leftAxisParams, rightAxisParams, selectedSiteId, dateRange, displayTimezone, formatTimestampForCSV, escapeCSV]);
 
   // Export PNG (placeholder - would need html2canvas or similar)
   const exportPNG = useCallback(() => {
@@ -535,13 +534,6 @@ export function HistoricalDataClientV2({
 
   // All parameters for advanced options
   const allParams = [...leftAxisParams, ...rightAxisParams];
-
-  // Get selected project's timezone
-  const selectedProject = useMemo(() => {
-    return projects.find((p) => p.id === selectedProjectId);
-  }, [projects, selectedProjectId]);
-
-  const projectTimezone = selectedProject?.timezone || "UTC";
 
   return (
     <div className="space-y-6 p-6">
@@ -574,16 +566,21 @@ export function HistoricalDataClientV2({
                 : "No data available for selected parameters"
             }
             metadata={metadata}
+            timezone={displayTimezone}
           />
           {/* Timezone indicator */}
           {selectedProjectId && (
             <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
               <span>
-                Timezone: <span className="font-medium">{projectTimezone}</span>
-                <span className="ml-1 opacity-70">(project timezone)</span>
+                Timezone: <span className="font-medium">{displayTimezone}</span>
+                <span className="ml-1 opacity-70">
+                  ({isUsingBrowserTimezone ? "browser timezone" : "project timezone"})
+                </span>
               </span>
               <span>
-                All times shown in project&apos;s local timezone
+                {isUsingBrowserTimezone
+                  ? "Times shown in your browser's local timezone"
+                  : "Times shown in project's configured timezone"}
               </span>
             </div>
           )}

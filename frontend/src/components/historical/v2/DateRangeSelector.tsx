@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar, ChevronLeft, ChevronRight, Clock } from "lucide-react";
-import { DATE_PRESETS, MAX_DATE_RANGE_DAYS } from "./constants";
+import { DATE_PRESETS, MAX_DATE_RANGE } from "./constants";
 import type { DateRange } from "./types";
 
 interface DateRangeSelectorProps {
@@ -129,12 +129,15 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
 
     if (date > today) return;
 
+    // Use max daily range (server-side aggregation handles long ranges)
+    const maxRangeDays = MAX_DATE_RANGE.daily;
+
     if (selectingStart) {
       const newStart = new Date(date);
       newStart.setHours(dateRange.start.getHours(), dateRange.start.getMinutes(), 0, 0);
 
       const maxEnd = new Date(newStart);
-      maxEnd.setDate(maxEnd.getDate() + MAX_DATE_RANGE_DAYS);
+      maxEnd.setDate(maxEnd.getDate() + maxRangeDays);
       if (maxEnd > today) maxEnd.setTime(today.getTime());
 
       let newEnd = dateRange.end > maxEnd ? maxEnd : dateRange.end;
@@ -152,9 +155,9 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
         const diffDays = Math.round(
           (newEnd.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24)
         );
-        if (diffDays > MAX_DATE_RANGE_DAYS) {
+        if (diffDays > maxRangeDays) {
           const adjustedStart = new Date(newEnd);
-          adjustedStart.setDate(adjustedStart.getDate() - MAX_DATE_RANGE_DAYS);
+          adjustedStart.setDate(adjustedStart.getDate() - maxRangeDays);
           onDateRangeChange({ start: adjustedStart, end: newEnd });
         } else {
           onDateRangeChange({ ...dateRange, end: newEnd });
@@ -228,7 +231,7 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
             {/* Info banner */}
             <div className="text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded-md flex items-center gap-2">
               <Clock className="h-3.5 w-3.5" />
-              Max {MAX_DATE_RANGE_DAYS} days. Selecting {selectingStart ? "start" : "end"} date.
+              Selecting {selectingStart ? "start" : "end"} date. Max: {MAX_DATE_RANGE.daily} days.
             </div>
 
             {/* Month navigation */}

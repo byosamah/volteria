@@ -98,7 +98,14 @@
       "Skill(update-claudemd)",
       "Bash(git restore:*)",
       "mcp__plugin_supabase_supabase__list_tables",
-      "mcp__plugin_supabase_supabase__get_logs"
+      "mcp__plugin_supabase_supabase__get_logs",
+      "Bash(dir \"C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe\")",
+      "Bash(dir \"C:\\\\Program Files \\(x86\\)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe\")",
+      "Bash(taskkill:*)",
+      "WebSearch",
+      "WebFetch(domain:recharts.github.io)",
+      "WebFetch(domain:recharts.org)",
+      "mcp__plugin_supabase_supabase__search_docs"
     ]
   }
 }

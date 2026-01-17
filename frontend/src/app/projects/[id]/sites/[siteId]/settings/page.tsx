@@ -107,12 +107,20 @@ export default async function SiteSettingsPage({
               Irreversible actions for this site
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-md p-3">
+              <p className="text-sm text-red-800">
+                <strong>Warning:</strong> Deleting this site will permanently remove all data from the database including devices, control logs, and historical readings. This action cannot be undone.
+              </p>
+              <p className="text-sm text-red-700 mt-2">
+                If you just want to hide this site from views, use the <strong>Active toggle</strong> in the settings above instead.
+              </p>
+            </div>
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Delete this site</p>
                 <p className="text-sm text-muted-foreground">
-                  All devices and data for this site will be permanently removed
+                  Permanently removes all site data
                 </p>
               </div>
               <DeleteSiteButton siteId={siteId} siteName={site.name} projectId={projectId} userRole={userProfile?.role || undefined} />

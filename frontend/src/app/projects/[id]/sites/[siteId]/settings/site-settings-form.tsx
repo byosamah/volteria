@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -49,6 +50,7 @@ interface Site {
   name: string;
   location: string | null;
   description: string | null;
+  is_active: boolean;
   controller_serial_number: string | null;
   controller_status: string | null;
   // Control method fields
@@ -91,6 +93,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
     name: site.name,
     location: site.location || "",
     description: site.description || "",
+    is_active: site.is_active,
     controller_serial_number: site.controller_serial_number || "",
     // Control method
     control_method: site.control_method || "onsite_controller",
@@ -153,6 +156,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
           name: formData.name.trim(),
           location: formData.location.trim() || null,
           description: formData.description.trim() || null,
+          is_active: formData.is_active,
           controller_serial_number: formData.controller_serial_number.trim() || null,
           // Control method
           control_method: formData.control_method,
@@ -690,6 +694,39 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
             </div>
           </div>
         )}
+      </div>
+
+      <Separator />
+
+      {/* Status - Deactivate Site */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium">Site Status</h3>
+
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="is_active" className="text-base">Active</Label>
+              <p className="text-sm text-muted-foreground">
+                Control whether this site is operational
+              </p>
+            </div>
+            <Switch
+              id="is_active"
+              checked={formData.is_active}
+              onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, is_active: checked }))}
+            />
+          </div>
+          {!formData.is_active && (
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+              <p className="text-sm text-amber-800">
+                <strong>Warning:</strong> Deactivating this site will stop all site services including control loops, data logging, and cloud sync. The site will become non-operational.
+              </p>
+              <p className="text-sm text-amber-700 mt-2">
+                Historical data will be preserved in the database and can be viewed in Historical Data page.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       <Separator />

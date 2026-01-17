@@ -2,24 +2,33 @@
  * API Route: Historical Data
  *
  * Fetches time-series data for the Historical Data visualization page.
- * Supports:
- * - Device readings from device_readings table (per-device data)
- * - Aggregate readings from control_logs table (backward compatibility)
- * - Date range filtering with downsampling for large datasets
- * - Multi-site queries for comparing data across sites
+ * Uses server-side aggregation RPC function for optimal performance.
  *
  * Query parameters:
- * - siteId: UUID of the site (required, can be comma-separated for multiple sites)
- * - deviceIds: Comma-separated device UUIDs (optional, for device_readings)
+ * - siteIds: Comma-separated site UUIDs (required)
+ * - deviceIds: Comma-separated device UUIDs (required for device source)
  * - registers: Comma-separated register names (optional)
  * - start: ISO datetime string (required)
  * - end: ISO datetime string (required)
  * - source: "device" | "aggregate" | "both" (default: "device")
- * - limit: Max number of points per device (default: 5000)
+ * - aggregation: "auto" | "raw" | "hourly" | "daily" (default: "auto")
+ *
+ * Date Range Limits (enforced by RPC):
+ * - Raw: max 7 days
+ * - Hourly: max 90 days
+ * - Daily: max 2 years
+ *
+ * Aggregation Auto-Selection:
+ * - < 24h → raw
+ * - 24h - 7d → hourly
+ * - > 7d → daily
  */
 
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+
+// Aggregation type
+type AggregationType = "auto" | "raw" | "hourly" | "daily";
 
 // Response types
 interface DeviceReading {
@@ -29,7 +38,7 @@ interface DeviceReading {
   site_name: string;
   register_name: string;
   unit: string | null;
-  data: { timestamp: string; value: number }[];
+  data: { timestamp: string; value: number; min_value?: number; max_value?: number; sample_count?: number }[];
 }
 
 interface AggregateData {
@@ -49,11 +58,12 @@ interface HistoricalDataResponse {
     startTime: string;
     endTime: string;
     downsampled: boolean;
+    aggregationType: AggregationType;
     originalCount?: number;
   };
 }
 
-// Helper to parse duration strings to milliseconds
+// Helper to parse duration strings to milliseconds (for backward compatibility)
 function parseDuration(duration: string): number {
   const match = duration.match(/^(\d+)(h|d)$/);
   if (!match) return 24 * 60 * 60 * 1000; // Default 24h
@@ -66,6 +76,9 @@ function parseDuration(duration: string): number {
 
   return 24 * 60 * 60 * 1000;
 }
+
+// Valid aggregation types
+const VALID_AGGREGATIONS = ["auto", "raw", "hourly", "daily"] as const;
 
 export async function GET(request: NextRequest) {
   try {
@@ -89,7 +102,7 @@ export async function GET(request: NextRequest) {
     const endParam = searchParams.get("end");
     const durationParam = searchParams.get("duration");
     const source = searchParams.get("source") || "device";
-    const limit = parseInt(searchParams.get("limit") || "5000", 10);
+    const aggregationParam = (searchParams.get("aggregation") || "auto") as AggregationType;
 
     // Validate required parameters
     if (!siteIdsParam) {
@@ -176,6 +189,15 @@ export async function GET(request: NextRequest) {
       ? registersParam.split(",").filter((r) => r.trim())
       : [];
 
+    // Determine actual aggregation based on date range (for auto mode)
+    const diffHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+    let actualAggregation: AggregationType = aggregationParam;
+    if (aggregationParam === "auto") {
+      if (diffHours <= 24) actualAggregation = "raw";
+      else if (diffHours <= 168) actualAggregation = "hourly"; // 7 days
+      else actualAggregation = "daily";
+    }
+
     // Initialize response
     const response: HistoricalDataResponse = {
       deviceReadings: [],
@@ -184,7 +206,8 @@ export async function GET(request: NextRequest) {
         totalPoints: 0,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
-        downsampled: false,
+        downsampled: actualAggregation !== "raw",
+        aggregationType: actualAggregation,
       },
     };
 
@@ -193,28 +216,23 @@ export async function GET(request: NextRequest) {
       (source === "device" || source === "both") &&
       deviceIds.length > 0
     ) {
-      // Build query for device readings across multiple sites
-      let query = supabase
-        .from("device_readings")
-        .select("site_id, device_id, register_name, value, unit, timestamp")
-        .in("site_id", siteIds)
-        .in("device_id", deviceIds)
-        .gte("timestamp", startTime.toISOString())
-        .lte("timestamp", endTime.toISOString())
-        .order("timestamp", { ascending: true });
+      // Use RPC function for server-side aggregation
+      const { data: readingsData, error: readingsError } = await supabase.rpc(
+        "get_historical_readings",
+        {
+          p_site_ids: siteIds,
+          p_device_ids: deviceIds,
+          p_registers: registers.length > 0 ? registers : null,
+          p_start: startTime.toISOString(),
+          p_end: endTime.toISOString(),
+          p_aggregation: actualAggregation === "auto" ? "auto" : actualAggregation,
+        }
+      );
 
-      // Filter by registers if specified
-      if (registers.length > 0) {
-        query = query.in("register_name", registers);
-      }
-
-      // Apply limit
-      query = query.limit(limit * deviceIds.length);
-
-      const { data: readingsData, error: readingsError } = await query;
+      console.log("[historical API] RPC result:", readingsData?.length || 0, "readings, aggregation:", actualAggregation, "error:", readingsError?.message);
 
       if (!readingsError && readingsData && readingsData.length > 0) {
-        // Fetch device names and site_ids for mapping
+        // Fetch device names for mapping
         const { data: devicesData } = await supabase
           .from("site_devices")
           .select("id, name, site_id")
@@ -237,7 +255,7 @@ export async function GET(request: NextRequest) {
             site_name: string;
             register_name: string;
             unit: string | null;
-            data: { timestamp: string; value: number }[];
+            data: { timestamp: string; value: number; min_value?: number; max_value?: number; sample_count?: number }[];
           }
         > = {};
 
@@ -258,22 +276,21 @@ export async function GET(request: NextRequest) {
           }
 
           groupedReadings[key].data.push({
-            timestamp: reading.timestamp,
+            timestamp: reading.bucket,
             value: reading.value,
+            min_value: reading.min_value,
+            max_value: reading.max_value,
+            sample_count: reading.sample_count,
           });
         }
 
         response.deviceReadings = Object.values(groupedReadings);
         response.metadata.totalPoints += readingsData.length;
-
-        // Check if we hit the limit (indicates downsampling may be needed)
-        if (readingsData.length >= limit * deviceIds.length) {
-          response.metadata.downsampled = true;
-        }
+        console.log("[historical API] Grouped into", response.deviceReadings.length, "series with", response.metadata.totalPoints, "total points");
       }
     }
 
-    // Fetch aggregate data if requested (from first site for backward compatibility)
+    // Fetch aggregate data if requested (from control_logs for backward compatibility)
     if (source === "aggregate" || source === "both") {
       const { data: logsData, error: logsError } = await supabase
         .from("control_logs")
@@ -284,7 +301,7 @@ export async function GET(request: NextRequest) {
         .gte("timestamp", startTime.toISOString())
         .lte("timestamp", endTime.toISOString())
         .order("timestamp", { ascending: true })
-        .limit(limit * siteIds.length);
+        .limit(10000); // Safety limit
 
       if (!logsError && logsData) {
         response.aggregateData = logsData.map((log) => ({
@@ -296,10 +313,6 @@ export async function GET(request: NextRequest) {
           safe_mode_active: log.safe_mode_active || false,
         }));
         response.metadata.totalPoints += logsData.length;
-
-        if (logsData.length >= limit * siteIds.length) {
-          response.metadata.downsampled = true;
-        }
       }
     }
 

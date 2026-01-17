@@ -26,9 +26,10 @@ export interface Project {
 
 interface ProjectCardProps {
   project: Project;
+  isInactive?: boolean;
 }
 
-export const ProjectCard = memo(function ProjectCard({ project }: ProjectCardProps) {
+export const ProjectCard = memo(function ProjectCard({ project, isInactive }: ProjectCardProps) {
   const router = useRouter();
 
   const handleCardClick = () => {
@@ -42,7 +43,7 @@ export const ProjectCard = memo(function ProjectCard({ project }: ProjectCardPro
 
   return (
     <Card
-      className="h-full hover:border-primary/50 transition-colors cursor-pointer"
+      className={`h-full hover:border-primary/50 transition-colors cursor-pointer ${isInactive ? "opacity-60 border-dashed" : ""}`}
       onClick={handleCardClick}
       role="link"
       tabIndex={0}
@@ -56,7 +57,12 @@ export const ProjectCard = memo(function ProjectCard({ project }: ProjectCardPro
       <CardHeader>
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <CardTitle className="text-lg">{project.name}</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-lg">{project.name}</CardTitle>
+              {isInactive && (
+                <Badge variant="secondary" className="text-xs">Inactive</Badge>
+              )}
+            </div>
             <CardDescription>
               {project.location || "No location set"}
             </CardDescription>

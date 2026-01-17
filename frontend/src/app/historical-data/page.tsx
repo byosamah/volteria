@@ -1,32 +1,39 @@
 /**
- * Historical Data Page
+ * Historical Data Page (V2)
  *
- * Advanced time-series visualization for device data.
+ * Redesigned historical data viewer with drag-and-drop parameter selection.
  * Features:
- * - Project/Site selection cascade
- * - Multiple parameters (up to 10) with color selection
- * - Multiple Y-axes (up to 3)
- * - Zoom via Recharts Brush component
- * - Reference lines
- * - Calculated fields
- * - CSV export
+ * - Project/Site/Device cascading selection
+ * - Drag-and-drop parameter selection to Left/Right Y-axes
+ * - Calendar date picker with quick presets (24h, 3d, 7d)
+ * - Cloud/Local data source toggle (super admin only)
+ * - Multiple parameters (max 10) with per-parameter chart type
+ * - Reference lines and calculated fields (in Advanced Options)
+ * - CSV/PNG export
+ *
+ * Limits:
+ * - Max 10 parameters on one graph
+ * - Max 7 day date range
  */
 
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
-import { HistoricalDataClient } from "@/components/historical/historical-data-client";
+import { HistoricalDataClientV2 } from "@/components/historical/v2";
 
 // Types for projects and sites
 interface Project {
   id: string;
   name: string;
+  timezone: string | null;
+  is_active?: boolean;
 }
 
 interface Site {
   id: string;
   name: string;
   project_id: string;
+  is_active?: boolean;
 }
 
 interface Device {
@@ -34,6 +41,7 @@ interface Device {
   name: string;
   site_id: string;
   device_type: string | null;
+  enabled?: boolean;
 }
 
 export default async function HistoricalDataPage() {
@@ -62,10 +70,11 @@ export default async function HistoricalDataPage() {
   const isAdmin = userProfile?.role === "super_admin" || userProfile?.role === "backend_admin";
 
   if (isAdmin) {
+    // Fetch ALL projects (including inactive) - client filters based on activeFilter toggle
     const { data } = await supabase
       .from("projects")
-      .select("id, name")
-      .eq("is_active", true)
+      .select("id, name, timezone, is_active")
+      .order("is_active", { ascending: false }) // Active first
       .order("name");
     projects = data || [];
   } else {
@@ -77,30 +86,31 @@ export default async function HistoricalDataPage() {
 
     if (userProjects && userProjects.length > 0) {
       const projectIds = userProjects.map((up) => up.project_id);
+      // Fetch ALL assigned projects (including inactive)
       const { data } = await supabase
         .from("projects")
-        .select("id, name")
+        .select("id, name, timezone, is_active")
         .in("id", projectIds)
-        .eq("is_active", true)
+        .order("is_active", { ascending: false }) // Active first
         .order("name");
       projects = data || [];
     }
   }
 
-  // Fetch all sites for these projects (client will filter by selected project)
+  // Fetch ALL sites for these projects (including inactive) - client filters based on activeFilter toggle
   const projectIds = projects.map((p) => p.id);
   let sites: Site[] = [];
   if (projectIds.length > 0) {
     const { data } = await supabase
       .from("sites")
-      .select("id, name, project_id")
+      .select("id, name, project_id, is_active")
       .in("project_id", projectIds)
-      .eq("is_active", true)
+      .order("is_active", { ascending: false }) // Active first
       .order("name");
     sites = data || [];
   }
 
-  // Fetch all devices for these sites (client will filter by selected site)
+  // Fetch ALL devices for these sites (including disabled) - client filters based on activeFilter toggle
   const siteIds = sites.map((s) => s.id);
   let devices: Device[] = [];
   if (siteIds.length > 0) {
@@ -111,10 +121,11 @@ export default async function HistoricalDataPage() {
         name,
         site_id,
         device_type,
+        enabled,
         device_templates(device_type)
       `)
       .in("site_id", siteIds)
-      .eq("enabled", true)
+      .order("enabled", { ascending: false }) // Enabled first
       .order("name");
 
     if (data) {
@@ -127,6 +138,7 @@ export default async function HistoricalDataPage() {
           name: d.name,
           site_id: d.site_id,
           device_type: d.device_type || (template as { device_type: string } | null)?.device_type || "unknown",
+          enabled: d.enabled,
         };
       });
     }
@@ -142,23 +154,13 @@ export default async function HistoricalDataPage() {
         enterprise_id: userProfile?.enterprise_id || undefined,
       }}
     >
-      <div className="space-y-6">
-        {/* Page Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Historical Data</h1>
-          <p className="text-muted-foreground">
-            Visualize and analyze time-series data from your devices
-          </p>
-        </div>
-
-        {/* Main Content - Client Component */}
-        <HistoricalDataClient
-          projects={projects}
-          sites={sites}
-          devices={devices}
-          isSuperAdmin={userProfile?.role === "super_admin"}
-        />
-      </div>
+      {/* V2 Client Component - includes own header */}
+      <HistoricalDataClientV2
+        projects={projects}
+        sites={sites}
+        devices={devices}
+        isSuperAdmin={userProfile?.role === "super_admin"}
+      />
     </DashboardLayout>
   );
 }

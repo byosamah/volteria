@@ -47,7 +47,7 @@ export function NewProjectForm({
     name: "",
     location: "",
     description: "",
-    timezone: "UTC",
+    timezone: "", // Empty = use browser timezone
   });
 
   // Handle input changes
@@ -86,7 +86,7 @@ export function NewProjectForm({
           name: formData.name.trim(),
           location: formData.location.trim() || null,
           description: formData.description.trim() || null,
-          timezone: formData.timezone,
+          timezone: formData.timezone || null, // null = use browser timezone
           is_active: true,
         })
         .select()
@@ -189,16 +189,14 @@ export function NewProjectForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="timezone">
-            Timezone <span className="text-red-500">*</span>
-          </Label>
+          <Label htmlFor="timezone">Timezone</Label>
           <select
             id="timezone"
             value={formData.timezone}
             onChange={(e) => setFormData((prev) => ({ ...prev, timezone: e.target.value }))}
             className="w-full h-10 px-3 rounded-md border border-input bg-background min-h-[44px]"
-            required
           >
+            <option value="">Browser Timezone (auto-detect based on your device)</option>
             <optgroup label="Common Timezones">
               <option value="UTC">UTC (Coordinated Universal Time)</option>
               <option value="Asia/Dubai">Asia/Dubai (Gulf Standard Time, UTC+4)</option>
@@ -242,7 +240,7 @@ export function NewProjectForm({
             </optgroup>
           </select>
           <p className="text-xs text-muted-foreground">
-            Timezone for data logging and analysis
+            Timezone for charts and data analysis. &quot;Browser Timezone&quot; uses your device&apos;s local timezone automatically.
           </p>
         </div>
 

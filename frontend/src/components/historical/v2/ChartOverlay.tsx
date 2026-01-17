@@ -13,6 +13,7 @@ interface ChartOverlayProps {
   width: number;
   height: number;
   showTooltip?: boolean; // Whether to show overlay tooltip (false = let Recharts handle it)
+  timezone?: string; // IANA timezone for display
 }
 
 export function ChartOverlay({
@@ -24,6 +25,7 @@ export function ChartOverlay({
   width,
   height,
   showTooltip = true,
+  timezone,
 }: ChartOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const cursorLineRef = useRef<HTMLDivElement>(null);
@@ -283,6 +285,7 @@ export function ChartOverlay({
           parameters={allParams}
           containerWidth={width}
           containerHeight={height}
+          timezone={timezone}
         />
       )}
     </div>
