@@ -27,7 +27,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from common.shared_state import SharedState
+from common.state import SharedState
 from services.device.modbus_client import ModbusClient
 
 
