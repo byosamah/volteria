@@ -124,7 +124,14 @@ backend/
 | `/{id}` | GET | Get controller | Yes |
 | `/{id}` | PATCH | Update controller | Admin+ |
 | `/{id}` | DELETE | Delete controller | Super Admin |
+| `/{id}/update` | POST | Git pull + restart services | Admin+ or controller_secret |
+| `/{id}/reboot` | POST | Reboot controller | Admin+ or controller_secret |
+| `/{id}/ssh` | POST | Execute SSH command | Admin+ |
+| `/{id}/config` | GET | Get controller config | Controller |
+| `/{id}/test` | POST | Run controller tests | Admin+ |
 | `/claim` | POST | Claim controller by serial | Enterprise Admin+ |
+| `/register` | POST | Register new controller | Controller |
+| `/lookup` | GET | Lookup controller by serial | Yes |
 
 ### Enterprises (`/api/enterprises/`)
 | Endpoint | Method | Description | Auth |

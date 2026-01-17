@@ -190,34 +190,57 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 ## Recent Updates (2026-01-17)
 
-### Logging System Improvements
+### RAM Buffering for Logging (NEW)
+Reduces SSD/SD card wear by 60x through RAM buffering:
+```
+Device Service → SharedState (raw readings every 1s)
+       ↓
+RAM BUFFER (sample every 1s, max 10,000 readings ~2-3MB)
+       ↓
+LOCAL SQLITE (flush every 60s = 1 write/min)
+       ↓
+CLOUD SYNC (every 180s, downsampled per-register)
+```
+
+**Key Settings**:
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `local_sample_interval_s` | 1s | Sample into RAM |
+| `local_flush_interval_s` | 60s | Flush RAM to SQLite |
+| `cloud_sync_interval_s` | 180s | Sync to Supabase |
+| `logging_frequency` | per-register | Cloud data density |
+
+### Per-Register Cloud Downsampling
+- Each register has its own `logging_frequency` (1s to 3600s)
+- Cloud sync downsamples based on frequency (e.g., 60s = 1 reading/min)
+- Local SQLite keeps full resolution; cloud gets configurable density
+- All registers sync together in one batch (not separate times)
+
+### Controller Remote Update
+- **New Endpoint**: `POST /api/controllers/{id}/update`
+- **Auth**: `controller_secret` (SSH password) or admin JWT
+- **Action**: Runs `git pull` and restarts services on controller
+- **Use Case**: OTA updates without SSH tunnel access
+
+### Nginx Routing Fix
+- Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`) route to FastAPI
+- Controller frontend routes (`/heartbeats`, `/lookup`, `/register`) route to Next.js
+
+### Logging System Architecture
 - **Local vs Cloud Separation**: Local writes ALL readings; cloud filters by per-register `logging_frequency`
 - **Local Logging Toggle**: Site settings checkbox (migration 077: `logging_local_enabled`)
-- **Unique Timestamps**: Each log entry uses `datetime.now()` (not state timestamp)
-- **Data Flow**:
-  ```
-  Device Service → SharedState
-       ↓
-  LOCAL (if enabled): Every logging_local_interval_ms → Write ALL to SQLite
-       ↓
-  CLOUD (if enabled): Every logging_cloud_interval_ms → Filter by frequency → Supabase
-  ```
-
-### Cloud Sync Fixes
-- **HTTP 400 Fix**: Removed `operation_mode` field (not in `control_logs` table)
-- **HTTP 409 Fix**: Deduplication by `(site_id, timestamp)` before upload
+- **Device Readings Table**: Separate `device_readings` table for granular cloud sync
 - **Conflict Handling**: `Prefer: resolution=ignore-duplicates` header + graceful 409 handling
-- **AlarmEvaluator**: Added missing `update_definitions()` method
 
-### Reboot API Authentication
-- **Controller Self-Auth**: Accepts `controller_secret` (SSH password) without user JWT
-- **Use Case**: OTA updates, wizard automation, maintenance scripts
-- **Null User Fix**: Audit log handles missing user for controller-initiated reboots
-
-### Controller Setup
-- **SSH Auto-Assign**: `/register` endpoint auto-assigns SSH credentials to existing controllers
+### Controller Setup Improvements
+- **SSH Auto-Assign**: `/register` endpoint auto-assigns SSH credentials
+- **Full Git Clone**: Setup script clones full repo for easier `git pull` updates
 - **Simplified Ethernet**: Setup script skips ethernet gateway config (WiFi primary)
 - **SharedState Caching**: Config service uses SharedState consistently
+
+### API Authentication
+- **Controller Self-Auth**: Reboot/update accept `controller_secret` without user JWT
+- **Use Case**: OTA updates, wizard automation, maintenance scripts
 
 ### New Database Migrations
 - **075**: Cleanup users table

@@ -94,9 +94,36 @@ Entry point: `main_v2.py` (use this, not legacy `main.py`)
 - `calculated_fields.py` - Totals, energy metrics
 
 **Logging Service** (`services/logging/`)
-- `local_db.py` - SQLite storage
-- `cloud_sync.py` - Supabase upload
+- `service.py` - Main logging orchestration with RAM buffering
+- `local_db.py` - SQLite storage (control_logs + device_readings tables)
+- `cloud_sync.py` - Supabase upload with per-register downsampling
 - `alarm_evaluator.py` - Threshold checking
+
+### Logging Architecture (3-Tier with RAM Buffer)
+
+```
+Device Service → SharedState (raw readings every ~1s)
+       ↓
+RAM BUFFER (sample every 1s, max 10,000 readings ~2-3MB)
+       ↓
+LOCAL SQLITE (flush every 60s = 60x fewer disk writes)
+       ↓
+CLOUD SYNC (every 180s, downsampled per-register)
+```
+
+**Key Settings** (from site config via config service):
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `local_sample_interval_s` | 1 | Sample into RAM buffer |
+| `local_flush_interval_s` | 60 | Flush RAM to SQLite |
+| `cloud_sync_interval_s` | 180 | Sync batch to Supabase |
+| `logging_frequency` | per-register | Cloud data density (1-3600s) |
+
+**Per-Register Downsampling**:
+- Each register can have different `logging_frequency` (set in device config)
+- Local SQLite keeps full 1s resolution
+- Cloud receives downsampled data (e.g., 60s = 1 reading/min)
+- All registers sync together in one HTTP batch
 
 ### Running Services
 
