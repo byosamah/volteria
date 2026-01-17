@@ -123,7 +123,7 @@ supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_
 | `controller_heartbeats` | Controller status |
 | `controller_service_status` | 5-layer health tracking |
 
-> **Full schema**: See `database/migrations/` (78+ migration files)
+> **Full schema**: See `database/migrations/` (78 migration files)
 
 ## Deployment
 
@@ -188,9 +188,36 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 7. **Invite flow**: Uses URL fragments (`#access_token=...`), handled by login page
 
-## Recent Updates (2026-01-17)
+## Recent Updates (2026-01-18)
 
-### Historical Data V2 - Server-Side Aggregation (NEW)
+### Historical Data V2 - Local Data Source (NEW)
+Query historical data directly from controller's SQLite database:
+
+**Data Sources**:
+- **Cloud**: Supabase PostgreSQL (default) - multi-site, long-term storage
+- **Local**: Controller SQLite via SSH - single-site, real-time, super admin only
+
+**Local Source Constraints**:
+| Constraint | Limit | Reason |
+|------------|-------|--------|
+| Date Range (Raw) | 1 hour max | SSH transfer timeout |
+| Date Range (Aggregated) | 30 days max | SQLite performance |
+| Sites | Single site only | Controller is site-specific |
+| Filter | Active only | Inactive sites have no hardware |
+
+**Auto-Behavior When Switching to Local**:
+- Resets to 1h date range
+- Sets Raw aggregation (optimal for 1h)
+- Clears parameters from other sites
+- Forces "Active" filter
+
+**Key Files**:
+- `controller/historical_cli.py` - CLI for querying local SQLite (supports --aggregation raw/hourly/daily)
+- `backend/app/routers/controllers.py` - SSH endpoint for historical queries
+- `frontend/src/app/api/historical/local/route.ts` - Frontend API proxy
+- `frontend/src/components/historical/v2/ControlsRow.tsx` - Cloud/Local toggle
+
+### Historical Data V2 - Server-Side Aggregation
 Large dataset support with database-level aggregation:
 
 **Problem**: Client fetching 100,000+ rows is slow and hits Supabase max_rows limits.
@@ -234,6 +261,11 @@ Large dataset support with database-level aggregation:
 - Method (for Hourly/Daily): Avg | Min | Max
 - Auto badge when system auto-selected
 - Changes date range → auto-switches to available aggregation
+
+### Historical Chart Improvements
+- **Adaptive Y-Axis**: Domain calculated from actual data values with 10% padding (no longer starts at 0)
+- **Date Presets**: 1h, 24h, 3d, 7d buttons (1h optimal for local raw data)
+- **Raw Disabled Logic**: Raw aggregation disabled for local source when date range > 1 hour
 
 ### Historical Data Chart V2 - Multi-Site Support
 Compare parameters from multiple projects/sites on the same chart:
@@ -293,7 +325,6 @@ Performance-optimized chart for 500+ data points using DOM overlay instead of Re
 **When to Use**: Any Recharts visualization with 100+ data points that needs hover/zoom interaction.
 
 ### Historical Data - Next Steps
-- **Local Data Source**: Query controller's SQLite via SSH/API (super admin only)
 - **Pre-Aggregated Tables**: Materialized hourly/daily summaries for sub-second 1-year queries
 
 ### Live Registers Feature (NEW)

@@ -79,7 +79,7 @@ export function StepHardwareInfo({
           ))}
         </select>
         <p className="text-xs text-muted-foreground">
-          Select the hardware model. Currently supported: Raspberry Pi 5.
+          Select the hardware model from the approved hardware list.
         </p>
       </div>
 

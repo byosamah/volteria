@@ -97,8 +97,8 @@ export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstruc
           <div>
             <h5 className="font-medium">Choose Device</h5>
             <p className="text-sm text-muted-foreground">
-              Click <span className="font-medium">&quot;Choose Device&quot;</span> and select <code className="bg-muted px-1 rounded">Raspberry Pi 5</code>
-              {" "}(or your Pi model).
+              Click <span className="font-medium">&quot;Choose Device&quot;</span> and select your Raspberry Pi model
+              (e.g., Pi 5, Pi 4, etc. based on your approved hardware).
             </p>
           </div>
         </div>
