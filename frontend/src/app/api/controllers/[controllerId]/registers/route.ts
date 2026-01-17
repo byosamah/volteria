@@ -8,7 +8,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NODE_ENV === "production"
+  ? "http://sdc-backend:8000"
+  : "http://localhost:8000";
 
 interface ReadRequest {
   device_id: string;
