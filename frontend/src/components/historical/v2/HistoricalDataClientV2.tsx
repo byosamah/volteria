@@ -228,39 +228,95 @@ export function HistoricalDataClientV2({
     return filteredSites.find((s) => s.id === selectedSiteId)?.name || "";
   }, [filteredSites, selectedSiteId]);
 
-  // Get available registers for selected device (or controller)
-  const availableRegisters = useMemo((): AvailableRegister[] => {
-    if (!selectedDeviceId || !selectedSiteId) return [];
+  // Available registers state (fetched from API or dummy for controller)
+  const [availableRegisters, setAvailableRegisters] = useState<AvailableRegister[]>([]);
+  const [isLoadingRegisters, setIsLoadingRegisters] = useState(false);
 
-    // Handle Site Controller (calculated fields)
-    if (selectedDeviceId === SITE_CONTROLLER_ID) {
-      const controllerRegs = DUMMY_REGISTERS[SITE_CONTROLLER_ID] || [];
-      return controllerRegs.map((reg) => ({
-        id: reg.id,
-        name: reg.name,
-        unit: reg.unit,
-        deviceId: SITE_CONTROLLER_ID,
-        deviceName: "Site Controller",
-        siteId: selectedSiteId,
-        siteName: selectedSiteName,
-        preferred_chart_type: reg.preferred_chart_type,
-      }));
-    }
+  // Fetch registers when device changes
+  useEffect(() => {
+    const fetchRegisters = async () => {
+      if (!selectedDeviceId || !selectedSiteId) {
+        setAvailableRegisters([]);
+        return;
+      }
 
-    // Use dummy registers for now (devices)
-    const regs = DUMMY_REGISTERS[selectedDeviceId] || [];
-    const device = filteredDevices.find((d) => d.id === selectedDeviceId);
+      // Handle Site Controller (calculated fields) - use dummy data
+      if (selectedDeviceId === SITE_CONTROLLER_ID) {
+        const controllerRegs = DUMMY_REGISTERS[SITE_CONTROLLER_ID] || [];
+        setAvailableRegisters(
+          controllerRegs.map((reg) => ({
+            id: reg.id,
+            name: reg.name,
+            unit: reg.unit,
+            deviceId: SITE_CONTROLLER_ID,
+            deviceName: "Site Controller",
+            siteId: selectedSiteId,
+            siteName: selectedSiteName,
+            preferred_chart_type: reg.preferred_chart_type,
+          }))
+        );
+        return;
+      }
 
-    return regs.map((reg) => ({
-      id: reg.id,
-      name: reg.name,
-      unit: reg.unit,
-      deviceId: selectedDeviceId,
-      deviceName: device?.name || "Unknown",
-      siteId: selectedSiteId,
-      siteName: selectedSiteName,
-      preferred_chart_type: reg.preferred_chart_type,
-    }));
+      // Fetch real registers from API
+      setIsLoadingRegisters(true);
+      try {
+        const response = await fetch(`/api/devices/${selectedDeviceId}/registers`);
+        if (response.ok) {
+          const data = await response.json();
+          const device = filteredDevices.find((d) => d.id === selectedDeviceId);
+          setAvailableRegisters(
+            data.registers.map((reg: { name: string; unit: string; preferred_chart_type?: string }) => ({
+              id: `${selectedDeviceId}:${reg.name}`,
+              name: reg.name,
+              unit: reg.unit || "",
+              deviceId: selectedDeviceId,
+              deviceName: device?.name || data.deviceName || "Unknown",
+              siteId: selectedSiteId,
+              siteName: selectedSiteName,
+              preferred_chart_type: reg.preferred_chart_type,
+            }))
+          );
+        } else {
+          // Fall back to dummy registers if API fails
+          const regs = DUMMY_REGISTERS[selectedDeviceId] || [];
+          const device = filteredDevices.find((d) => d.id === selectedDeviceId);
+          setAvailableRegisters(
+            regs.map((reg) => ({
+              id: reg.id,
+              name: reg.name,
+              unit: reg.unit,
+              deviceId: selectedDeviceId,
+              deviceName: device?.name || "Unknown",
+              siteId: selectedSiteId,
+              siteName: selectedSiteName,
+              preferred_chart_type: reg.preferred_chart_type,
+            }))
+          );
+        }
+      } catch (error) {
+        console.error("Failed to fetch registers:", error);
+        // Fall back to dummy registers
+        const regs = DUMMY_REGISTERS[selectedDeviceId] || [];
+        const device = filteredDevices.find((d) => d.id === selectedDeviceId);
+        setAvailableRegisters(
+          regs.map((reg) => ({
+            id: reg.id,
+            name: reg.name,
+            unit: reg.unit,
+            deviceId: selectedDeviceId,
+            deviceName: device?.name || "Unknown",
+            siteId: selectedSiteId,
+            siteName: selectedSiteName,
+            preferred_chart_type: reg.preferred_chart_type,
+          }))
+        );
+      } finally {
+        setIsLoadingRegisters(false);
+      }
+    };
+
+    fetchRegisters();
   }, [selectedDeviceId, selectedSiteId, selectedSiteName, filteredDevices]);
 
   // Handle project change (just for browsing - doesn't clear selected parameters)
@@ -300,7 +356,7 @@ export function HistoricalDataClientV2({
     }
   }, []);
 
-  // Fetch data (using dummy data for now)
+  // Fetch data from API
   const fetchData = useCallback(async () => {
     const allParams = [...leftAxisParams, ...rightAxisParams];
     if (allParams.length === 0) return;
@@ -308,18 +364,53 @@ export function HistoricalDataClientV2({
     setIsLoading(true);
 
     try {
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Collect unique site IDs and device IDs from parameters
+      const siteIds = [...new Set(allParams.map((p) => p.siteId).filter(Boolean))];
+      const deviceIds = [...new Set(allParams.map((p) => p.deviceId).filter(Boolean))];
+      const registerNames = [...new Set(allParams.map((p) => p.registerName))];
 
-      // Generate dummy data
-      const rawData = generateDummyChartData(
-        allParams.map((p) => ({
-          deviceId: p.deviceId,
-          registerName: p.registerName,
-        })),
-        dateRange.start,
-        dateRange.end
-      );
+      // If using dummy data (no real site IDs yet), fall back to dummy generation
+      if (siteIds.length === 0 || siteIds.some((id) => !id || id === "site-controller")) {
+        // Fall back to dummy data for development
+        const rawData = generateDummyChartData(
+          allParams.map((p) => ({
+            deviceId: p.deviceId,
+            registerName: p.registerName,
+          })),
+          dateRange.start,
+          dateRange.end
+        );
+        const processedData = aggregateData(rawData, aggregationType, allParams);
+        setChartData(processedData);
+        setMetadata({
+          totalPoints: processedData.length,
+          downsampled: processedData.length < rawData.length,
+          aggregationType: aggregationType,
+          originalPoints: rawData.length,
+        });
+        return;
+      }
+
+      // Build API query params
+      const params = new URLSearchParams({
+        siteIds: siteIds.join(","),
+        deviceIds: deviceIds.join(","),
+        registers: registerNames.join(","),
+        start: dateRange.start.toISOString(),
+        end: dateRange.end.toISOString(),
+        source: "device",
+        limit: "10000",
+      });
+
+      const response = await fetch(`/api/historical?${params}`);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Transform API response to ChartDataPoint format
+      const rawData = transformApiToChartData(data.deviceReadings, allParams);
 
       // Apply aggregation
       const processedData = aggregateData(rawData, aggregationType, allParams);
@@ -327,16 +418,75 @@ export function HistoricalDataClientV2({
       setChartData(processedData);
       setMetadata({
         totalPoints: processedData.length,
-        downsampled: processedData.length < rawData.length,
+        downsampled: data.metadata?.downsampled || processedData.length < rawData.length,
         aggregationType: aggregationType,
         originalPoints: rawData.length,
       });
     } catch (error) {
       console.error("Failed to fetch data:", error);
+      // Show error to user
+      setChartData([]);
+      setMetadata(undefined);
     } finally {
       setIsLoading(false);
     }
   }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, aggregateData]);
+
+  // Transform API device readings to chart data format
+  const transformApiToChartData = useCallback(
+    (
+      deviceReadings: Array<{
+        device_id: string;
+        register_name: string;
+        data: Array<{ timestamp: string; value: number }>;
+      }>,
+      params: AxisParameter[]
+    ): ChartDataPoint[] => {
+      // Collect all unique timestamps
+      const timestampSet = new Set<string>();
+      deviceReadings.forEach((reading) => {
+        reading.data.forEach((point) => {
+          timestampSet.add(point.timestamp);
+        });
+      });
+
+      // Sort timestamps
+      const timestamps = Array.from(timestampSet).sort(
+        (a, b) => new Date(a).getTime() - new Date(b).getTime()
+      );
+
+      // Create lookup maps for each device:register combination
+      const dataLookup: Record<string, Record<string, number>> = {};
+      deviceReadings.forEach((reading) => {
+        const key = `${reading.device_id}:${reading.register_name}`;
+        dataLookup[key] = {};
+        reading.data.forEach((point) => {
+          dataLookup[key][point.timestamp] = point.value;
+        });
+      });
+
+      // Build chart data points
+      return timestamps.map((timestamp) => {
+        const point: ChartDataPoint = {
+          timestamp,
+          formattedTime: new Date(timestamp).toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+
+        // Add values for each parameter
+        params.forEach((param) => {
+          const key = `${param.deviceId}:${param.registerName}`;
+          const value = dataLookup[key]?.[timestamp];
+          point[key] = value !== undefined ? value : null;
+        });
+
+        return point;
+      });
+    },
+    []
+  );
 
   // Clear chart data when all parameters are removed (but don't auto-fetch)
   useEffect(() => {

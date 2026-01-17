@@ -6,14 +6,15 @@
  * - Device readings from device_readings table (per-device data)
  * - Aggregate readings from control_logs table (backward compatibility)
  * - Date range filtering with downsampling for large datasets
+ * - Multi-site queries for comparing data across sites
  *
  * Query parameters:
- * - siteId: UUID of the site (required)
+ * - siteId: UUID of the site (required, can be comma-separated for multiple sites)
  * - deviceIds: Comma-separated device UUIDs (optional, for device_readings)
  * - registers: Comma-separated register names (optional)
  * - start: ISO datetime string (required)
  * - end: ISO datetime string (required)
- * - source: "device" | "aggregate" | "both" (default: "both")
+ * - source: "device" | "aggregate" | "both" (default: "device")
  * - limit: Max number of points per device (default: 5000)
  */
 
@@ -24,6 +25,8 @@ import { NextRequest, NextResponse } from "next/server";
 interface DeviceReading {
   device_id: string;
   device_name: string;
+  site_id: string;
+  site_name: string;
   register_name: string;
   unit: string | null;
   data: { timestamp: string; value: number }[];
@@ -79,22 +82,25 @@ export async function GET(request: NextRequest) {
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
-    const siteId = searchParams.get("siteId");
+    const siteIdsParam = searchParams.get("siteIds") || searchParams.get("siteId"); // Support both
     const deviceIdsParam = searchParams.get("deviceIds");
     const registersParam = searchParams.get("registers");
     const startParam = searchParams.get("start");
     const endParam = searchParams.get("end");
     const durationParam = searchParams.get("duration");
-    const source = searchParams.get("source") || "both";
+    const source = searchParams.get("source") || "device";
     const limit = parseInt(searchParams.get("limit") || "5000", 10);
 
     // Validate required parameters
-    if (!siteId) {
+    if (!siteIdsParam) {
       return NextResponse.json(
-        { error: "siteId is required" },
+        { error: "siteIds is required" },
         { status: 400 }
       );
     }
+
+    // Parse site IDs (comma-separated)
+    const siteIds = siteIdsParam.split(",").filter((id) => id.trim());
 
     // Calculate time range
     let startTime: Date;
@@ -112,16 +118,15 @@ export async function GET(request: NextRequest) {
       startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000);
     }
 
-    // Verify user has access to this site via project
-    const { data: siteData, error: siteError } = await supabase
+    // Verify user has access to all sites via projects
+    const { data: sitesData, error: sitesError } = await supabase
       .from("sites")
-      .select("id, project_id")
-      .eq("id", siteId)
-      .single();
+      .select("id, name, project_id")
+      .in("id", siteIds);
 
-    if (siteError || !siteData) {
+    if (sitesError || !sitesData || sitesData.length === 0) {
       return NextResponse.json(
-        { error: "Site not found" },
+        { error: "Sites not found" },
         { status: 404 }
       );
     }
@@ -137,22 +142,31 @@ export async function GET(request: NextRequest) {
       userProfile?.role === "super_admin" ||
       userProfile?.role === "backend_admin";
 
-    // Non-admin users must have project access
+    // Non-admin users must have project access to all sites
     if (!isAdmin) {
+      const projectIds = [...new Set(sitesData.map((s) => s.project_id))];
       const { data: projectAccess } = await supabase
         .from("user_projects")
         .select("project_id")
         .eq("user_id", user.id)
-        .eq("project_id", siteData.project_id)
-        .single();
+        .in("project_id", projectIds);
 
-      if (!projectAccess) {
+      const accessibleProjects = new Set(projectAccess?.map((p) => p.project_id) || []);
+      const hasAccessToAll = projectIds.every((pid) => accessibleProjects.has(pid));
+
+      if (!hasAccessToAll) {
         return NextResponse.json(
-          { error: "Access denied to this site" },
+          { error: "Access denied to one or more sites" },
           { status: 403 }
         );
       }
     }
+
+    // Create site name lookup
+    const siteNameMap: Record<string, string> = {};
+    sitesData.forEach((s) => {
+      siteNameMap[s.id] = s.name;
+    });
 
     // Parse device IDs and registers
     const deviceIds = deviceIdsParam
@@ -179,11 +193,11 @@ export async function GET(request: NextRequest) {
       (source === "device" || source === "both") &&
       deviceIds.length > 0
     ) {
-      // Build query for device readings
+      // Build query for device readings across multiple sites
       let query = supabase
         .from("device_readings")
-        .select("device_id, register_name, value, unit, timestamp")
-        .eq("site_id", siteId)
+        .select("site_id, device_id, register_name, value, unit, timestamp")
+        .in("site_id", siteIds)
         .in("device_id", deviceIds)
         .gte("timestamp", startTime.toISOString())
         .lte("timestamp", endTime.toISOString())
@@ -200,16 +214,16 @@ export async function GET(request: NextRequest) {
       const { data: readingsData, error: readingsError } = await query;
 
       if (!readingsError && readingsData && readingsData.length > 0) {
-        // Fetch device names for mapping
+        // Fetch device names and site_ids for mapping
         const { data: devicesData } = await supabase
           .from("site_devices")
-          .select("id, name")
+          .select("id, name, site_id")
           .in("id", deviceIds);
 
-        const deviceNameMap: Record<string, string> = {};
+        const deviceInfoMap: Record<string, { name: string; site_id: string }> = {};
         if (devicesData) {
           devicesData.forEach((d) => {
-            deviceNameMap[d.id] = d.name;
+            deviceInfoMap[d.id] = { name: d.name, site_id: d.site_id };
           });
         }
 
@@ -219,6 +233,8 @@ export async function GET(request: NextRequest) {
           {
             device_id: string;
             device_name: string;
+            site_id: string;
+            site_name: string;
             register_name: string;
             unit: string | null;
             data: { timestamp: string; value: number }[];
@@ -227,11 +243,14 @@ export async function GET(request: NextRequest) {
 
         for (const reading of readingsData) {
           const key = `${reading.device_id}:${reading.register_name}`;
+          const deviceInfo = deviceInfoMap[reading.device_id];
 
           if (!groupedReadings[key]) {
             groupedReadings[key] = {
               device_id: reading.device_id,
-              device_name: deviceNameMap[reading.device_id] || "Unknown",
+              device_name: deviceInfo?.name || "Unknown",
+              site_id: reading.site_id,
+              site_name: siteNameMap[reading.site_id] || "Unknown",
               register_name: reading.register_name,
               unit: reading.unit,
               data: [],
@@ -254,18 +273,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fetch aggregate data if requested
+    // Fetch aggregate data if requested (from first site for backward compatibility)
     if (source === "aggregate" || source === "both") {
       const { data: logsData, error: logsError } = await supabase
         .from("control_logs")
         .select(
-          "timestamp, total_load_kw, solar_output_kw, dg_power_kw, solar_limit_pct, safe_mode_active"
+          "site_id, timestamp, total_load_kw, solar_output_kw, dg_power_kw, solar_limit_pct, safe_mode_active"
         )
-        .eq("site_id", siteId)
+        .in("site_id", siteIds)
         .gte("timestamp", startTime.toISOString())
         .lte("timestamp", endTime.toISOString())
         .order("timestamp", { ascending: true })
-        .limit(limit);
+        .limit(limit * siteIds.length);
 
       if (!logsError && logsData) {
         response.aggregateData = logsData.map((log) => ({
@@ -278,7 +297,7 @@ export async function GET(request: NextRequest) {
         }));
         response.metadata.totalPoints += logsData.length;
 
-        if (logsData.length >= limit) {
+        if (logsData.length >= limit * siteIds.length) {
           response.metadata.downsampled = true;
         }
       }
