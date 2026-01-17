@@ -63,11 +63,20 @@ upstream frontend {
 ```
 
 ### Route Mapping
-| Path | Destination |
-|------|-------------|
-| `/api/*` | FastAPI backend |
-| `/auth/*` | Supabase auth proxy |
-| `/*` | Next.js frontend |
+| Path | Destination | Notes |
+|------|-------------|-------|
+| `/api/admin/*` | Next.js frontend | Admin API routes |
+| `/api/controllers/{id}/(update\|reboot\|ssh\|...)` | FastAPI backend | Controller operations |
+| `/api/controllers/*` | Next.js frontend | Heartbeats, lookup |
+| `/api/dashboards/*` | Next.js frontend | Dashboard widgets |
+| `/api/historical` | Next.js frontend | Historical data (regex match) |
+| `/api/sites/*` | Next.js frontend | Site status |
+| `/api/projects/*` | Next.js frontend | Project status |
+| `/api/devices/*` | Next.js frontend | Device registers |
+| `/api/*` | FastAPI backend | All other API routes |
+| `/*` | Next.js frontend | Frontend pages |
+
+**Important**: `/api/historical` uses regex `^/api/historical(/|$)` to match with/without trailing slash. This prevents redirect loops between nginx (adds slash) and Next.js (removes slash).
 
 ### Security Features
 - SSL/TLS with Let's Encrypt
@@ -127,6 +136,16 @@ docker restart sdc-nginx
 # Check logs for errors
 docker logs sdc-backend --tail=100
 docker logs sdc-frontend --tail=100
+```
+
+### ERR_TOO_MANY_REDIRECTS
+```bash
+# Check nginx access logs for redirect pattern (301 → 308 loop)
+docker logs sdc-nginx --tail=50
+
+# Common cause: trailing slash mismatch between nginx and Next.js
+# Fix: Use regex location matching for API routes
+# Example: location ~ ^/api/historical(/|$) instead of location /api/historical/
 ```
 
 ### SSL Certificate Renewal

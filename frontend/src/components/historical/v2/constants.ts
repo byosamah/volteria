@@ -13,6 +13,10 @@ export const MAX_DATE_RANGE = {
   daily: 730,  // 2 years max for daily (~730 points/device)
 } as const;
 
+// Maximum date range for local data source (in days)
+// Local data queries the controller's SQLite via SSH - limited for performance
+export const MAX_LOCAL_DATE_RANGE_DAYS = 7;
+
 // Default max date range (for backward compatibility)
 export const MAX_DATE_RANGE_DAYS = MAX_DATE_RANGE.raw;
 

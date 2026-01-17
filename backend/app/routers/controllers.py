@@ -1777,3 +1777,141 @@ async def write_register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to write register: {str(e)}"
         )
+
+
+# ============================================
+# ENDPOINTS - LOCAL HISTORICAL DATA
+# ============================================
+
+class LocalHistoricalRequest(BaseModel):
+    """Request to query local historical data."""
+    site_id: str = Field(..., description="Site UUID")
+    device_ids: Optional[list[str]] = Field(None, description="Device UUIDs to filter")
+    registers: Optional[list[str]] = Field(None, description="Register names to filter")
+    start: str = Field(..., description="Start datetime (ISO)")
+    end: str = Field(..., description="End datetime (ISO)")
+
+
+class LocalHistoricalResponse(BaseModel):
+    """Response from local historical query."""
+    success: bool
+    deviceReadings: list = []
+    metadata: dict = {}
+    error: Optional[str] = None
+
+
+@router.post("/{controller_id}/historical/query", response_model=LocalHistoricalResponse)
+async def query_local_historical(
+    controller_id: UUID,
+    request: LocalHistoricalRequest,
+    current_user: CurrentUser = Depends(require_role(["super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Query historical data from controller's local SQLite database.
+
+    Executes historical_cli.py on the controller via SSH.
+    Requires configurator role or higher.
+
+    Max range: 7 days (enforced by frontend).
+    """
+    try:
+        # 1. Get controller details
+        result = db.table("controllers").select(
+            "id, serial_number, ssh_port, ssh_username, ssh_password, status"
+        ).eq("id", str(controller_id)).single().execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Controller not found"
+            )
+
+        controller = result.data
+
+        # 2. Check controller is deployed
+        if controller["status"] not in ("deployed", "ready"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Controller is not deployed (status: {controller['status']})"
+            )
+
+        # 3. Check SSH credentials
+        if not controller.get("ssh_port") or not controller.get("ssh_username"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Controller SSH not configured"
+            )
+
+        # 4. Build the command
+        cmd_parts = [
+            "cd /opt/volteria/controller &&",
+            "/opt/volteria/venv/bin/python historical_cli.py query",
+            f"--site-id {request.site_id}",
+            f"--start '{request.start}'",
+            f"--end '{request.end}'"
+        ]
+
+        if request.device_ids:
+            cmd_parts.append(f"--device-ids {','.join(request.device_ids)}")
+
+        if request.registers:
+            # URL decode and escape register names for shell
+            registers_str = ','.join(request.registers)
+            cmd_parts.append(f"--registers '{registers_str}'")
+
+        command = " ".join(cmd_parts)
+
+        # 5. Execute via SSH
+        SSH_HOST = "host.docker.internal"
+        success, message, output = execute_ssh_command(
+            host=SSH_HOST,
+            port=controller["ssh_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", ""),
+            command=command,
+            timeout=60  # Allow longer timeout for large queries
+        )
+
+        if not success:
+            return LocalHistoricalResponse(
+                success=False,
+                error=f"SSH command failed: {message}"
+            )
+
+        # 6. Parse JSON output
+        try:
+            import json
+            # Find the JSON line (skip any debug output)
+            lines = [l.strip() for l in output.strip().split('\n') if l.strip()]
+            json_line = None
+            for line in lines:
+                if line.startswith('{'):
+                    json_line = line
+                    break
+
+            if not json_line:
+                json_line = output.strip()
+
+            result_data = json.loads(json_line)
+
+            return LocalHistoricalResponse(
+                success=result_data.get("success", False),
+                deviceReadings=result_data.get("deviceReadings", []),
+                metadata=result_data.get("metadata", {}),
+                error=result_data.get("error")
+            )
+
+        except json.JSONDecodeError as e:
+            return LocalHistoricalResponse(
+                success=False,
+                error=f"Failed to parse response: {str(e)}. Output: {output[:300]}"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to query local historical data: {str(e)}"
+        )

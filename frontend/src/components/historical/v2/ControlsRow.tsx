@@ -159,6 +159,7 @@ export function ControlsRow({
                   size="sm"
                   className="h-8 gap-1.5 rounded-sm px-3"
                   onClick={() => onDataSourceChange("cloud")}
+                  title="Query data from Supabase cloud database"
                 >
                   <Cloud className="h-3.5 w-3.5" />
                   Cloud
@@ -168,11 +169,15 @@ export function ControlsRow({
                   size="sm"
                   className="h-8 gap-1.5 rounded-sm px-3"
                   onClick={() => onDataSourceChange("local")}
+                  title="Query data from controller's local SQLite (max 7 days, one site)"
                 >
                   <HardDrive className="h-3.5 w-3.5" />
                   Local
                 </Button>
               </div>
+              {dataSource === "local" && (
+                <p className="text-[10px] text-amber-600">Max 7 days, single site only</p>
+              )}
             </div>
           )}
 

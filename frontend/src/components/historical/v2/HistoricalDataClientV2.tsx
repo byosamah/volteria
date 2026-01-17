@@ -406,7 +406,21 @@ export function HistoricalDataClientV2({
         return;
       }
 
-      // Build API query params - aggregation is now done server-side
+      // Validate local data source constraints
+      if (dataSource === "local") {
+        // Local data source only supports one site at a time
+        if (siteIds.length > 1) {
+          throw new Error("Local data source only supports one site at a time. Please select parameters from a single site.");
+        }
+
+        // Local data source limited to 7 days
+        const diffDays = (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays > 7) {
+          throw new Error("Local data source is limited to 7 days. Use cloud data source for longer date ranges.");
+        }
+      }
+
+      // Build API query params
       const params = new URLSearchParams({
         siteIds: siteIds.join(","),
         deviceIds: deviceIds.join(","),
@@ -417,9 +431,15 @@ export function HistoricalDataClientV2({
         aggregation: apiAggregation,
       });
 
-      const response = await fetch(`/api/historical?${params}`);
+      // Use appropriate API endpoint based on data source
+      const apiEndpoint = dataSource === "local"
+        ? `/api/historical/local?${params}`
+        : `/api/historical?${params}`;
+
+      const response = await fetch(apiEndpoint);
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${response.status}`);
       }
 
       const data = await response.json();
@@ -435,13 +455,17 @@ export function HistoricalDataClientV2({
       });
     } catch (error) {
       console.error("Failed to fetch data:", error);
-      // Show error to user
+      // Show error to user - could use toast notification here
       setChartData([]);
       setMetadata(undefined);
+      // Re-throw to show in UI
+      if (error instanceof Error) {
+        alert(error.message);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, transformApiToChartData]);
+  }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, dataSource, transformApiToChartData]);
 
   // Clear chart data when all parameters are removed (but don't auto-fetch)
   useEffect(() => {
