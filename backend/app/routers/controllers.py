@@ -1621,12 +1621,20 @@ async def read_registers(
                 errors=[f"SSH command failed: {message}"]
             )
 
-        # 6. Parse JSON output (use last line to avoid debug output)
+        # 6. Parse JSON output (find the JSON line among any debug output)
         try:
             import json
-            # Get last non-empty line (the JSON output)
-            lines = [l for l in output.strip().split('\n') if l.strip()]
-            json_line = lines[-1] if lines else output.strip()
+            # Find the line that starts with '{' (the JSON output)
+            lines = [l.strip() for l in output.strip().split('\n') if l.strip()]
+            json_line = None
+            for line in lines:
+                if line.startswith('{'):
+                    json_line = line
+                    break
+
+            if not json_line:
+                json_line = output.strip()
+
             result_data = json.loads(json_line)
 
             # Convert readings to proper format
@@ -1727,12 +1735,20 @@ async def write_register(
                 error=f"SSH command failed: {message}"
             )
 
-        # 6. Parse JSON output (use last line to avoid debug output)
+        # 6. Parse JSON output (find the JSON line among any debug output)
         try:
             import json
-            # Get last non-empty line (the JSON output)
-            lines = [l for l in output.strip().split('\n') if l.strip()]
-            json_line = lines[-1] if lines else output.strip()
+            # Find the line that starts with '{' (the JSON output)
+            lines = [l.strip() for l in output.strip().split('\n') if l.strip()]
+            json_line = None
+            for line in lines:
+                if line.startswith('{'):
+                    json_line = line
+                    break
+
+            if not json_line:
+                json_line = output.strip()
+
             result_data = json.loads(json_line)
 
             return RegisterWriteResponse(
