@@ -85,7 +85,7 @@ class LoggingService:
         self._site_id: str | None = None
         self._local_sample_interval = 1  # Sample readings into RAM every N seconds
         self._local_flush_interval = 60  # Flush RAM to SQLite every N seconds
-        self._cloud_sync_interval = CLOUD_SYNC_INTERVAL_S
+        self._cloud_sync_interval = 180  # Cloud sync every 3 minutes (default)
         self._retention_days = 7
         self._instant_sync_alarms = True
         self._local_enabled = True  # Enable local SQLite logging
