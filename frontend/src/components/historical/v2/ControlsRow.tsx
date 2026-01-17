@@ -169,17 +169,12 @@ export function ControlsRow({
                   size="sm"
                   className="h-8 gap-1.5 rounded-sm px-3"
                   onClick={() => onDataSourceChange("local")}
-                  title="Query data from controller's local SQLite (max 7 days, one site)"
+                  title="Query from controller's local database (1h raw max, 30 days aggregated, single site)"
                 >
                   <HardDrive className="h-3.5 w-3.5" />
                   Local
                 </Button>
               </div>
-              {dataSource === "local" && (
-                <p className="text-[10px] text-amber-600 text-center whitespace-nowrap">
-                  Max 7 days, single site
-                </p>
-              )}
             </div>
           )}
 

@@ -36,33 +36,48 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
   };
 
   // Handle preset click
-  const handlePreset = (days: number) => {
+  const handlePreset = (hours: number) => {
     const end = new Date();
     const start = new Date();
-    start.setDate(start.getDate() - days);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
+
+    if (hours < 24) {
+      // For sub-day presets (like 1h), use exact time range
+      start.setTime(end.getTime() - hours * 60 * 60 * 1000);
+    } else {
+      // For day+ presets, use calendar days
+      const days = Math.floor(hours / 24);
+      start.setDate(start.getDate() - days);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
     onDateRangeChange({ start, end });
     setIsOpen(false);
   };
 
   // Get current preset if matching
   const getCurrentPreset = () => {
-    // Check if times are at the expected positions (start at 00:00, end at 23:59)
+    const diffMs = dateRange.end.getTime() - dateRange.start.getTime();
+    const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+
+    // Check for 1h preset (approximately 1 hour difference)
+    if (diffHours <= 1) {
+      return "1h";
+    }
+
+    // For day+ presets, check calendar days
     const startAtMidnight = dateRange.start.getHours() === 0 && dateRange.start.getMinutes() === 0;
     const endAtEndOfDay = dateRange.end.getHours() === 23 && dateRange.end.getMinutes() === 59;
 
     if (!startAtMidnight || !endAtEndOfDay) return null;
 
-    // Calculate calendar days between dates (not time difference)
-    // Jan 10 00:00 to Jan 17 23:59 = 7 calendar days difference
     const startDate = new Date(dateRange.start);
     startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(dateRange.end);
     endDate.setHours(0, 0, 0, 0);
 
-    const diffMs = endDate.getTime() - startDate.getTime();
-    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+    const dayDiffMs = endDate.getTime() - startDate.getTime();
+    const diffDays = Math.round(dayDiffMs / (1000 * 60 * 60 * 24));
 
     const preset = DATE_PRESETS.find((p) => p.days === diffDays);
     return preset?.value || null;
@@ -202,7 +217,7 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
             variant={currentPreset === preset.value ? "default" : "ghost"}
             size="sm"
             className="h-7 px-3 text-xs"
-            onClick={() => handlePreset(preset.days)}
+            onClick={() => handlePreset(preset.hours)}
           >
             {preset.label}
           </Button>

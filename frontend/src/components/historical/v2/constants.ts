@@ -86,10 +86,12 @@ export const CHART_TYPE_OPTIONS = [
 ] as const;
 
 // Date range preset options (quick filters for common ranges)
+// hours field used for calculation, days used for calendar detection
 export const DATE_PRESETS = [
-  { value: "24h", label: "24h", days: 1 },
-  { value: "3d", label: "3d", days: 3 },
-  { value: "7d", label: "7d", days: 7 },
+  { value: "1h", label: "1h", hours: 1, days: 0 },
+  { value: "24h", label: "24h", hours: 24, days: 1 },
+  { value: "3d", label: "3d", hours: 72, days: 3 },
+  { value: "7d", label: "7d", hours: 168, days: 7 },
 ] as const;
 
 // Dummy projects for testing (including inactive for filter testing)

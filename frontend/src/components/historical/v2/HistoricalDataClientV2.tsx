@@ -270,40 +270,39 @@ export function HistoricalDataClientV2({
     setSelectedDeviceId(deviceId);
   }, []);
 
-  // Handle data source change - reset date range to 24h when switching to local
+  // Handle data source change - reset to appropriate settings for each source
   const handleDataSourceChange = useCallback((source: DataSource) => {
     setDataSource(source);
 
     // When switching to local:
-    // 1. Force "active" filter (inactive sites have no local hardware)
-    // 2. Enforce 7-day max by resetting to 24h if needed
-    // 3. Auto-select hourly aggregation for ranges > 4 hours (raw data times out over SSH)
+    // - Force "active" filter (inactive sites have no local hardware)
+    // - Single site only (clear parameters from other sites)
+    // - Max 1 hour for raw data, otherwise hourly aggregation
+    // - Max 30 days total
+    // - Reset to 1h date range for optimal local performance
     if (source === "local") {
       // Force active filter - inactive sites don't have local hardware
       setActiveFilter("active");
 
-      if (dateRange) {
-        const diffDays = (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
-        const diffHours = diffDays * 24;
+      // Reset to 1 hour date range (optimal for local raw data)
+      const end = new Date();
+      const start = new Date();
+      start.setHours(start.getHours() - 1);
+      setDateRange({ start, end });
 
-        if (diffDays > 7) {
-          // Reset to 24h (default for local)
-          const end = new Date();
-          end.setHours(23, 59, 59, 999);
-          const start = new Date();
-          start.setDate(start.getDate() - 1);
-          start.setHours(0, 0, 0, 0);
-          setDateRange({ start, end });
-        }
+      // Set raw aggregation for 1h range
+      if (isAutoAggregation) {
+        setAggregationType("raw");
+      }
 
-        // For local source, auto-select hourly for ranges > 4 hours
-        // Raw data over SSH times out for large queries
-        if (diffHours > 4 && isAutoAggregation) {
-          setAggregationType("hourly");
-        }
+      // Clear parameters from other sites if multiple sites selected
+      const currentSiteId = selectedSiteId;
+      if (currentSiteId) {
+        setLeftAxisParams(prev => prev.filter(p => p.siteId === currentSiteId));
+        setRightAxisParams(prev => prev.filter(p => p.siteId === currentSiteId));
       }
     }
-  }, [dateRange, isAutoAggregation]);
+  }, [isAutoAggregation, selectedSiteId]);
 
   // Validate date range and auto-update aggregation if needed
   const handleDateRangeChange = useCallback((range: DateRange) => {
@@ -448,15 +447,16 @@ export function HistoricalDataClientV2({
           throw new Error("Local data source only supports one site at a time. Please select parameters from a single site.");
         }
 
-        // Local data source limited to 7 days
         const diffDays = (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
-        if (diffDays > 7) {
-          throw new Error("Local data source is limited to 7 days. Use cloud data source for longer date ranges.");
+        const diffHours = diffDays * 24;
+
+        // Local data source limited to 30 days for aggregated data
+        if (diffDays > 30) {
+          throw new Error("Local data source is limited to 30 days. Use cloud data source for longer date ranges.");
         }
 
-        // For local source with > 4 hours, force hourly aggregation (raw times out)
-        const diffHours = diffDays * 24;
-        if (diffHours > 4 && apiAggregation === "raw") {
+        // For local source, max 1 hour for raw data (otherwise times out over SSH)
+        if (diffHours > 1 && apiAggregation === "raw") {
           // Auto-upgrade to hourly to avoid timeout
           apiAggregation = "hourly";
         }
