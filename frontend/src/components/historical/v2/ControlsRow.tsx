@@ -183,12 +183,14 @@ export function ControlsRow({
             </div>
           )}
 
-          {/* Filter toggle */}
+          {/* Filter toggle - disabled when local data source (requires active hardware) */}
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 className={`h-9 gap-2 ${activeFilter === "all" ? "border-amber-500 text-amber-600" : ""}`}
+                disabled={dataSource === "local"}
+                title={dataSource === "local" ? "Local data requires active sites with hardware" : undefined}
               >
                 <Filter className="h-4 w-4" />
                 {activeFilter === "all" ? "All" : "Active"}
