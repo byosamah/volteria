@@ -96,7 +96,7 @@ export function ParameterCard({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{parameter.registerName}</p>
         <p className="text-xs text-muted-foreground truncate">
-          {parameter.deviceName} {parameter.unit && `• ${parameter.unit}`}
+          {parameter.siteName} › {parameter.deviceName} {parameter.unit && `• ${parameter.unit}`}
         </p>
       </div>
 
@@ -138,6 +138,8 @@ interface AvailableParameterCardProps {
     unit: string;
     deviceId: string;
     deviceName: string;
+    siteId: string;
+    siteName: string;
   };
   onAddToLeft: () => void;
   onAddToRight: () => void;
@@ -156,7 +158,7 @@ export function AvailableParameterCard({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{register.name}</p>
         <p className="text-xs text-muted-foreground truncate">
-          {register.deviceName} {register.unit && `• ${register.unit}`}
+          {register.siteName} › {register.deviceName} {register.unit && `• ${register.unit}`}
         </p>
       </div>
 

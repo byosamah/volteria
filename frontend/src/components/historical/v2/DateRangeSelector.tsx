@@ -48,16 +48,21 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
 
   // Get current preset if matching
   const getCurrentPreset = () => {
-    // Calculate diff in days - use floor since end is 23:59:59 and start is 00:00:00
-    // e.g., 24h preset: Jan 16 00:00 to Jan 17 23:59 = ~1.99 days, floor = 1
-    const diffMs = dateRange.end.getTime() - dateRange.start.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    // Also check if times are at the expected positions (start at 00:00, end at 23:59)
+    // Check if times are at the expected positions (start at 00:00, end at 23:59)
     const startAtMidnight = dateRange.start.getHours() === 0 && dateRange.start.getMinutes() === 0;
     const endAtEndOfDay = dateRange.end.getHours() === 23 && dateRange.end.getMinutes() === 59;
 
     if (!startAtMidnight || !endAtEndOfDay) return null;
+
+    // Calculate calendar days between dates (not time difference)
+    // Jan 10 00:00 to Jan 17 23:59 = 7 calendar days difference
+    const startDate = new Date(dateRange.start);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(dateRange.end);
+    endDate.setHours(0, 0, 0, 0);
+
+    const diffMs = endDate.getTime() - startDate.getTime();
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
     const preset = DATE_PRESETS.find((p) => p.days === diffDays);
     return preset?.value || null;

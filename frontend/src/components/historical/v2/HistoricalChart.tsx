@@ -42,24 +42,45 @@ interface HistoricalChartProps {
   };
 }
 
-// Modern legend component with pill styling
-function ModernLegend({ payload }: { payload?: Array<{ value: string; color: string }> }) {
-  if (!payload) return null;
+// Modern legend component with site name
+function ModernLegend({
+  payload,
+  params
+}: {
+  payload?: Array<{ value: string; color: string }>;
+  params?: AxisParameter[];
+}) {
+  if (!payload || !params) return null;
+
+  // Create a lookup map by color for quick access to param info
+  const paramsByColor = new Map(params.map(p => [p.color, p]));
 
   return (
     <div className="flex flex-wrap justify-center gap-3 mt-4 pt-4 border-t border-border/30">
-      {payload.map((entry, index) => (
-        <div
-          key={index}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/40 hover:bg-muted/60 transition-colors"
-        >
-          <span
-            className="w-2.5 h-2.5 rounded-full shadow-sm"
-            style={{ backgroundColor: entry.color }}
-          />
-          <span className="text-xs font-medium text-foreground/80">{entry.value}</span>
-        </div>
-      ))}
+      {payload.map((entry, index) => {
+        const param = paramsByColor.get(entry.color);
+        return (
+          <div
+            key={index}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors"
+          >
+            <span
+              className="w-2.5 h-2.5 rounded-full shadow-sm flex-shrink-0"
+              style={{ backgroundColor: entry.color }}
+            />
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-foreground/80 leading-tight">
+                {entry.value}
+              </span>
+              {(param?.siteName || param?.deviceName) && (
+                <span className="text-[10px] text-muted-foreground leading-tight">
+                  {param.siteName}{param.siteName && param.deviceName && " › "}{param.deviceName}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -491,7 +512,7 @@ export function HistoricalChart({
           {/* Tooltip removed - DOM overlay handles all tooltips now */}
 
           {/* Modern legend */}
-          <Legend content={<ModernLegend />} />
+          <Legend content={<ModernLegend params={[...leftAxisParams, ...rightAxisParams]} />} />
 
           {/* Render chart elements */}
           {renderChartElements(leftAxisParams, "left")}

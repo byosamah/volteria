@@ -62,11 +62,13 @@ export function HistoricalDataClientV2({
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
 
-  // Date range (default to last 24 hours)
+  // Date range (default to last 24 hours - matching preset format)
   const [dateRange, setDateRange] = useState<DateRange>(() => {
     const end = new Date();
+    end.setHours(23, 59, 59, 999);
     const start = new Date();
     start.setDate(start.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
     return { start, end };
   });
 
@@ -221,9 +223,14 @@ export function HistoricalDataClientV2({
     return filtered;
   }, [devices, selectedSiteId, activeFilter]);
 
+  // Get selected site name
+  const selectedSiteName = useMemo(() => {
+    return filteredSites.find((s) => s.id === selectedSiteId)?.name || "";
+  }, [filteredSites, selectedSiteId]);
+
   // Get available registers for selected device (or controller)
   const availableRegisters = useMemo((): AvailableRegister[] => {
-    if (!selectedDeviceId) return [];
+    if (!selectedDeviceId || !selectedSiteId) return [];
 
     // Handle Site Controller (calculated fields)
     if (selectedDeviceId === SITE_CONTROLLER_ID) {
@@ -234,6 +241,8 @@ export function HistoricalDataClientV2({
         unit: reg.unit,
         deviceId: SITE_CONTROLLER_ID,
         deviceName: "Site Controller",
+        siteId: selectedSiteId,
+        siteName: selectedSiteName,
         preferred_chart_type: reg.preferred_chart_type,
       }));
     }
@@ -248,26 +257,25 @@ export function HistoricalDataClientV2({
       unit: reg.unit,
       deviceId: selectedDeviceId,
       deviceName: device?.name || "Unknown",
+      siteId: selectedSiteId,
+      siteName: selectedSiteName,
       preferred_chart_type: reg.preferred_chart_type,
     }));
-  }, [selectedDeviceId, filteredDevices]);
+  }, [selectedDeviceId, selectedSiteId, selectedSiteName, filteredDevices]);
 
-  // Handle project change
+  // Handle project change (just for browsing - doesn't clear selected parameters)
   const handleProjectChange = useCallback((projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedSiteId("");
     setSelectedDeviceId("");
-    setLeftAxisParams([]);
-    setRightAxisParams([]);
-    setChartData([]);
+    // Don't clear axis params - user can add parameters from multiple projects/sites
   }, []);
 
-  // Handle site change
+  // Handle site change (just for browsing - doesn't clear selected parameters)
   const handleSiteChange = useCallback((siteId: string) => {
     setSelectedSiteId(siteId);
     setSelectedDeviceId("");
-    // Keep existing parameters from other devices
-    setChartData([]);
+    // Don't clear axis params - user can add parameters from multiple sites
   }, []);
 
   // Handle device change (for parameter selection)
@@ -277,13 +285,15 @@ export function HistoricalDataClientV2({
 
   // Validate date range (max 7 days)
   const handleDateRangeChange = useCallback((range: DateRange) => {
-    const diffDays = Math.round(
+    // Use floor to calculate days (7d preset spans 7.99 days, should be treated as 7)
+    const diffDays = Math.floor(
       (range.end.getTime() - range.start.getTime()) / (1000 * 60 * 60 * 24)
     );
     if (diffDays > MAX_DATE_RANGE_DAYS) {
-      // Adjust start date to keep within limit
+      // Adjust start date to keep within limit, preserving time
       const adjustedStart = new Date(range.end);
       adjustedStart.setDate(adjustedStart.getDate() - MAX_DATE_RANGE_DAYS);
+      adjustedStart.setHours(0, 0, 0, 0); // Keep midnight for presets
       setDateRange({ start: adjustedStart, end: range.end });
     } else {
       setDateRange(range);
@@ -465,23 +475,18 @@ export function HistoricalDataClientV2({
           <CardTitle className="text-lg">Parameter Selection</CardTitle>
         </CardHeader>
         <CardContent>
-          {!selectedSiteId ? (
-            <div className="text-center py-12 text-muted-foreground">
-              Select a project and site above to configure parameters
-            </div>
-          ) : (
-            <ParameterSelector
-              devices={filteredDevices}
-              selectedDeviceId={selectedDeviceId}
-              onDeviceChange={handleDeviceChange}
-              availableRegisters={availableRegisters}
-              leftAxisParams={leftAxisParams}
-              rightAxisParams={rightAxisParams}
-              onLeftAxisChange={setLeftAxisParams}
-              onRightAxisChange={setRightAxisParams}
-              defaultChartType={chartType}
-            />
-          )}
+          <ParameterSelector
+            devices={filteredDevices}
+            selectedDeviceId={selectedDeviceId}
+            onDeviceChange={handleDeviceChange}
+            availableRegisters={availableRegisters}
+            leftAxisParams={leftAxisParams}
+            rightAxisParams={rightAxisParams}
+            onLeftAxisChange={setLeftAxisParams}
+            onRightAxisChange={setRightAxisParams}
+            defaultChartType={chartType}
+            hasSiteSelected={!!selectedSiteId}
+          />
         </CardContent>
       </Card>
 

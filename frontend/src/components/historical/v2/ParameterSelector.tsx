@@ -29,6 +29,7 @@ interface ParameterSelectorProps {
   onLeftAxisChange: (params: AxisParameter[]) => void;
   onRightAxisChange: (params: AxisParameter[]) => void;
   defaultChartType: ChartType;
+  hasSiteSelected: boolean;
 }
 
 export function ParameterSelector({
@@ -41,6 +42,7 @@ export function ParameterSelector({
   onLeftAxisChange,
   onRightAxisChange,
   defaultChartType,
+  hasSiteSelected,
 }: ParameterSelectorProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draggedRegister, setDraggedRegister] = useState<AvailableRegister | null>(null);
@@ -68,6 +70,8 @@ export function ParameterSelector({
         registerName: register.name,
         deviceId: register.deviceId,
         deviceName: register.deviceName,
+        siteId: register.siteId,
+        siteName: register.siteName,
         unit: register.unit,
         color: getNextColor(usedColors),
         chartType: (register.preferred_chart_type as ChartType) || defaultChartType,
@@ -238,14 +242,23 @@ export function ParameterSelector({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Available Parameters */}
         <div className="lg:col-span-1 border rounded-lg p-4 bg-card min-h-[350px]">
-          <AvailableParametersList
-            devices={devices}
-            selectedDeviceId={selectedDeviceId}
-            onDeviceChange={onDeviceChange}
-            registers={availableRegisters}
-            onAddToAxis={handleAddToAxis}
-            canAddMore={canAddMore}
-          />
+          {!hasSiteSelected ? (
+            <div className="flex flex-col h-full">
+              <h3 className="text-sm font-medium mb-2">Available Parameters</h3>
+              <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm text-center p-4">
+                Select a project and site above<br />to browse available parameters
+              </div>
+            </div>
+          ) : (
+            <AvailableParametersList
+              devices={devices}
+              selectedDeviceId={selectedDeviceId}
+              onDeviceChange={onDeviceChange}
+              registers={availableRegisters}
+              onAddToAxis={handleAddToAxis}
+              canAddMore={canAddMore}
+            />
+          )}
         </div>
 
         {/* Left Y-Axis */}

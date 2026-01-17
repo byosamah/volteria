@@ -52,6 +52,8 @@ export interface AxisParameter {
   registerName: string;
   deviceId: string;
   deviceName: string;
+  siteId: string;
+  siteName: string;
   unit: string;
   color: string;
   chartType: "line" | "area" | "bar";
@@ -64,6 +66,8 @@ export interface AvailableRegister {
   unit: string;
   deviceId: string;
   deviceName: string;
+  siteId: string;
+  siteName: string;
   preferred_chart_type?: string;
 }
 

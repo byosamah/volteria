@@ -82,10 +82,10 @@ export function AvailableParametersList({
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {/* Controller - always available as first option */}
+          {/* Master Device - always available as first option */}
           <SelectGroup>
             <SelectLabel className="text-xs text-muted-foreground flex items-center gap-1">
-              <Cpu className="h-3 w-3" /> Controller (Site Calculated Fields)
+              <Cpu className="h-3 w-3" /> Master Device (Site Level)
             </SelectLabel>
             <SelectItem value={CONTROLLER_ID}>
               <span className="flex items-center gap-2">
@@ -99,7 +99,7 @@ export function AvailableParametersList({
           {regularDevices.length > 0 && (
             <SelectGroup>
               <SelectLabel className="text-xs text-muted-foreground flex items-center gap-1">
-                <HardDrive className="h-3 w-3" /> Devices
+                <HardDrive className="h-3 w-3" /> Device
               </SelectLabel>
               {regularDevices.map((device) => (
                 <SelectItem key={device.id} value={device.id}>
@@ -189,7 +189,7 @@ function DraggableRegisterItem({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{register.name}</p>
         <p className="text-xs text-muted-foreground truncate">
-          {register.unit || "—"}
+          {register.siteName} › {register.deviceName} {register.unit && `• ${register.unit}`}
         </p>
       </div>
 
