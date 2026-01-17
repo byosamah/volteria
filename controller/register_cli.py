@@ -180,13 +180,13 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
                     response = await client.read_holding_registers(
                         address=address,
                         count=1,
-                        unit=slave_id
+                        device_id=slave_id
                     )
                 else:
                     response = await client.read_input_registers(
                         address=address,
                         count=1,
-                        unit=slave_id
+                        device_id=slave_id
                     )
 
                 if response.isError():
@@ -285,7 +285,7 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
         response = await client.write_register(
             address=address,
             value=value,
-            unit=slave_id
+            device_id=slave_id
         )
 
         if response.isError():
@@ -301,7 +301,7 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
             read_response = await client.read_holding_registers(
                 address=address,
                 count=1,
-                unit=slave_id
+                device_id=slave_id
             )
 
             if not read_response.isError():
