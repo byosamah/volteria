@@ -63,15 +63,22 @@ export function HistoricalDataClientV2({
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
 
-  // Date range (default to last 24 hours - matching preset format)
-  const [dateRange, setDateRange] = useState<DateRange>(() => {
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-    const start = new Date();
-    start.setDate(start.getDate() - 1);
-    start.setHours(0, 0, 0, 0);
-    return { start, end };
-  });
+  // Date range (initialized on client to avoid hydration mismatch)
+  const [dateRange, setDateRange] = useState<DateRange | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Initialize date range on client side only (avoids hydration mismatch)
+  useEffect(() => {
+    if (!isHydrated) {
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      const start = new Date();
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      setDateRange({ start, end });
+      setIsHydrated(true);
+    }
+  }, [isHydrated]);
 
   // Chart settings
   const [chartType, setChartType] = useState<ChartType>("line");
@@ -110,7 +117,7 @@ export function HistoricalDataClientV2({
 
   // Update aggregation when date range changes (if auto mode)
   useEffect(() => {
-    if (isAutoAggregation) {
+    if (isAutoAggregation && dateRange) {
       setAggregationType(getAutoAggregationType(dateRange));
     }
   }, [dateRange, isAutoAggregation, getAutoAggregationType]);
@@ -362,7 +369,7 @@ export function HistoricalDataClientV2({
   // Fetch data from API (better for large datasets - server-side control)
   const fetchData = useCallback(async () => {
     const allParams = [...leftAxisParams, ...rightAxisParams];
-    if (allParams.length === 0) return;
+    if (allParams.length === 0 || !dateRange) return;
 
     setIsLoading(true);
 
@@ -486,7 +493,7 @@ export function HistoricalDataClientV2({
 
   // Export CSV with UTC and local time columns
   const exportCSV = useCallback(() => {
-    if (chartData.length === 0) return;
+    if (chartData.length === 0 || !dateRange) return;
 
     const allParams = [...leftAxisParams, ...rightAxisParams];
 
@@ -534,6 +541,18 @@ export function HistoricalDataClientV2({
 
   // All parameters for advanced options
   const allParams = [...leftAxisParams, ...rightAxisParams];
+
+  // Show loading state during hydration
+  if (!isHydrated || !dateRange) {
+    return (
+      <div className="space-y-6 p-6">
+        <div>
+          <h1 className="text-2xl font-bold">Historical Data</h1>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-6">
