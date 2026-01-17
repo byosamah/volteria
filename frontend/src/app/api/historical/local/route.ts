@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
     const registersParam = searchParams.get("registers");
     const startParam = searchParams.get("start");
     const endParam = searchParams.get("end");
+    const aggregationParam = searchParams.get("aggregation") || "raw";
 
     // Validate required parameters
     if (!siteIdsParam || !startParam || !endParam) {
@@ -207,6 +208,7 @@ export async function GET(request: NextRequest) {
           registers: registers.length > 0 ? registers : null,
           start: startTime.toISOString(),
           end: endTime.toISOString(),
+          aggregation: aggregationParam,
         }),
       }
     );

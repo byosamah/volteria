@@ -7,14 +7,20 @@ Used by the backend to fetch local data via SSH.
 
 Safety features:
 - Read-only database access (URI mode=ro)
-- Conservative query limit (max 10,000 records)
+- Conservative query limit (max 50,000 records for raw, unlimited for aggregated)
 - Short busy timeout to avoid blocking control loop
 - Row-by-row processing to limit memory usage
 - Graceful handling of database busy errors
 - Lower process priority (nice)
 
+Aggregation support:
+- raw: Individual readings (default, limited to MAX_RECORDS)
+- hourly: Aggregate by hour (avg, min, max, count)
+- daily: Aggregate by day (avg, min, max, count)
+
 Usage:
     python historical_cli.py query --site-id UUID --start 2026-01-10T00:00:00 --end 2026-01-17T23:59:59
+    python historical_cli.py query --site-id UUID --start 2026-01-10 --end 2026-01-17 --aggregation hourly
 
 Output: JSON to stdout
 """
@@ -30,9 +36,12 @@ from pathlib import Path
 DB_PATH = "/opt/volteria/data/controller.db"
 
 # Conservative limits to protect controller performance
-MAX_RECORDS = 10000      # Hard limit on query results
+MAX_RECORDS = 50000      # Hard limit for raw data (increased from 10k for better coverage)
 BUSY_TIMEOUT_MS = 1000   # 1 second - fail fast if DB busy
 FETCH_CHUNK_SIZE = 1000  # Process in chunks to limit memory
+
+# Valid aggregation types
+AGGREGATION_TYPES = ["raw", "hourly", "daily"]
 
 
 def set_low_priority():
@@ -73,6 +82,7 @@ def query_historical(
     registers: list[str] | None,
     start: str,
     end: str,
+    aggregation: str = "raw",
     limit: int = MAX_RECORDS
 ) -> dict:
     """
@@ -87,31 +97,75 @@ def query_historical(
         registers: Optional list of register names to filter
         start: Start datetime (ISO format)
         end: End datetime (ISO format)
-        limit: Max records to return (capped at MAX_RECORDS)
+        aggregation: 'raw', 'hourly', or 'daily'
+        limit: Max records to return (capped at MAX_RECORDS for raw)
 
     Returns:
         JSON-serializable dict with readings grouped by device/register
     """
-    # Enforce hard limit to protect memory
-    limit = min(limit, MAX_RECORDS)
+    # Validate aggregation type
+    if aggregation not in AGGREGATION_TYPES:
+        aggregation = "raw"
+
+    # Enforce hard limit for raw data to protect memory
+    if aggregation == "raw":
+        limit = min(limit, MAX_RECORDS)
+    else:
+        # Aggregated queries return much less data, can be higher
+        limit = 100000  # Safety limit for aggregated
 
     conn = None
     try:
         conn = get_connection()
 
-        # Build query with parameterized inputs
-        sql = """
-            SELECT
-                device_id,
-                register_name,
-                timestamp,
-                value,
-                unit
-            FROM device_readings
-            WHERE site_id = ?
-              AND timestamp >= ?
-              AND timestamp <= ?
-        """
+        # Build query based on aggregation type
+        if aggregation == "raw":
+            sql = """
+                SELECT
+                    device_id,
+                    register_name,
+                    timestamp,
+                    value,
+                    unit
+                FROM device_readings
+                WHERE site_id = ?
+                  AND timestamp >= ?
+                  AND timestamp <= ?
+            """
+        elif aggregation == "hourly":
+            # SQLite doesn't have date_trunc, use strftime
+            sql = """
+                SELECT
+                    device_id,
+                    register_name,
+                    strftime('%Y-%m-%dT%H:00:00', timestamp) || '+00:00' as bucket,
+                    AVG(value) as value,
+                    MIN(value) as min_value,
+                    MAX(value) as max_value,
+                    COUNT(*) as sample_count,
+                    unit
+                FROM device_readings
+                WHERE site_id = ?
+                  AND timestamp >= ?
+                  AND timestamp <= ?
+            """
+        else:  # daily
+            sql = """
+                SELECT
+                    device_id,
+                    register_name,
+                    strftime('%Y-%m-%dT00:00:00', timestamp) || '+00:00' as bucket,
+                    AVG(value) as value,
+                    MIN(value) as min_value,
+                    MAX(value) as max_value,
+                    COUNT(*) as sample_count,
+                    unit
+                FROM device_readings
+                WHERE site_id = ?
+                  AND timestamp >= ?
+                  AND timestamp <= ?
+            """
+
         params: list = [site_id, start, end]
 
         # Add device filter
@@ -126,7 +180,14 @@ def query_historical(
             sql += f" AND register_name IN ({placeholders})"
             params.extend(registers)
 
-        sql += " ORDER BY timestamp ASC LIMIT ?"
+        # Add GROUP BY for aggregation
+        if aggregation != "raw":
+            sql += " GROUP BY device_id, register_name, bucket"
+            sql += " ORDER BY bucket ASC"
+        else:
+            sql += " ORDER BY timestamp ASC"
+
+        sql += " LIMIT ?"
         params.append(limit)
 
         cursor = conn.execute(sql, params)
@@ -153,10 +214,20 @@ def query_historical(
                         "data": []
                     }
 
-                grouped[key]["data"].append({
-                    "timestamp": row["timestamp"],
-                    "value": row["value"]
-                })
+                if aggregation == "raw":
+                    grouped[key]["data"].append({
+                        "timestamp": row["timestamp"],
+                        "value": row["value"]
+                    })
+                else:
+                    # Aggregated data includes min/max/count
+                    grouped[key]["data"].append({
+                        "timestamp": row["bucket"],
+                        "value": row["value"],
+                        "min_value": row["min_value"],
+                        "max_value": row["max_value"],
+                        "sample_count": row["sample_count"]
+                    })
                 total_points += 1
 
         return {
@@ -167,6 +238,7 @@ def query_historical(
                 "startTime": start,
                 "endTime": end,
                 "source": "local",
+                "aggregationType": aggregation,
                 "limitApplied": total_points >= limit
             }
         }
@@ -219,7 +291,9 @@ def main():
     query_parser.add_argument("--registers", help="Comma-separated register names")
     query_parser.add_argument("--start", required=True, help="Start datetime (ISO)")
     query_parser.add_argument("--end", required=True, help="End datetime (ISO)")
-    query_parser.add_argument("--limit", type=int, default=MAX_RECORDS, help=f"Max records (max {MAX_RECORDS})")
+    query_parser.add_argument("--aggregation", choices=AGGREGATION_TYPES, default="raw",
+                              help="Aggregation type: raw (default), hourly, daily")
+    query_parser.add_argument("--limit", type=int, default=MAX_RECORDS, help=f"Max records (max {MAX_RECORDS} for raw)")
 
     args = parser.parse_args()
 
@@ -233,7 +307,8 @@ def main():
             registers=registers,
             start=args.start,
             end=args.end,
-            limit=min(args.limit, MAX_RECORDS)  # Enforce limit
+            aggregation=args.aggregation,
+            limit=args.limit
         )
 
         print(json.dumps(result))

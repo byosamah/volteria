@@ -1792,6 +1792,7 @@ class LocalHistoricalRequest(BaseModel):
     registers: Optional[list[str]] = Field(None, description="Register names to filter")
     start: str = Field(..., description="Start datetime (ISO)")
     end: str = Field(..., description="End datetime (ISO)")
+    aggregation: str = Field("raw", description="Aggregation type: raw, hourly, daily")
 
 
 class LocalHistoricalResponse(BaseModel):
@@ -1879,6 +1880,10 @@ async def query_local_historical(
             # URL decode and escape register names for shell
             registers_str = ','.join(request.registers)
             cmd_parts.append(f"--registers '{registers_str}'")
+
+        # Add aggregation parameter (defaults to 'raw' if not specified)
+        if request.aggregation and request.aggregation in ("raw", "hourly", "daily"):
+            cmd_parts.append(f"--aggregation {request.aggregation}")
 
         command = " ".join(cmd_parts)
 
