@@ -48,17 +48,21 @@ def get_connection() -> sqlite3.Connection:
     if not Path(DB_PATH).exists():
         raise FileNotFoundError(f"Database not found at {DB_PATH}")
 
-    # Open in read-only mode using URI
+    # Open in read-only mode using URI with immutable flag
+    # immutable=1 tells SQLite to skip journal file checks (safe for read-only)
     conn = sqlite3.connect(
-        f"file:{DB_PATH}?mode=ro",
+        f"file:{DB_PATH}?mode=ro&immutable=1",
         uri=True,
         timeout=BUSY_TIMEOUT_MS / 1000.0,  # Convert to seconds
         isolation_level=None  # Autocommit (no transaction for reads)
     )
     conn.row_factory = sqlite3.Row
 
-    # Set busy handler to fail immediately rather than block
-    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    # Use query_only mode as extra safety (won't write even if bug)
+    try:
+        conn.execute("PRAGMA query_only = ON")
+    except sqlite3.OperationalError:
+        pass  # Older SQLite versions may not support this
 
     return conn
 
