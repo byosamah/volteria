@@ -190,7 +190,27 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 ## Recent Updates (2026-01-17)
 
-### Historical Data Chart V2 - DOM Overlay Pattern (NEW)
+### Historical Data Chart V2 - Multi-Site Support (NEW)
+Compare parameters from multiple projects/sites on the same chart:
+
+**Features**:
+- Add parameters from different projects, sites, and devices to same chart
+- Site and device name shown in parameter cards, tooltips, and legend
+- Format: `RegisterName` with `SiteName › DeviceName` below
+- Parameters persist when changing project/site browser selection
+- Date preset buttons (24h, 3d, 7d) highlight correctly when selected
+
+**Parameter Sources**:
+- **Master Device (Site Level)**: Site controller calculated fields (Total Load, Solar Generation, etc.)
+- **Device**: Individual Modbus devices (inverters, meters, sensors)
+
+**Key Files**:
+- `frontend/src/components/historical/v2/ParameterSelector.tsx` - Multi-site parameter selection
+- `frontend/src/components/historical/v2/ParameterCard.tsx` - Card with site/device info
+- `frontend/src/components/historical/v2/OverlayTooltip.tsx` - Tooltip with site/device hierarchy
+- `frontend/src/components/historical/v2/types.ts` - AxisParameter includes siteId, siteName, deviceName
+
+### Historical Data Chart V2 - DOM Overlay Pattern
 Performance-optimized chart for 500+ data points using DOM overlay instead of Recharts event handlers:
 
 **Problem**: Recharts re-renders entire SVG on every mouse event (hover/drag), causing lag with large datasets.
@@ -226,6 +246,12 @@ Performance-optimized chart for 500+ data points using DOM overlay instead of Re
 - `frontend/src/components/historical/v2/HistoricalChart.tsx` - Main chart (no mouse handlers)
 
 **When to Use**: Any Recharts visualization with 100+ data points that needs hover/zoom interaction.
+
+### Next Steps: Connect to Real Data
+Currently using dummy data. Implementation plan:
+1. **Cloud Data Source**: Query `device_readings` table from Supabase
+2. **Local Data Source**: Query controller's SQLite via SSH/API
+3. **API Route**: `GET /api/historical` with project, site, device, register, dateRange params
 
 ### Live Registers Feature (NEW)
 Real-time Modbus register read/write through web UI:
