@@ -1621,10 +1621,13 @@ async def read_registers(
                 errors=[f"SSH command failed: {message}"]
             )
 
-        # 6. Parse JSON output
+        # 6. Parse JSON output (use last line to avoid debug output)
         try:
             import json
-            result_data = json.loads(output.strip())
+            # Get last non-empty line (the JSON output)
+            lines = [l for l in output.strip().split('\n') if l.strip()]
+            json_line = lines[-1] if lines else output.strip()
+            result_data = json.loads(json_line)
 
             # Convert readings to proper format
             readings = {}
@@ -1724,10 +1727,13 @@ async def write_register(
                 error=f"SSH command failed: {message}"
             )
 
-        # 6. Parse JSON output
+        # 6. Parse JSON output (use last line to avoid debug output)
         try:
             import json
-            result_data = json.loads(output.strip())
+            # Get last non-empty line (the JSON output)
+            lines = [l for l in output.strip().split('\n') if l.strip()]
+            json_line = lines[-1] if lines else output.strip()
+            result_data = json.loads(json_line)
 
             return RegisterWriteResponse(
                 success=result_data.get("success", False),
@@ -1745,7 +1751,7 @@ async def write_register(
                 device_id=request.device_id,
                 address=request.address,
                 written_value=request.value,
-                error=f"Failed to parse response: {str(e)}"
+                error=f"Failed to parse response: {str(e)}. Output: {output[:200]}"
             )
 
     except HTTPException:
