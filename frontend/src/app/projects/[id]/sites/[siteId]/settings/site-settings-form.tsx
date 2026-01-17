@@ -102,7 +102,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
     operation_mode: site.operation_mode || "zero_dg_reverse",
     // Logging settings
     logging_local_interval_ms: site.logging_local_interval_ms || 1000,
-    logging_cloud_interval_ms: site.logging_cloud_interval_ms || 5000,
+    logging_cloud_interval_ms: site.logging_cloud_interval_ms || 180000,  // 3 min default
     logging_local_retention_days: site.logging_local_retention_days || 30,
     logging_local_enabled: site.logging_local_enabled ?? true,
     logging_cloud_enabled: site.logging_cloud_enabled ?? true,
@@ -471,7 +471,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
                   <span><InfoIcon /></span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
-                  <p>How often data is synced to the cloud platform. Higher values reduce bandwidth usage but delay dashboard updates.</p>
+                  <p>How often to batch and push data to cloud. Readings are downsampled per-register based on their logging frequency. Recommended: 180000ms (3 min).</p>
                 </TooltipContent>
               </Tooltip>
             </Label>
@@ -479,8 +479,8 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
               id="logging_cloud_interval_ms"
               name="logging_cloud_interval_ms"
               type="number"
-              min={1000}
-              step={1000}
+              min={60000}
+              step={60000}
               value={formData.logging_cloud_interval_ms}
               onChange={handleChange}
             />

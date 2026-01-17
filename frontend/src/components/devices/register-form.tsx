@@ -75,10 +75,10 @@ const OPERATOR_OPTIONS: { value: ThresholdOperator; label: string }[] = [
   { value: "!=", label: "!=" },
 ];
 
-// Logging frequency options (in seconds)
+// Logging frequency options (in seconds) - minimum 1 second to prevent excessive cloud sync
 const LOGGING_FREQUENCY_OPTIONS = [
-  { value: "0.5", label: "0.5 seconds" },
   { value: "1", label: "1 second" },
+  { value: "5", label: "5 seconds" },
   { value: "10", label: "10 seconds" },
   { value: "30", label: "30 seconds" },
   { value: "60", label: "1 minute" },

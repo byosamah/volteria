@@ -474,8 +474,15 @@ class ConfigSync:
             "dg_reserve_kw": site.get("dg_reserve_kw", 0),
             "mode_settings": mode_settings,
             "logging": {
-                "local_write_interval_s": site.get("logging_local_interval_ms", 10000) // 1000,
-                "cloud_sync_interval_s": site.get("logging_cloud_interval_ms", 120000) // 1000,
+                # RAM buffering: sample readings every N seconds (default 1s)
+                # This captures readings from SharedState into RAM buffer
+                "local_sample_interval_s": site.get("logging_sample_interval_ms", 1000) // 1000,
+                # RAM to SQLite flush interval (default 60s)
+                # Reduces SSD/SD card wear by batching writes
+                "local_flush_interval_s": site.get("logging_flush_interval_ms", 60000) // 1000,
+                # Cloud sync bucket interval (default 3 min = 180s for batching)
+                # Readings are downsampled per-register based on logging_frequency
+                "cloud_sync_interval_s": site.get("logging_cloud_interval_ms", 180000) // 1000,
                 "aggregation_method": "last",
                 "include_min_max": True,
                 "local_retention_days": site.get("logging_local_retention_days", 7),

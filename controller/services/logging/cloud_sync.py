@@ -198,6 +198,69 @@ class CloudSync:
 
         return 0
 
+    async def sync_specific_readings(
+        self,
+        readings: list[dict],
+        all_reading_ids: list | None = None,
+    ) -> int:
+        """
+        Sync specific device readings to cloud (downsampled).
+
+        Used by per-register frequency downsampling:
+        - `readings`: The downsampled readings to upload to cloud
+        - `all_reading_ids`: ALL original reading IDs to mark as synced
+          (includes readings not uploaded due to downsampling)
+
+        This allows local SQLite to keep full resolution while cloud gets
+        downsampled data. All original readings are marked as processed.
+
+        Args:
+            readings: List of reading dicts to upload (downsampled)
+            all_reading_ids: All reading IDs to mark as synced (optional)
+
+        Returns:
+            Number of readings uploaded to cloud
+        """
+        if not readings:
+            # Even with no readings to upload, mark all as synced if provided
+            if all_reading_ids:
+                self.local_db.mark_device_readings_synced(all_reading_ids)
+            return 0
+
+        # Transform for Supabase (must match device_readings table columns)
+        records = []
+        for reading in readings:
+            record = {
+                "site_id": reading.get("site_id") or self.site_id,
+                "device_id": reading["device_id"],
+                "register_name": reading["register_name"],
+                "value": reading["value"],
+                "unit": reading.get("unit"),
+                "timestamp": reading["timestamp"],
+            }
+            records.append(record)
+
+        # Upload with retry
+        success = await self._upload_with_retry(
+            table="device_readings",
+            records=records,
+        )
+
+        if success:
+            # Mark ALL original readings as synced (not just uploaded ones)
+            # This handles downsampling where we upload fewer than we processed
+            ids_to_mark = all_reading_ids if all_reading_ids else [r["id"] for r in readings]
+            self.local_db.mark_device_readings_synced(ids_to_mark)
+            self._sync_count += len(readings)
+
+            logger.debug(
+                f"Synced {len(readings)} readings to cloud "
+                f"(marked {len(ids_to_mark)} as processed)"
+            )
+            return len(readings)
+
+        return 0
+
     async def sync_all(self) -> dict:
         """
         Sync all pending data.

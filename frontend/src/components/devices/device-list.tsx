@@ -48,9 +48,9 @@ import { RegisterForm, type ModbusRegister } from "./register-form";
 
 // Format logging frequency (in seconds) into readable labels
 // This converts the per-register logging_frequency value to user-friendly text
+// Minimum is 1 second to prevent excessive cloud sync
 function formatLoggingFrequency(seconds?: number): string {
-  if (!seconds) return "1 min";  // Default: 60 seconds
-  if (seconds < 1) return `${seconds * 1000}ms`;
+  if (!seconds || seconds < 1) return "1s";  // Default/minimum: 1 second
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
