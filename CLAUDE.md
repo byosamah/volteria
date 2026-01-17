@@ -190,6 +190,43 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 ## Recent Updates (2026-01-17)
 
+### Historical Data Chart V2 - DOM Overlay Pattern (NEW)
+Performance-optimized chart for 500+ data points using DOM overlay instead of Recharts event handlers:
+
+**Problem**: Recharts re-renders entire SVG on every mouse event (hover/drag), causing lag with large datasets.
+
+**Solution**: DOM overlay layer that captures mouse events and manipulates elements directly:
+```
+┌─────────────────────────────────────────────┐
+│  ChartContainer (relative positioning)      │
+│  ┌───────────────────────────────────────┐  │
+│  │  Recharts SVG (data visualization)    │  │
+│  │  - No mouse handlers on chart         │  │
+│  │  - Animations disabled for >100 pts   │  │
+│  └───────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────┐  │
+│  │  ChartOverlay (absolute, z-10)        │  │
+│  │  - Vertical cursor line (DOM div)     │  │
+│  │  - Selection rectangle (DOM div)      │  │
+│  │  - Tooltip (React state, minimal)     │  │
+│  └───────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+**Key Techniques**:
+- Use `useRef` for drag state (no re-renders during interaction)
+- Direct DOM manipulation: `cursorLineRef.current.style.transform = ...`
+- Callback ref with ResizeObserver for reliable dimension tracking
+- Pixel-to-index mapping: `Math.round((relativeX / plotWidth) * (data.length - 1))`
+- Dynamic X-axis formatting based on zoom level (time/date/both)
+
+**Files**:
+- `frontend/src/components/historical/v2/ChartOverlay.tsx` - DOM overlay component
+- `frontend/src/components/historical/v2/OverlayTooltip.tsx` - Positioned tooltip
+- `frontend/src/components/historical/v2/HistoricalChart.tsx` - Main chart (no mouse handlers)
+
+**When to Use**: Any Recharts visualization with 100+ data points that needs hover/zoom interaction.
+
 ### Live Registers Feature (NEW)
 Real-time Modbus register read/write through web UI:
 - **URL**: `/projects/[id]/sites/[siteId]/devices/[deviceId]/live-registers`
