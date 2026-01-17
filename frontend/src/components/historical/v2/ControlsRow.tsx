@@ -67,13 +67,23 @@ export function ControlsRow({
     ? sites.filter((s) => s.project_id === selectedProjectId)
     : [];
 
-  // Calculate available aggregation groups based on date range
-  const availableAggregationGroups = useMemo((): AggregationGroup[] => {
-    const days = Math.ceil(
-      (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    return getAvailableAggregations(days);
+  // Calculate date range in hours
+  const dateRangeHours = useMemo(() => {
+    return (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60);
   }, [dateRange]);
+
+  // Calculate available aggregation groups based on date range AND data source
+  const availableAggregationGroups = useMemo((): AggregationGroup[] => {
+    const days = Math.ceil(dateRangeHours / 24);
+    let groups = getAvailableAggregations(days);
+
+    // For local data source: Raw only available for <= 1 hour
+    if (dataSource === "local" && dateRangeHours > 1) {
+      groups = groups.filter(g => g !== "raw");
+    }
+
+    return groups;
+  }, [dateRangeHours, dataSource]);
 
   return (
     <div className="space-y-4">

@@ -206,6 +206,51 @@ export function HistoricalChart({
     }));
   }, [leftAxisParams, rightAxisParams]);
 
+  // Calculate adaptive Y-axis domains based on actual data values
+  const yAxisDomains = useMemo(() => {
+    const calculateDomain = (params: AxisParameter[]): [number, number] | undefined => {
+      if (params.length === 0 || displayData.length === 0) return undefined;
+
+      let min = Infinity;
+      let max = -Infinity;
+
+      for (const param of params) {
+        const dataKey = `${param.deviceId}:${param.registerName}`;
+        for (const point of displayData) {
+          const value = point[dataKey];
+          if (typeof value === "number" && !isNaN(value)) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+          }
+        }
+      }
+
+      // No valid data found
+      if (!isFinite(min) || !isFinite(max)) return undefined;
+
+      // If all values are the same, add some range
+      if (min === max) {
+        const padding = Math.abs(min) * 0.1 || 1;
+        return [min - padding, max + padding];
+      }
+
+      // Add 10% padding above and below for nice visual
+      const range = max - min;
+      const padding = range * 0.1;
+
+      // Round to "nice" values for cleaner axis ticks
+      const niceMin = Math.floor((min - padding) * 10) / 10;
+      const niceMax = Math.ceil((max + padding) * 10) / 10;
+
+      return [niceMin, niceMax];
+    };
+
+    return {
+      left: calculateDomain(leftAxisParams),
+      right: calculateDomain(rightAxisParams),
+    };
+  }, [displayData, leftAxisParams, rightAxisParams]);
+
   // Render chart elements for parameters
   const renderChartElements = useCallback(
     (params: AxisParameter[], yAxisId: string) => {
@@ -486,7 +531,7 @@ export function HistoricalChart({
             }}
           />
 
-          {/* Left Y-Axis with neutral colors */}
+          {/* Left Y-Axis with adaptive domain */}
           {hasLeftParams && (
             <YAxis
               yAxisId="left"
@@ -495,6 +540,7 @@ export function HistoricalChart({
               tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
               tickLine={false}
               axisLine={false}
+              domain={yAxisDomains.left || ["auto", "auto"]}
               tickFormatter={(value: number) => {
                 if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(1)}k`;
                 return value.toFixed(1);
@@ -504,7 +550,7 @@ export function HistoricalChart({
             />
           )}
 
-          {/* Right Y-Axis with neutral colors */}
+          {/* Right Y-Axis with adaptive domain */}
           {hasRightParams && (
             <YAxis
               yAxisId="right"
@@ -513,6 +559,7 @@ export function HistoricalChart({
               tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
               tickLine={false}
               axisLine={false}
+              domain={yAxisDomains.right || ["auto", "auto"]}
               tickFormatter={(value: number) => {
                 if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(1)}k`;
                 return value.toFixed(1);
