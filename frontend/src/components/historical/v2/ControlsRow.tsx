@@ -176,7 +176,9 @@ export function ControlsRow({
                 </Button>
               </div>
               {dataSource === "local" && (
-                <p className="text-[10px] text-amber-600">Max 7 days, single site only</p>
+                <p className="text-[10px] text-amber-600 text-center whitespace-nowrap">
+                  Max 7 days, single site
+                </p>
               )}
             </div>
           )}

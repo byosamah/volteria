@@ -130,14 +130,32 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Find the controller for this site
-    const { data: controllerData, error: controllerError } = await supabase
+    // Find the controller for this site (by site_id in controllers table)
+    let controllerData: { id: string; serial_number: string; status: string } | null = null;
+
+    // First try: look by site_id directly
+    const { data: controllerBySite } = await supabase
       .from("controllers")
       .select("id, serial_number, status")
-      .eq("serial_number", siteData.controller_serial_number)
+      .eq("site_id", siteId)
       .single();
 
-    if (controllerError || !controllerData) {
+    if (controllerBySite) {
+      controllerData = controllerBySite;
+    } else if (siteData.controller_serial_number) {
+      // Second try: look by serial number in site settings
+      const { data: controllerBySerial } = await supabase
+        .from("controllers")
+        .select("id, serial_number, status")
+        .eq("serial_number", siteData.controller_serial_number)
+        .single();
+
+      if (controllerBySerial) {
+        controllerData = controllerBySerial;
+      }
+    }
+
+    if (!controllerData) {
       return NextResponse.json(
         { error: "No controller found for this site. Local data requires an assigned controller." },
         { status: 404 }

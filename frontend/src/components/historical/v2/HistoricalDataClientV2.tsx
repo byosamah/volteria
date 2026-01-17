@@ -270,6 +270,29 @@ export function HistoricalDataClientV2({
     setSelectedDeviceId(deviceId);
   }, []);
 
+  // Handle data source change - reset date range to 24h when switching to local
+  const handleDataSourceChange = useCallback((source: DataSource) => {
+    setDataSource(source);
+
+    // When switching to local, enforce 7-day max by resetting to 24h
+    if (source === "local" && dateRange) {
+      const diffDays = (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
+      if (diffDays > 7) {
+        // Reset to 24h (default for local)
+        const end = new Date();
+        end.setHours(23, 59, 59, 999);
+        const start = new Date();
+        start.setDate(start.getDate() - 1);
+        start.setHours(0, 0, 0, 0);
+        setDateRange({ start, end });
+        // Also reset aggregation to raw for 24h range
+        if (isAutoAggregation) {
+          setAggregationType("raw");
+        }
+      }
+    }
+  }, [dateRange, isAutoAggregation]);
+
   // Validate date range and auto-update aggregation if needed
   const handleDateRangeChange = useCallback((range: DateRange) => {
     const diffDays = Math.ceil(
@@ -646,7 +669,7 @@ export function HistoricalDataClientV2({
             onAggregationChange={handleAggregationChange}
             isAutoAggregation={isAutoAggregation}
             dataSource={dataSource}
-            onDataSourceChange={setDataSource}
+            onDataSourceChange={handleDataSourceChange}
             isSuperAdmin={isSuperAdmin}
             onPlot={fetchData}
             onExportCSV={exportCSV}
