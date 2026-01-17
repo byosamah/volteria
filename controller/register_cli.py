@@ -51,16 +51,26 @@ def get_device_config(device_id: str) -> dict | None:
     if not config:
         return None
 
-    # Search in all device lists
-    device_lists = [
-        config.get("devices", {}).get("load_meters", []),
-        config.get("devices", {}).get("inverters", []),
-        config.get("devices", {}).get("generators", []),
-        config.get("devices", {}).get("sensors", []),
-    ]
+    # Config stores devices as a flat list
+    # Each device has: id, device_type, modbus, registers, etc.
+    devices = config.get("devices", [])
 
-    for device_list in device_lists:
-        for device in device_list:
+    # Handle both list (new format) and dict (legacy format)
+    if isinstance(devices, dict):
+        # Legacy format: {load_meters: [], inverters: [], ...}
+        device_lists = [
+            devices.get("load_meters", []),
+            devices.get("inverters", []),
+            devices.get("generators", []),
+            devices.get("sensors", []),
+        ]
+        for device_list in device_lists:
+            for device in device_list:
+                if device.get("id") == device_id:
+                    return device
+    elif isinstance(devices, list):
+        # New format: flat list of devices
+        for device in devices:
             if device.get("id") == device_id:
                 return device
 
@@ -118,14 +128,16 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
         return result
 
     # Determine connection parameters
-    protocol = device.get("protocol", "tcp")
+    # New format has modbus settings nested, old format has them at root
+    modbus = device.get("modbus", {})
+    protocol = modbus.get("protocol") or device.get("protocol", "tcp")
 
     if protocol == "tcp":
-        host = device.get("ip_address") or device.get("ip")
-        port = device.get("port", 502)
+        host = modbus.get("host") or device.get("ip_address") or device.get("ip")
+        port = modbus.get("port") or device.get("port", 502)
     elif protocol in ("rtu_gateway", "rtu"):
-        host = device.get("gateway_ip")
-        port = device.get("gateway_port", 502)
+        host = modbus.get("gateway_ip") or device.get("gateway_ip")
+        port = modbus.get("gateway_port") or device.get("gateway_port", 502)
     else:
         result["errors"].append(f"Unsupported protocol: {protocol}")
         return result
@@ -134,7 +146,7 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
         result["errors"].append("No host/IP configured for device")
         return result
 
-    slave_id = device.get("slave_id", 1)
+    slave_id = modbus.get("slave_id") or device.get("slave_id", 1)
 
     # Create Modbus client
     client = AsyncModbusTcpClient(host=host, port=port)
@@ -240,14 +252,16 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
         return result
 
     # Determine connection parameters
-    protocol = device.get("protocol", "tcp")
+    # New format has modbus settings nested, old format has them at root
+    modbus = device.get("modbus", {})
+    protocol = modbus.get("protocol") or device.get("protocol", "tcp")
 
     if protocol == "tcp":
-        host = device.get("ip_address") or device.get("ip")
-        port = device.get("port", 502)
+        host = modbus.get("host") or device.get("ip_address") or device.get("ip")
+        port = modbus.get("port") or device.get("port", 502)
     elif protocol in ("rtu_gateway", "rtu"):
-        host = device.get("gateway_ip")
-        port = device.get("gateway_port", 502)
+        host = modbus.get("gateway_ip") or device.get("gateway_ip")
+        port = modbus.get("gateway_port") or device.get("gateway_port", 502)
     else:
         result["error"] = f"Unsupported protocol: {protocol}"
         return result
@@ -256,7 +270,7 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
         result["error"] = "No host/IP configured for device"
         return result
 
-    slave_id = device.get("slave_id", 1)
+    slave_id = modbus.get("slave_id") or device.get("slave_id", 1)
 
     # Create Modbus client
     client = AsyncModbusTcpClient(host=host, port=port)
