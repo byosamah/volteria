@@ -1,0 +1,227 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useDraggable } from "@dnd-kit/core";
+import { GripVertical, Search, Cpu, HardDrive } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SelectGroup,
+  SelectLabel,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import type { AvailableRegister, Device } from "./types";
+
+interface AvailableParametersListProps {
+  devices: Device[];
+  selectedDeviceId: string;
+  onDeviceChange: (deviceId: string) => void;
+  registers: AvailableRegister[];
+  onAddToAxis: (register: AvailableRegister, axis: "left" | "right") => void;
+  canAddMore: boolean;
+}
+
+export function AvailableParametersList({
+  devices,
+  selectedDeviceId,
+  onDeviceChange,
+  registers,
+  onAddToAxis,
+  canAddMore,
+}: AvailableParametersListProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // All devices are regular devices - controller is always added as special entry
+  const regularDevices = devices;
+
+  // Controller is always available as a special option (hardcoded)
+  const CONTROLLER_ID = "site-controller";
+
+  // Filter registers by search query
+  const filteredRegisters = useMemo(() => {
+    if (!searchQuery.trim()) return registers;
+    const query = searchQuery.toLowerCase();
+    return registers.filter(
+      (reg) =>
+        reg.name.toLowerCase().includes(query) ||
+        reg.unit.toLowerCase().includes(query)
+    );
+  }, [registers, searchQuery]);
+
+  // Check if controller is selected
+  const isControllerSelected = selectedDeviceId === CONTROLLER_ID;
+
+  // Get selected device name for display
+  const selectedDevice = isControllerSelected
+    ? { id: CONTROLLER_ID, name: "Site Controller", device_type: "controller", site_id: "" }
+    : devices.find((d) => d.id === selectedDeviceId);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <h3 className="text-sm font-medium mb-2">Available Parameters</h3>
+
+      {/* Device/Controller selector */}
+      <Select value={selectedDeviceId} onValueChange={onDeviceChange}>
+        <SelectTrigger className="mb-2">
+          <SelectValue placeholder="Select source">
+            {selectedDevice && (
+              <span className="flex items-center gap-2">
+                {isControllerSelected ? (
+                  <Cpu className="h-3.5 w-3.5 text-blue-500" />
+                ) : (
+                  <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+                {selectedDevice.name}
+              </span>
+            )}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {/* Controller - always available as first option */}
+          <SelectGroup>
+            <SelectLabel className="text-xs text-muted-foreground flex items-center gap-1">
+              <Cpu className="h-3 w-3" /> Controller (Site Calculated Fields)
+            </SelectLabel>
+            <SelectItem value={CONTROLLER_ID}>
+              <span className="flex items-center gap-2">
+                <Cpu className="h-3.5 w-3.5 text-blue-500" />
+                Site Controller
+              </span>
+            </SelectItem>
+          </SelectGroup>
+
+          {/* Devices section */}
+          {regularDevices.length > 0 && (
+            <SelectGroup>
+              <SelectLabel className="text-xs text-muted-foreground flex items-center gap-1">
+                <HardDrive className="h-3 w-3" /> Devices
+              </SelectLabel>
+              {regularDevices.map((device) => (
+                <SelectItem key={device.id} value={device.id}>
+                  <span className={`flex items-center gap-2 ${device.enabled === false ? "text-muted-foreground" : ""}`}>
+                    <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+                    {device.name}
+                    {device.enabled === false && (
+                      <span className="text-xs opacity-60">(disabled)</span>
+                    )}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          )}
+        </SelectContent>
+      </Select>
+
+      {/* Search */}
+      <div className="relative mb-2">
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search registers..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-8 h-9"
+        />
+      </div>
+
+      {/* Register list */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1">
+        {!selectedDeviceId ? (
+          <div className="h-full flex items-center justify-center text-muted-foreground text-sm text-center p-4">
+            Select a device to view<br />available parameters
+          </div>
+        ) : filteredRegisters.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-muted-foreground text-sm text-center p-4">
+            {searchQuery ? "No matching registers" : "No registers available"}
+          </div>
+        ) : (
+          filteredRegisters.map((register) => (
+            <DraggableRegisterItem
+              key={register.id}
+              register={register}
+              onAddToAxis={onAddToAxis}
+              canAddMore={canAddMore}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface DraggableRegisterItemProps {
+  register: AvailableRegister;
+  onAddToAxis: (register: AvailableRegister, axis: "left" | "right") => void;
+  canAddMore: boolean;
+}
+
+function DraggableRegisterItem({
+  register,
+  onAddToAxis,
+  canAddMore,
+}: DraggableRegisterItemProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `available-${register.id}`,
+    data: { register },
+    disabled: !canAddMore,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={`
+        flex items-center gap-2 p-2 rounded-md border bg-muted/30
+        ${isDragging ? "opacity-50 shadow-lg" : "hover:bg-muted/50"}
+        ${!canAddMore ? "opacity-50 cursor-not-allowed" : "cursor-grab active:cursor-grabbing"}
+        transition-colors
+      `}
+    >
+      {/* Drag handle indicator */}
+      <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+
+      {/* Parameter info */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{register.name}</p>
+        <p className="text-xs text-muted-foreground truncate">
+          {register.unit || "—"}
+        </p>
+      </div>
+
+      {/* Quick add buttons */}
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddToAxis(register, "left");
+          }}
+          disabled={!canAddMore}
+          title="Add to Left Y-Axis"
+        >
+          +L
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddToAxis(register, "right");
+          }}
+          disabled={!canAddMore}
+          title="Add to Right Y-Axis"
+        >
+          +R
+        </Button>
+      </div>
+    </div>
+  );
+}
