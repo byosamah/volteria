@@ -190,7 +190,27 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 ## Recent Updates (2026-01-17)
 
-### RAM Buffering for Logging (NEW)
+### Live Registers Feature (NEW)
+Real-time Modbus register read/write through web UI:
+- **URL**: `/projects/[id]/sites/[siteId]/devices/[deviceId]/live-registers`
+- **Flow**: Frontend → Next.js API → FastAPI → SSH to controller → `register_cli.py` → Modbus device
+- **Features**:
+  - Read registers grouped by section (Logging/Visualization/Alarms)
+  - Write to holding registers with verification
+  - Sequential write queue (500ms delay) prevents Modbus timeouts
+  - Automatic value scaling based on register config
+
+**Key Files**:
+- `frontend/src/components/devices/live-registers/` - UI components
+- `frontend/src/app/api/controllers/[controllerId]/registers/route.ts` - API proxy
+- `backend/app/routers/controllers.py` - SSH execution endpoints
+- `controller/register_cli.py` - Standalone Modbus CLI tool
+
+### Controller Wizard Improvements
+- **NVMe Boot Detection**: Now reads from `approved_hardware.features.nvme_boot` instead of hardcoded list
+- Future hardware types automatically get NVMe setup instructions if `features.nvme_boot: true`
+
+### RAM Buffering for Logging
 Reduces SSD/SD card wear by 60x through RAM buffering:
 ```
 Device Service → SharedState (raw readings every 1s)
@@ -223,8 +243,8 @@ CLOUD SYNC (every 180s, downsampled per-register)
 - **Use Case**: OTA updates without SSH tunnel access
 
 ### Nginx Routing Fix
-- Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`) route to FastAPI
-- Controller frontend routes (`/heartbeats`, `/lookup`, `/register`) route to Next.js
+- Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`, `/registers/read`, `/registers/write`) route to FastAPI
+- Controller frontend routes (`/heartbeats`, `/lookup`, `/register`, `/registers`) route to Next.js
 
 ### Logging System Architecture
 - **Local vs Cloud Separation**: Local writes ALL readings; cloud filters by per-register `logging_frequency`
