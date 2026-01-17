@@ -23,18 +23,30 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from common.state import SharedState
-from services.device.modbus_client import ModbusClient
+from pymodbus.client import AsyncModbusTcpClient
 
 
 def get_device_config(device_id: str) -> dict | None:
-    """Get device configuration from SharedState."""
-    state = SharedState()
-    config = state.get_config()
+    """Get device configuration from SharedState config file."""
+    config_path = Path("/opt/volteria/data/state/config.json")
+
+    # Fallback for Windows development
+    if not config_path.exists():
+        config_path = Path(__file__).parent / "data" / "state" / "config.json"
+
+    if not config_path.exists():
+        return None
+
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
 
     if not config:
         return None
@@ -92,8 +104,6 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
             "errors": ["error message", ...]
         }
     """
-    from datetime import datetime
-
     result = {
         "success": False,
         "device_id": device_id,
@@ -127,7 +137,7 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
     slave_id = device.get("slave_id", 1)
 
     # Create Modbus client
-    client = ModbusClient(host=host, port=port)
+    client = AsyncModbusTcpClient(host=host, port=port)
 
     try:
         connected = await client.connect()
@@ -135,7 +145,7 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
             result["errors"].append(f"Failed to connect to {host}:{port}")
             return result
 
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         for address in addresses:
             try:
@@ -143,50 +153,47 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
                 reg_config = get_register_config(device, address)
 
                 reg_type = "input"
-                datatype = "uint16"
                 scale = 1.0
                 offset = 0.0
                 scale_order = "multiply_first"
 
                 if reg_config:
                     reg_type = reg_config.get("type", "input")
-                    datatype = reg_config.get("datatype", "uint16")
                     scale = reg_config.get("scale", 1.0) or 1.0
                     offset = reg_config.get("offset", 0.0) or 0.0
                     scale_order = reg_config.get("scale_order", "multiply_first")
 
                 # Read based on register type
                 if reg_type == "holding":
-                    read_result = await client.read_holding_registers(
-                        slave_id=slave_id,
+                    response = await client.read_holding_registers(
                         address=address,
                         count=1,
-                        datatype=datatype
+                        slave=slave_id
                     )
                 else:
-                    read_result = await client.read_input_registers(
-                        slave_id=slave_id,
+                    response = await client.read_input_registers(
                         address=address,
                         count=1,
-                        datatype=datatype
+                        slave=slave_id
                     )
 
-                if read_result.success and read_result.value is not None:
-                    raw_value = read_result.value
+                if response.isError():
+                    result["errors"].append(f"Failed to read address {address}: {response}")
+                    continue
 
-                    # Apply scale and offset
-                    if scale_order == "multiply_first":
-                        scaled_value = (raw_value * scale) + offset
-                    else:
-                        scaled_value = (raw_value + offset) * scale
+                raw_value = response.registers[0]
 
-                    result["readings"][str(address)] = {
-                        "raw_value": raw_value,
-                        "scaled_value": scaled_value,
-                        "timestamp": timestamp
-                    }
+                # Apply scale and offset
+                if scale_order == "multiply_first":
+                    scaled_value = (raw_value * scale) + offset
                 else:
-                    result["errors"].append(f"Failed to read address {address}: {read_result.error}")
+                    scaled_value = (raw_value + offset) * scale
+
+                result["readings"][str(address)] = {
+                    "raw_value": raw_value,
+                    "scaled_value": scaled_value,
+                    "timestamp": timestamp
+                }
 
             except Exception as e:
                 result["errors"].append(f"Error reading address {address}: {str(e)}")
@@ -196,7 +203,7 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
     except Exception as e:
         result["errors"].append(f"Connection error: {str(e)}")
     finally:
-        await client.close()
+        client.close()
 
     return result
 
@@ -252,7 +259,7 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
     slave_id = device.get("slave_id", 1)
 
     # Create Modbus client
-    client = ModbusClient(host=host, port=port)
+    client = AsyncModbusTcpClient(host=host, port=port)
 
     try:
         connected = await client.connect()
@@ -261,14 +268,14 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
             return result
 
         # Write the register
-        write_result = await client.write_register(
-            slave_id=slave_id,
+        response = await client.write_register(
             address=address,
-            value=value
+            value=value,
+            slave=slave_id
         )
 
-        if not write_result.success:
-            result["error"] = f"Write failed: {write_result.error}"
+        if response.isError():
+            result["error"] = f"Write failed: {response}"
             return result
 
         result["success"] = True
@@ -277,18 +284,17 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
         if verify:
             await asyncio.sleep(0.2)  # Wait 200ms before verification
 
-            read_result = await client.read_holding_registers(
-                slave_id=slave_id,
+            read_response = await client.read_holding_registers(
                 address=address,
                 count=1,
-                datatype="uint16"
+                slave=slave_id
             )
 
-            if read_result.success and read_result.value is not None:
-                result["read_back_value"] = read_result.value
+            if not read_response.isError():
+                result["read_back_value"] = read_response.registers[0]
                 # Allow 1% tolerance
                 tolerance = max(1, abs(value * 0.01))
-                result["verified"] = abs(read_result.value - value) <= tolerance
+                result["verified"] = abs(read_response.registers[0] - value) <= tolerance
             else:
                 result["verified"] = False
 
@@ -296,7 +302,7 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
         result["error"] = str(e)
         result["success"] = False
     finally:
-        await client.close()
+        client.close()
 
     return result
 
