@@ -284,7 +284,17 @@ src/components/
 │   └── widget-picker.tsx              # Widget type selector
 │
 ├── historical/
-│   └── historical-data-client.tsx     # Historical data viewer
+│   ├── historical-data-client.tsx     # Legacy historical viewer
+│   └── v2/                            # Historical V2 (server-side aggregation)
+│       ├── HistoricalDataClientV2.tsx # Main orchestrator
+│       ├── HistoricalChart.tsx        # Recharts visualization
+│       ├── ChartOverlay.tsx           # DOM overlay for performance
+│       ├── OverlayTooltip.tsx         # Positioned tooltip
+│       ├── ParameterSelector.tsx      # Device/register selection
+│       ├── AggregationSelector.tsx    # Raw/Hourly/Daily selector
+│       ├── DateRangeSelector.tsx      # Calendar with presets
+│       ├── constants.ts               # MAX_DATE_RANGE, colors
+│       └── types.ts                   # TypeScript interfaces
 │
 ├── alarms/
 │   ├── alarms-viewer.tsx              # Alarms with resolve functionality
@@ -667,13 +677,34 @@ Custom dashboards with drag-drop widget placement:
 | `alarm_list` | `alarm-list-widget.tsx` | Recent alarms with severity filter |
 | `text` | `text-widget.tsx` | Custom text/markdown display |
 
-### Historical Data (`/historical-data`)
-Historical data viewer for analyzing past readings:
-- **Date Range Picker**: Presets (24h, 7d, 30d) + custom range
-- **Device Selection**: Filter by device and register
-- **Chart Visualization**: Time-series chart with recharts
-- **CSV Export**: Export selected data columns
-- **Smart Polling**: Page Visibility API to pause when tab hidden
+### Historical Data V2 (`/historical-data`)
+Multi-site historical data viewer with server-side aggregation:
+
+**Features**:
+- **Multi-Site Comparison**: Add parameters from multiple projects/sites on same chart
+- **Server-Side Aggregation**: RPC function aggregates data in database (bypasses max_rows)
+- **Aggregation Levels**: Raw (7d max), Hourly (90d max), Daily (2yr max)
+- **Auto-Selection**: System auto-selects aggregation based on date range
+- **DOM Overlay**: Performance-optimized hover/zoom (no re-renders)
+- **Dual Y-Axis**: Left/right axis support with different units
+- **CSV Export**: Export with UTC + local timezone columns
+
+**Components** (`frontend/src/components/historical/v2/`):
+| Component | Purpose |
+|-----------|---------|
+| `HistoricalDataClientV2.tsx` | Main orchestrator component |
+| `HistoricalChart.tsx` | Recharts visualization (no mouse handlers) |
+| `ChartOverlay.tsx` | DOM overlay for hover/drag interactions |
+| `OverlayTooltip.tsx` | Positioned tooltip with site/device hierarchy |
+| `ParameterSelector.tsx` | Device + register selection |
+| `ParameterCard.tsx` | Parameter card with site/device info |
+| `AggregationSelector.tsx` | Raw/Hourly/Daily + Avg/Min/Max selector |
+| `DateRangeSelector.tsx` | Calendar picker with presets |
+| `ControlsRow.tsx` | All controls in single row |
+| `constants.ts` | MAX_DATE_RANGE, COLOR_PALETTE |
+| `types.ts` | TypeScript interfaces |
+
+**API Route**: `GET /api/historical?siteIds=...&deviceIds=...&aggregation=auto`
 
 ### Project Status Badge
 Live status polling component showing online/offline site counts:

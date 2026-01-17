@@ -123,7 +123,7 @@ supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_
 | `controller_heartbeats` | Controller status |
 | `controller_service_status` | 5-layer health tracking |
 
-> **Full schema**: See `database/migrations/` (77+ migration files)
+> **Full schema**: See `database/migrations/` (78+ migration files)
 
 ## Deployment
 
@@ -190,7 +190,52 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 ## Recent Updates (2026-01-17)
 
-### Historical Data Chart V2 - Multi-Site Support (NEW)
+### Historical Data V2 - Server-Side Aggregation (NEW)
+Large dataset support with database-level aggregation:
+
+**Problem**: Client fetching 100,000+ rows is slow and hits Supabase max_rows limits.
+
+**Solution**: PostgreSQL RPC function aggregates data server-side:
+```
+┌─────────────────────────────────────────────┐
+│  Frontend: Select date range + aggregation  │
+│              ↓                              │
+│  API Route: /api/historical                 │
+│              ↓                              │
+│  RPC: get_historical_readings()             │
+│  - Raw: Returns all points (LIMIT 50k)      │
+│  - Hourly: AVG/MIN/MAX per hour             │
+│  - Daily: AVG/MIN/MAX per day               │
+│              ↓                              │
+│  Response: Pre-aggregated data + metadata   │
+└─────────────────────────────────────────────┘
+```
+
+**Date Range Limits** (enforced by UI and auto-switch):
+| Aggregation | Max Range | Points/Device |
+|-------------|-----------|---------------|
+| Raw | 7 days | ~10,000-20,000 |
+| Hourly | 90 days | ~2,160 |
+| Daily | 2 years | ~730 |
+
+**Auto-Selection** (when aggregation="auto"):
+- < 24h → Raw data
+- 24h - 7d → Hourly aggregation
+- > 7d → Daily aggregation
+
+**Key Files**:
+- `database/migrations/078_historical_aggregation.sql` - RPC function
+- `frontend/src/app/api/historical/route.ts` - Uses RPC instead of direct query
+- `frontend/src/components/historical/v2/constants.ts` - MAX_DATE_RANGE limits
+- `frontend/src/components/historical/v2/AggregationSelector.tsx` - Raw/Hourly/Daily + Avg/Min/Max
+
+**Aggregation UI**:
+- Time period: Raw | Hourly | Daily (unavailable periods disabled + strikethrough)
+- Method (for Hourly/Daily): Avg | Min | Max
+- Auto badge when system auto-selected
+- Changes date range → auto-switches to available aggregation
+
+### Historical Data Chart V2 - Multi-Site Support
 Compare parameters from multiple projects/sites on the same chart:
 
 **Features**:
@@ -247,11 +292,9 @@ Performance-optimized chart for 500+ data points using DOM overlay instead of Re
 
 **When to Use**: Any Recharts visualization with 100+ data points that needs hover/zoom interaction.
 
-### Next Steps: Connect to Real Data
-Currently using dummy data. Implementation plan:
-1. **Cloud Data Source**: Query `device_readings` table from Supabase
-2. **Local Data Source**: Query controller's SQLite via SSH/API
-3. **API Route**: `GET /api/historical` with project, site, device, register, dateRange params
+### Historical Data - Next Steps
+- **Local Data Source**: Query controller's SQLite via SSH/API (super admin only)
+- **Pre-Aggregated Tables**: Materialized hourly/daily summaries for sub-second 1-year queries
 
 ### Live Registers Feature (NEW)
 Real-time Modbus register read/write through web UI:
@@ -329,6 +372,7 @@ CLOUD SYNC (every 180s, downsampled per-register)
 - **075**: Cleanup users table
 - **076**: Add phone column to users
 - **077**: Add `logging_local_enabled` to sites
+- **078**: Add `get_historical_readings` RPC function for server-side aggregation
 
 ### Device Types
 - **Temperature Sensor**: Added `sensor` device type for environmental monitoring

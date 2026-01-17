@@ -86,7 +86,31 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 026-040 | Alarms & fields | thresholds, calculated fields |
 | 041-050 | Dashboards | widgets, retention policies |
 | 051-060 | Enterprise | subscriptions, firmware/OTA |
-| 061-081 | Refinements | constraints, FK fixes, cleanup |
+| 061-077 | Refinements | constraints, FK fixes, cleanup |
+| 078+ | Historical | RPC functions, aggregation |
+
+## RPC Functions
+
+### get_historical_readings (Migration 078)
+Server-side aggregation for historical data visualization. Bypasses max_rows limit by aggregating in database.
+
+```sql
+SELECT * FROM get_historical_readings(
+  p_site_ids := ARRAY['uuid-1', 'uuid-2']::UUID[],
+  p_device_ids := ARRAY['uuid-1']::UUID[],
+  p_registers := ARRAY['Total Active Power']::TEXT[],
+  p_start := '2026-01-10T00:00:00Z'::TIMESTAMPTZ,
+  p_end := '2026-01-17T00:00:00Z'::TIMESTAMPTZ,
+  p_aggregation := 'auto'  -- 'raw', 'hourly', 'daily', 'auto'
+);
+```
+
+**Returns**: `site_id, device_id, register_name, bucket, value, min_value, max_value, sample_count, unit`
+
+**Auto-selection logic**:
+- < 24h → raw
+- 24h - 7d → hourly
+- > 7d → daily
 
 ## Key Patterns
 
