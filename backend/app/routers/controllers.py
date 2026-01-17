@@ -1598,9 +1598,9 @@ async def read_registers(
                 detail="Controller SSH not configured"
             )
 
-        # 4. Build the command
+        # 4. Build the command (use venv python which has pymodbus installed)
         addresses_str = ",".join(str(a) for a in request.addresses)
-        command = f"cd /opt/volteria/controller && python3 register_cli.py read --device-id {request.device_id} --addresses {addresses_str}"
+        command = f"cd /opt/volteria/controller && /opt/volteria/venv/bin/python register_cli.py read --device-id {request.device_id} --addresses {addresses_str}"
 
         # 5. Execute via SSH
         SSH_HOST = "host.docker.internal"
@@ -1702,7 +1702,7 @@ async def write_register(
 
         # 4. Build the command
         verify_flag = "" if request.verify else "--no-verify"
-        command = f"cd /opt/volteria/controller && python3 register_cli.py write --device-id {request.device_id} --address {request.address} --value {request.value} {verify_flag}".strip()
+        command = f"cd /opt/volteria/controller && /opt/volteria/venv/bin/python register_cli.py write --device-id {request.device_id} --address {request.address} --value {request.value} {verify_flag}".strip()
 
         # 5. Execute via SSH
         SSH_HOST = "host.docker.internal"
