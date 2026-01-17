@@ -277,12 +277,15 @@ export function HistoricalDataClientV2({
     // When switching to local:
     // 1. Force "active" filter (inactive sites have no local hardware)
     // 2. Enforce 7-day max by resetting to 24h if needed
+    // 3. Auto-select hourly aggregation for ranges > 4 hours (raw data times out over SSH)
     if (source === "local") {
       // Force active filter - inactive sites don't have local hardware
       setActiveFilter("active");
 
       if (dateRange) {
         const diffDays = (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
+        const diffHours = diffDays * 24;
+
         if (diffDays > 7) {
           // Reset to 24h (default for local)
           const end = new Date();
@@ -291,10 +294,12 @@ export function HistoricalDataClientV2({
           start.setDate(start.getDate() - 1);
           start.setHours(0, 0, 0, 0);
           setDateRange({ start, end });
-          // Also reset aggregation to raw for 24h range
-          if (isAutoAggregation) {
-            setAggregationType("raw");
-          }
+        }
+
+        // For local source, auto-select hourly for ranges > 4 hours
+        // Raw data over SSH times out for large queries
+        if (diffHours > 4 && isAutoAggregation) {
+          setAggregationType("hourly");
         }
       }
     }
@@ -410,7 +415,7 @@ export function HistoricalDataClientV2({
       const registerNames = [...new Set(allParams.map((p) => p.registerName))];
 
       // Convert aggregationType to simple form for API (raw, hourly, daily)
-      const apiAggregation = aggregationType === "raw"
+      let apiAggregation = aggregationType === "raw"
         ? "raw"
         : aggregationType.startsWith("hourly")
         ? "hourly"
@@ -447,6 +452,13 @@ export function HistoricalDataClientV2({
         const diffDays = (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
         if (diffDays > 7) {
           throw new Error("Local data source is limited to 7 days. Use cloud data source for longer date ranges.");
+        }
+
+        // For local source with > 4 hours, force hourly aggregation (raw times out)
+        const diffHours = diffDays * 24;
+        if (diffHours > 4 && apiAggregation === "raw") {
+          // Auto-upgrade to hourly to avoid timeout
+          apiAggregation = "hourly";
         }
       }
 
