@@ -260,13 +260,11 @@ Query historical data directly from controller's SQLite database:
 - **Cloud**: Supabase PostgreSQL (default) - multi-site, long-term storage
 - **Local**: Controller SQLite via SSH - single-site, real-time, super admin only
 
-**Local Source Constraints**:
-| Constraint | Limit | Reason |
-|------------|-------|--------|
-| Date Range (Raw) | 1 hour max | SSH transfer timeout |
-| Date Range (Aggregated) | 30 days max | SQLite performance |
-| Sites | Single site only | Controller is site-specific |
-| Filter | Active only | Inactive sites have no hardware |
+**Data Source Constraints**:
+| Source | Raw Max | Aggregated Max | Sites | Notes |
+|--------|---------|----------------|-------|-------|
+| Cloud | 30 days | 2 years (daily) | Multi-site | RPC LIMIT 50k rows |
+| Local | 1 hour | 30 days | Single site only | SSH timeout, active only |
 
 **Auto-Behavior When Switching to Local**:
 - Resets to 1h date range
@@ -302,11 +300,11 @@ Large dataset support with database-level aggregation:
 ```
 
 **Date Range Limits** (enforced by UI and auto-switch):
-| Aggregation | Max Range | Points/Device |
-|-------------|-----------|---------------|
-| Raw | 7 days | ~10,000-20,000 |
-| Hourly | 90 days | ~2,160 |
-| Daily | 2 years | ~730 |
+| Aggregation | Cloud Max | Local Max | Points/Device |
+|-------------|-----------|-----------|---------------|
+| Raw | 30 days | 1 hour | ~50,000 (LIMIT) |
+| Hourly | 90 days | 30 days | ~2,160 |
+| Daily | 2 years | 30 days | ~730 |
 
 **Auto-Selection** (when aggregation="auto"):
 - < 24h → Raw data
