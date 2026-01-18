@@ -190,6 +190,35 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 ## Recent Updates (2026-01-18)
 
+### Server Maintenance Automation (NEW)
+Automated cleanup to prevent disk/memory issues:
+
+**Changes Made**:
+| Change | Before | After |
+|--------|--------|-------|
+| Disk cleanup | Manual | Daily 3am (`maintenance.sh`) |
+| SSH sync | Every 1 min | Every 5 min |
+| Docker logs | Unbounded | 10MB max, 3 files |
+| Backend workers | 4 | 2 (saves ~200MB RAM) |
+| Resource limits | None | backend 512M, frontend 384M, nginx 64M |
+
+**Maintenance Script** (`deploy/maintenance.sh`):
+- Docker prune (images >24h, unused volumes/networks)
+- Journal vacuum (7 days retention)
+- APT cleanup
+- Disk/memory health report
+
+**Cron Schedule**:
+```
+*/5 * * * * sync-ssh-keys.sh   # SSH key sync
+0 3 * * * maintenance.sh       # Daily cleanup
+```
+
+### Controller Performance Improvements
+- **Config Watch Interval**: Increased from 60s to 300s (5 minutes)
+- **Removed DEBUG prints**: Cleaner logs in production
+- **SharedState optimization**: Reduced redundant state operations
+
 ### Historical Data V2 - Local Data Source (NEW)
 Query historical data directly from controller's SQLite database:
 

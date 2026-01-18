@@ -26,7 +26,8 @@ ssh volteria "docker-compose -f /opt/solar-diesel-controller/docker-compose.yml 
 deploy/
 ├── nginx.conf         # Reverse proxy + SSL (268 lines)
 ├── setup-server.sh    # Initial server setup (193 lines)
-└── sync-ssh-keys.sh   # SSH key synchronization (93 lines)
+├── sync-ssh-keys.sh   # SSH key synchronization (93 lines)
+└── maintenance.sh     # Daily automated cleanup (NEW)
 ```
 
 ## Server Details
@@ -44,11 +45,13 @@ deploy/
 
 Defined in `docker-compose.yml` at project root:
 
-| Service | Container | Port | Health Check |
-|---------|-----------|------|--------------|
-| Backend | sdc-backend | 8000 | `/health` endpoint |
-| Frontend | sdc-frontend | 3000 | HTTP check |
-| Nginx | sdc-nginx | 80, 443 | Proxy check |
+| Service | Container | Port | Resources | Health Check |
+|---------|-----------|------|-----------|--------------|
+| Backend | sdc-backend | 8000 | 1 CPU, 512MB | `/health` endpoint |
+| Frontend | sdc-frontend | 3000 | 0.5 CPU, 384MB | HTTP check |
+| Nginx | sdc-nginx | 80, 443 | 0.25 CPU, 64MB | Proxy check |
+
+**Log Rotation**: All services configured with `max-size: 10m`, `max-file: 3`
 
 ## Nginx Configuration
 
@@ -102,7 +105,33 @@ Automated setup for fresh Ubuntu 22.04 server:
 Synchronizes controller SSH public keys from database to server:
 - Fetches keys from `controllers_master` table
 - Updates `authorized_keys` for controller access
-- Runs on cron schedule
+- Runs every 5 minutes via cron
+
+## Maintenance Script (maintenance.sh)
+
+Daily automated cleanup running at 3 AM:
+- Docker prune (images >24h, unused volumes/networks)
+- Journal vacuum (7 days retention)
+- APT autoremove and clean
+- Truncate large volteria logs (>10MB)
+- Health report (disk, memory, container status)
+
+**Cron Schedule**:
+```bash
+*/5 * * * * /opt/.../deploy/sync-ssh-keys.sh   # SSH sync
+0 3 * * * /opt/.../deploy/maintenance.sh       # Daily cleanup
+```
+
+**Logrotate** (`/etc/logrotate.d/volteria`):
+```
+/var/log/volteria-*.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+}
+```
 
 ## Deployment Checklist
 
