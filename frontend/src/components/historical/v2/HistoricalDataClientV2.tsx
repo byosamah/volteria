@@ -15,7 +15,7 @@
  * - Max 7 day date range
  */
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ControlsRow } from "./ControlsRow";
 import { ParameterSelector } from "./ParameterSelector";
@@ -173,6 +173,9 @@ export function HistoricalDataClientV2({
   const [availableRegisters, setAvailableRegisters] = useState<AvailableRegister[]>([]);
   const [isLoadingRegisters, setIsLoadingRegisters] = useState(false);
 
+  // Cache for device registers (persists across device switches)
+  const registersCache = useRef<Map<string, AvailableRegister[]>>(new Map());
+
   // Fetch registers when device changes
   useEffect(() => {
     const fetchRegisters = async () => {
@@ -181,21 +184,29 @@ export function HistoricalDataClientV2({
         return;
       }
 
+      // Check cache first (key includes siteId for site context)
+      const cacheKey = `${selectedSiteId}:${selectedDeviceId}`;
+      const cached = registersCache.current.get(cacheKey);
+      if (cached) {
+        setAvailableRegisters(cached);
+        return;
+      }
+
       // Handle Site Controller (calculated fields) - use dummy data
       if (selectedDeviceId === SITE_CONTROLLER_ID) {
         const controllerRegs = DUMMY_REGISTERS[SITE_CONTROLLER_ID] || [];
-        setAvailableRegisters(
-          controllerRegs.map((reg) => ({
-            id: reg.id,
-            name: reg.name,
-            unit: reg.unit,
-            deviceId: SITE_CONTROLLER_ID,
-            deviceName: "Site Controller",
-            siteId: selectedSiteId,
-            siteName: selectedSiteName,
-            preferred_chart_type: reg.preferred_chart_type,
-          }))
-        );
+        const mappedRegs = controllerRegs.map((reg) => ({
+          id: reg.id,
+          name: reg.name,
+          unit: reg.unit,
+          deviceId: SITE_CONTROLLER_ID,
+          deviceName: "Site Controller",
+          siteId: selectedSiteId,
+          siteName: selectedSiteName,
+          preferred_chart_type: reg.preferred_chart_type,
+        }));
+        registersCache.current.set(cacheKey, mappedRegs);
+        setAvailableRegisters(mappedRegs);
         return;
       }
 
@@ -206,38 +217,37 @@ export function HistoricalDataClientV2({
         if (response.ok) {
           const data = await response.json();
           const device = filteredDevices.find((d) => d.id === selectedDeviceId);
-          setAvailableRegisters(
-            data.registers.map((reg: { name: string; unit: string; preferred_chart_type?: string }) => ({
-              id: `${selectedDeviceId}:${reg.name}`,
-              name: reg.name,
-              unit: reg.unit || "",
-              deviceId: selectedDeviceId,
-              deviceName: device?.name || data.deviceName || "Unknown",
-              siteId: selectedSiteId,
-              siteName: selectedSiteName,
-              preferred_chart_type: reg.preferred_chart_type,
-            }))
-          );
+          const mappedRegs = data.registers.map((reg: { name: string; unit: string; preferred_chart_type?: string }) => ({
+            id: `${selectedDeviceId}:${reg.name}`,
+            name: reg.name,
+            unit: reg.unit || "",
+            deviceId: selectedDeviceId,
+            deviceName: device?.name || data.deviceName || "Unknown",
+            siteId: selectedSiteId,
+            siteName: selectedSiteName,
+            preferred_chart_type: reg.preferred_chart_type,
+          }));
+          registersCache.current.set(cacheKey, mappedRegs);
+          setAvailableRegisters(mappedRegs);
         } else {
           // Fall back to dummy registers if API fails
           const regs = DUMMY_REGISTERS[selectedDeviceId] || [];
           const device = filteredDevices.find((d) => d.id === selectedDeviceId);
-          setAvailableRegisters(
-            regs.map((reg) => ({
-              id: reg.id,
-              name: reg.name,
-              unit: reg.unit,
-              deviceId: selectedDeviceId,
-              deviceName: device?.name || "Unknown",
-              siteId: selectedSiteId,
-              siteName: selectedSiteName,
-              preferred_chart_type: reg.preferred_chart_type,
-            }))
-          );
+          const mappedRegs = regs.map((reg) => ({
+            id: reg.id,
+            name: reg.name,
+            unit: reg.unit,
+            deviceId: selectedDeviceId,
+            deviceName: device?.name || "Unknown",
+            siteId: selectedSiteId,
+            siteName: selectedSiteName,
+            preferred_chart_type: reg.preferred_chart_type,
+          }));
+          setAvailableRegisters(mappedRegs);
         }
       } catch (error) {
         console.error("Failed to fetch registers:", error);
-        // Fall back to dummy registers
+        // Fall back to dummy registers (don't cache errors)
         const regs = DUMMY_REGISTERS[selectedDeviceId] || [];
         const device = filteredDevices.find((d) => d.id === selectedDeviceId);
         setAvailableRegisters(
@@ -731,6 +741,7 @@ export function HistoricalDataClientV2({
             dataSource={dataSource}
             currentSiteId={selectedSiteId}
             localLockedSiteId={localLockedSiteId}
+            isLoadingRegisters={isLoadingRegisters}
           />
         </CardContent>
       </Card>

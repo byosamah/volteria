@@ -33,6 +33,7 @@ interface ParameterSelectorProps {
   dataSource: DataSource;
   currentSiteId: string;
   localLockedSiteId: string | null;
+  isLoadingRegisters: boolean;
 }
 
 export function ParameterSelector({
@@ -49,6 +50,7 @@ export function ParameterSelector({
   dataSource,
   currentSiteId,
   localLockedSiteId,
+  isLoadingRegisters,
 }: ParameterSelectorProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draggedRegister, setDraggedRegister] = useState<AvailableRegister | null>(null);
@@ -266,6 +268,7 @@ export function ParameterSelector({
               dataSource={dataSource}
               currentSiteId={currentSiteId}
               localLockedSiteId={localLockedSiteId}
+              isLoading={isLoadingRegisters}
             />
           )}
         </div>

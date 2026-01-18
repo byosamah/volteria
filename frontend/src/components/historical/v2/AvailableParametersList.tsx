@@ -14,6 +14,7 @@ import {
   SelectLabel,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 import type { AvailableRegister, Device, DataSource } from "./types";
 
 interface AvailableParametersListProps {
@@ -26,6 +27,7 @@ interface AvailableParametersListProps {
   dataSource: DataSource;
   currentSiteId: string;
   localLockedSiteId: string | null;
+  isLoading: boolean;
 }
 
 export function AvailableParametersList({
@@ -38,6 +40,7 @@ export function AvailableParametersList({
   dataSource,
   currentSiteId,
   localLockedSiteId,
+  isLoading,
 }: AvailableParametersListProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -158,6 +161,11 @@ export function AvailableParametersList({
         {!selectedDeviceId ? (
           <div className="h-full flex items-center justify-center text-muted-foreground text-sm text-center p-4">
             Select a device to view<br />available parameters
+          </div>
+        ) : isLoading ? (
+          <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            Loading registers...
           </div>
         ) : filteredRegisters.length === 0 ? (
           <div className="h-full flex items-center justify-center text-muted-foreground text-sm text-center p-4">
