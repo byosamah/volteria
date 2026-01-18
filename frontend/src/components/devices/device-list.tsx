@@ -373,20 +373,60 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     // Connection alarm settings
     setEditConnectionAlarmEnabled(device.connection_alarm_enabled ?? true);
     setEditConnectionTimeoutMultiplier(device.connection_timeout_multiplier ?? 3.0);
-    // Logging Registers tab - load from device
-    setEditRegisters(device.registers || []);
-    // Visualization Registers tab - load from device
-    setEditVisualizationRegisters(device.visualization_registers || []);
-    // Alarm Registers tab - load from device
-    setEditAlarmRegisters(device.alarm_registers || []);
     // Calculated Fields tab - load from device
     setEditCalculatedFields(device.calculated_fields || []);
     // Template selection
     setSelectedTemplateId(device.template_id);
 
-    // Fetch available templates
+    const supabase = createClient();
+
+    // If device has a template, fetch template registers LIVE (not from stale device copy)
+    // This ensures template changes show immediately in the device edit dialog
+    if (device.template_id) {
+      try {
+        const { data: template } = await supabase
+          .from("device_templates")
+          .select("logging_registers, visualization_registers, alarm_registers, registers")
+          .eq("id", device.template_id)
+          .single();
+
+        if (template) {
+          // Get manual registers from device (these are device-specific)
+          const manualLogging = (device.registers || []).filter(r => r.source === "manual");
+          const manualViz = (device.visualization_registers || []).filter(r => r.source === "manual");
+          const manualAlarm = (device.alarm_registers || []).filter(r => r.source === "manual");
+
+          // Get FRESH template registers (add source: "template")
+          const templateLogging = (template.logging_registers || template.registers || []).map((r: ModbusRegister) => ({ ...r, source: "template" as const }));
+          const templateViz = (template.visualization_registers || []).map((r: ModbusRegister) => ({ ...r, source: "template" as const }));
+          const templateAlarm = (template.alarm_registers || []).map((r: ModbusRegister) => ({ ...r, source: "template" as const }));
+
+          // Merge: template registers + manual registers (sorted by address)
+          setEditRegisters([...templateLogging, ...manualLogging].sort((a, b) => a.address - b.address));
+          setEditVisualizationRegisters([...templateViz, ...manualViz].sort((a, b) => a.address - b.address));
+          setEditAlarmRegisters([...templateAlarm, ...manualAlarm].sort((a, b) => a.address - b.address));
+        } else {
+          // Template not found - use device registers as-is
+          setEditRegisters(device.registers || []);
+          setEditVisualizationRegisters(device.visualization_registers || []);
+          setEditAlarmRegisters(device.alarm_registers || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch template:", err);
+        // Fallback to device registers
+        setEditRegisters(device.registers || []);
+        setEditVisualizationRegisters(device.visualization_registers || []);
+        setEditAlarmRegisters(device.alarm_registers || []);
+      }
+    } else {
+      // No template - use device registers as-is
+      setEditRegisters(device.registers || []);
+      setEditVisualizationRegisters(device.visualization_registers || []);
+      setEditAlarmRegisters(device.alarm_registers || []);
+    }
+
+    // Fetch available templates for dropdown
     try {
-      const supabase = createClient();
       const { data: templates } = await supabase
         .from("device_templates")
         .select("id, name, device_type")
