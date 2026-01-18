@@ -425,7 +425,7 @@ class ControlService:
         Config service sets config_changed flag when new config is synced.
         This loop detects changes and reloads control configuration.
         """
-        watch_interval = 5.0  # Check every 5 seconds
+        watch_interval = 15.0  # Check every 15 seconds (config changes are rare)
 
         while self._running:
             try:
