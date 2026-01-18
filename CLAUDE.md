@@ -473,6 +473,73 @@ CLOUD SYNC (every 180s, downsampled per-register)
 ### Device Types
 - **Temperature Sensor**: Added `sensor` device type for environmental monitoring
 
+### Device Template Linkage (NEW - 2026-01-18)
+Template registers are now **live references**, not copies. Changes to templates show immediately in linked devices.
+
+**Architecture**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│  TEMPLATE (device_templates table)                          │
+│  - logging_registers, visualization_registers, alarm_registers │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ LIVE REFERENCE (fetched on edit)
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  DEVICE (site_devices table)                                │
+│  - template_id → links to template                          │
+│  - registers: [template source:"template"] + [manual source:"manual"] │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ SYNC (pushes merged config)
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  CONTROLLER (local config.yaml)                             │
+│  - Receives merged template + manual registers              │
+│  - source field preserved for debugging                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Behaviors**:
+| Action | Result |
+|--------|--------|
+| Edit template | Device edit dialog shows updated registers immediately (live fetch) |
+| Save template | Confirmation dialog if template has connected devices |
+| Add manual register to device | Saved with `source: "manual"`, editable |
+| Template registers in device | Read-only, `source: "template"` badge |
+| Sync to controller | Sends merged list (template + manual registers) |
+
+**Source Field Values**:
+- `"template"` - Register comes from template, read-only in device
+- `"manual"` - Register added directly to device, editable
+
+**Files Changed**:
+- `frontend/src/components/devices/device-list.tsx` - Fetches template registers live on edit
+- `frontend/src/components/devices/template-form-dialog.tsx` - Confirmation dialog + warning banner
+- `backend/app/routers/controllers.py` - Config includes all device types + device registers
+- `backend/app/routers/sites.py` - Config endpoint updated for all device types
+
+### Controller Config - All Device Types (NEW - 2026-01-18)
+Controller config now includes **all device types**, not just load_meters/inverters/generators.
+
+**Device Categories in Config**:
+```json
+{
+  "devices": {
+    "load_meters": [],      // meter, load_meter, load, subload, energy_meter
+    "inverters": [],        // inverter, solar_meter
+    "generators": [],       // dg, diesel_generator, gas_generator
+    "sensors": [],          // sensor, temperature_humidity_sensor, solar_sensor, etc.
+    "other": []             // wind_turbine, bess, capacitor_bank, etc.
+  }
+}
+```
+
+**Register Types in Config**:
+- `registers` - Logging registers (for control logic + data logging)
+- `visualization_registers` - Live display registers
+- `alarm_registers` - Threshold-based alarm registers
+
+**Important**: Config uses **device registers** (merged template + manual), not raw template registers.
+
 ## Never Do
 
 - NEVER over-engineer

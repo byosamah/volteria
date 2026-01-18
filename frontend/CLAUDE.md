@@ -772,3 +772,16 @@ npx shadcn@latest add dialog
 5. **Image Optimization**: Uses `next/image` for optimized images.
 
 6. **SUPABASE_SERVICE_KEY**: Required in frontend container for admin API routes.
+
+7. **BACKEND_URL**: Required in frontend container for API routes that call backend (e.g., sync-templates). Set to `http://backend:8000` in docker-compose.
+
+8. **Device Template Linkage**: When editing a device with a template:
+   - Template registers are fetched **live** from the template (not stale copies)
+   - Manual registers come from the device's stored data
+   - Template registers display as read-only with "Template" badge
+   - Manual registers are editable with "Manual" badge
+
+9. **Template Edit Warning**: When editing a template with connected devices:
+   - Yellow warning banner shows connected device/site count
+   - Confirmation dialog appears on save
+   - Uses `/api/devices/templates/{id}/usage` endpoint

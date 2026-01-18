@@ -403,6 +403,17 @@ The API prevents duplicate Slave ID + connection combinations:
 
 5. **Project Access**: Use `require_project_access()` to check user has access to specific project
 
+6. **Controller Config Device Types**: Config endpoint (`/controllers/{id}/config`) categorizes devices into:
+   - `load_meters`: meter, load_meter, load, subload, energy_meter
+   - `inverters`: inverter, solar_meter
+   - `generators`: dg, diesel_generator, gas_generator
+   - `sensors`: sensor, temperature_humidity_sensor, solar_sensor, wind_sensor, fuel_level_sensor
+   - `other`: wind_turbine, bess, capacitor_bank, etc.
+
+7. **Device Registers in Config**: Config uses **device registers** (merged template + manual), not raw template registers. Includes `registers`, `visualization_registers`, and `alarm_registers`.
+
+8. **Template Usage Endpoint**: `GET /devices/templates/{id}/usage` returns count of connected devices/sites for warning display.
+
 ## New Features (Backend)
 
 ### Notification Triggers
