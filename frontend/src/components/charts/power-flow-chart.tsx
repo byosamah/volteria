@@ -599,7 +599,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const getChartInfo = () => {
     switch (chartType) {
       case "connection":
-        return { title: "Cloud Connection", description: "Hardware connection to server history (heartbeat gaps)" };
+        return { title: "Cloud Connection", description: "Hardware connection to cloud history (heartbeat gaps)" };
       case "system":
         return { title: "System Health", description: "CPU, Memory, Disk usage and temperature" };
       case "control":
