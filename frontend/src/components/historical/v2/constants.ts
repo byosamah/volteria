@@ -8,7 +8,7 @@ export const MAX_PARAMETERS = 10;
 // Maximum date range per aggregation level (in days)
 // Enforced by server-side RPC function (get_historical_readings)
 export const MAX_DATE_RANGE = {
-  raw: 7,      // 7 days max for raw data (~10,000-20,000 points/device)
+  raw: 30,     // 30 days max for raw cloud data
   hourly: 90,  // 90 days max for hourly (~2,160 points/device)
   daily: 730,  // 2 years max for daily (~730 points/device)
 } as const;
