@@ -933,11 +933,13 @@ async def sync_site_templates(
         for device in devices_result.data:
             try:
                 # Get template data
+                print(f"[SYNC] Syncing device {device['id']} with template_id {device['template_id']}")
                 template_result = db.table("device_templates").select(
                     "logging_registers, visualization_registers, alarm_registers, calculated_fields, registers"
                 ).eq("id", device["template_id"]).single().execute()
 
                 if template_result.data:
+                    print(f"[SYNC] Found template with {len(template_result.data.get('logging_registers') or template_result.data.get('registers') or [])} logging registers")
                     template = template_result.data
 
                     # Get manual registers to preserve
@@ -970,9 +972,13 @@ async def sync_site_templates(
                         update_data["calculated_fields"] = template.get("calculated_fields") or []
 
                     db.table("site_devices").update(update_data).eq("id", device["id"]).execute()
+                    print(f"[SYNC] Successfully updated device {device['id']} with {len(merged_logging)} logging, {len(merged_viz)} viz, {len(merged_alarm)} alarm registers")
 
                     synced_count += 1
+                else:
+                    print(f"[SYNC] Template not found for device {device['id']}")
             except Exception as device_error:
+                print(f"[SYNC] Error syncing device {device['id']}: {device_error}")
                 errors.append({
                     "device_id": device["id"],
                     "error": str(device_error)

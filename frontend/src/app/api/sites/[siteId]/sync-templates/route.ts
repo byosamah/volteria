@@ -47,6 +47,12 @@ export async function POST(
 
     // Step 1: Call backend to sync device registers from templates
     // This updates site_devices.registers with fresh template data
+    let backendSyncResult: {
+      synced_devices: number;
+      total_devices: number;
+      errors?: Array<{ device_id: string; error: string }>;
+    } | null = null;
+
     try {
       const backendResponse = await fetch(
         `${BACKEND_URL}/api/sites/${siteId}/sync-templates`,
@@ -62,14 +68,27 @@ export async function POST(
       if (!backendResponse.ok) {
         const errorText = await backendResponse.text();
         console.error("Backend sync-templates failed:", errorText);
-        // Continue anyway - the controller sync might still work
-      } else {
-        const syncResult = await backendResponse.json();
-        console.log("Backend sync-templates result:", syncResult);
+        return NextResponse.json({
+          success: false,
+          error: `Backend sync failed: ${errorText}`,
+          synced_devices: 0,
+        }, { status: backendResponse.status });
+      }
+
+      backendSyncResult = await backendResponse.json();
+      console.log("Backend sync-templates result:", backendSyncResult);
+
+      // Check if any devices failed to sync
+      if (backendSyncResult?.errors && backendSyncResult.errors.length > 0) {
+        console.error("Some devices failed to sync:", backendSyncResult.errors);
       }
     } catch (backendError) {
       console.error("Failed to call backend sync-templates:", backendError);
-      // Continue anyway - we'll still try to sync with controller
+      return NextResponse.json({
+        success: false,
+        error: `Failed to reach backend: ${backendError}`,
+        synced_devices: 0,
+      }, { status: 500 });
     }
 
     // Step 2: Get site and its master device (controller)
@@ -182,11 +201,13 @@ export async function POST(
           .update({ config_synced_at: new Date().toISOString() })
           .eq("id", siteId);
 
+        const syncedCount = backendSyncResult?.synced_devices ?? deviceCount;
         return NextResponse.json({
           success: true,
-          synced_devices: deviceCount,
-          message: `Successfully synced ${deviceCount} device(s) to controller`,
+          synced_devices: syncedCount,
+          message: `Successfully synced ${syncedCount} device(s) to controller`,
           executed_at: updatedCommand?.executed_at,
+          backend_sync: backendSyncResult,
         });
       }
 
@@ -217,11 +238,13 @@ export async function POST(
         .update({ config_synced_at: new Date().toISOString() })
         .eq("id", siteId);
 
+      const syncedCount = backendSyncResult?.synced_devices ?? deviceCount;
       return NextResponse.json({
         success: true,
-        synced_devices: deviceCount,
-        message: `Successfully synced ${deviceCount} device(s) to controller`,
+        synced_devices: syncedCount,
+        message: `Successfully synced ${syncedCount} device(s) to controller`,
         executed_at: finalCheck?.executed_at,
+        backend_sync: backendSyncResult,
       });
     }
 

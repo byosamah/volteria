@@ -1237,19 +1237,23 @@ async def get_template_usage(
     """
     try:
         # Find template by template_id string
+        print(f"[USAGE] Looking up template by template_id: {template_id}")
         template_result = db.table("device_templates").select("id").eq("template_id", template_id).execute()
         if not template_result.data:
+            print(f"[USAGE] Template '{template_id}' not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Template '{template_id}' not found"
             )
 
         template_uuid = template_result.data[0]["id"]
+        print(f"[USAGE] Found template UUID: {template_uuid}")
 
         # Get all devices using this template
         devices_result = db.table("site_devices").select(
             "id, site_id"
         ).eq("template_id", template_uuid).eq("enabled", True).execute()
+        print(f"[USAGE] Found {len(devices_result.data) if devices_result.data else 0} devices using this template")
 
         device_count = len(devices_result.data) if devices_result.data else 0
 
