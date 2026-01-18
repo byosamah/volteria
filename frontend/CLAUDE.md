@@ -681,13 +681,16 @@ Custom dashboards with drag-drop widget placement:
 Multi-site historical data viewer with server-side aggregation:
 
 **Features**:
-- **Multi-Site Comparison**: Add parameters from multiple projects/sites on same chart
+- **Multi-Site Comparison**: Add parameters from multiple projects/sites on same chart (cloud only)
 - **Server-Side Aggregation**: RPC function aggregates data in database (bypasses max_rows)
-- **Aggregation Levels**: Raw (7d max), Hourly (90d max), Daily (2yr max)
+- **Aggregation Levels**: Raw (30d cloud / 1h local), Hourly (90d), Daily (2yr)
 - **Auto-Selection**: System auto-selects aggregation based on date range
 - **DOM Overlay**: Performance-optimized hover/zoom (no re-renders)
 - **Dual Y-Axis**: Left/right axis support with different units
 - **CSV Export**: Export with UTC + local timezone columns
+- **No Browser Caching**: Refresh/Plot always fetch fresh data
+- **Register Caching**: In-memory cache for fast device switching
+- **Local Source**: Single-site only, 1h max for raw, 30d for aggregated
 
 **Components** (`frontend/src/components/historical/v2/`):
 | Component | Purpose |
@@ -697,6 +700,7 @@ Multi-site historical data viewer with server-side aggregation:
 | `ChartOverlay.tsx` | DOM overlay for hover/drag interactions |
 | `OverlayTooltip.tsx` | Positioned tooltip with site/device hierarchy |
 | `ParameterSelector.tsx` | Device + register selection |
+| `AvailableParametersList.tsx` | Register list with loading state + local site blocking |
 | `ParameterCard.tsx` | Parameter card with site/device info |
 | `AggregationSelector.tsx` | Raw/Hourly/Daily + Avg/Min/Max selector |
 | `DateRangeSelector.tsx` | Calendar picker with presets |

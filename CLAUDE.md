@@ -327,6 +327,9 @@ Large dataset support with database-level aggregation:
 - **Adaptive Y-Axis**: Domain calculated from actual data values with 10% padding (no longer starts at 0)
 - **Date Presets**: 1h, 24h, 3d, 7d buttons (1h optimal for local raw data)
 - **Raw Disabled Logic**: Raw aggregation disabled for local source when date range > 1 hour
+- **No Browser Caching**: Refresh/Plot buttons always fetch fresh data (`cache: 'no-store'` + `Cache-Control` headers)
+- **Device Register Caching**: In-memory cache for fast device switching (no re-fetch when switching back)
+- **Loading Spinner**: Shows "Loading registers..." while fetching device parameters
 
 ### Historical Data Chart V2 - Multi-Site Support
 Compare parameters from multiple projects/sites on the same chart:
