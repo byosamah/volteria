@@ -57,7 +57,11 @@ export interface AxisParameter {
   unit: string;
   color: string;
   chartType: "line" | "area" | "bar";
+  status?: RegisterStatus;
 }
+
+// Register status: active (in current config) or inactive (has data but not in config)
+export type RegisterStatus = "active" | "inactive";
 
 // Available register that can be added to chart
 export interface AvailableRegister {
@@ -69,6 +73,7 @@ export interface AvailableRegister {
   siteId: string;
   siteName: string;
   preferred_chart_type?: string;
+  status?: RegisterStatus;
 }
 
 // Reference line configuration

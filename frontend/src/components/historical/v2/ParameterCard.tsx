@@ -5,6 +5,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -75,6 +76,8 @@ export function ParameterCard({
     transition,
   };
 
+  const isInactive = parameter.status === "inactive";
+
   return (
     <div
       ref={setNodeRef}
@@ -82,8 +85,9 @@ export function ParameterCard({
       {...attributes}
       {...listeners}
       className={`
-        flex items-center gap-2 p-2 rounded-md border bg-muted/40 cursor-grab active:cursor-grabbing
+        flex items-center gap-2 p-2 rounded-md border cursor-grab active:cursor-grabbing
         ${isDragging ? "opacity-50 shadow-lg" : "hover:bg-muted/60"}
+        ${isInactive ? "border-amber-200 bg-amber-50/30" : "bg-muted/40"}
       `}
     >
       {/* Drag handle indicator */}
@@ -136,7 +140,16 @@ export function ParameterCard({
 
       {/* Parameter info */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{parameter.registerName}</p>
+        <div className="flex items-center gap-1.5">
+          <p className={`text-sm font-medium truncate ${isInactive ? "text-amber-700" : ""}`}>
+            {parameter.registerName}
+          </p>
+          {isInactive && (
+            <Badge variant="outline" className="h-4 px-1 text-[10px] border-amber-300 text-amber-600 bg-amber-50">
+              Non-Active
+            </Badge>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground truncate">
           {parameter.siteName} › {parameter.deviceName} {parameter.unit && `• ${parameter.unit}`}
         </p>

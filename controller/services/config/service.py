@@ -9,6 +9,8 @@ Responsible for:
 """
 
 import asyncio
+import hashlib
+import json
 import os
 import signal
 from datetime import datetime, timezone
@@ -155,6 +157,50 @@ class ConfigService:
             logger.warning(f"Failed to fetch site_id from cloud: {e}")
 
         return None
+
+    def _config_content_changed(self, new_config: dict) -> bool:
+        """
+        Check if config content has actually changed.
+
+        Compares a hash of meaningful config fields (devices, settings)
+        rather than just sites.updated_at. This detects device register
+        changes even when sites.updated_at doesn't change.
+
+        Args:
+            new_config: New config from cloud
+
+        Returns:
+            True if content has changed
+        """
+        if not self._current_config:
+            return True
+
+        def compute_hash(config: dict) -> str:
+            """Compute hash of meaningful config content"""
+            # Include fields that affect controller behavior
+            content = {
+                "devices": config.get("devices", []),
+                "calculated_fields": config.get("calculated_fields", []),
+                "site_level_alarms": config.get("site_level_alarms", []),
+                "alarm_overrides": config.get("alarm_overrides", {}),
+                "logging": config.get("logging", {}),
+                "safe_mode": config.get("safe_mode", {}),
+                "dg_reserve_kw": config.get("dg_reserve_kw"),
+                "operation_mode": config.get("operation_mode"),
+                "control_interval_ms": config.get("control_interval_ms"),
+            }
+            # Use json with sort_keys for consistent ordering
+            content_str = json.dumps(content, sort_keys=True, default=str)
+            return hashlib.md5(content_str.encode()).hexdigest()
+
+        current_hash = compute_hash(self._current_config)
+        new_hash = compute_hash(new_config)
+
+        if current_hash != new_hash:
+            logger.debug(f"Config content changed (hash: {current_hash[:8]} → {new_hash[:8]})")
+            return True
+
+        return False
 
     async def start(self) -> None:
         """Start the config service"""
@@ -313,48 +359,37 @@ class ConfigService:
                 logger.error(f"New config validation failed: {errors}")
                 return False
 
-            # Check if config changed
-            current_version = self._current_config.get("updated_at") if self._current_config else None
+            # Check if config content actually changed
+            config_changed = self._config_content_changed(new_config)
             new_version = new_config.get("updated_at")
+            old_version = self._current_config.get("updated_at") if self._current_config else None
 
-            if current_version == new_version:
-                logger.debug("Config unchanged")
-                return False
-
-            # Save to cache
+            # Always save to ensure local cache is fresh
+            # Services detect changes themselves by comparing config hash
             self.cache.save(new_config)
 
             # Update current config
             self._current_config = new_config
 
-            # Notify other services
-            await self._notify_config_change()
-
             # Update config_synced_at in cloud so frontend knows we synced
             await self._update_config_synced_at(new_version)
 
-            logger.info(
-                f"Config updated: {current_version} → {new_version}",
-                extra={
-                    "old_version": current_version,
-                    "new_version": new_version,
-                },
-            )
+            if config_changed:
+                logger.info(
+                    f"Config updated: {old_version} → {new_version}",
+                    extra={
+                        "old_version": old_version,
+                        "new_version": new_version,
+                    },
+                )
+            else:
+                logger.debug("Config synced (no content changes)")
 
-            return True
+            return config_changed
 
         except Exception as e:
             logger.error(f"Error syncing config: {e}")
             return False
-
-    async def _notify_config_change(self) -> None:
-        """Notify other services of config change"""
-        from common.state import notify_config_changed
-
-        version = self._current_config.get("updated_at") if self._current_config else ""
-        notify_config_changed(version)
-
-        logger.info(f"Config change notification sent (version: {version})")
 
     async def _update_config_synced_at(self, config_version: str) -> None:
         """Update site.config_synced_at in cloud so frontend knows we synced"""
@@ -509,7 +544,7 @@ class ConfigService:
         """Rollback to a previous config version"""
         if self.cache.rollback(version):
             self._current_config = self.cache.load()
-            await self._notify_config_change()
+            # Services detect config changes via hash comparison
             return True
         return False
 

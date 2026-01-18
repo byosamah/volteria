@@ -54,6 +54,10 @@ class RegisterReader:
         """Initialize polling for devices"""
         self._running = True
 
+        # Clear old poll states to ensure renamed registers get new keys
+        # This is critical when config reloads with renamed registers
+        self._poll_states.clear()
+
         # Initialize poll states for all registers
         for device in devices:
             for register in device.registers:

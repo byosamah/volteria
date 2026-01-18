@@ -31,7 +31,7 @@ from collections import deque, defaultdict
 import yaml
 from aiohttp import web
 
-from common.state import SharedState, set_service_health, get_config, get_control_state, is_config_changed, acknowledge_config_change
+from common.state import SharedState, set_service_health, get_config, get_control_state
 from common.config import AlarmDefinition, AlarmCondition
 from common.logging_setup import get_service_logger
 
@@ -654,15 +654,42 @@ class LoggingService:
         """
         Watch for config changes and reload when detected.
 
-        Config service sets config_changed flag when new config is synced.
-        This loop detects changes and reloads logging configuration.
+        Directly compares config content hash instead of relying on
+        notification flags. Simpler and more reliable.
         """
-        watch_interval = 15.0  # Check every 15 seconds (config changes are rare)
+        import hashlib
+        import json as json_module
+
+        watch_interval = 15.0  # Check every 15 seconds
+
+        def compute_config_hash(config: dict) -> str:
+            """Compute hash of logging-relevant config content"""
+            content = {
+                "devices": config.get("devices", []),
+                "logging": config.get("logging", {}),
+                "calculated_fields": config.get("calculated_fields", []),
+            }
+            content_str = json_module.dumps(content, sort_keys=True, default=str)
+            return hashlib.md5(content_str.encode()).hexdigest()
+
+        # Store current config hash
+        current_hash = ""
+        initial_config = get_config()
+        if initial_config:
+            current_hash = compute_config_hash(initial_config)
 
         while self._running:
             try:
-                if is_config_changed():
-                    logger.info("Config change detected, reloading logging settings...")
+                # Read fresh config from SharedState
+                config = SharedState.read_fresh("config")
+                if not config:
+                    await asyncio.sleep(watch_interval)
+                    continue
+
+                new_hash = compute_config_hash(config)
+
+                if new_hash != current_hash:
+                    logger.info(f"Config change detected (hash: {current_hash[:8]} → {new_hash[:8]}), reloading...")
 
                     # Reload configuration
                     await self._load_config()
@@ -670,12 +697,12 @@ class LoggingService:
                     # Reload alarm definitions
                     self.alarm_evaluator.update_definitions(self._alarm_definitions)
 
-                    # Acknowledge the change
-                    acknowledge_config_change("logging")
+                    current_hash = new_hash
 
                     logger.info(
                         f"Config reloaded: retention={self._retention_days}d, "
-                        f"{len(self._alarm_definitions)} alarm definitions",
+                        f"{len(self._alarm_definitions)} alarm definitions, "
+                        f"{sum(len(regs) for regs in self._logging_registers.values())} registers",
                     )
 
             except Exception as e:

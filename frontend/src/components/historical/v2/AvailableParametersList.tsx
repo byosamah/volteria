@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { GripVertical, Search, Cpu, HardDrive } from "lucide-react";
+import { GripVertical, Search, Cpu, HardDrive, Clock, CheckCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -14,8 +14,9 @@ import {
   SelectLabel,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
-import type { AvailableRegister, Device, DataSource } from "./types";
+import type { AvailableRegister, Device, DataSource, ActiveFilter } from "./types";
 
 interface AvailableParametersListProps {
   devices: Device[];
@@ -28,6 +29,7 @@ interface AvailableParametersListProps {
   currentSiteId: string;
   localLockedSiteId: string | null;
   isLoading: boolean;
+  activeFilter: ActiveFilter;
 }
 
 export function AvailableParametersList({
@@ -41,6 +43,7 @@ export function AvailableParametersList({
   currentSiteId,
   localLockedSiteId,
   isLoading,
+  activeFilter,
 }: AvailableParametersListProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -60,16 +63,43 @@ export function AvailableParametersList({
   // Controller is always available as a special option (hardcoded)
   const CONTROLLER_ID = "site-controller";
 
-  // Filter registers by search query
+  // Filter registers by search query and active filter
   const filteredRegisters = useMemo(() => {
-    if (!searchQuery.trim()) return registers;
-    const query = searchQuery.toLowerCase();
-    return registers.filter(
-      (reg) =>
-        reg.name.toLowerCase().includes(query) ||
-        reg.unit.toLowerCase().includes(query)
-    );
-  }, [registers, searchQuery]);
+    let filtered = registers;
+
+    // Filter by active status (hide inactive when "active" filter is selected)
+    if (activeFilter === "active") {
+      filtered = filtered.filter((reg) => reg.status !== "inactive");
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (reg) =>
+          reg.name.toLowerCase().includes(query) ||
+          reg.unit.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [registers, searchQuery, activeFilter]);
+
+  // Group registers by status (active first, then inactive/non-active)
+  const { activeRegisters, inactiveRegisters } = useMemo(() => {
+    const active: AvailableRegister[] = [];
+    const inactive: AvailableRegister[] = [];
+
+    for (const reg of filteredRegisters) {
+      if (reg.status === "inactive") {
+        inactive.push(reg);
+      } else {
+        active.push(reg);
+      }
+    }
+
+    return { activeRegisters: active, inactiveRegisters: inactive };
+  }, [filteredRegisters]);
 
   // Check if controller is selected
   const isControllerSelected = selectedDeviceId === CONTROLLER_ID;
@@ -157,7 +187,7 @@ export function AvailableParametersList({
       )}
 
       {/* Register list */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1">
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         {!selectedDeviceId ? (
           <div className="h-full flex items-center justify-center text-muted-foreground text-sm text-center p-4">
             Select a device to view<br />available parameters
@@ -172,14 +202,47 @@ export function AvailableParametersList({
             {searchQuery ? "No matching registers" : "No registers available"}
           </div>
         ) : (
-          filteredRegisters.map((register) => (
-            <DraggableRegisterItem
-              key={register.id}
-              register={register}
-              onAddToAxis={onAddToAxis}
-              canAddMore={canAddMore && !isLocalSiteBlocked}
-            />
-          ))
+          <div className="space-y-3">
+            {/* Active registers section */}
+            {activeRegisters.length > 0 && (
+              <div>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5 px-1">
+                  <CheckCircle className="h-3 w-3 text-green-500" />
+                  <span>Active ({activeRegisters.length})</span>
+                </div>
+                <div className="space-y-1">
+                  {activeRegisters.map((register) => (
+                    <DraggableRegisterItem
+                      key={register.id}
+                      register={register}
+                      onAddToAxis={onAddToAxis}
+                      canAddMore={canAddMore && !isLocalSiteBlocked}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Non-active registers section */}
+            {inactiveRegisters.length > 0 && (
+              <div>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5 px-1">
+                  <Clock className="h-3 w-3 text-amber-500" />
+                  <span>Non-Active ({inactiveRegisters.length})</span>
+                </div>
+                <div className="space-y-1">
+                  {inactiveRegisters.map((register) => (
+                    <DraggableRegisterItem
+                      key={register.id}
+                      register={register}
+                      onAddToAxis={onAddToAxis}
+                      canAddMore={canAddMore && !isLocalSiteBlocked}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -203,6 +266,8 @@ function DraggableRegisterItem({
     disabled: !canAddMore,
   });
 
+  const isInactive = register.status === "inactive";
+
   return (
     <div
       ref={setNodeRef}
@@ -212,6 +277,7 @@ function DraggableRegisterItem({
         flex items-center gap-2 p-2 rounded-md border bg-muted/30
         ${isDragging ? "opacity-50 shadow-lg" : "hover:bg-muted/50"}
         ${!canAddMore ? "opacity-50 cursor-not-allowed" : "cursor-grab active:cursor-grabbing"}
+        ${isInactive ? "border-amber-200 bg-amber-50/30" : ""}
         transition-colors
       `}
     >
@@ -220,7 +286,16 @@ function DraggableRegisterItem({
 
       {/* Parameter info */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{register.name}</p>
+        <div className="flex items-center gap-1.5">
+          <p className={`text-sm font-medium truncate ${isInactive ? "text-amber-700" : ""}`}>
+            {register.name}
+          </p>
+          {isInactive && (
+            <Badge variant="outline" className="h-4 px-1 text-[10px] border-amber-300 text-amber-600 bg-amber-50">
+              Non-Active
+            </Badge>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground truncate">
           {register.siteName} › {register.deviceName} {register.unit && `• ${register.unit}`}
         </p>

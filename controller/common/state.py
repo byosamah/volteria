@@ -46,7 +46,12 @@ class SharedState:
     @classmethod
     def write(cls, key: str, data: dict) -> None:
         """
-        Write state with file locking (Unix) or atomic rename (Windows).
+        Write state using atomic rename pattern for all platforms.
+
+        This ensures readers never see partial writes:
+        1. Write to temporary file
+        2. Sync to disk
+        3. Atomic rename to target
 
         Args:
             key: State key (becomes filename without .json)
@@ -54,6 +59,7 @@ class SharedState:
         """
         cls._ensure_dir()
         path = cls._get_path(key)
+        temp_path = path.with_suffix(".tmp")
 
         # Add metadata
         data_with_meta = {
@@ -61,23 +67,16 @@ class SharedState:
             "_updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        if os.name == "nt":
-            # Windows: write to temp file, then rename (atomic on same filesystem)
-            temp_path = path.with_suffix(".tmp")
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(data_with_meta, f, indent=2)
-            temp_path.replace(path)
-        else:
-            # Unix: use file locking
-            import fcntl
-            with open(path, "w", encoding="utf-8") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                try:
-                    json.dump(data_with_meta, f, indent=2)
-                    f.flush()  # Ensure data is written
-                    os.fsync(f.fileno())  # Force write to disk
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        # Write to temp file first
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data_with_meta, f, indent=2)
+            f.flush()
+            # Ensure data hits disk before rename
+            if os.name != "nt":
+                os.fsync(f.fileno())
+
+        # Atomic rename - readers see either old or new file, never partial
+        temp_path.replace(path)
 
         # Update cache
         with cls._lock:

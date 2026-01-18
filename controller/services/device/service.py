@@ -17,7 +17,7 @@ from pathlib import Path
 import yaml
 from aiohttp import web
 
-from common.state import SharedState, set_service_health, get_config, is_config_changed, acknowledge_config_change
+from common.state import SharedState, set_service_health, get_config
 from common.config import DeviceConfig, DeviceType, load_site_config
 from common.logging_setup import get_service_logger
 
@@ -376,15 +376,38 @@ class DeviceService:
         """
         Watch for config changes and reload when detected.
 
-        Config service sets config_changed flag when new config is synced.
-        This loop detects changes and reloads device configuration.
+        Directly compares config content hash instead of relying on
+        notification flags. Simpler and more reliable.
         """
-        watch_interval = 15.0  # Check every 15 seconds (config changes are rare)
+        import hashlib
+        import json
+
+        watch_interval = 15.0  # Check every 15 seconds
+
+        def compute_devices_hash(config: dict) -> str:
+            """Compute hash of devices portion of config"""
+            devices = config.get("devices", [])
+            content = json.dumps(devices, sort_keys=True, default=str)
+            return hashlib.md5(content.encode()).hexdigest()
+
+        # Store current config hash
+        current_hash = ""
+        initial_config = get_config()
+        if initial_config:
+            current_hash = compute_devices_hash(initial_config)
 
         while self._running:
             try:
-                if is_config_changed():
-                    logger.info("Config change detected, reloading devices...")
+                # Read fresh config from SharedState
+                config = SharedState.read_fresh("config")
+                if not config:
+                    await asyncio.sleep(watch_interval)
+                    continue
+
+                new_hash = compute_devices_hash(config)
+
+                if new_hash != current_hash:
+                    logger.info(f"Config change detected (hash: {current_hash[:8]} → {new_hash[:8]}), reloading...")
 
                     # Reload configuration
                     await self._load_config()
@@ -393,8 +416,7 @@ class DeviceService:
                     self.register_reader.stop_polling()
                     await self.register_reader.start_polling(self._devices)
 
-                    # Acknowledge the change
-                    acknowledge_config_change("device")
+                    current_hash = new_hash
 
                     logger.info(
                         f"Config reloaded: {len(self._devices)} devices",

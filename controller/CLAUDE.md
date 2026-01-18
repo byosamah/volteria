@@ -377,6 +377,31 @@ python-dotenv>=1.0.0
    - `dg_inverter` - DG controllers + inverters
    - `full_system` - All device types present
 
+## Config Hot-Reload Improvements (2026-01-18)
+
+### Simplified Config Change Detection
+- **Before**: Complex notification system with flags and acknowledgments
+- **After**: Services directly compare config content hash every 15 seconds
+- **Benefit**: Simpler, more reliable, detects ALL changes including register renames
+
+### Atomic File Writes
+- **Problem**: Reading config while writing could see partial data
+- **Solution**: All platforms now use atomic write pattern (write to .tmp, rename)
+- **Impact**: Readers always see complete file (old or new), never partial
+
+### Register Rename Fix
+- **Problem**: When register renamed, old name kept logging (device service didn't reload)
+- **Root Cause**: Config sync only compared `sites.updated_at`, missed device register changes
+- **Solution**: Services now hash config content (including devices) to detect any change
+
+### Files Changed
+- `common/state.py` - Atomic writes for all platforms
+- `services/config/service.py` - Content hash comparison
+- `services/device/service.py` - Hash-based config reload
+- `services/control/service.py` - Hash-based config reload
+- `services/logging/service.py` - Hash-based config reload
+- `services/device/register_reader.py` - Clear old poll states on reload
+
 ## Performance Optimizations (2026-01-18)
 
 ### Config Watch Interval

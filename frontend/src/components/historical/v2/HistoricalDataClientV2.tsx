@@ -176,7 +176,7 @@ export function HistoricalDataClientV2({
   // Cache for device registers (persists across device switches)
   const registersCache = useRef<Map<string, AvailableRegister[]>>(new Map());
 
-  // Fetch registers when device changes
+  // Fetch registers when device changes (config + historical from DB)
   useEffect(() => {
     const fetchRegisters = async () => {
       if (!selectedDeviceId || !selectedSiteId) {
@@ -204,47 +204,77 @@ export function HistoricalDataClientV2({
           siteId: selectedSiteId,
           siteName: selectedSiteName,
           preferred_chart_type: reg.preferred_chart_type,
+          status: "active" as const,
         }));
         registersCache.current.set(cacheKey, mappedRegs);
         setAvailableRegisters(mappedRegs);
         return;
       }
 
-      // Fetch real registers from API
+      // Fetch real registers from API + historical registers
       setIsLoadingRegisters(true);
       try {
-        const response = await fetch(`/api/devices/${selectedDeviceId}/registers`);
-        if (response.ok) {
-          const data = await response.json();
-          const device = filteredDevices.find((d) => d.id === selectedDeviceId);
-          const mappedRegs = data.registers.map((reg: { name: string; unit: string; preferred_chart_type?: string }) => ({
-            id: `${selectedDeviceId}:${reg.name}`,
-            name: reg.name,
-            unit: reg.unit || "",
-            deviceId: selectedDeviceId,
-            deviceName: device?.name || data.deviceName || "Unknown",
-            siteId: selectedSiteId,
-            siteName: selectedSiteName,
-            preferred_chart_type: reg.preferred_chart_type,
-          }));
-          registersCache.current.set(cacheKey, mappedRegs);
-          setAvailableRegisters(mappedRegs);
-        } else {
-          // Fall back to dummy registers if API fails
-          const regs = DUMMY_REGISTERS[selectedDeviceId] || [];
-          const device = filteredDevices.find((d) => d.id === selectedDeviceId);
-          const mappedRegs = regs.map((reg) => ({
-            id: reg.id,
-            name: reg.name,
-            unit: reg.unit,
-            deviceId: selectedDeviceId,
-            deviceName: device?.name || "Unknown",
-            siteId: selectedSiteId,
-            siteName: selectedSiteName,
-            preferred_chart_type: reg.preferred_chart_type,
-          }));
-          setAvailableRegisters(mappedRegs);
+        const device = filteredDevices.find((d) => d.id === selectedDeviceId);
+        const deviceName = device?.name || "Unknown";
+
+        // Fetch both config registers and historical register names in parallel
+        const [configResponse, historicalResponse] = await Promise.all([
+          fetch(`/api/devices/${selectedDeviceId}/registers`),
+          fetch(`/api/historical/registers?deviceIds=${selectedDeviceId}`),
+        ]);
+
+        // Process config registers (active)
+        const configRegisterNames = new Set<string>();
+        let activeRegs: AvailableRegister[] = [];
+
+        if (configResponse.ok) {
+          const configData = await configResponse.json();
+          activeRegs = configData.registers.map((reg: { name: string; unit: string; preferred_chart_type?: string }) => {
+            configRegisterNames.add(reg.name);
+            return {
+              id: `${selectedDeviceId}:${reg.name}`,
+              name: reg.name,
+              unit: reg.unit || "",
+              deviceId: selectedDeviceId,
+              deviceName: configData.deviceName || deviceName,
+              siteId: selectedSiteId,
+              siteName: selectedSiteName,
+              preferred_chart_type: reg.preferred_chart_type,
+              status: "active" as const,
+            };
+          });
         }
+
+        // Process inactive registers (only those NOT in config but have data in DB)
+        let inactiveRegs: AvailableRegister[] = [];
+
+        if (historicalResponse.ok) {
+          const historicalData = await historicalResponse.json();
+          const deviceHistorical = historicalData.registers?.find(
+            (r: { deviceId: string; registerNames: string[] }) => r.deviceId === selectedDeviceId
+          );
+
+          if (deviceHistorical?.registerNames) {
+            inactiveRegs = deviceHistorical.registerNames
+              .filter((name: string) => !configRegisterNames.has(name))
+              .map((name: string) => ({
+                id: `${selectedDeviceId}:${name}`,
+                name: name,
+                unit: "", // Inactive registers don't have unit info in DB
+                deviceId: selectedDeviceId,
+                deviceName: deviceName,
+                siteId: selectedSiteId,
+                siteName: selectedSiteName,
+                status: "inactive" as const,
+              }));
+          }
+        }
+
+        // Merge: active first, then inactive
+        const mergedRegs = [...activeRegs, ...inactiveRegs];
+        registersCache.current.set(cacheKey, mergedRegs);
+        setAvailableRegisters(mergedRegs);
+
       } catch (error) {
         console.error("Failed to fetch registers:", error);
         // Fall back to dummy registers (don't cache errors)
@@ -260,6 +290,7 @@ export function HistoricalDataClientV2({
             siteId: selectedSiteId,
             siteName: selectedSiteName,
             preferred_chart_type: reg.preferred_chart_type,
+            status: "active" as const,
           }))
         );
       } finally {
@@ -743,6 +774,7 @@ export function HistoricalDataClientV2({
             currentSiteId={selectedSiteId}
             localLockedSiteId={localLockedSiteId}
             isLoadingRegisters={isLoadingRegisters}
+            activeFilter={activeFilter}
           />
         </CardContent>
       </Card>
