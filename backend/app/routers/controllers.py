@@ -1006,10 +1006,13 @@ async def get_controller_config(
         load_meters = []
         inverters = []
         generators = []
+        sensors = []
+        other = []
 
         for device in devices_result.data or []:
             template = device.get("device_templates") or {}
-            device_type = template.get("device_type", "")
+            # Prefer device-level device_type, fallback to template's device_type
+            device_type = device.get("device_type") or template.get("device_type") or "unknown"
 
             device_config = {
                 "id": str(device["id"]),
@@ -1022,17 +1025,23 @@ async def get_controller_config(
                 "slave_id": device.get("slave_id"),
                 "rated_power_kw": template.get("rated_power_kw"),
                 "rated_power_kva": template.get("rated_power_kva"),
-                "device_type": device.get("device_type"),
-                # Use logging_registers if available, fall back to legacy registers
-                "registers": template.get("logging_registers") or template.get("registers", [])
+                # Use DEVICE registers (merged template + manual), not template registers
+                "registers": device.get("registers") or [],
+                "visualization_registers": device.get("visualization_registers") or [],
+                "alarm_registers": device.get("alarm_registers") or []
             }
 
-            if device_type == "load_meter":
+            # Categorize by device type
+            if device_type in ["meter", "load_meter", "load", "subload", "energy_meter"]:
                 load_meters.append(device_config)
-            elif device_type == "inverter":
+            elif device_type in ["inverter", "solar_meter"]:
                 inverters.append(device_config)
-            elif device_type == "dg":
+            elif device_type in ["dg", "diesel_generator", "gas_generator"]:
                 generators.append(device_config)
+            elif device_type in ["sensor", "temperature_humidity_sensor", "solar_sensor", "solar_radiation_sensor", "wind_sensor", "fuel_level_sensor"]:
+                sensors.append(device_config)
+            else:
+                other.append(device_config)
 
         # 6. Build site configuration
         site_config = {
@@ -1066,7 +1075,9 @@ async def get_controller_config(
             "devices": {
                 "load_meters": load_meters,
                 "inverters": inverters,
-                "generators": generators
+                "generators": generators,
+                "sensors": sensors,
+                "other": other
             }
         }
 
