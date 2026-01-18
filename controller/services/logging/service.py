@@ -92,9 +92,6 @@ class LoggingService:
         self._cloud_enabled = True  # Enable cloud sync
         self._alarm_definitions: list[AlarmDefinition] = []
 
-        # Logging register tracking: {device_id: {register_name: {config, last_cloud_synced}}}
-        # Used for tracking per-register cloud sync frequency
-        self._logging_registers: dict[str, dict[str, dict]] = {}
         # Calculated fields to log: {field_id: {config, last_cloud_synced}}
         self._calculated_fields_to_log: dict[str, dict] = {}
 
@@ -266,30 +263,11 @@ class LoggingService:
             for alarm_def in device.get("alarm_definitions", []):
                 self._alarm_definitions.append(self._parse_alarm_definition(alarm_def))
 
-        # Load logging registers from device configs
-        self._logging_registers = {}
+        # Load device-level calculated fields to log
         for device in config.get("devices", []):
             device_id = device.get("id")
             if not device_id:
                 continue
-
-            device_registers = {}
-            for reg in device.get("registers", []):
-                reg_name = reg.get("name")
-                if not reg_name:
-                    continue
-                # logging_frequency in seconds, default 60s, minimum 1s (for cloud sync)
-                logging_freq = max(1, reg.get("logging_frequency") or 60)
-                device_registers[reg_name] = {
-                    "config": reg,
-                    "logging_frequency": logging_freq,
-                    "last_cloud_synced": None,
-                }
-
-            if device_registers:
-                self._logging_registers[device_id] = device_registers
-
-            # Load device-level calculated fields to log
             for calc_field in device.get("calculated_fields", []):
                 if calc_field.get("storage_mode") == "log":
                     field_id = calc_field.get("field_id")
@@ -311,8 +289,13 @@ class LoggingService:
                         "last_cloud_synced": None,
                     }
 
+        # Count registers from config (read fresh, no caching)
+        register_count = sum(
+            len(device.get("registers", []))
+            for device in config.get("devices", [])
+        )
         logger.info(
-            f"Loaded logging config: {sum(len(regs) for regs in self._logging_registers.values())} registers, "
+            f"Loaded logging config: {register_count} registers, "
             f"{len(self._calculated_fields_to_log)} calc fields, "
             f"local={self._local_enabled}, cloud={self._cloud_enabled}"
         )
@@ -404,30 +387,57 @@ class LoggingService:
         """
         Sample current device readings into RAM buffer.
 
-        Gets readings from SharedState and adds to _device_readings_buffer.
+        Reads config FRESH each cycle - no caching of registers/devices.
+        Iterates config registers (not SharedState keys) to ensure
+        register names always match current config.
+
+        Safe: handles config file being written during sync.
         Buffer is flushed to SQLite by _local_flush_loop.
         """
-        # Get device readings from shared state
+        # Read FRESH config - with error handling for sync writes
+        try:
+            config = get_config()
+            if not config or not config.get("devices"):
+                return  # Config not ready or empty
+        except Exception as e:
+            # Config file might be mid-write during sync - skip this cycle
+            logger.debug(f"Skipping sample cycle, config read error: {e}")
+            return
+
         readings_state = SharedState.read("readings")
-        if not readings_state or not readings_state.get("devices"):
+        if not readings_state:
             return
 
         current_timestamp = datetime.now(timezone.utc).isoformat()
 
+        # Build readings from CONFIG (not SharedState keys)
         async with self._readings_buffer_lock:
-            for device_id, device_data in readings_state.get("devices", {}).items():
-                # Get register config for unit lookups
-                device_log_config = self._logging_registers.get(device_id, {})
+            for device in config.get("devices", []):
+                device_id = device.get("id")
+                if not device_id:
+                    continue
 
-                for register_name, reading in device_data.get("readings", {}).items():
-                    reg_config = device_log_config.get(register_name, {})
+                # Get device readings from SharedState
+                device_data = readings_state.get("devices", {}).get(device_id, {})
+                device_readings = device_data.get("readings", {})
+
+                # Iterate CONFIG registers (source of truth for names)
+                for reg in device.get("registers", []):
+                    reg_name = reg.get("name")
+                    if not reg_name:
+                        continue
+
+                    # Look up reading by config-defined name
+                    reading = device_readings.get(reg_name)
+                    if reading is None:
+                        continue  # No reading yet for this register
 
                     self._device_readings_buffer.append({
                         "site_id": self._site_id,
                         "device_id": device_id,
-                        "register_name": register_name,
+                        "register_name": reg_name,  # From CONFIG (always current)
                         "value": reading.get("value"),
-                        "unit": reg_config.get("config", {}).get("unit", ""),
+                        "unit": reg.get("unit", ""),  # From CONFIG
                         "timestamp": reading.get("timestamp") or current_timestamp,
                     })
 
@@ -525,6 +535,8 @@ class LoggingService:
         """
         Sync device readings with per-register frequency downsampling.
 
+        Reads config FRESH each sync cycle - no caching.
+
         All unsynced readings are processed in a batch (e.g., every 3 minutes).
         Each register is downsampled based on its logging_frequency:
         - Register with freq=1s: all readings sent (1 per second)
@@ -545,6 +557,21 @@ class LoggingService:
         if not unsynced:
             return 0
 
+        # Read FRESH config for logging_frequency lookups
+        config = get_config()
+        register_frequencies: dict[tuple[str, str], int] = {}
+        if config:
+            for device in config.get("devices", []):
+                device_id = device.get("id")
+                if not device_id:
+                    continue
+                for reg in device.get("registers", []):
+                    reg_name = reg.get("name")
+                    if reg_name:
+                        # logging_frequency in seconds, default 60s, minimum 1s
+                        freq = max(1, reg.get("logging_frequency") or 60)
+                        register_frequencies[(device_id, reg_name)] = freq
+
         # Group by (device_id, register_name)
         grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
         for reading in unsynced:
@@ -559,11 +586,8 @@ class LoggingService:
             # Collect all reading IDs (will mark all as synced after upload)
             all_reading_ids.extend([r["id"] for r in readings])
 
-            # Get register config (with defaults)
-            reg_config = self._logging_registers.get(device_id, {}).get(register_name, {})
-
-            # logging_frequency in seconds, default 60s, minimum 1s
-            frequency = max(1, reg_config.get("logging_frequency", 60))
+            # Get logging_frequency from config (default 60s)
+            frequency = register_frequencies.get((device_id, register_name), 60)
 
             # Sort readings by timestamp (oldest first for proper sampling)
             sorted_readings = sorted(readings, key=lambda r: r.get("timestamp", ""))
@@ -699,10 +723,15 @@ class LoggingService:
 
                     current_hash = new_hash
 
+                    # Count registers fresh from config
+                    register_count = sum(
+                        len(device.get("registers", []))
+                        for device in config.get("devices", [])
+                    )
                     logger.info(
                         f"Config reloaded: retention={self._retention_days}d, "
                         f"{len(self._alarm_definitions)} alarm definitions, "
-                        f"{sum(len(regs) for regs in self._logging_registers.values())} registers",
+                        f"{register_count} registers",
                     )
 
             except Exception as e:
