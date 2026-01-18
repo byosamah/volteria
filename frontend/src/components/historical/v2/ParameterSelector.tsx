@@ -17,7 +17,7 @@ import { GripVertical } from "lucide-react";
 import { AvailableParametersList } from "./AvailableParametersList";
 import { AxisDropZone } from "./AxisDropZone";
 import { MAX_PARAMETERS, getNextColor } from "./constants";
-import type { AxisParameter, AvailableRegister, Device, ChartType } from "./types";
+import type { AxisParameter, AvailableRegister, Device, ChartType, DataSource } from "./types";
 
 interface ParameterSelectorProps {
   devices: Device[];
@@ -30,6 +30,9 @@ interface ParameterSelectorProps {
   onRightAxisChange: (params: AxisParameter[]) => void;
   defaultChartType: ChartType;
   hasSiteSelected: boolean;
+  dataSource: DataSource;
+  currentSiteId: string;
+  localLockedSiteId: string | null;
 }
 
 export function ParameterSelector({
@@ -43,6 +46,9 @@ export function ParameterSelector({
   onRightAxisChange,
   defaultChartType,
   hasSiteSelected,
+  dataSource,
+  currentSiteId,
+  localLockedSiteId,
 }: ParameterSelectorProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draggedRegister, setDraggedRegister] = useState<AvailableRegister | null>(null);
@@ -257,6 +263,9 @@ export function ParameterSelector({
               registers={availableRegisters}
               onAddToAxis={handleAddToAxis}
               canAddMore={canAddMore}
+              dataSource={dataSource}
+              currentSiteId={currentSiteId}
+              localLockedSiteId={localLockedSiteId}
             />
           )}
         </div>

@@ -14,7 +14,7 @@ import {
   SelectLabel,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import type { AvailableRegister, Device } from "./types";
+import type { AvailableRegister, Device, DataSource } from "./types";
 
 interface AvailableParametersListProps {
   devices: Device[];
@@ -23,6 +23,9 @@ interface AvailableParametersListProps {
   registers: AvailableRegister[];
   onAddToAxis: (register: AvailableRegister, axis: "left" | "right") => void;
   canAddMore: boolean;
+  dataSource: DataSource;
+  currentSiteId: string;
+  localLockedSiteId: string | null;
 }
 
 export function AvailableParametersList({
@@ -32,8 +35,21 @@ export function AvailableParametersList({
   registers,
   onAddToAxis,
   canAddMore,
+  dataSource,
+  currentSiteId,
+  localLockedSiteId,
 }: AvailableParametersListProps) {
   const [searchQuery, setSearchQuery] = useState("");
+
+  // For local data source: check if adding is blocked due to different site
+  // Local mode only allows parameters from ONE site
+  const isLocalSiteBlocked = useMemo(() => {
+    if (dataSource !== "local") return false;
+    // If no parameters exist yet, any site is allowed
+    if (!localLockedSiteId) return false;
+    // If browsing a different site than the locked one, block adding
+    return currentSiteId !== localLockedSiteId;
+  }, [dataSource, localLockedSiteId, currentSiteId]);
 
   // All devices are regular devices - controller is always added as special entry
   const regularDevices = devices;
@@ -128,6 +144,15 @@ export function AvailableParametersList({
         />
       </div>
 
+      {/* Local source site restriction warning */}
+      {isLocalSiteBlocked && (
+        <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs text-amber-700">
+            Local source allows one site only. Clear existing parameters to change sites.
+          </p>
+        </div>
+      )}
+
       {/* Register list */}
       <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1">
         {!selectedDeviceId ? (
@@ -144,7 +169,7 @@ export function AvailableParametersList({
               key={register.id}
               register={register}
               onAddToAxis={onAddToAxis}
-              canAddMore={canAddMore}
+              canAddMore={canAddMore && !isLocalSiteBlocked}
             />
           ))
         )}

@@ -159,6 +159,16 @@ export function HistoricalDataClientV2({
     return filteredSites.find((s) => s.id === selectedSiteId)?.name || "";
   }, [filteredSites, selectedSiteId]);
 
+  // For local data source: determine locked site from existing parameters
+  // Local mode only allows parameters from ONE site
+  const localLockedSiteId = useMemo(() => {
+    if (dataSource !== "local") return null;
+    const allParams = [...leftAxisParams, ...rightAxisParams];
+    if (allParams.length === 0) return null;
+    // Return the site ID of the first parameter (all should be same site)
+    return allParams[0].siteId || null;
+  }, [dataSource, leftAxisParams, rightAxisParams]);
+
   // Available registers state (fetched from API or dummy for controller)
   const [availableRegisters, setAvailableRegisters] = useState<AvailableRegister[]>([]);
   const [isLoadingRegisters, setIsLoadingRegisters] = useState(false);
@@ -718,6 +728,9 @@ export function HistoricalDataClientV2({
             onRightAxisChange={setRightAxisParams}
             defaultChartType={chartType}
             hasSiteSelected={!!selectedSiteId}
+            dataSource={dataSource}
+            currentSiteId={selectedSiteId}
+            localLockedSiteId={localLockedSiteId}
           />
         </CardContent>
       </Card>
