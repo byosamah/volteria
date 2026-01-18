@@ -1444,6 +1444,7 @@ async def update_controller(
 
         # Git fetch + reset (handles local changes gracefully)
         # First check if it's a git repo, if not, clone it
+        # IMPORTANT: Recreate runtime directories after git reset (they're not in git)
         git_command = """
 cd /opt/volteria
 if [ -d .git ]; then
@@ -1456,6 +1457,9 @@ else
     sudo git clone https://github.com/byosamah/volteria.git
     sudo chown -R voltadmin:voltadmin volteria
 fi
+# Recreate runtime directories (removed by git reset if not tracked)
+sudo mkdir -p /opt/volteria/backup /opt/volteria/updates /opt/volteria/data /opt/volteria/logs
+sudo chown -R volteria:volteria /opt/volteria/backup /opt/volteria/updates /opt/volteria/data /opt/volteria/logs
 """
         success, message, output = execute_ssh_command(
             host=SSH_HOST,
