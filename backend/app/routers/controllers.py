@@ -1442,12 +1442,13 @@ async def update_controller(
         # 3. Execute SSH commands
         SSH_HOST = "host.docker.internal"
 
-        # Git pull (or clone if not a git repo)
+        # Git fetch + reset (handles local changes gracefully)
         # First check if it's a git repo, if not, clone it
         git_command = """
 cd /opt/volteria
 if [ -d .git ]; then
-    sudo git pull origin main
+    sudo git fetch origin main
+    sudo git reset --hard origin/main
 else
     cd /opt
     sudo rm -rf volteria.old
