@@ -1217,3 +1217,281 @@ async def update_site_device_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update device status: {str(e)}"
         )
+
+
+# ============================================
+# TEMPLATE LINKAGE ENDPOINTS
+# ============================================
+
+@router.get("/templates/{template_id}/usage")
+async def get_template_usage(
+    template_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Get usage statistics for a template.
+
+    Returns count of devices and sites using this template.
+    Used for showing warning when editing templates with connected devices.
+    """
+    try:
+        # Find template by template_id string
+        template_result = db.table("device_templates").select("id").eq("template_id", template_id).execute()
+        if not template_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template '{template_id}' not found"
+            )
+
+        template_uuid = template_result.data[0]["id"]
+
+        # Get all devices using this template
+        devices_result = db.table("site_devices").select(
+            "id, site_id"
+        ).eq("template_id", template_uuid).eq("enabled", True).execute()
+
+        device_count = len(devices_result.data) if devices_result.data else 0
+
+        # Get unique sites
+        site_ids = list(set(d["site_id"] for d in devices_result.data if d.get("site_id"))) if devices_result.data else []
+        site_count = len(site_ids)
+
+        # Get site names
+        site_names = []
+        if site_ids:
+            sites_result = db.table("sites").select("name").in_("id", site_ids).eq("is_active", True).execute()
+            site_names = [s["name"] for s in sites_result.data] if sites_result.data else []
+
+        return {
+            "template_id": template_id,
+            "device_count": device_count,
+            "site_count": site_count,
+            "site_names": site_names
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get template usage: {str(e)}"
+        )
+
+
+class UnlinkTemplateResponse(BaseModel):
+    """Response for unlink template operation."""
+    device_id: str
+    template_registers_removed: int
+    manual_registers_kept: int
+
+
+@router.post("/site/{site_id}/{device_id}/unlink-template", response_model=UnlinkTemplateResponse)
+async def unlink_device_template(
+    site_id: UUID,
+    device_id: UUID,
+    current_user: CurrentUser = Depends(require_role([
+        "super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"
+    ])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Unlink a device from its template.
+
+    - Removes all registers with source:"template"
+    - Keeps all registers with source:"manual"
+    - Sets template_id to NULL
+
+    This makes the device fully independent of the template.
+    """
+    try:
+        # Get current device data
+        device_result = db.table("site_devices").select(
+            "id, template_id, registers, visualization_registers, alarm_registers"
+        ).eq("id", str(device_id)).eq("site_id", str(site_id)).eq("enabled", True).execute()
+
+        if not device_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Device {device_id} not found in site {site_id}"
+            )
+
+        device = device_result.data[0]
+
+        if not device.get("template_id"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Device is not linked to a template"
+            )
+
+        # Filter out template registers, keep manual ones
+        def filter_manual_registers(registers):
+            if not registers:
+                return [], 0, 0
+            manual = [r for r in registers if r.get("source") == "manual"]
+            template_count = len([r for r in registers if r.get("source") == "template"])
+            return manual, template_count, len(manual)
+
+        logging_manual, logging_template_count, logging_manual_count = filter_manual_registers(device.get("registers"))
+        viz_manual, viz_template_count, viz_manual_count = filter_manual_registers(device.get("visualization_registers"))
+        alarm_manual, alarm_template_count, alarm_manual_count = filter_manual_registers(device.get("alarm_registers"))
+
+        total_template_removed = logging_template_count + viz_template_count + alarm_template_count
+        total_manual_kept = logging_manual_count + viz_manual_count + alarm_manual_count
+
+        # Update device: remove template link and template registers
+        update_data = {
+            "template_id": None,
+            "template_synced_at": None,
+            "registers": logging_manual if logging_manual else None,
+            "visualization_registers": viz_manual if viz_manual else None,
+            "alarm_registers": alarm_manual if alarm_manual else None
+        }
+
+        db.table("site_devices").update(update_data).eq("id", str(device_id)).execute()
+
+        # Update site config_changed_at to trigger sync
+        db.table("sites").update({"config_changed_at": datetime.utcnow().isoformat()}).eq("id", str(site_id)).execute()
+
+        return UnlinkTemplateResponse(
+            device_id=str(device_id),
+            template_registers_removed=total_template_removed,
+            manual_registers_kept=total_manual_kept
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unlink template: {str(e)}"
+        )
+
+
+class ChangeTemplateRequest(BaseModel):
+    """Request to change device template."""
+    new_template_id: str = Field(..., description="Template ID string (e.g., 'sungrow_150kw')")
+
+
+class ChangeTemplateResponse(BaseModel):
+    """Response for change template operation."""
+    device_id: str
+    old_template_id: Optional[str]
+    new_template_id: str
+    template_registers_replaced: int
+    manual_registers_kept: int
+
+
+@router.post("/site/{site_id}/{device_id}/change-template", response_model=ChangeTemplateResponse)
+async def change_device_template(
+    site_id: UUID,
+    device_id: UUID,
+    request: ChangeTemplateRequest,
+    current_user: CurrentUser = Depends(require_role([
+        "super_admin", "backend_admin", "admin", "enterprise_admin", "configurator"
+    ])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Change the template linked to a device.
+
+    - Removes all registers with source:"template"
+    - Adds new template registers with source:"template"
+    - Keeps all registers with source:"manual"
+    - Updates template_id to new template
+
+    This allows swapping to a different template while preserving manual customizations.
+    """
+    try:
+        # Get current device data
+        device_result = db.table("site_devices").select(
+            "id, template_id, registers, visualization_registers, alarm_registers"
+        ).eq("id", str(device_id)).eq("site_id", str(site_id)).eq("enabled", True).execute()
+
+        if not device_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Device {device_id} not found in site {site_id}"
+            )
+
+        device = device_result.data[0]
+
+        # Get old template ID for response
+        old_template_uuid = device.get("template_id")
+        old_template_id = None
+        if old_template_uuid:
+            old_result = db.table("device_templates").select("template_id").eq("id", old_template_uuid).execute()
+            if old_result.data:
+                old_template_id = old_result.data[0]["template_id"]
+
+        # Get new template data
+        new_template_result = db.table("device_templates").select(
+            "id, template_id, logging_registers, registers, visualization_registers, alarm_registers"
+        ).eq("template_id", request.new_template_id).execute()
+
+        if not new_template_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template '{request.new_template_id}' not found"
+            )
+
+        new_template = new_template_result.data[0]
+        new_template_uuid = new_template["id"]
+
+        # Helper: add source:"template" to all registers
+        def add_template_source(registers):
+            if not registers:
+                return []
+            return [{**r, "source": "template"} for r in registers]
+
+        # Helper: filter manual registers from device
+        def get_manual_registers(registers):
+            if not registers:
+                return []
+            return [r for r in registers if r.get("source") == "manual"]
+
+        # Get manual registers to keep
+        manual_logging = get_manual_registers(device.get("registers"))
+        manual_viz = get_manual_registers(device.get("visualization_registers"))
+        manual_alarm = get_manual_registers(device.get("alarm_registers"))
+
+        # Get new template registers with source:"template"
+        new_logging = add_template_source(new_template.get("logging_registers") or new_template.get("registers") or [])
+        new_viz = add_template_source(new_template.get("visualization_registers") or [])
+        new_alarm = add_template_source(new_template.get("alarm_registers") or [])
+
+        # Count for response
+        template_count = len(new_logging) + len(new_viz) + len(new_alarm)
+        manual_count = len(manual_logging) + len(manual_viz) + len(manual_alarm)
+
+        # Merge: new template registers + manual registers
+        merged_logging = new_logging + manual_logging
+        merged_viz = new_viz + manual_viz
+        merged_alarm = new_alarm + manual_alarm
+
+        # Update device
+        update_data = {
+            "template_id": new_template_uuid,
+            "template_synced_at": datetime.utcnow().isoformat(),
+            "registers": merged_logging if merged_logging else None,
+            "visualization_registers": merged_viz if merged_viz else None,
+            "alarm_registers": merged_alarm if merged_alarm else None
+        }
+
+        db.table("site_devices").update(update_data).eq("id", str(device_id)).execute()
+
+        # Update site config_changed_at to trigger sync
+        db.table("sites").update({"config_changed_at": datetime.utcnow().isoformat()}).eq("id", str(site_id)).execute()
+
+        return ChangeTemplateResponse(
+            device_id=str(device_id),
+            old_template_id=old_template_id,
+            new_template_id=request.new_template_id,
+            template_registers_replaced=template_count,
+            manual_registers_kept=manual_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to change template: {str(e)}"
+        )

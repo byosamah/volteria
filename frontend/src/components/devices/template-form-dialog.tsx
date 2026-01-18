@@ -259,6 +259,13 @@ export function TemplateFormDialog({
   // Current active tab in the register sections
   const [activeTab, setActiveTab] = useState("logging");
 
+  // Template usage tracking (for warning when editing templates with connected devices)
+  const [templateUsage, setTemplateUsage] = useState<{
+    device_count: number;
+    site_count: number;
+    site_names: string[];
+  } | null>(null);
+
   // Extract unique groups from all registers (Logging, Visualization, and Alarm)
   // This is passed to RegisterForm so users can select from existing groups
   const existingGroups = useMemo(() => {
@@ -325,6 +332,24 @@ export function TemplateFormDialog({
       }
       // Reset to first tab when opening
       setActiveTab("logging");
+
+      // Fetch template usage when editing
+      if (mode === "edit" && template?.template_id) {
+        fetch(`/api/devices/templates/${template.template_id}/usage`)
+          .then((res) => res.ok ? res.json() : null)
+          .then((data) => {
+            if (data) {
+              setTemplateUsage({
+                device_count: data.device_count || 0,
+                site_count: data.site_count || 0,
+                site_names: data.site_names || [],
+              });
+            }
+          })
+          .catch(() => setTemplateUsage(null));
+      } else {
+        setTemplateUsage(null);
+      }
     }
   }, [open, mode, template, isEnterpriseOrConfigurator]);
 
@@ -629,6 +654,20 @@ export function TemplateFormDialog({
               ? "Update the device template settings."
               : "Create a new device template for the library."}
           </DialogDescription>
+          {/* Warning banner when template has connected devices */}
+          {mode === "edit" && templateUsage && templateUsage.device_count > 0 && (
+            <div className="mt-3 p-3 bg-amber-50 rounded-md border border-amber-200">
+              <p className="text-sm font-medium text-amber-800">
+                Warning: This template is linked to {templateUsage.device_count} device{templateUsage.device_count !== 1 ? "s" : ""} in {templateUsage.site_count} site{templateUsage.site_count !== 1 ? "s" : ""}.
+              </p>
+              <p className="text-xs text-amber-700 mt-1">
+                Changes will auto-sync to connected devices on next sync.
+                {templateUsage.site_names.length > 0 && (
+                  <span className="block mt-1">Sites: {templateUsage.site_names.slice(0, 3).join(", ")}{templateUsage.site_names.length > 3 ? ` +${templateUsage.site_names.length - 3} more` : ""}</span>
+                )}
+              </p>
+            </div>
+          )}
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">

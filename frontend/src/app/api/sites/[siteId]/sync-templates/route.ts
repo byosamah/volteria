@@ -1,13 +1,13 @@
 /**
  * API Route: Manual Config Sync
  *
- * Triggers a full config sync to the controller and waits for response.
- * This is an alternative to automatic sync when you need immediate confirmation.
+ * Syncs device registers from templates and notifies controller.
  *
  * Flow:
- * 1. Insert sync_config command into control_commands table
- * 2. Poll for controller response (with 30s timeout)
- * 3. Return success/failure based on actual controller response
+ * 1. Call backend sync-templates endpoint to update device registers
+ * 2. Insert sync_config command into control_commands table
+ * 3. Poll for controller response (with 30s timeout)
+ * 4. Return success/failure based on actual controller response
  *
  * POST /api/sites/[siteId]/sync-templates
  */
@@ -15,6 +15,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 const SYNC_TIMEOUT_MS = 30000; // 30 seconds timeout
 const POLL_INTERVAL_MS = 1000; // Poll every 1 second
 
@@ -35,7 +36,43 @@ export async function POST(
       );
     }
 
-    // Get site and its master device (controller)
+    // Get auth token for backend
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      return NextResponse.json(
+        { error: "No session" },
+        { status: 401 }
+      );
+    }
+
+    // Step 1: Call backend to sync device registers from templates
+    // This updates site_devices.registers with fresh template data
+    try {
+      const backendResponse = await fetch(
+        `${BACKEND_URL}/api/sites/${siteId}/sync-templates`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!backendResponse.ok) {
+        const errorText = await backendResponse.text();
+        console.error("Backend sync-templates failed:", errorText);
+        // Continue anyway - the controller sync might still work
+      } else {
+        const syncResult = await backendResponse.json();
+        console.log("Backend sync-templates result:", syncResult);
+      }
+    } catch (backendError) {
+      console.error("Failed to call backend sync-templates:", backendError);
+      // Continue anyway - we'll still try to sync with controller
+    }
+
+    // Step 2: Get site and its master device (controller)
     const { data: site, error: siteError } = await supabase
       .from("sites")
       .select(`

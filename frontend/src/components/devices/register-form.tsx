@@ -55,6 +55,11 @@ export interface ModbusRegister {
     bits: boolean[];
   };
   decimals?: number;  // Display precision (0-10)
+
+  // Template linkage tracking
+  // "template": Read-only at device level, synced from template
+  // "manual": Editable at device level, preserved across template sync
+  source?: "template" | "manual";
 }
 
 // Severity options for alarm thresholds

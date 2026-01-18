@@ -234,7 +234,27 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
       // Create device in Supabase - includes site_id
       // Copy all register types and fields from template so device has its own independent copy
       // Use logging_registers if available, otherwise fall back to registers
-      const loggingRegisters = selectedTemplate?.logging_registers || selectedTemplate?.registers || [];
+      const rawLoggingRegisters = selectedTemplate?.logging_registers || selectedTemplate?.registers || [];
+      const rawVisualizationRegisters = selectedTemplate?.visualization_registers || [];
+      const rawAlarmRegisters = selectedTemplate?.alarm_registers || [];
+
+      // Helper: Add source:"template" to all registers copied from template
+      // This enables template linkage tracking - template registers are read-only,
+      // manual registers (source:"manual") can be edited independently
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const addTemplateSource = (registers: any[]) =>
+        registers.map((r) => ({ ...r, source: "template" }));
+
+      // Only add source if template is selected
+      const loggingRegisters = selectedTemplateId
+        ? addTemplateSource(rawLoggingRegisters as Record<string, unknown>[])
+        : rawLoggingRegisters;
+      const visualizationRegisters = selectedTemplateId
+        ? addTemplateSource(rawVisualizationRegisters as Record<string, unknown>[])
+        : rawVisualizationRegisters;
+      const alarmRegisters = selectedTemplateId
+        ? addTemplateSource(rawAlarmRegisters as Record<string, unknown>[])
+        : rawAlarmRegisters;
 
       const { error } = await supabase.from("site_devices").insert({
         site_id: siteId,  // Required: Link device to this site
@@ -252,13 +272,13 @@ export function AddDeviceForm({ projectId, siteId, templates }: AddDeviceFormPro
         baudrate: formData.protocol === "rtu_direct" ? formData.baudrate : null,
         slave_id: formData.slave_id,
         rated_power_kw: formData.rated_power_kw ? parseFloat(formData.rated_power_kw as string) : null,
-        // Copy logging registers from template - device can edit these independently
+        // Copy logging registers from template with source:"template"
         registers: loggingRegisters,
-        // Copy visualization registers from template - for live display only
-        visualization_registers: selectedTemplate?.visualization_registers || [],
-        // Copy alarm registers from template - device can edit these independently
-        alarm_registers: selectedTemplate?.alarm_registers || [],
-        // Copy calculated fields from template - device can edit these independently
+        // Copy visualization registers from template with source:"template"
+        visualization_registers: visualizationRegisters,
+        // Copy alarm registers from template with source:"template"
+        alarm_registers: alarmRegisters,
+        // Copy calculated fields from template - freely editable (no source tracking)
         calculated_fields: selectedTemplate?.calculated_fields || [],
         // Mark as synced on creation (if template is selected)
         template_synced_at: selectedTemplateId ? new Date().toISOString() : null,

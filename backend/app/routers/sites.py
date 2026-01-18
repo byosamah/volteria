@@ -892,15 +892,20 @@ async def sync_site_templates(
     """
     Sync all devices in a site from their templates.
 
-    Copies registers, visualization_registers, alarm_registers, and calculated_fields
-    from each device's template to the device. This overwrites any local device changes.
+    For each register type (logging, visualization, alarm):
+    - Replaces all registers with source:"template" with fresh copies from template
+    - Preserves all registers with source:"manual"
+    - New template registers are marked with source:"template"
+
+    Calculated fields are freely editable at device level, so they're only synced
+    if the device has no calculated fields yet.
 
     Returns count of synced devices and timestamp.
     """
     try:
         # Get all devices in site that have a template_id
         devices_result = db.table("site_devices").select(
-            "id, template_id"
+            "id, template_id, registers, visualization_registers, alarm_registers, calculated_fields"
         ).eq("site_id", str(site_id)).eq("enabled", True).not_.is_("template_id", "null").execute()
 
         if not devices_result.data:
@@ -913,6 +918,18 @@ async def sync_site_templates(
         synced_count = 0
         errors = []
 
+        # Helper: add source:"template" to all registers
+        def add_template_source(registers):
+            if not registers:
+                return []
+            return [{**r, "source": "template"} for r in registers]
+
+        # Helper: filter manual registers from device
+        def get_manual_registers(registers):
+            if not registers:
+                return []
+            return [r for r in registers if r.get("source") == "manual"]
+
         for device in devices_result.data:
             try:
                 # Get template data
@@ -923,17 +940,36 @@ async def sync_site_templates(
                 if template_result.data:
                     template = template_result.data
 
-                    # Update device with template data
-                    # Use logging_registers if available, fall back to registers for backward compatibility
-                    logging_regs = template.get("logging_registers") or template.get("registers") or []
+                    # Get manual registers to preserve
+                    manual_logging = get_manual_registers(device.get("registers"))
+                    manual_viz = get_manual_registers(device.get("visualization_registers"))
+                    manual_alarm = get_manual_registers(device.get("alarm_registers"))
 
-                    db.table("site_devices").update({
-                        "registers": logging_regs,
-                        "visualization_registers": template.get("visualization_registers") or [],
-                        "alarm_registers": template.get("alarm_registers") or [],
-                        "calculated_fields": template.get("calculated_fields") or [],
+                    # Get fresh template registers with source:"template"
+                    template_logging = add_template_source(
+                        template.get("logging_registers") or template.get("registers") or []
+                    )
+                    template_viz = add_template_source(template.get("visualization_registers") or [])
+                    template_alarm = add_template_source(template.get("alarm_registers") or [])
+
+                    # Merge: template registers + manual registers
+                    merged_logging = template_logging + manual_logging
+                    merged_viz = template_viz + manual_viz
+                    merged_alarm = template_alarm + manual_alarm
+
+                    # Build update data
+                    update_data = {
+                        "registers": merged_logging if merged_logging else [],
+                        "visualization_registers": merged_viz if merged_viz else [],
+                        "alarm_registers": merged_alarm if merged_alarm else [],
                         "template_synced_at": datetime.utcnow().isoformat()
-                    }).eq("id", device["id"]).execute()
+                    }
+
+                    # Only sync calculated_fields if device has none (freely editable)
+                    if not device.get("calculated_fields"):
+                        update_data["calculated_fields"] = template.get("calculated_fields") or []
+
+                    db.table("site_devices").update(update_data).eq("id", device["id"]).execute()
 
                     synced_count += 1
             except Exception as device_error:

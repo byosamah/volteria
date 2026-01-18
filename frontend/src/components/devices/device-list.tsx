@@ -348,8 +348,13 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   // Edit form state - Calculated Fields tab
   const [editCalculatedFields, setEditCalculatedFields] = useState<CalculatedFieldSelection[]>([]);
 
+  // Template selection state
+  const [availableTemplates, setAvailableTemplates] = useState<{ id: string; name: string; device_type: string }[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [templateLoading, setTemplateLoading] = useState(false);
+
   // Open edit dialog
-  const openEditDialog = (device: Device) => {
+  const openEditDialog = async (device: Device) => {
     setEditDevice(device);
     // Basic info
     setEditName(device.name);
@@ -376,6 +381,21 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     setEditAlarmRegisters(device.alarm_registers || []);
     // Calculated Fields tab - load from device
     setEditCalculatedFields(device.calculated_fields || []);
+    // Template selection
+    setSelectedTemplateId(device.template_id);
+
+    // Fetch available templates
+    try {
+      const supabase = createClient();
+      const { data: templates } = await supabase
+        .from("device_templates")
+        .select("id, name, device_type")
+        .eq("is_active", true)
+        .order("name");
+      setAvailableTemplates(templates || []);
+    } catch (err) {
+      console.error("Failed to fetch templates:", err);
+    }
   };
 
   // Register management functions for editing
@@ -400,15 +420,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
   const handleSaveRegister = (register: ModbusRegister) => {
     if (registerFormMode === "edit" && editingRegisterIndex >= 0) {
-      // Update existing register
+      // Update existing register (preserve source)
       setEditRegisters((prev) =>
-        prev.map((r, i) => (i === editingRegisterIndex ? register : r))
+        prev.map((r, i) => (i === editingRegisterIndex ? { ...register, source: r.source } : r))
       );
       toast.success("Register updated");
     } else {
-      // Add new register (sorted by address)
-      setEditRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
-      toast.success("Register added");
+      // Add new register with source:"manual" (sorted by address)
+      const newRegister = { ...register, source: "manual" as const };
+      setEditRegisters((prev) => [...prev, newRegister].sort((a, b) => a.address - b.address));
+      toast.success("Manual register added");
     }
   };
 
@@ -434,15 +455,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
   const handleSaveAlarmRegister = (register: ModbusRegister) => {
     if (alarmRegisterFormMode === "edit" && editingAlarmRegisterIndex >= 0) {
-      // Update existing alarm register
+      // Update existing alarm register (preserve source)
       setEditAlarmRegisters((prev) =>
-        prev.map((r, i) => (i === editingAlarmRegisterIndex ? register : r))
+        prev.map((r, i) => (i === editingAlarmRegisterIndex ? { ...register, source: r.source } : r))
       );
       toast.success("Alarm register updated");
     } else {
-      // Add new alarm register (sorted by address)
-      setEditAlarmRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
-      toast.success("Alarm register added");
+      // Add new alarm register with source:"manual" (sorted by address)
+      const newRegister = { ...register, source: "manual" as const };
+      setEditAlarmRegisters((prev) => [...prev, newRegister].sort((a, b) => a.address - b.address));
+      toast.success("Manual alarm register added");
     }
   };
 
@@ -468,15 +490,16 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
 
   const handleSaveVizRegister = (register: ModbusRegister) => {
     if (vizRegisterFormMode === "edit" && editingVizRegisterIndex >= 0) {
-      // Update existing visualization register
+      // Update existing visualization register (preserve source)
       setEditVisualizationRegisters((prev) =>
-        prev.map((r, i) => (i === editingVizRegisterIndex ? register : r))
+        prev.map((r, i) => (i === editingVizRegisterIndex ? { ...register, source: r.source } : r))
       );
       toast.success("Visualization register updated");
     } else {
-      // Add new visualization register (sorted by address)
-      setEditVisualizationRegisters((prev) => [...prev, register].sort((a, b) => a.address - b.address));
-      toast.success("Visualization register added");
+      // Add new visualization register with source:"manual" (sorted by address)
+      const newRegister = { ...register, source: "manual" as const };
+      setEditVisualizationRegisters((prev) => [...prev, newRegister].sort((a, b) => a.address - b.address));
+      toast.success("Manual visualization register added");
     }
   };
 
@@ -498,6 +521,74 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     setEditCalculatedFields((prev) =>
       prev.map((f) => (f.field_id === fieldId ? { ...f, storage_mode: mode } : f))
     );
+  };
+
+  // Handle template change (select different template or remove)
+  const handleTemplateChange = async (newTemplateId: string | null) => {
+    if (!editDevice || !siteId) return;
+
+    setTemplateLoading(true);
+    try {
+      if (newTemplateId === null) {
+        // Remove template - call unlink API
+        const response = await fetch(`/api/devices/site/${siteId}/${editDevice.id}/unlink-template`, {
+          method: "POST",
+        });
+        if (!response.ok) throw new Error("Failed to unlink template");
+
+        // Remove template registers from state
+        setEditRegisters(prev => prev.filter(r => r.source !== "template"));
+        setEditVisualizationRegisters(prev => prev.filter(r => r.source !== "template"));
+        setEditAlarmRegisters(prev => prev.filter(r => r.source !== "template"));
+        setSelectedTemplateId(null);
+
+        // Update device in list
+        setDevices(prev => prev.map(d =>
+          d.id === editDevice.id ? { ...d, template_id: null, device_templates: null } : d
+        ));
+
+        toast.success("Template removed. Manual registers preserved.");
+      } else {
+        // Change to different template - call change-template API
+        const response = await fetch(`/api/devices/site/${siteId}/${editDevice.id}/change-template`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_template_id: newTemplateId }),
+        });
+        if (!response.ok) throw new Error("Failed to change template");
+
+        const data = await response.json();
+
+        // Update registers with new template data
+        setEditRegisters(data.registers || []);
+        setEditVisualizationRegisters(data.visualization_registers || []);
+        setEditAlarmRegisters(data.alarm_registers || []);
+        setSelectedTemplateId(newTemplateId);
+
+        // Update device in list
+        const newTemplate = availableTemplates.find(t => t.id === newTemplateId);
+        setDevices(prev => prev.map(d =>
+          d.id === editDevice.id ? {
+            ...d,
+            template_id: newTemplateId,
+            device_templates: newTemplate ? {
+              name: newTemplate.name,
+              device_type: newTemplate.device_type,
+              brand: "",
+              model: ""
+            } : null
+          } : d
+        ));
+
+        toast.success("Template changed. New template registers applied.");
+      }
+      router.refresh();
+    } catch (err) {
+      toast.error(newTemplateId ? "Failed to change template" : "Failed to remove template");
+      console.error(err);
+    } finally {
+      setTemplateLoading(false);
+    }
   };
 
   // Check for Modbus address conflicts when editing
@@ -936,7 +1027,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
             </DialogDescription>
             {/* Protocol badge - shows connection type */}
             {editDevice && (
-              <div className="pt-2">
+              <div className="pt-2 flex flex-wrap gap-2 items-center">
                 <Badge variant="outline" className="bg-slate-100 text-slate-700">
                   {editDevice.protocol === "tcp"
                     ? "Modbus TCP"
@@ -990,6 +1081,49 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                 </select>
                 <p className="text-xs text-muted-foreground">
                   Used for control logic and calculated fields
+                </p>
+              </div>
+
+              {/* Template Selection - dropdown with remove button */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-template">Device Template</Label>
+                <div className="flex gap-2">
+                  <select
+                    id="edit-template"
+                    value={selectedTemplateId || ""}
+                    onChange={(e) => {
+                      const newId = e.target.value || null;
+                      if (newId !== selectedTemplateId) {
+                        handleTemplateChange(newId);
+                      }
+                    }}
+                    disabled={templateLoading}
+                    className="flex-1 min-h-[44px] px-3 rounded-md border border-input bg-background disabled:opacity-50"
+                  >
+                    <option value="">No template</option>
+                    {availableTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedTemplateId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleTemplateChange(null)}
+                      disabled={templateLoading}
+                      className="h-[44px] px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                    >
+                      {templateLoading ? "..." : "Remove"}
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {selectedTemplateId
+                    ? "Linked template provides registers (shown as \"Template\" in register tabs). Changing or removing the template will update these registers automatically. Manual registers you add are always preserved."
+                    : "Link a template to auto-populate registers. You can still add manual registers for device-specific needs."}
                 </p>
               </div>
 
@@ -1203,7 +1337,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
-                  Add Register
+                  Add Manual Register
                 </Button>
               </div>
 
@@ -1216,59 +1350,64 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                         <tr>
                           <th className="px-3 py-2 text-left font-medium">Addr</th>
                           <th className="px-3 py-2 text-left font-medium">Name</th>
-                          <th className="px-3 py-2 text-left font-medium">Type</th>
+                          <th className="px-3 py-2 text-left font-medium">Source</th>
                           <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Datatype</th>
                           <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Logging</th>
                           <th className="px-3 py-2 text-right font-medium">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {editRegisters.map((reg, index) => (
-                          <tr key={index} className="hover:bg-muted/30">
-                            <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
-                            <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
-                            <td className="px-3 py-2">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
-                              }`}>
-                                {reg.type}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
-                              {formatLoggingFrequency(reg.logging_frequency)}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleEditRegister(reg, index)}
-                                  className="p-1.5 rounded hover:bg-muted transition-colors"
-                                  title="Edit register"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
-                                    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                    <path d="m15 5 4 4"/>
-                                  </svg>
-                                </button>
-                                {canDelete && (
+                        {editRegisters.map((reg, index) => {
+                          const isTemplate = reg.source === "template";
+                          return (
+                            <tr key={index} className={`hover:bg-muted/30 ${isTemplate ? "bg-blue-50/30" : ""}`}>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
+                              <td className="px-3 py-2">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                  isTemplate ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                                }`}>
+                                  {isTemplate ? "Template" : "Manual"}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
+                                {formatLoggingFrequency(reg.logging_frequency)}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex items-center justify-end gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteRegister(index)}
-                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
-                                    title="Delete register"
+                                    onClick={isTemplate ? undefined : () => handleEditRegister(reg, index)}
+                                    disabled={isTemplate}
+                                    className={`p-1.5 rounded transition-colors ${isTemplate ? "cursor-not-allowed opacity-30" : "hover:bg-muted"}`}
+                                    title={isTemplate ? "Template register - edit the template to modify" : "Edit register"}
                                   >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-                                      <path d="M3 6h18"/>
-                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
+                                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                      <path d="m15 5 4 4"/>
                                     </svg>
                                   </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                                  {canDelete && (
+                                    <button
+                                      type="button"
+                                      onClick={isTemplate ? undefined : () => handleDeleteRegister(index)}
+                                      disabled={isTemplate}
+                                      className={`p-1.5 rounded transition-colors ${isTemplate ? "cursor-not-allowed opacity-30" : "hover:bg-red-100"}`}
+                                      title={isTemplate ? "Template register - edit the template to modify" : "Delete register"}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${isTemplate ? "text-muted-foreground" : "text-red-500"}`}>
+                                        <path d="M3 6h18"/>
+                                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                      </svg>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1276,7 +1415,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
               ) : (
                 <div className="border rounded-md p-6 text-center text-muted-foreground">
                   <p className="text-sm">No registers configured for this device.</p>
-                  <p className="text-xs mt-1">Click &quot;Add Register&quot; to define Modbus registers.</p>
+                  <p className="text-xs mt-1">Click &quot;Add Manual Register&quot; to define Modbus registers.</p>
                 </div>
               )}
             </TabsContent>
@@ -1301,7 +1440,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
-                  Add Register
+                  Add Manual Register
                 </Button>
               </div>
 
@@ -1314,57 +1453,62 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                         <tr>
                           <th className="px-3 py-2 text-left font-medium">Addr</th>
                           <th className="px-3 py-2 text-left font-medium">Name</th>
-                          <th className="px-3 py-2 text-left font-medium">Type</th>
+                          <th className="px-3 py-2 text-left font-medium">Source</th>
                           <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Datatype</th>
                           <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Unit</th>
                           <th className="px-3 py-2 text-right font-medium">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {editVisualizationRegisters.map((reg, index) => (
-                          <tr key={index} className="hover:bg-muted/30">
-                            <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
-                            <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
-                            <td className="px-3 py-2">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
-                              }`}>
-                                {reg.type}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{reg.unit || "-"}</td>
-                            <td className="px-3 py-2 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleEditVizRegister(reg, index)}
-                                  className="p-1.5 rounded hover:bg-muted transition-colors"
-                                  title="Edit register"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
-                                    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                    <path d="m15 5 4 4"/>
-                                  </svg>
-                                </button>
-                                {canDelete && (
+                        {editVisualizationRegisters.map((reg, index) => {
+                          const isTemplate = reg.source === "template";
+                          return (
+                            <tr key={index} className={`hover:bg-muted/30 ${isTemplate ? "bg-blue-50/30" : ""}`}>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
+                              <td className="px-3 py-2">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                  isTemplate ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                                }`}>
+                                  {isTemplate ? "Template" : "Manual"}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{reg.unit || "-"}</td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex items-center justify-end gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteVizRegister(index)}
-                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
-                                    title="Delete register"
+                                    onClick={isTemplate ? undefined : () => handleEditVizRegister(reg, index)}
+                                    disabled={isTemplate}
+                                    className={`p-1.5 rounded transition-colors ${isTemplate ? "cursor-not-allowed opacity-30" : "hover:bg-muted"}`}
+                                    title={isTemplate ? "Template register - edit the template to modify" : "Edit register"}
                                   >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-                                      <path d="M3 6h18"/>
-                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
+                                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                      <path d="m15 5 4 4"/>
                                     </svg>
                                   </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                                  {canDelete && (
+                                    <button
+                                      type="button"
+                                      onClick={isTemplate ? undefined : () => handleDeleteVizRegister(index)}
+                                      disabled={isTemplate}
+                                      className={`p-1.5 rounded transition-colors ${isTemplate ? "cursor-not-allowed opacity-30" : "hover:bg-red-100"}`}
+                                      title={isTemplate ? "Template register - edit the template to modify" : "Delete register"}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${isTemplate ? "text-muted-foreground" : "text-red-500"}`}>
+                                        <path d="M3 6h18"/>
+                                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                      </svg>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1397,7 +1541,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
-                  Add Alarm Register
+                  Add Manual Alarm Register
                 </Button>
               </div>
 
@@ -1410,65 +1554,68 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                         <tr>
                           <th className="px-3 py-2 text-left font-medium">Addr</th>
                           <th className="px-3 py-2 text-left font-medium">Name</th>
-                          <th className="px-3 py-2 text-left font-medium">Type</th>
-                          <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Datatype</th>
-                          <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Thresholds</th>
+                          <th className="px-3 py-2 text-left font-medium">Source</th>
+                          <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Thresholds</th>
                           <th className="px-3 py-2 text-right font-medium">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {editAlarmRegisters.map((reg, index) => (
-                          <tr key={index} className="hover:bg-muted/30">
-                            <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
-                            <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
-                            <td className="px-3 py-2">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                reg.type === "holding" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
-                              }`}>
-                                {reg.type}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{reg.datatype}</td>
-                            <td className="px-3 py-2 hidden lg:table-cell">
-                              {reg.thresholds && reg.thresholds.length > 0 ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                  {reg.thresholds.length} configured
+                        {editAlarmRegisters.map((reg, index) => {
+                          const isTemplate = reg.source === "template";
+                          return (
+                            <tr key={index} className={`hover:bg-muted/30 ${isTemplate ? "bg-blue-50/30" : ""}`}>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.address}</td>
+                              <td className="px-3 py-2 font-mono text-xs">{reg.name}</td>
+                              <td className="px-3 py-2">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                  isTemplate ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                                }`}>
+                                  {isTemplate ? "Template" : "Manual"}
                                 </span>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">None</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleEditAlarmRegister(reg, index)}
-                                  className="p-1.5 rounded hover:bg-muted transition-colors"
-                                  title="Edit alarm register"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
-                                    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                    <path d="m15 5 4 4"/>
-                                  </svg>
-                                </button>
-                                {canDelete && (
+                              </td>
+                              <td className="px-3 py-2 hidden md:table-cell">
+                                {reg.thresholds && reg.thresholds.length > 0 ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                    {reg.thresholds.length} configured
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">None</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex items-center justify-end gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteAlarmRegister(index)}
-                                    className="p-1.5 rounded hover:bg-red-100 transition-colors"
-                                    title="Delete alarm register"
+                                    onClick={isTemplate ? undefined : () => handleEditAlarmRegister(reg, index)}
+                                    disabled={isTemplate}
+                                    className={`p-1.5 rounded transition-colors ${isTemplate ? "cursor-not-allowed opacity-30" : "hover:bg-muted"}`}
+                                    title={isTemplate ? "Template register - edit the template to modify" : "Edit alarm register"}
                                   >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-red-500">
-                                      <path d="M3 6h18"/>
-                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-muted-foreground">
+                                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                      <path d="m15 5 4 4"/>
                                     </svg>
                                   </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                                  {canDelete && (
+                                    <button
+                                      type="button"
+                                      onClick={isTemplate ? undefined : () => handleDeleteAlarmRegister(index)}
+                                      disabled={isTemplate}
+                                      className={`p-1.5 rounded transition-colors ${isTemplate ? "cursor-not-allowed opacity-30" : "hover:bg-red-100"}`}
+                                      title={isTemplate ? "Template register - edit the template to modify" : "Delete alarm register"}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${isTemplate ? "text-muted-foreground" : "text-red-500"}`}>
+                                        <path d="M3 6h18"/>
+                                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                      </svg>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1476,7 +1623,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
               ) : (
                 <div className="border rounded-md p-6 text-center text-muted-foreground">
                   <p className="text-sm">No alarm registers configured for this device.</p>
-                  <p className="text-xs mt-1">Click &quot;Add Alarm Register&quot; to define alarm-specific registers.</p>
+                  <p className="text-xs mt-1">Click &quot;Add Manual Alarm Register&quot; to define alarm-specific registers.</p>
                 </div>
               )}
             </TabsContent>
