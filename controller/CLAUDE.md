@@ -393,3 +393,9 @@ python-dotenv>=1.0.0
 ### SD Card Wear
 - **Impact**: ~23% reduction in daily writes when on SD card
 - **Calculation**: State file writes reduced from 2/sec to 0.4/sec effective
+
+### OTA Update Safety
+- **Problem**: `git reset --hard` removed runtime directories (`backup/`, `updates/`, `logs/`)
+- **Solution**: Added `.gitkeep` files so directories are tracked in git
+- **Fallback**: Backend update endpoint recreates dirs after git operations
+- **Setup Fix**: `create_directories` now runs AFTER `git clone` in setup script

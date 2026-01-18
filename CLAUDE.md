@@ -190,7 +190,40 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 ## Recent Updates (2026-01-18)
 
-### Server Maintenance Automation (NEW)
+### Controller OTA Update Safety (NEW)
+Prevents runtime directories from being wiped during OTA updates:
+
+**Problem**: `git reset --hard` during updates removed `/opt/volteria/{backup,updates,logs}` directories (not tracked in git), causing systemd NAMESPACE errors and service crashes.
+
+**Solution** (two-layer fix):
+| Layer | Fix | Purpose |
+|-------|-----|---------|
+| Git | Added `.gitkeep` files to `backup/`, `updates/`, `logs/` | Directories survive `git reset` |
+| Backend | Update endpoint recreates dirs after git reset | Failsafe for existing controllers |
+| Setup | `create_directories` now runs AFTER `git clone` | Fresh installs work correctly |
+
+**Files Changed**:
+- `backup/.gitkeep`, `updates/.gitkeep`, `logs/.gitkeep` - New tracked directories
+- `backend/app/routers/controllers.py` - Recreates dirs after git operations
+- `controller/scripts/setup-controller.sh` - Fixed execution order
+
+### Dashboard Metric Labels (NEW)
+Renamed metrics for clarity to avoid confusion between hardware uptime and cloud connectivity:
+
+| Before | After | Location |
+|--------|-------|----------|
+| Running | **Hardware Uptime** | Controller Health card |
+| Connection Status | **Cloud Connection** | Chart title |
+| Uptime: X% | **Connected:** X% | Connection stats |
+| Offline: Xm | **Disconnected:** Xm | Connection stats |
+
+**Description**: "Hardware connection to cloud history (heartbeat gaps)"
+
+**Files Changed**:
+- `frontend/src/components/sites/controller-health-card.tsx`
+- `frontend/src/components/charts/power-flow-chart.tsx`
+
+### Server Maintenance Automation
 Automated cleanup to prevent disk/memory issues:
 
 **Changes Made**:
