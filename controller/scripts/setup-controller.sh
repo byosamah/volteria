@@ -677,8 +677,8 @@ main() {
     check_requirements
     install_dependencies
     configure_network
-    create_directories
     setup_controller_code
+    create_directories  # Must run AFTER git clone (which removes /opt/volteria)
     setup_python_env
     create_volteria_user
     configure_tmpfs_state
