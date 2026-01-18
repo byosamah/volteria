@@ -405,8 +405,9 @@ CLOUD SYNC (every 180s, downsampled per-register)
 ### Controller Remote Update
 - **New Endpoint**: `POST /api/controllers/{id}/update`
 - **Auth**: `controller_secret` (SSH password) or admin JWT
-- **Action**: Runs `git pull` and restarts services on controller
+- **Action**: Runs `git fetch + reset --hard` and restarts services on controller
 - **Use Case**: OTA updates without SSH tunnel access
+- **Note**: Uses `reset --hard` to handle local changes gracefully (config.yaml excluded)
 
 ### Nginx Routing Fix
 - Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`, `/registers/read`, `/registers/write`) route to FastAPI
