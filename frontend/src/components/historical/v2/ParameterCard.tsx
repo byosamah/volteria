@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useEffect, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, X } from "lucide-react";
@@ -30,6 +31,37 @@ export function ParameterCard({
   onChartTypeChange,
   isDragging,
 }: ParameterCardProps) {
+  // Refs for uncontrolled color picker - avoids ALL React re-renders during drag
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const colorIndicatorRef = useRef<HTMLButtonElement>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync input value when parameter.color changes externally
+  useEffect(() => {
+    if (colorInputRef.current) {
+      colorInputRef.current.value = parameter.color;
+    }
+  }, [parameter.color]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Debounced color change - only updates chart after 300ms of no dragging
+  const debouncedColorChange = useCallback((color: string) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      onColorChange(color);
+    }, 300);
+  }, [onColorChange]);
+
   const {
     attributes,
     listeners,
@@ -61,6 +93,7 @@ export function ParameterCard({
       <Popover>
         <PopoverTrigger asChild>
           <button
+            ref={colorIndicatorRef}
             className="w-4 h-4 rounded-full flex-shrink-0 ring-offset-2 hover:ring-2 hover:ring-primary/50 transition-all"
             style={{ backgroundColor: parameter.color }}
             onClick={(e) => e.stopPropagation()}
@@ -83,9 +116,18 @@ export function ParameterCard({
           </div>
           <div className="mt-2 pt-2 border-t">
             <input
+              ref={colorInputRef}
               type="color"
-              value={parameter.color}
-              onChange={(e) => onColorChange(e.target.value)}
+              defaultValue={parameter.color}
+              onInput={(e) => {
+                const color = e.currentTarget.value;
+                // Direct DOM update for instant preview - NO React re-render
+                if (colorIndicatorRef.current) {
+                  colorIndicatorRef.current.style.backgroundColor = color;
+                }
+                // Debounced update - chart only updates after 300ms of no dragging
+                debouncedColorChange(color);
+              }}
               className="w-full h-8 rounded cursor-pointer"
             />
           </div>

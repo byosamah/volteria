@@ -498,7 +498,8 @@ export function HistoricalDataClientV2({
         ? `/api/historical/local?${params}`
         : `/api/historical?${params}`;
 
-      const response = await fetch(apiEndpoint);
+      // Always fetch fresh data - no browser caching
+      const response = await fetch(apiEndpoint, { cache: 'no-store' });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `API error: ${response.status}`);

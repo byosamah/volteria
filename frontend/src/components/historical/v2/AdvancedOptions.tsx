@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, Plus, Trash2, Calculator, Ruler } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -157,13 +157,11 @@ export function AdvancedOptions({
                         placeholder="Value"
                         className="w-24 h-8"
                       />
-                      <input
-                        type="color"
+                      <DebouncedColorPicker
                         value={line.color}
-                        onChange={(e) =>
-                          updateReferenceLine(line.id, { color: e.target.value })
+                        onChange={(color) =>
+                          updateReferenceLine(line.id, { color })
                         }
-                        className="h-8 w-8 rounded cursor-pointer border"
                       />
                       <Select
                         value={line.axis}
@@ -235,5 +233,52 @@ export function AdvancedOptions({
         </div>
       </Collapsible>
     </div>
+  );
+}
+
+// Debounced color picker - smooth dragging, chart updates after 300ms pause
+function DebouncedColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (color: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync input value when prop changes externally
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.value = value;
+    }
+  }, [value]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      type="color"
+      defaultValue={value}
+      onInput={(e) => {
+        const color = e.currentTarget.value;
+        // Debounce - only update after 300ms of no dragging
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+        }
+        debounceRef.current = setTimeout(() => {
+          onChange(color);
+        }, 300);
+      }}
+      className="h-8 w-8 rounded cursor-pointer border"
+    />
   );
 }

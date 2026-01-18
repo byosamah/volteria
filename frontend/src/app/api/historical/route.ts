@@ -316,7 +316,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(response);
+    // Return with no-cache headers to ensure fresh data on refresh
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+    });
   } catch {
     return NextResponse.json(
       { error: "Internal server error" },
