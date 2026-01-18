@@ -387,57 +387,43 @@ class LoggingService:
         """
         Sample current device readings into RAM buffer.
 
-        Reads config FRESH each cycle - no caching of registers/devices.
-        Iterates config registers (not SharedState keys) to ensure
-        register names always match current config.
+        Iterates SharedState readings (whatever device service wrote).
+        Register names come from SharedState, not config, to ensure
+        we log what the device service actually produced.
 
-        Safe: handles config file being written during sync.
         Buffer is flushed to SQLite by _local_flush_loop.
         """
-        # Read FRESH config - with error handling for sync writes
-        try:
-            config = get_config()
-            if not config or not config.get("devices"):
-                return  # Config not ready or empty
-        except Exception as e:
-            # Config file might be mid-write during sync - skip this cycle
-            logger.debug(f"Skipping sample cycle, config read error: {e}")
-            return
-
+        # Get device readings from shared state
         readings_state = SharedState.read("readings")
-        if not readings_state:
+        if not readings_state or not readings_state.get("devices"):
             return
 
         current_timestamp = datetime.now(timezone.utc).isoformat()
 
-        # Build readings from CONFIG (not SharedState keys)
-        async with self._readings_buffer_lock:
-            for device in config.get("devices", []):
-                device_id = device.get("id")
-                if not device_id:
-                    continue
-
-                # Get device readings from SharedState
-                device_data = readings_state.get("devices", {}).get(device_id, {})
-                device_readings = device_data.get("readings", {})
-
-                # Iterate CONFIG registers (source of truth for names)
+        # Read config for unit lookups (optional enrichment)
+        config = get_config() or {}
+        register_units: dict[tuple[str, str], str] = {}
+        for device in config.get("devices", []):
+            device_id = device.get("id")
+            if device_id:
                 for reg in device.get("registers", []):
                     reg_name = reg.get("name")
-                    if not reg_name:
-                        continue
+                    if reg_name:
+                        register_units[(device_id, reg_name)] = reg.get("unit", "")
 
-                    # Look up reading by config-defined name
-                    reading = device_readings.get(reg_name)
-                    if reading is None:
-                        continue  # No reading yet for this register
+        # Iterate SharedState readings (what device service actually wrote)
+        async with self._readings_buffer_lock:
+            for device_id, device_data in readings_state.get("devices", {}).items():
+                for register_name, reading in device_data.get("readings", {}).items():
+                    # Get unit from config if available
+                    unit = register_units.get((device_id, register_name), "")
 
                     self._device_readings_buffer.append({
                         "site_id": self._site_id,
                         "device_id": device_id,
-                        "register_name": reg_name,  # From CONFIG (always current)
+                        "register_name": register_name,  # From SharedState
                         "value": reading.get("value"),
-                        "unit": reg.get("unit", ""),  # From CONFIG
+                        "unit": unit,
                         "timestamp": reading.get("timestamp") or current_timestamp,
                     })
 
