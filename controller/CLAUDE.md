@@ -424,3 +424,44 @@ python-dotenv>=1.0.0
 - **Solution**: Added `.gitkeep` files so directories are tracked in git
 - **Fallback**: Backend update endpoint recreates dirs after git operations
 - **Setup Fix**: `create_directories` now runs AFTER `git clone` in setup script
+
+## Logging Service - No Register Caching (2026-01-19)
+
+### Problem
+When register renamed in cloud config, logging service kept logging with **old register name**:
+1. Config sync updates local config with new name
+2. Device service may not immediately reload config
+3. Logging service looked for readings by CONFIG name (the new name)
+4. But SharedState had readings written by device service using its OLD name
+5. Name mismatch → zero readings logged
+
+### Solution
+Logging service now iterates **SharedState readings directly** instead of looking for readings by config register names.
+
+**Critical Principle**: Log what device service wrote, not what config says should exist.
+
+```python
+# WRONG (caused bug):
+for reg in config.get("registers", []):
+    reading = readings.get(reg["name"])  # Looks for CONFIG name
+
+# CORRECT (current):
+for register_name, reading in device_readings.items():
+    # Logs whatever device service actually wrote
+```
+
+### Key Behaviors
+| Scenario | Before (Bug) | After (Fixed) |
+|----------|--------------|---------------|
+| Register renamed | Name mismatch, no data logged | Logs with SharedState name |
+| Device offline | Blocked waiting for data | Skips device, logs others |
+| Config not synced | Wrong name logged | Logs current device name |
+
+### Files Changed
+- `services/logging/service.py` - `_sample_readings_to_buffer()` iterates SharedState readings
+
+### Testing
+1. Rename register in frontend
+2. Trigger config sync
+3. Data flows immediately with whatever name device service uses
+4. Once device service reloads, new name appears

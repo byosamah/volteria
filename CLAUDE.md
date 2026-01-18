@@ -123,7 +123,7 @@ supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_
 | `controller_heartbeats` | Controller status |
 | `controller_service_status` | 5-layer health tracking |
 
-> **Full schema**: See `database/migrations/` (78 migration files)
+> **Full schema**: See `database/migrations/` (79 migration files)
 
 ## Deployment
 
@@ -539,6 +539,17 @@ Controller config now includes **all device types**, not just load_meters/invert
 - `alarm_registers` - Threshold-based alarm registers
 
 **Important**: Config uses **device registers** (merged template + manual), not raw template registers.
+
+### Logging Service - No Register Caching (2026-01-19)
+Fixed bug where logging service logged old register names after rename:
+
+**Problem**: Logging service looked for readings by CONFIG register name, but device service writes with its own config's name. If device service hasn't reloaded → name mismatch → zero data logged.
+
+**Solution**: Logging service now iterates SharedState readings directly (what device service wrote), not config registers (what should exist).
+
+**Key Principle**: Log what device service actually wrote, not what config says should exist.
+
+**Files Changed**: `controller/services/logging/service.py` - `_sample_readings_to_buffer()` iterates SharedState
 
 ## Never Do
 
