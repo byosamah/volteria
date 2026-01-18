@@ -27,6 +27,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -211,6 +221,7 @@ export function TemplateFormDialog({
 }: TemplateFormDialogProps) {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // Enterprise admins and configurators can only create custom templates for their enterprise
   const isEnterpriseOrConfigurator = userRole === "enterprise_admin" || userRole === "configurator";
@@ -492,35 +503,49 @@ export function TemplateFormDialog({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Handle form submission
+  // Validate form before submission
+  const validateForm = (): boolean => {
+    if (!formData.name.trim()) {
+      toast.error("Template name is required");
+      return false;
+    }
+    if (!formData.brand.trim()) {
+      toast.error("Brand is required");
+      return false;
+    }
+    if (!formData.model.trim()) {
+      toast.error("Model is required");
+      return false;
+    }
+    if (formData.template_type === "custom" && isSuperAdmin && !selectedEnterpriseId) {
+      toast.error("Please select an enterprise for custom templates");
+      return false;
+    }
+    return true;
+  };
+
+  // Handle form submission - show confirmation if template has connected devices
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!validateForm()) return;
+
+    // If editing template with connected devices, show confirmation dialog
+    if (mode === "edit" && templateUsage && templateUsage.device_count > 0) {
+      setShowConfirmDialog(true);
+      return;
+    }
+
+    // No connected devices, proceed with save
+    await performSave();
+  };
+
+  // Actual save logic (called after confirmation or directly)
+  const performSave = async () => {
     setLoading(true);
+    setShowConfirmDialog(false);
 
     try {
-      // Validate required fields
-      if (!formData.name.trim()) {
-        toast.error("Template name is required");
-        setLoading(false);
-        return;
-      }
-      if (!formData.brand.trim()) {
-        toast.error("Brand is required");
-        setLoading(false);
-        return;
-      }
-      if (!formData.model.trim()) {
-        toast.error("Model is required");
-        setLoading(false);
-        return;
-      }
-
-      // Validate enterprise selection for super admin creating custom templates
-      if (formData.template_type === "custom" && isSuperAdmin && !selectedEnterpriseId) {
-        toast.error("Please select an enterprise for custom templates");
-        setLoading(false);
-        return;
-      }
 
       // Map hardware_type to operation (required by database)
       const getOperationFromDeviceType = (deviceType: string): string => {
@@ -1295,6 +1320,37 @@ export function TemplateFormDialog({
         isAlarmRegister={true}
         existingGroups={existingGroups}
       />
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          CONFIRMATION DIALOG FOR CONNECTED DEVICES
+          Shown when saving template changes that will affect linked devices
+          ═══════════════════════════════════════════════════════════════════ */}
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update Template?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                This template is linked to <strong>{templateUsage?.device_count || 0} device{(templateUsage?.device_count || 0) !== 1 ? "s" : ""}</strong> in <strong>{templateUsage?.site_count || 0} site{(templateUsage?.site_count || 0) !== 1 ? "s" : ""}</strong>.
+              </span>
+              <span className="block">
+                Your changes will be applied to these devices on the next sync. Are you sure you want to continue?
+              </span>
+              {templateUsage?.site_names && templateUsage.site_names.length > 0 && (
+                <span className="block text-xs text-muted-foreground mt-2">
+                  Affected sites: {templateUsage.site_names.slice(0, 3).join(", ")}{templateUsage.site_names.length > 3 ? ` +${templateUsage.site_names.length - 3} more` : ""}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={performSave} className="bg-primary">
+              {loading ? "Saving..." : "Yes, Update Template"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
