@@ -311,7 +311,7 @@ export function ControllerHealthCard({ siteId }: ControllerHealthCardProps) {
           {/* Disk Usage */}
           <ProgressBar value={health.diskUsagePct} label="Disk" />
 
-          {/* Running Hours */}
+          {/* Hardware Uptime (time since last reboot) */}
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground flex items-center gap-2">
               {/* Clock icon */}
@@ -328,7 +328,7 @@ export function ControllerHealthCard({ siteId }: ControllerHealthCardProps) {
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 16 14" />
               </svg>
-              Running
+              Hardware Uptime
             </span>
             <span className="font-medium">{formatUptime(health.uptimeSeconds)}</span>
           </div>

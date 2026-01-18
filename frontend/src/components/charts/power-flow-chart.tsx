@@ -599,7 +599,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const getChartInfo = () => {
     switch (chartType) {
       case "connection":
-        return { title: "Connection Status", description: "Controller online/offline history" };
+        return { title: "Cloud Connection", description: "Server connection history (heartbeat gaps)" };
       case "system":
         return { title: "System Health", description: "CPU, Memory, Disk usage and temperature" };
       case "control":
@@ -705,7 +705,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     <div className="flex flex-wrap gap-4 mb-4 text-sm">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full bg-green-500" />
-                        <span className="text-muted-foreground">Uptime:</span>
+                        <span className="text-muted-foreground">Connected:</span>
                         <span className="font-medium">{connectionStats.uptimePct.toFixed(1)}%</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -714,7 +714,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full bg-red-500" />
-                        <span className="text-muted-foreground">Offline:</span>
+                        <span className="text-muted-foreground">Disconnected:</span>
                         <span className="font-medium">{connectionStats.totalOfflineMinutes}m</span>
                       </div>
                       <div className="flex items-center gap-2">
