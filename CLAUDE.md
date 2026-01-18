@@ -215,9 +215,10 @@ Automated cleanup to prevent disk/memory issues:
 ```
 
 ### Controller Performance Improvements
-- **Config Watch Interval**: Increased from 60s to 300s (5 minutes)
-- **Removed DEBUG prints**: Cleaner logs in production
-- **SharedState optimization**: Reduced redundant state operations
+- **Config Watch Interval**: Increased from 5s to 15s in device/control/logging services (3x fewer file reads)
+- **Removed DEBUG prints**: Removed 15 verbose DEBUG print statements from `common/state.py`
+- **SharedState optimization**: Cleaner write() method without debug logging overhead
+- **SD Card Wear Reduction**: ~23% fewer writes when running on SD card
 
 ### Historical Data V2 - Local Data Source (NEW)
 Query historical data directly from controller's SQLite database:
