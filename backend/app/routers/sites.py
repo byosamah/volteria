@@ -673,19 +673,22 @@ async def get_site_config(
             "devices": {
                 "load_meters": [],
                 "inverters": [],
-                "generators": []
+                "generators": [],
+                "sensors": [],
+                "other": []
             }
         }
 
-        # Categorize devices
+        # Categorize devices - use device's own device_type, fallback to template's
         for device in devices_result.data:
-            template = device.get("device_templates", {})
-            device_type = template.get("device_type", "unknown")
+            template = device.get("device_templates") or {}
+            # Prefer device-level device_type, fallback to template's device_type
+            device_type = device.get("device_type") or template.get("device_type") or "unknown"
 
             device_config = {
                 "id": str(device["id"]),  # Device ID for reference
                 "name": device["name"],
-                "device_type": device.get("device_type", "unknown"),  # Device type for control logic
+                "device_type": device_type,  # Device type for control logic
                 "template": template.get("template_id", "unknown"),
                 "protocol": device.get("protocol", "tcp"),
                 "slave_id": device.get("slave_id", 1)
@@ -707,15 +710,26 @@ async def get_site_config(
             device_registers = device.get("logging_registers") or device.get("registers")
             if device_registers:
                 device_config["registers"] = device_registers
+            # Include visualization and alarm registers for controller
+            if device.get("visualization_registers"):
+                device_config["visualization_registers"] = device["visualization_registers"]
+            if device.get("alarm_registers"):
+                device_config["alarm_registers"] = device["alarm_registers"]
             if device.get("logging_interval_ms"):
                 device_config["logging_interval_ms"] = device["logging_interval_ms"]
 
-            if device_type in ["meter", "load_meter"]:
+            # Categorize by device type
+            if device_type in ["meter", "load_meter", "load", "subload", "energy_meter"]:
                 config["devices"]["load_meters"].append(device_config)
-            elif device_type == "inverter":
+            elif device_type in ["inverter", "solar_meter"]:
                 config["devices"]["inverters"].append(device_config)
-            elif device_type == "dg":
+            elif device_type in ["dg", "diesel_generator", "gas_generator"]:
                 config["devices"]["generators"].append(device_config)
+            elif device_type in ["sensor", "temperature_humidity_sensor", "solar_sensor", "solar_radiation_sensor", "wind_sensor", "fuel_level_sensor"]:
+                config["devices"]["sensors"].append(device_config)
+            else:
+                # Catch-all for other device types (wind_turbine, bess, capacitor_bank, etc.)
+                config["devices"]["other"].append(device_config)
 
         return config
     except HTTPException:
