@@ -27,6 +27,20 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+        delay: 10s
     networks:
       - sdc-network
 
@@ -53,6 +67,20 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+        delay: 10s
     networks:
       - sdc-network
 
@@ -73,6 +101,20 @@ services:
     depends_on:
       - frontend
       - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+        delay: 10s
     networks:
       - sdc-network
 
