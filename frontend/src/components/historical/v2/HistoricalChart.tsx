@@ -511,22 +511,21 @@ export function HistoricalChart({
               // Format options with timezone
               const tzOptions = timezone ? { timeZone: timezone } : {};
 
-              // Format based on data range
-              if (rangeHours <= 2) {
-                // Very short range: time with minutes
-                return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, ...tzOptions });
-              } else if (rangeHours <= 24) {
-                // Within a day: time only
+              // Format based on data range - clean, unambiguous formats
+              if (rangeHours <= 26) {
+                // ≤1 day: time only (HH:mm)
                 return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, ...tzOptions });
               } else if (rangeHours <= 72) {
-                // 1-3 days: day + time
-                return date.toLocaleString("en-US", { day: "numeric", hour: "2-digit", hour12: false, ...tzOptions });
-              } else if (rangeHours <= 168) {
-                // Up to 7 days: weekday + day
-                return date.toLocaleDateString("en-US", { weekday: "short", day: "numeric", ...tzOptions });
+                // 1-3 days: "17 Jan 14:00" format (day-month-time, numbers separated by text)
+                const day = date.toLocaleDateString("en-US", { day: "numeric", ...tzOptions });
+                const month = date.toLocaleDateString("en-US", { month: "short", ...tzOptions });
+                const time = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, ...tzOptions });
+                return `${day} ${month} ${time}`;
               } else {
-                // More than 7 days: month + day
-                return date.toLocaleDateString("en-US", { month: "short", day: "numeric", ...tzOptions });
+                // >3 days: date only "17 Jan" (time would be too crowded)
+                const day = date.toLocaleDateString("en-US", { day: "numeric", ...tzOptions });
+                const month = date.toLocaleDateString("en-US", { month: "short", ...tzOptions });
+                return `${day} ${month}`;
               }
             }}
           />

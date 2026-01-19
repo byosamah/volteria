@@ -40,8 +40,8 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
     const end = new Date();
     const start = new Date();
 
-    if (hours < 24) {
-      // For sub-day presets (like 1h), use exact time range
+    if (hours <= 24) {
+      // For ≤24h presets (1h, 24h), use exact time range
       start.setTime(end.getTime() - hours * 60 * 60 * 1000);
     } else {
       // For day+ presets, use calendar days
@@ -65,7 +65,12 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
       return "1h";
     }
 
-    // For day+ presets, check calendar days
+    // Check for 24h preset (approximately 24 hours, exact time range)
+    if (diffHours >= 23 && diffHours <= 25) {
+      return "24h";
+    }
+
+    // For day+ presets (3d, 7d), check calendar days
     const startAtMidnight = dateRange.start.getHours() === 0 && dateRange.start.getMinutes() === 0;
     const endAtEndOfDay = dateRange.end.getHours() === 23 && dateRange.end.getMinutes() === 59;
 
@@ -79,7 +84,7 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
     const dayDiffMs = endDate.getTime() - startDate.getTime();
     const diffDays = Math.round(dayDiffMs / (1000 * 60 * 60 * 24));
 
-    const preset = DATE_PRESETS.find((p) => p.days === diffDays);
+    const preset = DATE_PRESETS.find((p) => p.days === diffDays && p.days > 1);
     return preset?.value || null;
   };
 
