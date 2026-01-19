@@ -497,6 +497,17 @@ Exponential backoff on disk errors: 0.5s, 1s, 2s
 **6. Cloud Backfill Progress**
 Logs progress when >1000 readings pending (for offline recovery visibility)
 
+**7. Logging Stats API Endpoint**
+`GET /api/controllers/{id}/logging-stats` - Fetches stats from controller's logging service:
+```json
+{
+  "buffer": { "readings_count": 30, "memory_kb": 9.0 },
+  "timing": { "sample_drift_ms": 0.3, "flush_drift_ms": 1.2 },
+  "schedulers": { "sample": { "execution_count": 762, "skipped_count": 0 } },
+  "errors": { "sample_errors": 0, "flush_errors": 0, "cloud_errors": 0 }
+}
+```
+
 ### Controller Remote Update
 - **New Endpoint**: `POST /api/controllers/{id}/update`
 - **Auth**: `controller_secret` (SSH password) or admin JWT
@@ -505,7 +516,7 @@ Logs progress when >1000 readings pending (for offline recovery visibility)
 - **Note**: Uses `reset --hard` to handle local changes gracefully (config.yaml excluded)
 
 ### Nginx Routing Fix
-- Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`, `/registers/read`, `/registers/write`) route to FastAPI
+- Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`, `/logging-stats`, `/registers/read`, `/registers/write`, `/historical/query`) route to FastAPI
 - Controller frontend routes (`/heartbeats`, `/lookup`, `/register`, `/registers`) route to Next.js
 
 ### Logging System Architecture
