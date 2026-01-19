@@ -34,6 +34,8 @@ from aiohttp import web
 from common.state import SharedState, set_service_health, get_config, get_control_state
 from common.config import AlarmDefinition, AlarmCondition
 from common.logging_setup import get_service_logger
+from common.timestamp import get_aligned_now_iso
+from common.scheduler import ScheduledLoop
 
 from .local_db import LocalDatabase
 from .cloud_sync import CloudSync
@@ -97,19 +99,38 @@ class LoggingService:
 
         self._start_time = datetime.now(timezone.utc)
 
+        # Observability: timing metrics
+        self._last_sample_time: datetime | None = None
+        self._last_flush_time: datetime | None = None
+        self._last_cloud_sync_time: datetime | None = None
+
+        # Observability: error counters
+        self._sample_error_count = 0
+        self._flush_error_count = 0
+        self._cloud_error_count = 0
+
+        # Observability: drift tracking (for scheduler phase)
+        self._sample_drift_ms: float = 0
+        self._flush_drift_ms: float = 0
+
+        # Delta filter: track last control log for change detection
+        self._last_control_log: dict | None = None
+
         # Health server
         self._health_app: web.Application | None = None
         self._health_runner: web.AppRunner | None = None
 
         # State
         self._running = False
-        self._sample_task: asyncio.Task | None = None  # Sample readings into RAM
-        self._local_flush_task: asyncio.Task | None = None  # Flush RAM to SQLite
+        self._buffer_task: asyncio.Task | None = None  # Control state buffer
         self._cloud_sync_task: asyncio.Task | None = None
         self._retention_task: asyncio.Task | None = None
-        self._buffer_task: asyncio.Task | None = None  # Control state buffer
         self._config_watch_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
+
+        # Schedulers for precise-interval tasks (initialized in start())
+        self._sample_scheduler: ScheduledLoop | None = None
+        self._flush_scheduler: ScheduledLoop | None = None
 
     def _find_config_path(self) -> str:
         """Find configuration file"""
@@ -144,10 +165,22 @@ class LoggingService:
         # Start health server
         await self._start_health_server()
 
-        # Start background tasks
+        # Start scheduled loops (precise timing)
+        self._sample_scheduler = ScheduledLoop(
+            self._local_sample_interval,
+            self._sample_callback,
+            name="sample",
+        )
+        self._flush_scheduler = ScheduledLoop(
+            self._local_flush_interval,
+            self._flush_callback,
+            name="flush",
+        )
+        await self._sample_scheduler.start()
+        await self._flush_scheduler.start()
+
+        # Start background tasks (less timing-sensitive)
         self._buffer_task = asyncio.create_task(self._buffer_loop())
-        self._sample_task = asyncio.create_task(self._sample_loop())  # Sample readings → RAM
-        self._local_flush_task = asyncio.create_task(self._local_flush_loop())  # RAM → SQLite
         self._cloud_sync_task = asyncio.create_task(self._cloud_sync_loop())
         self._retention_task = asyncio.create_task(self._retention_loop())
         self._config_watch_task = asyncio.create_task(self._config_watch_loop())
@@ -176,14 +209,18 @@ class LoggingService:
 
         self._running = False
 
+        # Stop schedulers
+        if self._sample_scheduler:
+            self._sample_scheduler.stop()
+        if self._flush_scheduler:
+            self._flush_scheduler.stop()
+
         # Flush any remaining readings to SQLite before stopping
         await self._flush_readings_to_sqlite()
 
         # Cancel tasks
         for task in [
             self._buffer_task,
-            self._sample_task,
-            self._local_flush_task,
             self._cloud_sync_task,
             self._retention_task,
             self._config_watch_task,
@@ -362,6 +399,57 @@ class LoggingService:
 
             await asyncio.sleep(1)  # Check every second
 
+    async def _sample_callback(self) -> None:
+        """
+        Scheduler callback for sampling device readings into RAM buffer.
+
+        Called by ScheduledLoop at precise _local_sample_interval intervals.
+        """
+        # Skip if local logging is disabled
+        if not self._local_enabled:
+            return
+
+        try:
+            await self._sample_readings_to_buffer()
+            self._last_sample_time = datetime.now(timezone.utc)
+            if self._sample_scheduler:
+                self._sample_drift_ms = self._sample_scheduler.drift_ms
+        except Exception as e:
+            self._sample_error_count += 1
+            logger.error(f"Sample callback error: {e}")
+
+    async def _flush_callback(self) -> None:
+        """
+        Scheduler callback for flushing RAM buffer to SQLite.
+
+        Called by ScheduledLoop at precise _local_flush_interval intervals.
+        """
+        # Handle disabled state
+        if not self._local_enabled:
+            # Clear buffer to prevent memory growth when disabled
+            async with self._readings_buffer_lock:
+                self._device_readings_buffer.clear()
+            self._state_buffer.clear()
+            self._load_buffer.clear()
+            self._solar_buffer.clear()
+            return
+
+        # Skip flush if buffer is empty (idle optimization)
+        async with self._readings_buffer_lock:
+            buffer_count = len(self._device_readings_buffer)
+        if buffer_count == 0 and not self._state_buffer:
+            return
+
+        try:
+            await self._flush_readings_to_sqlite()
+            self._last_flush_time = datetime.now(timezone.utc)
+            if self._flush_scheduler:
+                self._flush_drift_ms = self._flush_scheduler.drift_ms
+        except Exception as e:
+            self._flush_error_count += 1
+            logger.error(f"Flush callback error: {e}")
+
+    # Legacy loop methods kept for reference (now replaced by scheduler callbacks)
     async def _sample_loop(self) -> None:
         """
         Sample device readings into RAM buffer.
@@ -380,7 +468,9 @@ class LoggingService:
 
             try:
                 await self._sample_readings_to_buffer()
+                self._last_sample_time = datetime.now(timezone.utc)
             except Exception as e:
+                self._sample_error_count += 1
                 logger.error(f"Sample loop error: {e}")
 
     async def _sample_readings_to_buffer(self) -> None:
@@ -391,6 +481,10 @@ class LoggingService:
         Register names come from SharedState, not config, to ensure
         we log what the device service actually produced.
 
+        Timestamps are aligned to the sample interval boundary, ensuring
+        all readings from the same cycle have identical timestamps for
+        easy cross-device correlation.
+
         Buffer is flushed to SQLite by _local_flush_loop.
         """
         # Get device readings from shared state
@@ -398,7 +492,10 @@ class LoggingService:
         if not readings_state or not readings_state.get("devices"):
             return
 
-        current_timestamp = datetime.now(timezone.utc).isoformat()
+        # Align timestamp to sample interval boundary
+        # This ensures all readings from this cycle have identical timestamps
+        # e.g., with 1s interval: 10:30:17.234 → 10:30:17.000
+        current_timestamp = get_aligned_now_iso(self._local_sample_interval)
 
         # Read config for unit lookups (optional enrichment)
         config = get_config() or {}
@@ -456,27 +553,64 @@ class LoggingService:
 
             await asyncio.sleep(self._local_flush_interval)
 
+            # Skip flush if buffer is empty (idle optimization)
+            async with self._readings_buffer_lock:
+                buffer_count = len(self._device_readings_buffer)
+            if buffer_count == 0 and not self._state_buffer:
+                continue
+
             try:
                 await self._flush_readings_to_sqlite()
+                self._last_flush_time = datetime.now(timezone.utc)
             except Exception as e:
+                self._flush_error_count += 1
                 logger.error(f"Local flush error: {e}")
+
+    # Maximum buffer age in seconds (5x flush interval = ~5 min at 60s flush)
+    MAX_BUFFER_AGE_S = 300
 
     async def _flush_readings_to_sqlite(self) -> None:
         """
-        Flush RAM buffer to SQLite.
+        Flush RAM buffer to SQLite with failure handling.
 
-        Writes all buffered device readings to local database,
-        then clears the buffer. Also writes control log summary.
+        Writes all buffered device readings to local database.
+        If SQLite write fails (after retries), keeps buffer for next attempt.
+        Buffer is capped at MAX_BUFFER_AGE_S (5 min) to prevent unbounded growth.
+        Also writes control log summary.
         """
-        # Get and clear buffer atomically
+        # Get buffer contents (don't clear yet)
         async with self._readings_buffer_lock:
             readings_batch = self._device_readings_buffer.copy()
-            self._device_readings_buffer.clear()
 
-        # Write device readings to SQLite
+        # Try to write device readings to SQLite
+        write_success = True
         if readings_batch:
-            count = self.local_db.insert_device_readings_batch(readings_batch)
-            logger.debug(f"Flushed {count} device readings to SQLite (from {len(readings_batch)} buffered)")
+            try:
+                count = self.local_db.insert_device_readings_batch(readings_batch)
+                logger.debug(f"Flushed {count} device readings to SQLite (from {len(readings_batch)} buffered)")
+            except Exception as e:
+                write_success = False
+                logger.error(f"SQLite flush failed, keeping {len(readings_batch)} readings in buffer: {e}")
+
+        # Only clear buffer if write succeeded
+        if write_success:
+            async with self._readings_buffer_lock:
+                self._device_readings_buffer.clear()
+        else:
+            # Check buffer age - don't let it grow unbounded
+            # Estimate: at 1s sampling, 300s = 300 samples per register
+            # With ~10 registers = ~3000 readings max from this interval
+            # 5 min worth = ~18000 readings (safety limit is 10000 in _sample_readings_to_buffer)
+            async with self._readings_buffer_lock:
+                buffer_size = len(self._device_readings_buffer)
+                max_readings = int(self.MAX_BUFFER_AGE_S / self._local_sample_interval) * 100
+                if buffer_size > max_readings:
+                    excess = buffer_size - max_readings
+                    self._device_readings_buffer = self._device_readings_buffer[excess:]
+                    logger.warning(
+                        f"Buffer exceeded {self.MAX_BUFFER_AGE_S}s limit, "
+                        f"dropped {excess} oldest readings"
+                    )
 
         # Write control log summary (aggregated state)
         await self._write_control_log_summary()
@@ -508,6 +642,7 @@ class LoggingService:
                 readings_synced = await self._sync_device_readings_filtered()
 
                 total = logs_synced + alarms_synced + readings_synced
+                self._last_cloud_sync_time = datetime.now(timezone.utc)
                 if total > 0:
                     logger.info(
                         f"Cloud sync: {logs_synced} logs, "
@@ -515,6 +650,7 @@ class LoggingService:
                         f"{readings_synced} device readings"
                     )
             except Exception as e:
+                self._cloud_error_count += 1
                 logger.error(f"Cloud sync error: {e}")
 
     async def _sync_device_readings_filtered(self) -> int:
@@ -589,6 +725,7 @@ class LoggingService:
             synced_count = await self.cloud_sync.sync_specific_readings(
                 readings=to_sync,
                 all_reading_ids=all_reading_ids,  # Mark ALL as synced
+                total_pending=len(unsynced),  # For backfill progress tracking
             )
 
         if synced_count > 0:
@@ -732,6 +869,9 @@ class LoggingService:
         Called by _flush_readings_to_sqlite() to write aggregated
         control state (load/solar min/max, safe mode, etc.).
 
+        Includes delta filter to skip writes when values haven't changed
+        significantly (<1% delta), reducing disk wear during stable operation.
+
         Device readings are written separately via the RAM buffer.
         """
         # Get state from buffer or skip if empty
@@ -746,6 +886,47 @@ class LoggingService:
         solar_min = min(self._solar_buffer) if self._solar_buffer else state.get("solar_output_kw", 0)
         solar_max = max(self._solar_buffer) if self._solar_buffer else state.get("solar_output_kw", 0)
 
+        # Build current values for delta comparison
+        current_load = state.get("total_load_kw", 0)
+        current_solar = state.get("solar_output_kw", 0)
+        current_dg = state.get("dg_power_kw", 0)
+        current_safe_mode = state.get("safe_mode_active", False)
+
+        # Delta filter: skip write if values unchanged (<1% delta)
+        # Always write if: safe_mode changed, first log, or significant change
+        should_write = True
+        if self._last_control_log is not None:
+            last = self._last_control_log
+
+            # Always write if safe mode status changed
+            if current_safe_mode != last.get("safe_mode_active", False):
+                should_write = True
+            else:
+                # Check if key values changed significantly (>1%)
+                def delta_pct(new: float, old: float) -> float:
+                    if old == 0:
+                        return 100 if new != 0 else 0
+                    return abs(new - old) / abs(old) * 100
+
+                load_delta = delta_pct(current_load, last.get("total_load_kw", 0))
+                solar_delta = delta_pct(current_solar, last.get("solar_output_kw", 0))
+                dg_delta = delta_pct(current_dg, last.get("dg_power_kw", 0))
+
+                # Skip if all deltas < 1%
+                if load_delta < 1 and solar_delta < 1 and dg_delta < 1:
+                    should_write = False
+                    logger.debug(
+                        f"Skipped control log (delta filter): load={load_delta:.1f}%, "
+                        f"solar={solar_delta:.1f}%, dg={dg_delta:.1f}%"
+                    )
+
+        if not should_write:
+            # Still clear buffers even if not writing
+            self._state_buffer.clear()
+            self._load_buffer.clear()
+            self._solar_buffer.clear()
+            return
+
         # Always use current timestamp for log entries (ensures uniqueness)
         current_timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -753,12 +934,12 @@ class LoggingService:
         self.local_db.insert_control_log(
             timestamp=current_timestamp,
             site_id=self._site_id,
-            total_load_kw=state.get("total_load_kw", 0),
-            solar_output_kw=state.get("solar_output_kw", 0),
-            dg_power_kw=state.get("dg_power_kw", 0),
+            total_load_kw=current_load,
+            solar_output_kw=current_solar,
+            dg_power_kw=current_dg,
             solar_limit_pct=state.get("solar_limit_pct", 100),
             solar_limit_kw=state.get("solar_limit_kw", 0),
-            safe_mode_active=state.get("safe_mode_active", False),
+            safe_mode_active=current_safe_mode,
             config_mode=state.get("config_mode", "full_system"),
             operation_mode=state.get("operation_mode", "zero_dg_reverse"),
             load_meters_online=state.get("load_meters_online", 0),
@@ -770,6 +951,14 @@ class LoggingService:
             solar_min_max=(solar_min, solar_max),
         )
         logger.debug("Wrote control log summary")
+
+        # Store for next delta comparison
+        self._last_control_log = {
+            "total_load_kw": current_load,
+            "solar_output_kw": current_solar,
+            "dg_power_kw": current_dg,
+            "safe_mode_active": current_safe_mode,
+        }
 
         # Clear state buffers (device readings buffer cleared separately)
         self._state_buffer.clear()
@@ -856,14 +1045,48 @@ class LoggingService:
         })
 
     async def _stats_handler(self, request: web.Request) -> web.Response:
-        """Return logging statistics"""
+        """Return logging statistics with observability metrics"""
         db_stats = self.local_db.get_stats()
         sync_stats = self.cloud_sync.get_stats() if self.cloud_sync else {}
+
+        # Calculate buffer memory estimate (~300 bytes per reading)
+        async with self._readings_buffer_lock:
+            buffer_count = len(self._device_readings_buffer)
+        buffer_memory_kb = buffer_count * 0.3
 
         return web.json_response({
             "database": db_stats,
             "cloud_sync": sync_stats,
             "active_alarms": self.alarm_evaluator.get_active_alarms(),
+            # Observability: buffer metrics
+            "buffer": {
+                "readings_count": buffer_count,
+                "state_buffer_count": len(self._state_buffer),
+                "memory_kb": round(buffer_memory_kb, 1),
+            },
+            # Observability: timing metrics
+            "timing": {
+                "last_sample": self._last_sample_time.isoformat() if self._last_sample_time else None,
+                "last_flush": self._last_flush_time.isoformat() if self._last_flush_time else None,
+                "last_cloud_sync": self._last_cloud_sync_time.isoformat() if self._last_cloud_sync_time else None,
+                "sample_interval_s": self._local_sample_interval,
+                "flush_interval_s": self._local_flush_interval,
+                "cloud_interval_s": self._cloud_sync_interval,
+                # Drift tracking from schedulers
+                "sample_drift_ms": round(self._sample_drift_ms, 1),
+                "flush_drift_ms": round(self._flush_drift_ms, 1),
+            },
+            # Scheduler statistics
+            "schedulers": {
+                "sample": self._sample_scheduler.get_stats() if self._sample_scheduler else None,
+                "flush": self._flush_scheduler.get_stats() if self._flush_scheduler else None,
+            },
+            # Observability: error counters
+            "errors": {
+                "sample_errors": self._sample_error_count,
+                "flush_errors": self._flush_error_count,
+                "cloud_errors": self._cloud_error_count,
+            },
         })
 
 

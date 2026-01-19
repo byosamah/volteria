@@ -30,6 +30,9 @@ class CloudSync:
     BATCH_SIZE = 100
     RETRY_BACKOFF = [1, 2, 4]  # seconds
 
+    # Backfill threshold: if more than this many pending, log progress
+    BACKFILL_THRESHOLD = 1000
+
     def __init__(
         self,
         site_id: str,
@@ -45,6 +48,11 @@ class CloudSync:
         self._last_sync = datetime.now(timezone.utc)
         self._sync_count = 0
         self._error_count = 0
+
+        # Backfill tracking
+        self._backfill_mode = False
+        self._backfill_total = 0
+        self._backfill_synced = 0
 
     async def sync_logs(self) -> int:
         """
@@ -202,6 +210,7 @@ class CloudSync:
         self,
         readings: list[dict],
         all_reading_ids: list | None = None,
+        total_pending: int | None = None,
     ) -> int:
         """
         Sync specific device readings to cloud (downsampled).
@@ -210,6 +219,7 @@ class CloudSync:
         - `readings`: The downsampled readings to upload to cloud
         - `all_reading_ids`: ALL original reading IDs to mark as synced
           (includes readings not uploaded due to downsampling)
+        - `total_pending`: Optional total pending count for backfill tracking
 
         This allows local SQLite to keep full resolution while cloud gets
         downsampled data. All original readings are marked as processed.
@@ -217,10 +227,22 @@ class CloudSync:
         Args:
             readings: List of reading dicts to upload (downsampled)
             all_reading_ids: All reading IDs to mark as synced (optional)
+            total_pending: Total pending readings for backfill progress
 
         Returns:
             Number of readings uploaded to cloud
         """
+        # Detect backfill mode
+        if total_pending is not None and total_pending > self.BACKFILL_THRESHOLD:
+            if not self._backfill_mode:
+                self._backfill_mode = True
+                self._backfill_total = total_pending
+                self._backfill_synced = 0
+                logger.info(
+                    f"Backfill mode: {total_pending} readings pending, "
+                    f"will log progress every {self.BACKFILL_THRESHOLD}"
+                )
+
         if not readings:
             # Even with no readings to upload, mark all as synced if provided
             if all_reading_ids:
@@ -252,6 +274,23 @@ class CloudSync:
             ids_to_mark = all_reading_ids if all_reading_ids else [r["id"] for r in readings]
             self.local_db.mark_device_readings_synced(ids_to_mark)
             self._sync_count += len(readings)
+
+            # Backfill progress tracking
+            if self._backfill_mode:
+                self._backfill_synced += len(ids_to_mark)
+                # Log progress every BACKFILL_THRESHOLD records
+                if self._backfill_synced % self.BACKFILL_THRESHOLD < len(ids_to_mark):
+                    pct = (self._backfill_synced / self._backfill_total) * 100
+                    logger.info(
+                        f"Backfill progress: {self._backfill_synced}/{self._backfill_total} "
+                        f"({pct:.1f}%) synced"
+                    )
+                # Exit backfill mode when caught up
+                if self._backfill_synced >= self._backfill_total:
+                    logger.info(
+                        f"Backfill complete: {self._backfill_synced} readings synced"
+                    )
+                    self._backfill_mode = False
 
             logger.debug(
                 f"Synced {len(readings)} readings to cloud "

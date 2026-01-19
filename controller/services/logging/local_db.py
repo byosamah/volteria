@@ -160,13 +160,20 @@ class LocalDatabase:
 
     @contextmanager
     def _get_connection(self):
-        """Get database connection with context manager and WAL mode"""
+        """Get database connection with context manager and disk-wear optimizations"""
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        # Enable WAL mode for reduced SSD write amplification
-        # WAL mode writes to a separate log file instead of rewriting the main DB
+
+        # Disk wear optimizations for SD card/SSD longevity:
+        # - WAL mode: writes to separate log file instead of rewriting main DB
+        # - synchronous=NORMAL: safe with WAL, reduces fsyncs (2-3x fewer writes)
+        # - temp_store=MEMORY: keep temp tables/indexes in RAM (no temp file writes)
+        # - cache_size=-2000: 2MB cache reduces disk reads
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")  # Safe with WAL, reduces fsyncs
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA cache_size=-2000")
+
         try:
             yield conn
         finally:
@@ -435,35 +442,77 @@ class LocalDatabase:
             conn.commit()
             return cursor.lastrowid
 
+    # Retry backoff for write operations (0.5s, 1s, 2s)
+    WRITE_RETRY_BACKOFF = [0.5, 1.0, 2.0]
+
     def insert_device_readings_batch(
         self,
         readings: list[dict],
     ) -> int:
-        """Insert multiple device readings in a batch"""
+        """
+        Insert multiple device readings in a batch with retry logic.
+
+        Retries on failure with exponential backoff (0.5s, 1s, 2s) to handle
+        transient disk errors. If all retries fail, raises the exception.
+
+        Args:
+            readings: List of reading dicts
+
+        Returns:
+            Number of rows inserted
+
+        Raises:
+            sqlite3.Error: If all retry attempts fail
+        """
         if not readings:
             return 0
 
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
+        last_error: Exception | None = None
 
-            cursor.executemany("""
-                INSERT INTO device_readings (
-                    site_id, device_id, register_name, value, unit, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            """, [
-                (
-                    r["site_id"],
-                    r["device_id"],
-                    r["register_name"],
-                    r["value"],
-                    r.get("unit"),
-                    r["timestamp"],
+        for attempt, delay in enumerate([0] + self.WRITE_RETRY_BACKOFF):
+            if attempt > 0:
+                import time
+                logger.warning(
+                    f"SQLite write retry {attempt}/{len(self.WRITE_RETRY_BACKOFF)} "
+                    f"after {delay}s delay"
                 )
-                for r in readings
-            ])
+                time.sleep(delay)
 
-            conn.commit()
-            return cursor.rowcount
+            try:
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+
+                    cursor.executemany("""
+                        INSERT INTO device_readings (
+                            site_id, device_id, register_name, value, unit, timestamp
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                    """, [
+                        (
+                            r["site_id"],
+                            r["device_id"],
+                            r["register_name"],
+                            r["value"],
+                            r.get("unit"),
+                            r["timestamp"],
+                        )
+                        for r in readings
+                    ])
+
+                    conn.commit()
+                    return cursor.rowcount
+
+            except Exception as e:
+                last_error = e
+                logger.error(f"SQLite write error (attempt {attempt + 1}): {e}")
+
+        # All retries failed
+        if last_error:
+            logger.error(
+                f"SQLite write failed after {len(self.WRITE_RETRY_BACKOFF) + 1} attempts"
+            )
+            raise last_error
+
+        return 0
 
     def get_unsynced_device_readings(self, limit: int = 100) -> list[dict]:
         """Get device readings that haven't been synced"""
