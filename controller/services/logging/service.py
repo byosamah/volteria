@@ -709,17 +709,26 @@ class LoggingService:
         config = get_config()
         register_frequencies: dict[tuple[str, str], int] = {}
         if config:
-            # Flatten devices dict: {sensors: [...], inverters: [...]} → [...]
-            devices_dict = config.get("devices", {})
+            # Flatten devices - handles both dict format and flat list format
+            # Dict format: {sensors: [...], inverters: [...], load_meters: [...]}
+            # Flat list format: [device1, device2, ...]
+            devices_raw = config.get("devices", [])
             all_devices: list = []
-            if isinstance(devices_dict, dict):
-                for device_type, device_list in devices_dict.items():
+
+            if isinstance(devices_raw, dict):
+                # Dict format: iterate values and extend
+                for category_name, device_list in devices_raw.items():
                     if isinstance(device_list, list):
                         all_devices.extend(device_list)
-            elif isinstance(devices_dict, list):
-                # Legacy flat list format
-                all_devices = devices_dict
+                        logger.debug(f"Extracted {len(device_list)} devices from '{category_name}'")
+            elif isinstance(devices_raw, list):
+                # Flat list format (legacy or processed config)
+                all_devices = devices_raw
+                logger.debug(f"Using flat device list with {len(all_devices)} devices")
+            else:
+                logger.warning(f"Unexpected devices format: {type(devices_raw)}")
 
+            # Extract logging_frequency for each register
             for device in all_devices:
                 device_id = device.get("id")
                 if not device_id:
@@ -731,11 +740,17 @@ class LoggingService:
                         freq = max(1, reg.get("logging_frequency") or 60)
                         register_frequencies[(device_id, reg_name)] = freq
 
-            # Log extracted frequencies for debugging
-            if register_frequencies:
-                logger.debug(
-                    f"Cloud sync frequencies: {len(register_frequencies)} registers "
-                    f"(sample: {list(register_frequencies.items())[:3]})"
+            # Log extraction summary for debugging
+            logger.debug(
+                f"Cloud sync: extracted {len(all_devices)} devices, "
+                f"{len(register_frequencies)} register frequencies"
+            )
+            # Log non-default frequencies for visibility
+            non_default = {k: v for k, v in register_frequencies.items() if v != 60}
+            if non_default:
+                logger.info(
+                    f"Non-default logging frequencies: {len(non_default)} registers "
+                    f"(sample: {list(non_default.items())[:3]})"
                 )
 
         # Group by (device_id, register_name)
@@ -780,52 +795,86 @@ class LoggingService:
 
         return synced_count
 
+    def _parse_timestamp_to_epoch(self, ts_str: str) -> float:
+        """
+        Parse ISO timestamp string to epoch seconds.
+
+        Args:
+            ts_str: ISO format timestamp (e.g., "2024-01-15T10:30:00.000Z")
+
+        Returns:
+            Epoch seconds, or 0 if parsing fails
+        """
+        if not ts_str:
+            return 0
+        try:
+            if "T" in ts_str:
+                # ISO format: 2024-01-15T10:30:00.000Z
+                dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                return dt.timestamp()
+            return float(ts_str)
+        except (ValueError, TypeError):
+            return 0
+
     def _downsample_readings(
         self,
         readings: list[dict],
         frequency_seconds: int,
     ) -> list[dict]:
         """
-        Downsample readings to match the target frequency.
+        Downsample readings to clock-aligned buckets.
 
-        Given readings at ~1s intervals and a target frequency of e.g. 10s,
-        select one reading per 10-second window.
+        Uses wall-clock bucket selection instead of relative intervals.
+        Each reading is assigned to a bucket based on floor division of
+        its timestamp by the frequency. Only one reading per bucket is
+        selected, and its timestamp is aligned to the bucket boundary.
+
+        Examples for 15-min frequency (900s):
+        - Reading at 21:00:05 → bucket 21:00:00 → selected, timestamp = 21:00:00
+        - Reading at 21:01:23 → bucket 21:00:00 → skipped (bucket already has reading)
+        - Reading at 21:15:02 → bucket 21:15:00 → selected, timestamp = 21:15:00
+
+        Clock alignment examples by frequency:
+        - 5s: :00, :05, :10, :15, :20...
+        - 60s (1min): :00:00, :01:00, :02:00...
+        - 900s (15min): :00:00, :15:00, :30:00, :45:00
+        - 3600s (1hr): 00:00:00, 01:00:00, 02:00:00...
 
         Args:
             readings: List of readings sorted by timestamp (oldest first)
-            frequency_seconds: Target interval between readings
+            frequency_seconds: Target interval between readings (bucket size)
 
         Returns:
-            List of selected readings at the target frequency
+            List of selected readings with clock-aligned timestamps
         """
         if not readings:
             return []
 
         if frequency_seconds <= 1:
-            # No downsampling needed, return all
+            # No downsampling needed, return all readings as-is
             return readings
 
         selected: list[dict] = []
-        last_selected_ts: float = 0
+        selected_buckets: set[int] = set()
 
         for reading in readings:
             # Parse timestamp to epoch seconds
-            ts_str = reading.get("timestamp", "")
-            try:
-                from datetime import datetime
-                if "T" in ts_str:
-                    # ISO format: 2024-01-15T10:30:00.000Z
-                    dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                    ts = dt.timestamp()
-                else:
-                    ts = float(ts_str) if ts_str else 0
-            except (ValueError, TypeError):
-                ts = 0
+            ts = self._parse_timestamp_to_epoch(reading.get("timestamp", ""))
+            if ts == 0:
+                # Skip readings with invalid timestamps
+                continue
 
-            # Select if enough time has passed since last selection
-            if ts == 0 or (ts - last_selected_ts) >= frequency_seconds:
-                selected.append(reading)
-                last_selected_ts = ts if ts > 0 else last_selected_ts + frequency_seconds
+            # Calculate clock-aligned bucket
+            # Example: ts=1705693205 (21:00:05), freq=900 → bucket=1705693200 (21:00:00)
+            bucket = int(ts // frequency_seconds) * frequency_seconds
+
+            if bucket not in selected_buckets:
+                # Create reading with aligned bucket timestamp
+                aligned_reading = reading.copy()
+                aligned_ts = datetime.fromtimestamp(bucket, timezone.utc).isoformat()
+                aligned_reading["timestamp"] = aligned_ts
+                selected.append(aligned_reading)
+                selected_buckets.add(bucket)
 
         return selected
 
