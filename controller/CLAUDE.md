@@ -465,3 +465,92 @@ for register_name, reading in device_readings.items():
 2. Trigger config sync
 3. Data flows immediately with whatever name device service uses
 4. Once device service reloads, new name appears
+
+## Cloud Sync - Clock-Aligned Downsampling (2026-01-19)
+
+### Problem
+Per-register `logging_frequency` was not being respected for cloud sync:
+- Temperature (900s) was logging every 60s instead of every 15 minutes
+- Readings weren't aligned to clock boundaries (e.g., :00, :15, :30, :45)
+
+### Solution
+Clock-aligned bucket selection for downsampling:
+
+```python
+def _downsample_readings(self, readings: list[dict], frequency_seconds: int) -> list[dict]:
+    """Downsample readings to clock-aligned buckets."""
+    if frequency_seconds <= 1:
+        return readings  # No downsampling needed
+
+    selected: list[dict] = []
+    selected_buckets: set[int] = set()
+
+    for reading in readings:
+        ts = parse_timestamp_to_epoch(reading["timestamp"])
+        # Clock-aligned bucket (e.g., 900s = :00, :15, :30, :45)
+        bucket = int(ts // frequency_seconds) * frequency_seconds
+
+        if bucket not in selected_buckets:
+            # Align timestamp to bucket boundary
+            aligned_ts = datetime.fromtimestamp(bucket, timezone.utc).isoformat()
+            aligned_reading = {**reading, "timestamp": aligned_ts}
+            selected.append(aligned_reading)
+            selected_buckets.add(bucket)
+
+    return selected
+```
+
+### Key Behaviors
+| Frequency | Cloud Data Points | Alignment |
+|-----------|-------------------|-----------|
+| 1s | Every second | N/A |
+| 60s | 1 per minute | :00 |
+| 300s | 1 per 5 min | :00, :05, :10... |
+| 900s | 1 per 15 min | :00, :15, :30, :45 |
+
+### Files Changed
+- `services/logging/service.py` - `_downsample_readings()`, `_sync_device_readings_filtered()`
+
+## Cloud Sync - Robustness Fix (2026-01-19)
+
+### Problem
+Data gaps in cloud even when local SQLite had data. Root cause: empty batches after downsampling were marking readings as synced without uploading anything.
+
+### Solution
+Strict **upload-then-mark** pattern with `UploadResult` tracking:
+
+```python
+@dataclass
+class UploadResult:
+    success: bool
+    records_uploaded: int
+    is_duplicate: bool = False  # 409 response
+    error: str | None = None
+
+# CRITICAL: Don't mark synced if nothing to upload
+if not readings:
+    logger.warning(f"No readings after downsampling (original: {count}). NOT marking synced.")
+    return 0  # Will retry next cycle
+
+# Only mark synced AFTER successful upload
+result = await self._upload_with_retry(table, records)
+if result.success:
+    self.local_db.mark_device_readings_synced(reading_ids)
+```
+
+### Robustness Guarantees
+1. **Empty uploads** → Nothing marked synced, retry next cycle
+2. **Upload failure** → Nothing marked synced, retry next cycle
+3. **409 Conflict** → Treated as success (duplicates ignored by Supabase)
+4. **Partial success** → Only successful portion marked synced
+
+### Observability Metrics
+| Metric | Description |
+|--------|-------------|
+| `empty_batch_count` | Batches filtered to empty by downsampling |
+| `duplicate_count` | 409 responses (records already in cloud) |
+| `backfill_mode` | True when >1000 readings pending |
+| `backfill_progress` | "synced/total" during backfill |
+
+### Files Changed
+- `services/logging/cloud_sync.py` - `UploadResult`, `sync_specific_readings()`, all sync methods
