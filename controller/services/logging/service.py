@@ -24,7 +24,7 @@ import os
 import signal
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from collections import deque, defaultdict
 
@@ -48,6 +48,11 @@ HEALTH_PORT = 8085
 
 # Default intervals (can be overridden by site config)
 RETENTION_CHECK_INTERVAL_S = 3600  # Check retention every hour
+
+# Health alert thresholds
+ALERT_DRIFT_MS = 1000  # Warn if scheduler drift > 1 second
+ALERT_BUFFER_SIZE = 5000  # Warn if buffer > 5000 readings
+ALERT_CONSECUTIVE_ERRORS = 3  # Warn after 3 consecutive errors
 
 
 class LoggingService:
@@ -112,6 +117,13 @@ class LoggingService:
         # Observability: drift tracking (for scheduler phase)
         self._sample_drift_ms: float = 0
         self._flush_drift_ms: float = 0
+
+        # Health alerting: track consecutive errors and alert cooldowns
+        self._consecutive_sample_errors = 0
+        self._consecutive_flush_errors = 0
+        self._last_drift_alert: datetime | None = None
+        self._last_buffer_alert: datetime | None = None
+        self._last_error_alert: datetime | None = None
 
         # Delta filter: track last control log for change detection
         self._last_control_log: dict | None = None
@@ -414,8 +426,11 @@ class LoggingService:
             self._last_sample_time = datetime.now(timezone.utc)
             if self._sample_scheduler:
                 self._sample_drift_ms = self._sample_scheduler.drift_ms
+            # Reset consecutive errors on success
+            self._consecutive_sample_errors = 0
         except Exception as e:
             self._sample_error_count += 1
+            self._consecutive_sample_errors += 1
             logger.error(f"Sample callback error: {e}")
 
     async def _flush_callback(self) -> None:
@@ -423,6 +438,7 @@ class LoggingService:
         Scheduler callback for flushing RAM buffer to SQLite.
 
         Called by ScheduledLoop at precise _local_flush_interval intervals.
+        Also checks logging service health and raises alarms if needed.
         """
         # Handle disabled state
         if not self._local_enabled:
@@ -434,10 +450,14 @@ class LoggingService:
             self._solar_buffer.clear()
             return
 
-        # Skip flush if buffer is empty (idle optimization)
+        # Get buffer count for health check
         async with self._readings_buffer_lock:
             buffer_count = len(self._device_readings_buffer)
+
+        # Skip flush if buffer is empty (idle optimization)
         if buffer_count == 0 and not self._state_buffer:
+            # Still check health even when idle
+            await self._check_logging_health(buffer_count)
             return
 
         try:
@@ -445,9 +465,15 @@ class LoggingService:
             self._last_flush_time = datetime.now(timezone.utc)
             if self._flush_scheduler:
                 self._flush_drift_ms = self._flush_scheduler.drift_ms
+            # Reset consecutive errors on success
+            self._consecutive_flush_errors = 0
         except Exception as e:
             self._flush_error_count += 1
+            self._consecutive_flush_errors += 1
             logger.error(f"Flush callback error: {e}")
+
+        # Check logging health and raise alarms if needed
+        await self._check_logging_health(buffer_count)
 
     # Legacy loop methods kept for reference (now replaced by scheduler callbacks)
     async def _sample_loop(self) -> None:
@@ -1013,6 +1039,65 @@ class LoggingService:
                     "device_name": alarm.device_name,
                     "timestamp": alarm.timestamp.isoformat(),
                 })
+
+    async def _check_logging_health(self, buffer_count: int) -> None:
+        """
+        Check logging service health and raise alarms if needed.
+
+        Checks:
+        - High scheduler drift (> ALERT_DRIFT_MS)
+        - Buffer buildup (> ALERT_BUFFER_SIZE)
+        - Consecutive errors (> ALERT_CONSECUTIVE_ERRORS)
+
+        Each alert has a 5-minute cooldown to avoid spam.
+        """
+        now = datetime.now(timezone.utc)
+        cooldown = timedelta(minutes=5)
+
+        # Check scheduler drift
+        max_drift = max(self._sample_drift_ms, self._flush_drift_ms)
+        if max_drift > ALERT_DRIFT_MS:
+            if self._last_drift_alert is None or (now - self._last_drift_alert) > cooldown:
+                self._last_drift_alert = now
+                self.local_db.insert_alarm(
+                    alarm_id=str(uuid.uuid4()),
+                    site_id=self._site_id,
+                    alarm_type="LOGGING_HIGH_DRIFT",
+                    message=f"Logging scheduler drift is {max_drift:.0f}ms (threshold: {ALERT_DRIFT_MS}ms)",
+                    severity="warning",
+                    timestamp=now.isoformat(),
+                )
+                logger.warning(f"Logging health alert: scheduler drift {max_drift:.0f}ms")
+
+        # Check buffer buildup
+        if buffer_count > ALERT_BUFFER_SIZE:
+            if self._last_buffer_alert is None or (now - self._last_buffer_alert) > cooldown:
+                self._last_buffer_alert = now
+                self.local_db.insert_alarm(
+                    alarm_id=str(uuid.uuid4()),
+                    site_id=self._site_id,
+                    alarm_type="LOGGING_BUFFER_BUILDUP",
+                    message=f"Logging buffer has {buffer_count} readings (threshold: {ALERT_BUFFER_SIZE})",
+                    severity="warning",
+                    timestamp=now.isoformat(),
+                )
+                logger.warning(f"Logging health alert: buffer buildup {buffer_count} readings")
+
+        # Check consecutive errors
+        max_consecutive = max(self._consecutive_sample_errors, self._consecutive_flush_errors)
+        if max_consecutive >= ALERT_CONSECUTIVE_ERRORS:
+            if self._last_error_alert is None or (now - self._last_error_alert) > cooldown:
+                self._last_error_alert = now
+                error_type = "sample" if self._consecutive_sample_errors >= ALERT_CONSECUTIVE_ERRORS else "flush"
+                self.local_db.insert_alarm(
+                    alarm_id=str(uuid.uuid4()),
+                    site_id=self._site_id,
+                    alarm_type="LOGGING_CONSECUTIVE_ERRORS",
+                    message=f"Logging {error_type} has failed {max_consecutive} times consecutively",
+                    severity="major",
+                    timestamp=now.isoformat(),
+                )
+                logger.error(f"Logging health alert: {max_consecutive} consecutive {error_type} errors")
 
     async def _start_health_server(self) -> None:
         """Start the health check HTTP server"""
