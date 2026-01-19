@@ -1440,11 +1440,18 @@ async def change_device_template(
         new_template = new_template_result.data[0]
         new_template_uuid = new_template["id"]
 
-        # Helper: add source:"template" to all registers
+        # Helper: add source:"template" to all registers and ensure logging_frequency
         def add_template_source(registers):
             if not registers:
                 return []
-            return [{**r, "source": "template"} for r in registers]
+            result = []
+            for r in registers:
+                reg = {**r, "source": "template"}
+                # Ensure logging_frequency is always set (default: 60 seconds = 1 minute)
+                if "logging_frequency" not in reg or reg.get("logging_frequency") is None:
+                    reg["logging_frequency"] = 60
+                result.append(reg)
+            return result
 
         # Helper: filter manual registers from device
         def get_manual_registers(registers):
