@@ -622,6 +622,74 @@ Fixed bug where logging service logged old register names after rename:
 
 **Files Changed**: `controller/services/logging/service.py` - `_sample_readings_to_buffer()` iterates SharedState
 
+### Cloud Sync Per-Register Frequency Fix (2026-01-19)
+Fixed bug where cloud logging ignored per-register `logging_frequency` settings:
+
+**Problem**: All registers logged to cloud at default 60s interval regardless of their `logging_frequency` config.
+
+**Root Causes**:
+1. **Devices dict iteration bug**: Controller code did `for device in config.get("devices", [])` but devices was a DICT (`{sensors: [...], inverters: [...]}`) not a LIST
+2. **Missing logging_frequency**: Registers synced from templates didn't always have `logging_frequency` saved in database
+
+**Data Flow** (how `logging_frequency` propagates):
+```
+┌─────────────────────────────────────────────────────────────┐
+│  TEMPLATE (device_templates.logging_registers)              │
+│  - logging_frequency: 900 (15 min)                          │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ TEMPLATE SYNC (sites.py, devices.py)
+                       │ add_template_source() ensures logging_frequency
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  DEVICE (site_devices.registers)                            │
+│  - logging_frequency: 900 (always saved, default 60s)       │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ CONFIG ENDPOINT (controllers.py)
+                       │ Fallback lookup from template if missing
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  CONTROLLER (config.yaml)                                   │
+│  - logging_frequency per register → cloud downsampling      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Fixes Applied**:
+| Location | Fix |
+|----------|-----|
+| Controller `service.py` | Flatten devices dict before extracting frequencies |
+| Backend `controllers.py` | Config endpoint falls back to template's `logging_frequency` if device register missing it |
+| Backend `sites.py` | `add_template_source()` ensures `logging_frequency` (default 60s) |
+| Backend `devices.py` | Same fix for change-template endpoint |
+| Frontend `register-form.tsx` | Always saves `logging_frequency` field (never undefined) |
+
+**Controller Fix** (`services/logging/service.py`):
+```python
+# Flatten devices dict: {sensors: [...], inverters: [...]} → [...]
+devices_dict = config.get("devices", {})
+all_devices: list = []
+if isinstance(devices_dict, dict):
+    for device_type, device_list in devices_dict.items():
+        if isinstance(device_list, list):
+            all_devices.extend(device_list)
+```
+
+**Template Sync Fix** (`sites.py`, `devices.py`):
+```python
+def add_template_source(registers):
+    result = []
+    for r in registers:
+        reg = {**r, "source": "template"}
+        # Ensure logging_frequency always set (default: 60s)
+        if "logging_frequency" not in reg or reg.get("logging_frequency") is None:
+            reg["logging_frequency"] = 60
+        result.append(reg)
+    return result
+```
+
+**Verification**: After fix, cloud data shows correct intervals:
+- Humidity (1s): 99 readings in 99 seconds ✓
+- Temperature (900s): 1 reading in 15 minutes ✓
+
 ### Logging Service Reliability Improvements (2026-01-19)
 Comprehensive improvements to timestamp alignment, observability, disk wear, and failure handling.
 
