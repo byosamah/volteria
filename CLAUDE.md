@@ -569,6 +569,109 @@ Fixed bug where logging service logged old register names after rename:
 
 **Files Changed**: `controller/services/logging/service.py` - `_sample_readings_to_buffer()` iterates SharedState
 
+### Logging Service Reliability Improvements (2026-01-19)
+Comprehensive improvements to timestamp alignment, observability, disk wear, and failure handling.
+
+#### Timestamp Alignment
+All readings from the same sample cycle now share **identical timestamps** for easy cross-device correlation:
+
+```python
+# Before: Timestamps varied by ~100-200ms between devices
+Device A polled at 10.050s → "00:00:10.050"
+Device B polled at 10.150s → "00:00:10.150"
+
+# After: All aligned to interval boundary
+Device A polled at 10.050s → "00:00:10.000"
+Device B polled at 10.150s → "00:00:10.000"
+```
+
+**Supports**: Sub-second (0.5s) to hours (3600s+) intervals
+
+**Files Added**: `controller/common/timestamp.py`
+- `align_timestamp(ts, interval_seconds)` - Round to interval boundary
+- `get_aligned_now_iso(interval_seconds)` - Get aligned current time
+
+#### Unified Scheduler
+Replaced `asyncio.sleep()` loops with precise interval scheduler that tracks drift:
+
+```
+┌─────────────────────────────────────────────┐
+│  ScheduledLoop                              │
+│  - Fires at exact wall-clock boundaries     │
+│  - Tracks cumulative drift                  │
+│  - Skips missed intervals to catch up       │
+│  - Reports metrics for observability        │
+└─────────────────────────────────────────────┘
+```
+
+**Files Added**: `controller/common/scheduler.py`
+- `ScheduledLoop` - Precise interval execution with drift tracking
+- `SchedulerGroup` - Manage multiple schedulers
+
+**Scheduler Stats** (via `/stats` endpoint):
+```json
+{
+  "schedulers": {
+    "sample": {"drift_total_s": 0.023, "skipped_count": 0, "execution_count": 3600},
+    "flush": {"drift_total_s": 0.156, "skipped_count": 0, "execution_count": 60}
+  }
+}
+```
+
+#### Observability Metrics
+New metrics exposed via `/stats` health endpoint:
+
+| Category | Metrics |
+|----------|---------|
+| **Buffer** | `readings_count`, `state_buffer_count`, `memory_kb` |
+| **Timing** | `last_sample`, `last_flush`, `last_cloud_sync`, `sample_drift_ms`, `flush_drift_ms` |
+| **Errors** | `sample_errors`, `flush_errors`, `cloud_errors` |
+| **Schedulers** | Per-scheduler stats (drift, skipped, execution count) |
+
+#### Disk Wear Optimizations
+Reduces SD card/SSD writes for longer hardware lifetime:
+
+| Optimization | Impact |
+|--------------|--------|
+| **Idle Skip** | Skip flush when buffer empty (0 writes during idle) |
+| **Delta Filter** | Skip control log if values changed <1% (~50% fewer writes) |
+| **PRAGMA temp_store=MEMORY** | No temp file writes |
+| **PRAGMA cache_size=-2000** | 2MB cache reduces reads |
+
+**Estimated Write Reduction**: ~55% (576/day → ~250/day)
+
+#### Backfill Progress Logging
+When catching up after offline period (>1000 pending readings):
+
+```
+INFO: Backfill mode: 15000 readings pending, will log progress every 1000
+INFO: Backfill progress: 1000/15000 (6.7%) synced
+INFO: Backfill progress: 2000/15000 (13.3%) synced
+...
+INFO: Backfill complete: 15000 readings synced
+```
+
+#### Local Write Retry
+SQLite writes now retry with exponential backoff on failure:
+
+| Attempt | Delay | Action |
+|---------|-------|--------|
+| 1 | 0s | Try write |
+| 2 | 0.5s | Retry |
+| 3 | 1.0s | Retry |
+| 4 | 2.0s | Final retry |
+
+**Buffer Retention**: If all retries fail, buffer is kept (up to 5 min / `MAX_BUFFER_AGE_S=300`) for next attempt.
+
+#### Files Changed
+| File | Changes |
+|------|---------|
+| `controller/common/timestamp.py` | NEW - Timestamp alignment utilities |
+| `controller/common/scheduler.py` | NEW - Precise interval scheduler |
+| `controller/services/logging/service.py` | Schedulers, observability, delta filter, buffer retention |
+| `controller/services/logging/local_db.py` | PRAGMA tuning, write retry logic |
+| `controller/services/logging/cloud_sync.py` | Backfill progress tracking |
+
 ## Never Do
 
 - NEVER over-engineer
