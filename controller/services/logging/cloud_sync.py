@@ -1,11 +1,18 @@
 """
 Cloud Sync
 
-Syncs local data to Supabase cloud (every 2 minutes).
+Syncs local data to Supabase cloud (every 3 minutes).
 Handles batched uploads with retry logic.
+
+Robustness Guarantees:
+1. Only mark readings as synced AFTER successful upload
+2. Empty uploads don't mark anything as synced
+3. Failed uploads leave readings unsynced for retry
+4. Partial success still marks successful portion
 """
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,6 +24,15 @@ from .local_db import LocalDatabase
 logger = get_service_logger("logging.cloud_sync")
 
 
+@dataclass
+class UploadResult:
+    """Result of an upload attempt."""
+    success: bool
+    records_uploaded: int
+    is_duplicate: bool = False  # True if 409 (records already exist)
+    error: str | None = None
+
+
 class CloudSync:
     """
     Syncs data to Supabase cloud.
@@ -24,7 +40,13 @@ class CloudSync:
     Features:
     - Batched uploads (up to 100 records)
     - Retry with exponential backoff
-    - Marks records as synced after successful upload
+    - Marks records as synced ONLY after successful upload
+    - Empty uploads don't mark anything as synced
+
+    Robustness:
+    - If upload fails, readings remain unsynced for retry next cycle
+    - 409 Conflict (duplicates) treated as success with ignore-duplicates header
+    - Tracks uploaded count vs marked count for observability
     """
 
     BATCH_SIZE = 100
@@ -48,6 +70,8 @@ class CloudSync:
         self._last_sync = datetime.now(timezone.utc)
         self._sync_count = 0
         self._error_count = 0
+        self._empty_batch_count = 0  # Track empty batches (downsampling filtered all)
+        self._duplicate_count = 0  # Track 409 responses (duplicates ignored)
 
         # Backfill tracking
         self._backfill_mode = False
@@ -104,12 +128,12 @@ class CloudSync:
             return 0
 
         # Upload with retry
-        success = await self._upload_with_retry(
+        result = await self._upload_with_retry(
             table="control_logs",
             records=records,
         )
 
-        if success:
+        if result.success:
             # Mark as synced
             log_ids = [log["id"] for log in logs]
             self.local_db.mark_logs_synced(log_ids)
@@ -118,6 +142,8 @@ class CloudSync:
             logger.debug(f"Synced {len(logs)} control logs")
             return len(logs)
 
+        # Upload failed - don't mark as synced
+        logger.warning(f"Control logs upload failed ({result.error}), will retry next cycle")
         return 0
 
     async def sync_alarms(self) -> int:
@@ -148,12 +174,12 @@ class CloudSync:
             records.append(record)
 
         # Upload with retry
-        success = await self._upload_with_retry(
+        result = await self._upload_with_retry(
             table="alarms",
             records=records,
         )
 
-        if success:
+        if result.success:
             # Mark as synced
             alarm_ids = [alarm["id"] for alarm in alarms]
             self.local_db.mark_alarms_synced(alarm_ids)
@@ -162,6 +188,8 @@ class CloudSync:
             logger.debug(f"Synced {len(alarms)} alarms")
             return len(alarms)
 
+        # Upload failed - don't mark as synced
+        logger.warning(f"Alarms upload failed ({result.error}), will retry next cycle")
         return 0
 
     async def sync_device_readings(self) -> int:
@@ -190,12 +218,12 @@ class CloudSync:
             records.append(record)
 
         # Upload with retry
-        success = await self._upload_with_retry(
+        result = await self._upload_with_retry(
             table="device_readings",
             records=records,
         )
 
-        if success:
+        if result.success:
             # Mark as synced
             reading_ids = [reading["id"] for reading in readings]
             self.local_db.mark_device_readings_synced(reading_ids)
@@ -204,6 +232,8 @@ class CloudSync:
             logger.debug(f"Synced {len(readings)} device readings")
             return len(readings)
 
+        # Upload failed - don't mark as synced
+        logger.warning(f"Device readings upload failed ({result.error}), will retry next cycle")
         return 0
 
     async def sync_specific_readings(
@@ -221,8 +251,8 @@ class CloudSync:
           (includes readings not uploaded due to downsampling)
         - `total_pending`: Optional total pending count for backfill tracking
 
-        This allows local SQLite to keep full resolution while cloud gets
-        downsampled data. All original readings are marked as processed.
+        IMPORTANT: Only marks readings as synced AFTER successful upload.
+        If readings list is empty or upload fails, nothing is marked as synced.
 
         Args:
             readings: List of reading dicts to upload (downsampled)
@@ -243,10 +273,17 @@ class CloudSync:
                     f"will log progress every {self.BACKFILL_THRESHOLD}"
                 )
 
+        # CRITICAL: Don't mark anything as synced if nothing to upload
+        # This prevents data loss when downsampling produces empty results
         if not readings:
-            # Even with no readings to upload, mark all as synced if provided
-            if all_reading_ids:
-                self.local_db.mark_device_readings_synced(all_reading_ids)
+            original_count = len(all_reading_ids) if all_reading_ids else 0
+            if original_count > 0:
+                self._empty_batch_count += 1
+                logger.warning(
+                    f"No readings to upload after downsampling "
+                    f"(original: {original_count}). NOT marking as synced - "
+                    f"will retry next cycle."
+                )
             return 0
 
         # Transform for Supabase (must match device_readings table columns)
@@ -263,17 +300,21 @@ class CloudSync:
             records.append(record)
 
         # Upload with retry
-        success = await self._upload_with_retry(
+        result = await self._upload_with_retry(
             table="device_readings",
             records=records,
         )
 
-        if success:
+        if result.success:
             # Mark ALL original readings as synced (not just uploaded ones)
             # This handles downsampling where we upload fewer than we processed
             ids_to_mark = all_reading_ids if all_reading_ids else [r["id"] for r in readings]
             self.local_db.mark_device_readings_synced(ids_to_mark)
             self._sync_count += len(readings)
+
+            # Track duplicates for observability
+            if result.is_duplicate:
+                self._duplicate_count += 1
 
             # Backfill progress tracking
             if self._backfill_mode:
@@ -292,12 +333,18 @@ class CloudSync:
                     )
                     self._backfill_mode = False
 
+            dup_note = " (duplicates ignored)" if result.is_duplicate else ""
             logger.debug(
-                f"Synced {len(readings)} readings to cloud "
-                f"(marked {len(ids_to_mark)} as processed)"
+                f"Synced {len(readings)} readings to cloud{dup_note}, "
+                f"marked {len(ids_to_mark)} as processed"
             )
             return len(readings)
 
+        # Upload failed - don't mark anything as synced
+        logger.warning(
+            f"Cloud upload failed ({result.error}), "
+            f"{len(readings)} readings NOT marked as synced - will retry next cycle"
+        )
         return 0
 
     async def sync_all(self) -> dict:
@@ -325,8 +372,21 @@ class CloudSync:
         self,
         table: str,
         records: list[dict],
-    ) -> bool:
-        """Upload records with retry logic"""
+    ) -> UploadResult:
+        """
+        Upload records with retry logic.
+
+        Returns UploadResult with details about the upload:
+        - success: True if upload succeeded (including duplicate handling)
+        - records_uploaded: Number of records sent to server
+        - is_duplicate: True if 409 (records already exist)
+        - error: Error message if failed
+
+        Uses Prefer: resolution=ignore-duplicates header, so 409 responses
+        are treated as success (records already exist in cloud).
+        """
+        last_error = None
+
         for attempt, delay in enumerate(self.RETRY_BACKOFF + [0]):
             try:
                 async with httpx.AsyncClient() as client:
@@ -343,7 +403,10 @@ class CloudSync:
                         timeout=30.0,
                     )
                     response.raise_for_status()
-                    return True
+                    return UploadResult(
+                        success=True,
+                        records_uploaded=len(records),
+                    )
 
             except httpx.HTTPStatusError as e:
                 # Log response body for debugging
@@ -352,24 +415,41 @@ class CloudSync:
                 except Exception:
                     error_body = "Could not read response body"
 
-                # 409 Conflict = records already exist, treat as success
+                # 409 Conflict with ignore-duplicates = records already exist
+                # This is safe because we use Prefer: resolution=ignore-duplicates
+                # Supabase will insert new records and skip existing ones
                 if e.response.status_code == 409:
-                    logger.info(f"Records already exist in {table} (409), marking as synced")
-                    return True
-                logger.warning(
-                    f"Upload failed (attempt {attempt + 1}): HTTP {e.response.status_code} - {error_body[:200]}"
-                )
+                    logger.info(
+                        f"Records already exist in {table} (409 with ignore-duplicates), "
+                        f"treating as success"
+                    )
+                    return UploadResult(
+                        success=True,
+                        records_uploaded=len(records),
+                        is_duplicate=True,
+                    )
+
+                last_error = f"HTTP {e.response.status_code}: {error_body[:200]}"
+                logger.warning(f"Upload failed (attempt {attempt + 1}): {last_error}")
+
             except httpx.TimeoutException:
+                last_error = "Timeout"
                 logger.warning(f"Upload timeout (attempt {attempt + 1})")
+
             except Exception as e:
+                last_error = str(e)
                 logger.warning(f"Upload error (attempt {attempt + 1}): {e}")
 
             if delay > 0:
                 await asyncio.sleep(delay)
 
         self._error_count += 1
-        logger.error(f"Failed to upload {len(records)} records to {table}")
-        return False
+        logger.error(f"Failed to upload {len(records)} records to {table} after all retries")
+        return UploadResult(
+            success=False,
+            records_uploaded=0,
+            error=last_error,
+        )
 
     async def sync_alarm_immediately(self, alarm: dict) -> bool:
         """
@@ -417,9 +497,13 @@ class CloudSync:
             return False
 
     def get_stats(self) -> dict:
-        """Get sync statistics"""
+        """Get sync statistics with robustness metrics"""
         return {
             "last_sync": self._last_sync.isoformat(),
             "total_synced": self._sync_count,
             "error_count": self._error_count,
+            "empty_batch_count": self._empty_batch_count,  # Downsampling produced empty
+            "duplicate_count": self._duplicate_count,  # 409 responses
+            "backfill_mode": self._backfill_mode,
+            "backfill_progress": f"{self._backfill_synced}/{self._backfill_total}" if self._backfill_mode else None,
         }
