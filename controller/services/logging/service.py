@@ -709,7 +709,18 @@ class LoggingService:
         config = get_config()
         register_frequencies: dict[tuple[str, str], int] = {}
         if config:
-            for device in config.get("devices", []):
+            # Flatten devices dict: {sensors: [...], inverters: [...]} → [...]
+            devices_dict = config.get("devices", {})
+            all_devices: list = []
+            if isinstance(devices_dict, dict):
+                for device_type, device_list in devices_dict.items():
+                    if isinstance(device_list, list):
+                        all_devices.extend(device_list)
+            elif isinstance(devices_dict, list):
+                # Legacy flat list format
+                all_devices = devices_dict
+
+            for device in all_devices:
                 device_id = device.get("id")
                 if not device_id:
                     continue
@@ -719,6 +730,13 @@ class LoggingService:
                         # logging_frequency in seconds, default 60s, minimum 1s
                         freq = max(1, reg.get("logging_frequency") or 60)
                         register_frequencies[(device_id, reg_name)] = freq
+
+            # Log extracted frequencies for debugging
+            if register_frequencies:
+                logger.debug(
+                    f"Cloud sync frequencies: {len(register_frequencies)} registers "
+                    f"(sample: {list(register_frequencies.items())[:3]})"
+                )
 
         # Group by (device_id, register_name)
         grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
