@@ -455,6 +455,48 @@ CLOUD SYNC (every 180s, downsampled per-register)
 - Local SQLite keeps full resolution; cloud gets configurable density
 - All registers sync together in one batch (not separate times)
 
+### Logging Service Improvements (2026-01-19)
+Comprehensive enhancements for precision, observability, and reliability:
+
+**1. Timestamp Alignment**
+All device readings are aligned to 1-second boundaries for cross-device correlation:
+```
+Device A polled at 10.050s → timestamp: "10:00:10.000" (rounded)
+Device B polled at 10.150s → timestamp: "10:00:10.000" (rounded)
+Device C polled at 10.250s → timestamp: "10:00:10.000" (rounded)
+```
+- All registers sampled in same interval share IDENTICAL timestamp
+- Supports sub-second (0.5s) to hours (3600s+) intervals
+- Files: `common/timestamp.py`, `services/logging/service.py`
+
+**2. Unified Scheduler**
+Precise interval execution with drift tracking (replaces simple `asyncio.sleep`):
+- Fires at exact wall-clock boundaries
+- Tracks cumulative drift for observability
+- Skips missed intervals to catch up (no queue buildup)
+- File: `common/scheduler.py`
+
+**3. Observability Metrics** (via `/stats` endpoint)
+| Metric | Description |
+|--------|-------------|
+| `buffer.readings_count` | Current RAM buffer size |
+| `timing.sample_drift_ms` | Sample loop timing drift |
+| `timing.flush_drift_ms` | Flush loop timing drift |
+| `errors.sample_errors` | Sample failures count |
+| `scheduler.*` | Per-scheduler execution stats |
+
+**4. Disk Wear Optimizations**
+- `PRAGMA temp_store=MEMORY` - Temp tables in RAM
+- `PRAGMA cache_size=-2000` - 2MB read cache
+- Idle skip: No flush if buffer empty
+- Delta filter: Skip control_log if <1% change
+
+**5. SQLite Write Retry**
+Exponential backoff on disk errors: 0.5s, 1s, 2s
+
+**6. Cloud Backfill Progress**
+Logs progress when >1000 readings pending (for offline recovery visibility)
+
 ### Controller Remote Update
 - **New Endpoint**: `POST /api/controllers/{id}/update`
 - **Auth**: `controller_secret` (SSH password) or admin JWT
