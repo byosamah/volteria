@@ -453,9 +453,10 @@ export function RegisterForm({
     }
     // Always save logging_frequency (default 60 seconds = 1 minute)
     // This ensures the value is stored in the database and synced to the controller
-    if (formData.logging_frequency) {
-      newRegister.logging_frequency = parseFloat(formData.logging_frequency);
-    }
+    // ALWAYS include this field, even with default value, to prevent config sync issues
+    newRegister.logging_frequency = formData.logging_frequency
+      ? parseFloat(formData.logging_frequency)
+      : 60;  // Default: 60 seconds (1 minute)
     if (formData.unit.trim()) {
       newRegister.unit = formData.unit.trim();
     }

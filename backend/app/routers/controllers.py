@@ -1014,6 +1014,23 @@ async def get_controller_config(
             # Prefer device-level device_type, fallback to template's device_type
             device_type = device.get("device_type") or template.get("device_type") or "unknown"
 
+            # Build lookup for template logging_registers by name (for logging_frequency)
+            template_logging_freq = {}
+            for reg in template.get("logging_registers") or []:
+                if reg.get("name") and reg.get("logging_frequency"):
+                    template_logging_freq[reg["name"]] = reg["logging_frequency"]
+
+            # Ensure each device register has logging_frequency from template if not set
+            device_registers = []
+            for reg in device.get("registers") or []:
+                reg_copy = dict(reg)  # Don't mutate original
+                if not reg_copy.get("logging_frequency") and reg_copy.get("name"):
+                    # Look up from template's logging_registers
+                    freq = template_logging_freq.get(reg_copy["name"])
+                    if freq:
+                        reg_copy["logging_frequency"] = freq
+                device_registers.append(reg_copy)
+
             device_config = {
                 "id": str(device["id"]),
                 "name": device.get("name"),
@@ -1025,8 +1042,8 @@ async def get_controller_config(
                 "slave_id": device.get("slave_id"),
                 "rated_power_kw": template.get("rated_power_kw"),
                 "rated_power_kva": template.get("rated_power_kva"),
-                # Use DEVICE registers (merged template + manual), not template registers
-                "registers": device.get("registers") or [],
+                # Use DEVICE registers with logging_frequency from template if missing
+                "registers": device_registers,
                 "visualization_registers": device.get("visualization_registers") or [],
                 "alarm_registers": device.get("alarm_registers") or []
             }

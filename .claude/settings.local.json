@@ -112,7 +112,8 @@
       "Bash(C:/Users/Hp/scoop/shims/supabase.exe db push:*)",
       "Bash(dir:*)",
       "Bash(pip show:*)",
-      "Bash(C:/Users/Hp/AppData/Roaming/Python/Python314/Scripts/uvicorn.exe:*)"
+      "Bash(C:/Users/Hp/AppData/Roaming/Python/Python314/Scripts/uvicorn.exe:*)",
+      "Bash(netstat:*)"
     ]
   }
 }
