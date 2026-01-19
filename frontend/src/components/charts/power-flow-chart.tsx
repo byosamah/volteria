@@ -1072,6 +1072,9 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
             </>
           )}
         </div>
+        <div className="text-right text-xs text-muted-foreground mt-1">
+          Times in browser timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+        </div>
       </CardContent>
     </Card>
   );
