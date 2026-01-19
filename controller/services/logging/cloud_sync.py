@@ -273,16 +273,15 @@ class CloudSync:
                     f"will log progress every {self.BACKFILL_THRESHOLD}"
                 )
 
-        # CRITICAL: Don't mark anything as synced if nothing to upload
-        # This prevents data loss when downsampling produces empty results
+        # Empty after downsampling = all readings fell into already-uploaded buckets
+        # This is LEGITIMATE - mark them as synced so we don't re-process forever
         if not readings:
-            original_count = len(all_reading_ids) if all_reading_ids else 0
-            if original_count > 0:
+            if all_reading_ids:
                 self._empty_batch_count += 1
-                logger.warning(
-                    f"No readings to upload after downsampling "
-                    f"(original: {original_count}). NOT marking as synced - "
-                    f"will retry next cycle."
+                self.local_db.mark_device_readings_synced(all_reading_ids)
+                logger.debug(
+                    f"Marked {len(all_reading_ids)} readings as synced "
+                    f"(all fell into existing clock-aligned buckets)"
                 )
             return 0
 
