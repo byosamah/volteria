@@ -331,6 +331,24 @@ Large dataset support with database-level aggregation:
 - **Device Register Caching**: In-memory cache for fast device switching (no re-fetch when switching back)
 - **Loading Spinner**: Shows "Loading registers..." while fetching device parameters
 
+### Historical Chart X-Axis Format (2026-01-19)
+Clean, unambiguous timestamp formatting based on data range:
+
+| Range | Format | Example |
+|-------|--------|---------|
+| ≤1 day | Time only | `14:35` |
+| 1-3 days | Day Month Time | `17 Jan 14:00` |
+| >3 days | Day Month | `17 Jan` |
+
+**Key Changes**:
+- 24h preset now uses exact 24 hours (not calendar days)
+- Numbers separated by month text for readability (`17 Jan 14:00` not `17, 14:00`)
+- Threshold increased to 26h to handle data variance edge cases
+
+**Files Changed**:
+- `frontend/src/components/historical/v2/DateRangeSelector.tsx` - 24h preset uses exact hours
+- `frontend/src/components/historical/v2/HistoricalChart.tsx` - Clean X-axis tickFormatter
+
 ### Historical Data Chart V2 - Multi-Site Support
 Compare parameters from multiple projects/sites on the same chart:
 
