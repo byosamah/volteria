@@ -364,7 +364,9 @@ export function LiveRegistersClient({
           }
 
           if (!result.success) {
-            const errorMsg = result.errors?.join(", ") || "Failed to read registers";
+            const errorMsg = result.errors?.length
+              ? `Device '${device.name}' - ${result.errors.join(", ")}`
+              : `Device '${device.name}' is not reporting back`;
             toast.error(errorMsg);
             return;
           }
@@ -391,7 +393,8 @@ export function LiveRegistersClient({
         }
       } catch (error) {
         console.error("Error reading registers:", error);
-        toast.error(error instanceof Error ? error.message : "Failed to read registers");
+        const msg = error instanceof Error ? error.message : "is not reporting back";
+        toast.error(`Device '${device.name}' ${msg}`);
       } finally {
         // Remove loading state
         setLoadingGroups((prev) => {
