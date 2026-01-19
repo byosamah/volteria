@@ -1378,6 +1378,88 @@ async def reboot_controller(
 
 
 # ============================================
+# ENDPOINTS - LOGGING SERVICE STATS
+# ============================================
+
+class LoggingStatsResponse(BaseModel):
+    """Response from logging service stats endpoint"""
+    success: bool
+    stats: Optional[dict] = None
+    error: Optional[str] = None
+
+
+@router.get("/{controller_id}/logging-stats", response_model=LoggingStatsResponse)
+async def get_logging_stats(
+    controller_id: UUID,
+    current_user: CurrentUser = Depends(require_role(["super_admin", "backend_admin", "admin", "configurator"])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Get logging service statistics from controller.
+
+    Fetches stats from the logging service's /stats endpoint (port 8085)
+    via SSH. Returns buffer sizes, timing metrics, scheduler stats, and error counts.
+    """
+    try:
+        # 1. Get controller with SSH credentials
+        controller_result = db.table("controllers").select(
+            "id, serial_number, ssh_port, ssh_username, ssh_password"
+        ).eq("id", str(controller_id)).execute()
+
+        if not controller_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Controller {controller_id} not found"
+            )
+
+        controller = controller_result.data[0]
+
+        if not controller.get("ssh_port") or not controller.get("ssh_username"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Controller SSH credentials not configured"
+            )
+
+        # 2. Execute curl to get stats from logging service
+        SSH_HOST = "host.docker.internal"
+        command = "curl -s http://localhost:8085/stats"
+
+        success, message, output = execute_ssh_command(
+            host=SSH_HOST,
+            port=controller["ssh_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", ""),
+            command=command,
+            timeout=10
+        )
+
+        if not success:
+            return LoggingStatsResponse(
+                success=False,
+                error=f"SSH command failed: {message}"
+            )
+
+        # 3. Parse JSON response
+        import json
+        try:
+            stats = json.loads(output.strip())
+            return LoggingStatsResponse(success=True, stats=stats)
+        except json.JSONDecodeError as e:
+            return LoggingStatsResponse(
+                success=False,
+                error=f"Invalid JSON response: {str(e)[:100]}"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get logging stats: {str(e)}"
+        )
+
+
+# ============================================
 # ENDPOINTS - UPDATE CONTROLLER SOFTWARE
 # ============================================
 
