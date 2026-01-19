@@ -521,7 +521,7 @@ class LoggingService:
                         "register_name": register_name,  # From SharedState
                         "value": reading.get("value"),
                         "unit": unit,
-                        "timestamp": reading.get("timestamp") or current_timestamp,
+                        "timestamp": current_timestamp,  # Always use aligned timestamp
                     })
 
         # Prevent unbounded memory growth (max 10000 readings ~= 2-3 MB)
