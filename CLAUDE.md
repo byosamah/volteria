@@ -732,6 +732,50 @@ Added timezone display to power flow chart for clarity when viewing historical d
 
 **Files Changed**: `frontend/src/components/charts/power-flow-chart.tsx`
 
+### Cloud Sync Robustness Fix (2026-01-19)
+Prevents data gaps by ensuring readings are only marked synced after **confirmed successful upload**.
+
+**Problem**: Data gaps in cloud when local SQLite has data. Root causes:
+1. Empty batches (downsampling filtered all) were marking readings as synced without uploading
+2. Upload failures didn't leave readings for retry on next cycle
+3. Service restarts during sync could orphan readings
+
+**Solution**: Strict "upload-then-mark" pattern:
+```python
+# BEFORE (buggy): Marked synced even if nothing uploaded
+if not readings:
+    if all_reading_ids:
+        self.local_db.mark_device_readings_synced(all_reading_ids)  # BAD
+    return 0
+
+# AFTER (fixed): Only mark if actually uploaded
+if not readings:
+    logger.warning("No readings after downsampling, NOT marking as synced")
+    return 0  # Will retry next cycle
+
+result = await self._upload_with_retry(...)
+if result.success:
+    self.local_db.mark_device_readings_synced(ids_to_mark)  # Only after success
+```
+
+**Key Guarantees**:
+| Scenario | Before (Bug) | After (Fixed) |
+|----------|--------------|---------------|
+| Empty after downsampling | Marked synced, data lost | Stays unsynced, retry next cycle |
+| Upload timeout | Might mark synced | Stays unsynced, retry next cycle |
+| Service restart mid-sync | Orphaned readings | Clean state, retry on restart |
+| 409 Conflict | Treated as success | Still success (ignore-duplicates header) |
+
+**New Observability Metrics** (via `/stats`):
+| Metric | Description |
+|--------|-------------|
+| `empty_batch_count` | Times downsampling produced no records to upload |
+| `duplicate_count` | Times 409 response received (records already exist) |
+| `backfill_mode` | Whether catching up from offline period |
+| `backfill_progress` | Progress during backfill (e.g., "1500/5000") |
+
+**Files Changed**: `controller/services/logging/cloud_sync.py`
+
 ### Logging Service Reliability Improvements (2026-01-19)
 Comprehensive improvements to timestamp alignment, observability, disk wear, and failure handling.
 
