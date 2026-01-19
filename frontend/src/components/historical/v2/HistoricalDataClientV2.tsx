@@ -71,10 +71,8 @@ export function HistoricalDataClientV2({
   useEffect(() => {
     if (!isHydrated) {
       const end = new Date();
-      end.setHours(23, 59, 59, 999);
       const start = new Date();
-      start.setDate(start.getDate() - 1);
-      start.setHours(0, 0, 0, 0);
+      start.setTime(end.getTime() - 1 * 60 * 60 * 1000); // 1 hour ago
       setDateRange({ start, end });
       setIsHydrated(true);
     }
