@@ -690,6 +690,48 @@ def add_template_source(registers):
 - Humidity (1s): 99 readings in 99 seconds ✓
 - Temperature (900s): 1 reading in 15 minutes ✓
 
+### Clock-Aligned Cloud Downsampling (2026-01-19)
+Cloud sync now uses **wall-clock bucket selection** instead of relative intervals for precise timestamp alignment.
+
+**Problem**: Previous downsampling used relative intervals (`ts - last_ts >= frequency`), creating arbitrary timestamps like 21:01:23, 21:16:24, etc.
+
+**Solution**: Clock-aligned bucket selection using floor division:
+```python
+# Calculate clock-aligned bucket
+bucket = int(ts // frequency_seconds) * frequency_seconds
+# Example: ts=1705693205 (21:00:05), freq=900 → bucket=1705693200 (21:00:00)
+```
+
+**Behavior**:
+| Reading Time | Frequency | Bucket | Result |
+|--------------|-----------|--------|--------|
+| 21:00:05 | 15min | 21:00:00 | Selected, timestamp = 21:00:00 |
+| 21:01:23 | 15min | 21:00:00 | Skipped (bucket exists) |
+| 21:15:02 | 15min | 21:15:00 | Selected, timestamp = 21:15:00 |
+
+**Clock Alignment by Frequency**:
+| Frequency | Boundaries |
+|-----------|------------|
+| 5s | :00, :05, :10, :15, :20... |
+| 60s (1min) | :00:00, :01:00, :02:00... |
+| 300s (5min) | :00:00, :05:00, :10:00... |
+| 900s (15min) | :00:00, :15:00, :30:00, :45:00 |
+| 3600s (1hr) | 00:00:00, 01:00:00, 02:00:00... |
+
+**Key Changes**:
+- `_downsample_readings()` - Uses bucket set instead of last_ts tracking
+- `_parse_timestamp_to_epoch()` - New helper for ISO timestamp parsing
+- Timestamps stored as aligned bucket time (not original reading time)
+
+**Files Changed**: `controller/services/logging/service.py`
+
+### Power Flow Chart Timezone Indicator (2026-01-19)
+Added timezone display to power flow chart for clarity when viewing historical data.
+
+**Display**: Shows current timezone (e.g., "Europe/Berlin") in chart header next to refresh button.
+
+**Files Changed**: `frontend/src/components/charts/power-flow-chart.tsx`
+
 ### Logging Service Reliability Improvements (2026-01-19)
 Comprehensive improvements to timestamp alignment, observability, disk wear, and failure handling.
 
