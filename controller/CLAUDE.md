@@ -554,3 +554,29 @@ if result.success:
 
 ### Files Changed
 - `services/logging/cloud_sync.py` - `UploadResult`, `sync_specific_readings()`, all sync methods
+
+## PostgREST on_conflict Requirement (CRITICAL)
+
+When using `Prefer: resolution=ignore-duplicates` with Supabase REST API, you MUST specify `on_conflict` query parameter:
+
+```
+POST /rest/v1/device_readings?on_conflict=device_id,register_name,timestamp
+```
+
+**Without `on_conflict`**: Entire batch fails with 409 if ANY record has duplicate key
+**With `on_conflict`**: Duplicates skip silently, new records insert, returns 201
+
+**Conflict columns by table**:
+| Table | on_conflict |
+|-------|-------------|
+| device_readings | device_id,register_name,timestamp |
+| control_logs | site_id,timestamp |
+| alarms | site_id,alarm_type,timestamp |
+
+**The Bug** (fixed 2026-01-20): Cloud sync returned 409 even for new records.
+
+**Root Cause**: Clock-aligned downsampling rounds timestamps to bucket boundaries (e.g., 3600s freq → hour boundary). A reading at 18:46:01 for a 3600s register gets aligned to 18:00:00 - but 18:00:00 may already exist from a previous sync cycle.
+
+**The Fix**: Added `?on_conflict=...` query parameters to all cloud sync POST URLs.
+
+**Files Changed**: `services/logging/cloud_sync.py`

@@ -879,6 +879,26 @@ SQLite writes now retry with exponential backoff on failure:
 | `controller/services/logging/local_db.py` | PRAGMA tuning, write retry logic |
 | `controller/services/logging/cloud_sync.py` | Backfill progress tracking |
 
+### Cloud Sync on_conflict Fix (2026-01-20)
+Fixed 409 errors blocking cloud uploads when clock-aligned timestamps created duplicates.
+
+**Problem**: PostgREST `Prefer: resolution=ignore-duplicates` header requires explicit `on_conflict` query parameter. Without it, entire batch fails if ANY record has a duplicate key.
+
+**Example**: Device Address2 (3600s freq) at 18:46:01 → bucket 18:00:00 → duplicate from previous sync → whole batch rejected.
+
+**Fix**: Added `?on_conflict=device_id,register_name,timestamp` to device_readings POST URL.
+
+**Conflict columns by table**:
+| Table | on_conflict |
+|-------|-------------|
+| device_readings | device_id,register_name,timestamp |
+| control_logs | site_id,timestamp |
+| alarms | site_id,alarm_type,timestamp |
+
+**Files Changed**: `controller/services/logging/cloud_sync.py`
+
+**Debugging Added**: `/logs` endpoint for fetching controller logs via SSH.
+
 ## Never Do
 
 - NEVER over-engineer

@@ -129,6 +129,9 @@ backend/
 | `/{id}/ssh` | POST | Execute SSH command | Admin+ |
 | `/{id}/config` | GET | Get controller config | Controller |
 | `/{id}/test` | POST | Run controller tests | Admin+ |
+| `/{id}/logs` | POST | Fetch controller logs via SSH | Admin+ or controller_secret |
+| `/{id}/logging-stats` | GET | Get logging service stats | Admin+ |
+| `/{id}/historical/query` | POST | Query local SQLite data | Admin+ |
 | `/claim` | POST | Claim controller by serial | Enterprise Admin+ |
 | `/register` | POST | Register new controller | Controller |
 | `/lookup` | GET | Lookup controller by serial | Yes |
