@@ -1573,6 +1573,110 @@ async def get_logging_debug(
 
 
 # ============================================
+# ENDPOINTS - CONTROLLER LOGS (DEBUG)
+# ============================================
+
+class LogsRequest(BaseModel):
+    """Request body for logs endpoint."""
+    controller_secret: Optional[str] = None
+    lines: int = 100  # Number of lines to fetch
+    service: Optional[str] = None  # Filter by service (logging, control, device, config, system)
+    grep: Optional[str] = None  # Filter by pattern
+    since: Optional[str] = None  # Time filter e.g. "5 minutes ago", "1 hour ago"
+
+
+@router.post("/{controller_id}/logs")
+async def get_controller_logs(
+    controller_id: UUID,
+    request: Optional[LogsRequest] = None,
+    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Fetch controller logs via SSH (for debugging).
+
+    Returns journalctl output from the controller.
+
+    Auth: Either valid user JWT (admin+) OR controller_secret in request body.
+    """
+    request = request or LogsRequest()
+
+    try:
+        # 1. Get controller info
+        result = db.table("controllers_master").select(
+            "id, serial_number, ssh_user, ssh_host, ssh_port, ssh_password"
+        ).eq("id", str(controller_id)).single().execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Controller not found")
+
+        controller = result.data
+
+        # 2. Check authorization - either user JWT or controller_secret
+        if current_user:
+            # User JWT auth - check role
+            if current_user.role not in ["super_admin", "backend_admin", "admin"]:
+                raise HTTPException(status_code=403, detail="Admin access required")
+        elif request.controller_secret:
+            # Controller secret auth
+            if request.controller_secret != controller.get("ssh_password"):
+                raise HTTPException(status_code=403, detail="Invalid controller secret")
+        else:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        # 3. Build journalctl command
+        lines = min(request.lines, 500)  # Cap at 500 lines
+        cmd_parts = [f"journalctl -u volteria --no-pager -n {lines}"]
+
+        if request.since:
+            cmd_parts.append(f'--since "{request.since}"')
+
+        if request.service:
+            # Filter to specific service logs
+            cmd_parts.append(f'| grep -i "\\[{request.service}"')
+
+        if request.grep:
+            # Additional grep filter
+            cmd_parts.append(f'| grep -i "{request.grep}"')
+
+        command = " ".join(cmd_parts)
+
+        # 4. Execute via SSH
+        SSH_HOST = "host.docker.internal"
+        success, message, output = execute_ssh_command(
+            host=SSH_HOST,
+            port=controller["ssh_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", ""),
+            command=command,
+            timeout=30,
+        )
+
+        if not success:
+            return {"success": False, "error": f"SSH command failed: {message}"}
+
+        # 5. Parse output into lines
+        log_lines = output.strip().split("\n") if output.strip() else []
+
+        return {
+            "success": True,
+            "controller_id": str(controller_id),
+            "serial_number": controller["serial_number"],
+            "command": command,
+            "line_count": len(log_lines),
+            "logs": log_lines,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch logs: {str(e)}"
+        )
+
+
+# ============================================
 # ENDPOINTS - UPDATE CONTROLLER SOFTWARE
 # ============================================
 

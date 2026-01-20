@@ -523,12 +523,21 @@ class LoggingService:
         # Get device readings from shared state
         readings_state = SharedState.read("readings")
         if not readings_state or not readings_state.get("devices"):
+            logger.debug("FLOW[sample]: No readings in SharedState")
             return
 
         # Align timestamp to sample interval boundary
         # This ensures all readings from this cycle have identical timestamps
         # e.g., with 1s interval: 10:30:17.234 → 10:30:17.000
         current_timestamp = get_aligned_now_iso(self._local_sample_interval)
+
+        # Count readings being sampled
+        device_count = len(readings_state.get("devices", {}))
+        reading_count = sum(
+            len(d.get("readings", {}))
+            for d in readings_state.get("devices", {}).values()
+        )
+        logger.debug(f"FLOW[sample]: {reading_count} readings from {device_count} devices @ {current_timestamp}")
 
         # Read config for unit lookups (optional enrichment)
         config = get_config() or {}
@@ -618,9 +627,12 @@ class LoggingService:
         # Try to write device readings to SQLite
         write_success = True
         if readings_batch:
+            # Get timestamp range for logging
+            timestamps = [r.get("timestamp", "") for r in readings_batch[:3]]
+            logger.info(f"FLOW[flush]: Writing {len(readings_batch)} readings to SQLite, timestamps={timestamps}")
             try:
                 count = self.local_db.insert_device_readings_batch(readings_batch)
-                logger.debug(f"Flushed {count} device readings to SQLite (from {len(readings_batch)} buffered)")
+                logger.info(f"FLOW[flush]: SUCCESS - {count} readings written")
             except Exception as e:
                 write_success = False
                 logger.error(f"SQLite flush failed, keeping {len(readings_batch)} readings in buffer: {e}")
@@ -664,7 +676,10 @@ class LoggingService:
             await asyncio.sleep(self._cloud_sync_interval)
 
             if not self.cloud_sync:
+                logger.debug("FLOW[cloud]: No cloud_sync instance")
                 continue
+
+            logger.info("FLOW[cloud]: Starting cloud sync cycle...")
 
             try:
                 # Sync control_logs and alarms (all unsynced)
@@ -676,15 +691,13 @@ class LoggingService:
 
                 total = logs_synced + alarms_synced + readings_synced
                 self._last_cloud_sync_time = datetime.now(timezone.utc)
-                if total > 0:
-                    logger.info(
-                        f"Cloud sync: {logs_synced} logs, "
-                        f"{alarms_synced} alarms, "
-                        f"{readings_synced} device readings"
-                    )
+                logger.info(
+                    f"FLOW[cloud]: Sync complete - {logs_synced} logs, "
+                    f"{alarms_synced} alarms, {readings_synced} device readings"
+                )
             except Exception as e:
                 self._cloud_error_count += 1
-                logger.error(f"Cloud sync error: {e}")
+                logger.error(f"FLOW[cloud]: ERROR - {e}")
 
     async def _sync_device_readings_filtered(self) -> int:
         """
@@ -710,7 +723,16 @@ class LoggingService:
         # Get all unsynced readings from SQLite (batch for this sync window)
         unsynced = self.local_db.get_unsynced_device_readings(limit=5000)
         if not unsynced:
+            logger.info("FLOW[cloud-readings]: No unsynced readings in SQLite")
             return 0
+
+        # Log what we got
+        timestamps = [r.get("timestamp", "") for r in unsynced[:5]]
+        registers = list(set(r.get("register_name", "") for r in unsynced[:20]))
+        logger.info(
+            f"FLOW[cloud-readings]: Retrieved {len(unsynced)} unsynced, "
+            f"timestamps={timestamps}, registers={registers}"
+        )
 
         # Read FRESH config for logging_frequency lookups
         config = get_config()
