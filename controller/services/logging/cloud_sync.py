@@ -386,15 +386,6 @@ class CloudSync:
         """
         last_error = None
 
-        # DEBUG: Log what we're about to send
-        if records:
-            sample = records[:2]  # First 2 records
-            timestamps = [r.get("timestamp") for r in records[:5]]
-            logger.info(
-                f"UPLOAD DEBUG: {len(records)} records to {table}, "
-                f"timestamps={timestamps}, sample={sample}"
-            )
-
         # Conflict columns for each table (for ON CONFLICT DO NOTHING)
         conflict_columns = {
             "device_readings": "device_id,register_name,timestamp",
@@ -422,11 +413,6 @@ class CloudSync:
                         },
                         timeout=30.0,
                     )
-                    # DEBUG: Log response
-                    logger.info(
-                        f"UPLOAD RESPONSE: status={response.status_code}, "
-                        f"url={url[:50]}..."
-                    )
                     response.raise_for_status()
                     return UploadResult(
                         success=True,
@@ -440,13 +426,10 @@ class CloudSync:
                 except Exception:
                     error_body = "Could not read response body"
 
-                # 409 Conflict with ignore-duplicates = records already exist
-                # This is safe because we use Prefer: resolution=ignore-duplicates
-                # Supabase will insert new records and skip existing ones
+                # 409 Conflict = some records already exist (handled by on_conflict)
+                # With on_conflict param, new records insert and duplicates are skipped
                 if e.response.status_code == 409:
-                    logger.info(
-                        f"409 response for {table}: body={error_body[:300]}"
-                    )
+                    logger.debug(f"409 for {table}: {error_body[:200]}")
                     return UploadResult(
                         success=True,
                         records_uploaded=len(records),

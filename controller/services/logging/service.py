@@ -627,12 +627,9 @@ class LoggingService:
         # Try to write device readings to SQLite
         write_success = True
         if readings_batch:
-            # Get timestamp range for logging
-            timestamps = [r.get("timestamp", "") for r in readings_batch[:3]]
-            logger.info(f"FLOW[flush]: Writing {len(readings_batch)} readings to SQLite, timestamps={timestamps}")
             try:
                 count = self.local_db.insert_device_readings_batch(readings_batch)
-                logger.info(f"FLOW[flush]: SUCCESS - {count} readings written")
+                logger.debug(f"Flushed {count} readings to SQLite")
             except Exception as e:
                 write_success = False
                 logger.error(f"SQLite flush failed, keeping {len(readings_batch)} readings in buffer: {e}")
@@ -679,8 +676,6 @@ class LoggingService:
                 logger.debug("FLOW[cloud]: No cloud_sync instance")
                 continue
 
-            logger.info("FLOW[cloud]: Starting cloud sync cycle...")
-
             try:
                 # Sync control_logs and alarms (all unsynced)
                 logs_synced = await self.cloud_sync.sync_logs()
@@ -691,13 +686,11 @@ class LoggingService:
 
                 total = logs_synced + alarms_synced + readings_synced
                 self._last_cloud_sync_time = datetime.now(timezone.utc)
-                logger.info(
-                    f"FLOW[cloud]: Sync complete - {logs_synced} logs, "
-                    f"{alarms_synced} alarms, {readings_synced} device readings"
-                )
+                if total > 0:
+                    logger.debug(f"Cloud sync: {logs_synced} logs, {alarms_synced} alarms, {readings_synced} readings")
             except Exception as e:
                 self._cloud_error_count += 1
-                logger.error(f"FLOW[cloud]: ERROR - {e}")
+                logger.error(f"Cloud sync error: {e}")
 
     async def _sync_device_readings_filtered(self) -> int:
         """
@@ -723,16 +716,7 @@ class LoggingService:
         # Get all unsynced readings from SQLite (batch for this sync window)
         unsynced = self.local_db.get_unsynced_device_readings(limit=5000)
         if not unsynced:
-            logger.info("FLOW[cloud-readings]: No unsynced readings in SQLite")
             return 0
-
-        # Log what we got
-        timestamps = [r.get("timestamp", "") for r in unsynced[:5]]
-        registers = list(set(r.get("register_name", "") for r in unsynced[:20]))
-        logger.info(
-            f"FLOW[cloud-readings]: Retrieved {len(unsynced)} unsynced, "
-            f"timestamps={timestamps}, registers={registers}"
-        )
 
         # Read FRESH config for logging_frequency lookups
         config = get_config()
@@ -757,8 +741,6 @@ class LoggingService:
             else:
                 logger.warning(f"Unexpected devices format: {type(devices_raw)}")
 
-            # DEBUG: Log device extraction result
-            logger.info(f"Cloud sync: devices={type(devices_raw).__name__}, count={len(all_devices)}")
             self._last_devices_type = type(devices_raw).__name__
             self._last_devices_count = len(all_devices)
 
@@ -774,22 +756,13 @@ class LoggingService:
                         freq = max(1, reg.get("logging_frequency") or 60)
                         register_frequencies[(device_id, reg_name)] = freq
 
-            # DEBUG: Log frequency extraction summary
-            logger.info(f"Frequencies: {len(register_frequencies)} registers extracted")
-            if register_frequencies:
-                sample = list(register_frequencies.items())[:3]
-                logger.info(f"Sample frequencies: {sample}")
-
             # Store for debug endpoint
             self._last_register_frequencies = register_frequencies.copy()
 
-            # Log non-default frequencies for visibility
+            # Log non-default frequencies (debug only)
             non_default = {k: v for k, v in register_frequencies.items() if v != 60}
             if non_default:
-                logger.info(
-                    f"Non-default logging frequencies: {len(non_default)} registers "
-                    f"(sample: {list(non_default.items())[:3]})"
-                )
+                logger.debug(f"Non-default frequencies: {len(non_default)} registers")
 
         # Group by (device_id, register_name)
         grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -808,18 +781,11 @@ class LoggingService:
             # Get logging_frequency from config (default 60s)
             frequency = register_frequencies.get((device_id, register_name), 60)
 
-            # DEBUG: Log frequency lookup for each register
-            logger.info(f"Lookup ({device_id[:8]}, {register_name}): freq={frequency}s")
-
             # Sort readings by timestamp (oldest first for proper sampling)
             sorted_readings = sorted(readings, key=lambda r: r.get("timestamp", ""))
 
             # Downsample: select readings at logging_frequency intervals
-            # If we have readings at 1s intervals and freq=10s, take every 10th
             selected = self._downsample_readings(sorted_readings, frequency)
-
-            # DEBUG: Log and store downsample result
-            logger.info(f"Downsample {register_name}: {len(readings)} → {len(selected)}")
             self._last_downsample_results[register_name] = {
                 "input_count": len(readings),
                 "output_count": len(selected),
