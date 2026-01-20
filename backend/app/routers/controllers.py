@@ -1603,8 +1603,8 @@ async def get_controller_logs(
 
     try:
         # 1. Get controller info
-        result = db.table("controllers_master").select(
-            "id, serial_number, ssh_user, ssh_host, ssh_port, ssh_password"
+        result = db.table("controllers").select(
+            "id, serial_number, ssh_username, ssh_host, ssh_port, ssh_password"
         ).eq("id", str(controller_id)).single().execute()
 
         if not result.data:
@@ -1646,14 +1646,14 @@ async def get_controller_logs(
         success, message, output = execute_ssh_command(
             host=SSH_HOST,
             port=controller["ssh_port"],
-            username=controller["ssh_username"],
+            username=controller.get("ssh_username") or "pi",
             password=controller.get("ssh_password", ""),
             command=command,
             timeout=30,
         )
 
         if not success:
-            return {"success": False, "error": f"SSH command failed: {message}"}
+            return {"success": False, "error": f"SSH command failed: {message}", "output": output}
 
         # 5. Parse output into lines
         log_lines = output.strip().split("\n") if output.strip() else []
