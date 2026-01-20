@@ -273,15 +273,17 @@ class CloudSync:
                     f"will log progress every {self.BACKFILL_THRESHOLD}"
                 )
 
-        # Empty after downsampling = all readings fell into already-uploaded buckets
-        # This is LEGITIMATE - mark them as synced so we don't re-process forever
+        # Empty after downsampling - do NOT mark as synced
+        # Per-register frequencies mean different registers have different sync times
+        # Marking ALL reading IDs as synced here breaks frequency filtering
         if not readings:
-            if all_reading_ids:
+            original_count = len(all_reading_ids) if all_reading_ids else 0
+            if original_count > 0:
                 self._empty_batch_count += 1
-                self.local_db.mark_device_readings_synced(all_reading_ids)
-                logger.debug(
-                    f"Marked {len(all_reading_ids)} readings as synced "
-                    f"(all fell into existing clock-aligned buckets)"
+                logger.warning(
+                    f"No readings to upload after downsampling "
+                    f"(original: {original_count}). NOT marking as synced - "
+                    f"will retry next cycle."
                 )
             return 0
 
