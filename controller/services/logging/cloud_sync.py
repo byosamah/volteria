@@ -386,11 +386,21 @@ class CloudSync:
         """
         last_error = None
 
+        # DEBUG: Log what we're about to send
+        if records:
+            sample = records[:2]  # First 2 records
+            timestamps = [r.get("timestamp") for r in records[:5]]
+            logger.info(
+                f"UPLOAD DEBUG: {len(records)} records to {table}, "
+                f"timestamps={timestamps}, sample={sample}"
+            )
+
         for attempt, delay in enumerate(self.RETRY_BACKOFF + [0]):
             try:
+                url = f"{self.supabase_url}/rest/v1/{table}"
                 async with httpx.AsyncClient() as client:
                     response = await client.post(
-                        f"{self.supabase_url}/rest/v1/{table}",
+                        url,
                         json=records,
                         headers={
                             "apikey": self.supabase_key,
@@ -400,6 +410,11 @@ class CloudSync:
                             "Prefer": "resolution=ignore-duplicates,return=minimal",
                         },
                         timeout=30.0,
+                    )
+                    # DEBUG: Log response
+                    logger.info(
+                        f"UPLOAD RESPONSE: status={response.status_code}, "
+                        f"url={url[:50]}..."
                     )
                     response.raise_for_status()
                     return UploadResult(
