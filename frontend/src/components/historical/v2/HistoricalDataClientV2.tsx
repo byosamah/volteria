@@ -454,6 +454,19 @@ export function HistoricalDataClientV2({
     const allParams = [...leftAxisParams, ...rightAxisParams];
     if (allParams.length === 0 || !dateRange) return;
 
+    // Slide date window to current time (keeps same duration)
+    // This ensures Refresh/Plot always fetches the latest data
+    const now = new Date();
+    const duration = dateRange.end.getTime() - dateRange.start.getTime();
+    const newEnd = now;
+    const newStart = new Date(now.getTime() - duration);
+
+    // Update state so UI reflects the new range
+    setDateRange({ start: newStart, end: newEnd });
+
+    // Use new range for this fetch (state update is async)
+    const effectiveDateRange = { start: newStart, end: newEnd };
+
     setIsLoading(true);
 
     try {
@@ -477,8 +490,8 @@ export function HistoricalDataClientV2({
             deviceId: p.deviceId,
             registerName: p.registerName,
           })),
-          dateRange.start,
-          dateRange.end
+          effectiveDateRange.start,
+          effectiveDateRange.end
         );
         setChartData(dummyData);
         setMetadata({
@@ -496,7 +509,7 @@ export function HistoricalDataClientV2({
           throw new Error("Local data source only supports one site at a time. Please select parameters from a single site.");
         }
 
-        const diffDays = (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
+        const diffDays = (effectiveDateRange.end.getTime() - effectiveDateRange.start.getTime()) / (1000 * 60 * 60 * 24);
         const diffHours = diffDays * 24;
 
         // Local data source limited to 30 days for aggregated data
@@ -516,8 +529,8 @@ export function HistoricalDataClientV2({
         siteIds: siteIds.join(","),
         deviceIds: deviceIds.join(","),
         registers: registerNames.join(","),
-        start: dateRange.start.toISOString(),
-        end: dateRange.end.toISOString(),
+        start: effectiveDateRange.start.toISOString(),
+        end: effectiveDateRange.end.toISOString(),
         source: "device",
         aggregation: apiAggregation,
       });
@@ -557,7 +570,7 @@ export function HistoricalDataClientV2({
     } finally {
       setIsLoading(false);
     }
-  }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, dataSource, transformApiToChartData]);
+  }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, dataSource, transformApiToChartData, setDateRange]);
 
   // Clear chart data when all parameters are removed (but don't auto-fetch)
   useEffect(() => {
