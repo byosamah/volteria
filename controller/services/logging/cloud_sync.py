@@ -395,9 +395,20 @@ class CloudSync:
                 f"timestamps={timestamps}, sample={sample}"
             )
 
+        # Conflict columns for each table (for ON CONFLICT DO NOTHING)
+        conflict_columns = {
+            "device_readings": "device_id,register_name,timestamp",
+            "control_logs": "site_id,timestamp",  # Adjust if different
+            "alarms": "site_id,alarm_type,timestamp",  # Adjust if different
+        }
+        on_conflict = conflict_columns.get(table, "")
+
         for attempt, delay in enumerate(self.RETRY_BACKOFF + [0]):
             try:
                 url = f"{self.supabase_url}/rest/v1/{table}"
+                if on_conflict:
+                    url += f"?on_conflict={on_conflict}"
+
                 async with httpx.AsyncClient() as client:
                     response = await client.post(
                         url,
