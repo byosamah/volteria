@@ -134,6 +134,17 @@ class LoggingService:
         self._last_devices_count: int = 0
         self._last_downsample_results: dict[str, dict] = {}  # reg_name -> {input, output, freq}
 
+        # Diagnostics: enhanced tracking for debug endpoint
+        self._frequency_lookup_misses: int = 0  # Registers without frequency config
+        self._buffer_peak_24h: int = 0  # Max buffer size in 24h window
+        self._clock_buckets_created: int = 0  # Total buckets created for downsampling
+        self._clock_duplicates_skipped: int = 0  # Duplicates skipped during downsampling
+        self._last_config_hash: str = ""  # Last config hash for change tracking
+        self._last_config_change_time: datetime | None = None  # When config last changed
+
+        # Periodic summary: track last summary time (10-minute intervals)
+        self._last_health_summary_time: datetime | None = None
+
         # Health server
         self._health_app: web.Application | None = None
         self._health_runner: web.AppRunner | None = None
@@ -686,11 +697,20 @@ class LoggingService:
 
                 total = logs_synced + alarms_synced + readings_synced
                 self._last_cloud_sync_time = datetime.now(timezone.utc)
-                if total > 0:
-                    logger.debug(f"Cloud sync: {logs_synced} logs, {alarms_synced} alarms, {readings_synced} readings")
+
+                # Cloud sync summary with [CLOUD] prefix for easy filtering
+                if total > 0 or self.cloud_sync._duplicate_count > 0:
+                    cloud_stats = self.cloud_sync.get_stats()
+                    logger.info(
+                        f"[CLOUD] uploaded={readings_synced}, logs={logs_synced}, alarms={alarms_synced}, "
+                        f"duplicates={cloud_stats.get('duplicate_count', 0)}, "
+                        f"empty_batches={cloud_stats.get('empty_batch_count', 0)}"
+                    )
+                elif total == 0:
+                    logger.debug("FLOW[cloud]: No data to sync this cycle")
             except Exception as e:
                 self._cloud_error_count += 1
-                logger.error(f"Cloud sync error: {e}")
+                logger.error(f"[ERROR] Cloud sync failed: {e}")
 
     async def _sync_device_readings_filtered(self) -> int:
         """
@@ -779,7 +799,18 @@ class LoggingService:
             all_reading_ids.extend([r["id"] for r in readings])
 
             # Get logging_frequency from config (default 60s)
-            frequency = register_frequencies.get((device_id, register_name), 60)
+            key = (device_id, register_name)
+            frequency = register_frequencies.get(key, 60)
+
+            # Track frequency lookup misses (registers not in config)
+            if key not in register_frequencies:
+                self._frequency_lookup_misses += 1
+                # Log warning for first 10 misses only (don't spam)
+                if self._frequency_lookup_misses <= 10:
+                    logger.warning(
+                        f"[FREQ] No logging_frequency for {device_id[:8]}:{register_name}, "
+                        f"using default 60s"
+                    )
 
             # Sort readings by timestamp (oldest first for proper sampling)
             sorted_readings = sorted(readings, key=lambda r: r.get("timestamp", ""))
@@ -872,6 +903,7 @@ class LoggingService:
 
         selected: list[dict] = []
         selected_buckets: set[int] = set()
+        duplicates_in_batch = 0
 
         for reading in readings:
             # Parse timestamp to epoch seconds
@@ -891,6 +923,12 @@ class LoggingService:
                 aligned_reading["timestamp"] = aligned_ts
                 selected.append(aligned_reading)
                 selected_buckets.add(bucket)
+                self._clock_buckets_created += 1
+            else:
+                duplicates_in_batch += 1
+
+        # Track total duplicates skipped
+        self._clock_duplicates_skipped += duplicates_in_batch
 
         return selected
 
@@ -945,7 +983,23 @@ class LoggingService:
                 new_hash = compute_config_hash(config)
 
                 if new_hash != current_hash:
-                    logger.info(f"Config change detected (hash: {current_hash[:8]} → {new_hash[:8]}), reloading...")
+                    # Track config change for diagnostics
+                    self._last_config_hash = new_hash
+                    self._last_config_change_time = datetime.now(timezone.utc)
+
+                    # Count devices and registers for detailed logging
+                    devices_raw = config.get("devices", [])
+                    if isinstance(devices_raw, dict):
+                        device_count = sum(len(d) for d in devices_raw.values() if isinstance(d, list))
+                        device_types = list(devices_raw.keys())
+                    else:
+                        device_count = len(devices_raw)
+                        device_types = ["flat_list"]
+
+                    old_register_count = sum(
+                        len(device.get("registers", []))
+                        for device in (get_config() or {}).get("devices", [])
+                    )
 
                     # Reload configuration
                     await self._load_config()
@@ -956,14 +1010,17 @@ class LoggingService:
                     current_hash = new_hash
 
                     # Count registers fresh from config
-                    register_count = sum(
+                    new_register_count = sum(
                         len(device.get("registers", []))
                         for device in config.get("devices", [])
                     )
+
+                    # Detailed config change logging with [CONFIG] prefix
                     logger.info(
-                        f"Config reloaded: retention={self._retention_days}d, "
-                        f"{len(self._alarm_definitions)} alarm definitions, "
-                        f"{register_count} registers",
+                        f"[CONFIG] Changed: devices={device_count} ({','.join(device_types)}), "
+                        f"registers={new_register_count} (was {old_register_count}), "
+                        f"cloud={self._cloud_enabled}, local={self._local_enabled}, "
+                        f"hash={current_hash[:8]}"
                     )
 
             except Exception as e:
@@ -1132,10 +1189,30 @@ class LoggingService:
         - Buffer buildup (> ALERT_BUFFER_SIZE)
         - Consecutive errors (> ALERT_CONSECUTIVE_ERRORS)
 
+        Also logs periodic health summary every 10 minutes.
         Each alert has a 5-minute cooldown to avoid spam.
         """
         now = datetime.now(timezone.utc)
         cooldown = timedelta(minutes=5)
+
+        # Track buffer peak for 24h diagnostics
+        if buffer_count > self._buffer_peak_24h:
+            self._buffer_peak_24h = buffer_count
+
+        # Periodic health summary (every 10 minutes = 600 seconds)
+        health_summary_interval = timedelta(minutes=10)
+        if (
+            self._last_health_summary_time is None
+            or (now - self._last_health_summary_time) >= health_summary_interval
+        ):
+            self._last_health_summary_time = now
+            # Log health summary with [HEALTH] prefix for easy filtering
+            logger.info(
+                f"[HEALTH] buffer={buffer_count}, "
+                f"drift_sample={self._sample_drift_ms:.1f}ms, "
+                f"drift_flush={self._flush_drift_ms:.1f}ms, "
+                f"errors={{sample:{self._sample_error_count}, flush:{self._flush_error_count}, cloud:{self._cloud_error_count}}}"
+            )
 
         # Check scheduler drift
         max_drift = max(self._sample_drift_ms, self._flush_drift_ms)
@@ -1270,9 +1347,29 @@ class LoggingService:
             for (dev_id, reg_name), freq in self._last_register_frequencies.items()
         }
 
+        # Count registers by frequency for diagnostics
+        freq_counts: dict[int, int] = {}
+        for freq in self._last_register_frequencies.values():
+            freq_counts[freq] = freq_counts.get(freq, 0) + 1
+        # Format as "Xs: N" for readability
+        registers_by_frequency = {f"{f}s": c for f, c in sorted(freq_counts.items())}
+
+        # Count devices by type
+        devices_by_type: dict[str, int] = {}
+        if isinstance(devices_raw, dict):
+            for dtype, dlist in devices_raw.items():
+                if isinstance(dlist, list):
+                    devices_by_type[dtype] = len(dlist)
+        else:
+            devices_by_type["flat_list"] = len(devices_raw) if isinstance(devices_raw, list) else 0
+
         # Get cloud sync stats and local db stats
         cloud_stats = self.cloud_sync.get_stats() if self.cloud_sync else {}
         db_stats = self.local_db.get_stats()
+
+        # Get current buffer count
+        async with self._readings_buffer_lock:
+            buffer_count = len(self._device_readings_buffer)
 
         return web.json_response({
             "config_devices_type": type(devices_raw).__name__,
@@ -1287,6 +1384,18 @@ class LoggingService:
             "timing": {
                 "last_cloud_sync": self._last_cloud_sync_time.isoformat() if self._last_cloud_sync_time else None,
                 "cloud_errors": self._cloud_error_count,
+            },
+            # NEW: Enhanced diagnostics section
+            "diagnostics": {
+                "config_hash": self._last_config_hash[:8] if self._last_config_hash else None,
+                "config_last_change": self._last_config_change_time.isoformat() if self._last_config_change_time else None,
+                "devices_by_type": devices_by_type,
+                "registers_by_frequency": registers_by_frequency,
+                "frequency_lookup_misses": self._frequency_lookup_misses,
+                "buffer_current": buffer_count,
+                "buffer_peak_24h": self._buffer_peak_24h,
+                "clock_buckets_created": self._clock_buckets_created,
+                "clock_duplicates_skipped": self._clock_duplicates_skipped,
             },
         })
 

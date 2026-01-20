@@ -269,7 +269,7 @@ class CloudSync:
                 self._backfill_total = total_pending
                 self._backfill_synced = 0
                 logger.info(
-                    f"Backfill mode: {total_pending} readings pending, "
+                    f"[CLOUD] Backfill mode: {total_pending} readings pending, "
                     f"will log progress every {self.BACKFILL_THRESHOLD}"
                 )
 
@@ -318,13 +318,13 @@ class CloudSync:
                 if self._backfill_synced % self.BACKFILL_THRESHOLD < len(ids_to_mark):
                     pct = (self._backfill_synced / self._backfill_total) * 100
                     logger.info(
-                        f"Backfill progress: {self._backfill_synced}/{self._backfill_total} "
+                        f"[CLOUD] Backfill progress: {self._backfill_synced}/{self._backfill_total} "
                         f"({pct:.1f}%) synced"
                     )
                 # Exit backfill mode when caught up
                 if self._backfill_synced >= self._backfill_total:
                     logger.info(
-                        f"Backfill complete: {self._backfill_synced} readings synced"
+                        f"[CLOUD] Backfill complete: {self._backfill_synced} readings synced"
                     )
                     self._backfill_mode = False
 
@@ -420,7 +420,7 @@ class CloudSync:
                     )
 
             except httpx.HTTPStatusError as e:
-                # Log response body for debugging
+                # Log FULL response body for debugging (not truncated)
                 try:
                     error_body = e.response.text
                 except Exception:
@@ -429,29 +429,44 @@ class CloudSync:
                 # 409 Conflict = some records already exist (handled by on_conflict)
                 # With on_conflict param, new records insert and duplicates are skipped
                 if e.response.status_code == 409:
-                    logger.debug(f"409 for {table}: {error_body[:200]}")
+                    logger.debug(f"[CLOUD] 409 for {table}: {error_body}")
                     return UploadResult(
                         success=True,
                         records_uploaded=len(records),
                         is_duplicate=True,
                     )
 
-                last_error = f"HTTP {e.response.status_code}: {error_body[:200]}"
-                logger.warning(f"Upload failed (attempt {attempt + 1}): {last_error}")
+                # Log full error body for easier debugging
+                last_error = f"HTTP {e.response.status_code}"
+                logger.error(
+                    f"[ERROR] Cloud upload failed (attempt {attempt + 1}/{len(self.RETRY_BACKOFF) + 1}): "
+                    f"{last_error}\n"
+                    f"Table: {table}, Records: {len(records)}\n"
+                    f"Response: {error_body}"
+                )
 
             except httpx.TimeoutException:
                 last_error = "Timeout"
-                logger.warning(f"Upload timeout (attempt {attempt + 1})")
+                logger.warning(
+                    f"[ERROR] Upload timeout (attempt {attempt + 1}/{len(self.RETRY_BACKOFF) + 1}) "
+                    f"for {table} ({len(records)} records)"
+                )
 
             except Exception as e:
                 last_error = str(e)
-                logger.warning(f"Upload error (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    f"[ERROR] Upload error (attempt {attempt + 1}/{len(self.RETRY_BACKOFF) + 1}): "
+                    f"{e.__class__.__name__}: {e}"
+                )
 
             if delay > 0:
                 await asyncio.sleep(delay)
 
         self._error_count += 1
-        logger.error(f"Failed to upload {len(records)} records to {table} after all retries")
+        logger.error(
+            f"[ERROR] Failed to upload {len(records)} records to {table} after all retries. "
+            f"Last error: {last_error}"
+        )
         return UploadResult(
             success=False,
             records_uploaded=0,

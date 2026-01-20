@@ -190,6 +190,44 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 ## Recent Updates (2026-01-20)
 
+### Logging Service Debug Enhancement (NEW)
+Comprehensive debug logging for diagnosing data issues without impacting performance:
+
+**New Log Prefixes** (for easy filtering):
+| Prefix | Meaning | Frequency |
+|--------|---------|-----------|
+| `[HEALTH]` | 10-min health summary | 6/hour |
+| `[CLOUD]` | Cloud sync summary | ~20/hour |
+| `[CONFIG]` | Config change details | On change |
+| `[FREQ]` | Frequency lookup issues | On issue (max 10) |
+| `[ERROR]` | Error with full details | On error |
+
+**Filter commands:**
+```bash
+journalctl -u volteria -f | grep -E '\[(HEALTH|CLOUD|CONFIG|FREQ|ERROR)\]'
+```
+
+**Enhanced `/debug` Endpoint** (localhost:8085/debug):
+```json
+{
+  "diagnostics": {
+    "config_hash": "a1b2c3d4",
+    "config_last_change": "2026-01-20T15:00:00Z",
+    "devices_by_type": {"sensors": 2, "inverters": 1},
+    "registers_by_frequency": {"1s": 3, "60s": 10, "900s": 2},
+    "frequency_lookup_misses": 0,
+    "buffer_peak_24h": 500,
+    "clock_buckets_created": 1440,
+    "clock_duplicates_skipped": 5
+  }
+}
+```
+
+**Files Changed**:
+- `controller/services/logging/service.py` - Diagnostics tracking, periodic summary, config details
+- `controller/services/logging/cloud_sync.py` - Full error bodies, sync summaries
+- `controller/services/logging/CLAUDE.md` - Updated documentation
+
 ### Controller OTA Update Safety (NEW)
 Prevents runtime directories from being wiped during OTA updates:
 
