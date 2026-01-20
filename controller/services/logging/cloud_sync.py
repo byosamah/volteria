@@ -344,22 +344,26 @@ class CloudSync:
 
     async def sync_all(self) -> dict:
         """
-        Sync all pending data.
+        Sync all pending logs and alarms (for shutdown).
+
+        NOTE: Device readings are NOT synced here because they require
+        per-register downsampling which is handled by _sync_device_readings_filtered()
+        in service.py. Any unsynced readings will be picked up on next service start.
 
         Returns:
             Dict with sync statistics
         """
         logs_synced = await self.sync_logs()
         alarms_synced = await self.sync_alarms()
-        device_readings_synced = await self.sync_device_readings()
+        # Don't sync device_readings - they need downsampling (handled by main loop)
 
         self._last_sync = datetime.now(timezone.utc)
 
         return {
             "logs_synced": logs_synced,
             "alarms_synced": alarms_synced,
-            "device_readings_synced": device_readings_synced,
-            "total_synced": logs_synced + alarms_synced + device_readings_synced,
+            "device_readings_synced": 0,  # Handled separately with downsampling
+            "total_synced": logs_synced + alarms_synced,
             "timestamp": self._last_sync.isoformat(),
         }
 
