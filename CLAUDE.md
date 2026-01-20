@@ -188,7 +188,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 
 7. **Invite flow**: Uses URL fragments (`#access_token=...`), handled by login page
 
-## Recent Updates (2026-01-18)
+## Recent Updates (2026-01-20)
 
 ### Controller OTA Update Safety (NEW)
 Prevents runtime directories from being wiped during OTA updates:
@@ -516,7 +516,7 @@ Logs progress when >1000 readings pending (for offline recovery visibility)
 - **Note**: Uses `reset --hard` to handle local changes gracefully (config.yaml excluded)
 
 ### Nginx Routing Fix
-- Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`, `/logging-stats`, `/registers/read`, `/registers/write`, `/historical/query`) route to FastAPI
+- Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`, `/logs`, `/logging-stats`, `/logging-debug`, `/registers/read`, `/registers/write`, `/historical/query`) route to FastAPI
 - Controller frontend routes (`/heartbeats`, `/lookup`, `/register`, `/registers`) route to Next.js
 
 ### Logging System Architecture

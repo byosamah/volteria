@@ -69,7 +69,7 @@ upstream frontend {
 | Path | Destination | Notes |
 |------|-------------|-------|
 | `/api/admin/*` | Next.js frontend | Admin API routes |
-| `/api/controllers/{id}/(update\|reboot\|ssh\|...)` | FastAPI backend | Controller operations |
+| `/api/controllers/{id}/(update\|reboot\|ssh\|logs\|logging-stats\|logging-debug\|...)` | FastAPI backend | Controller operations |
 | `/api/controllers/*` | Next.js frontend | Heartbeats, lookup |
 | `/api/dashboards/*` | Next.js frontend | Dashboard widgets |
 | `/api/historical` | Next.js frontend | Historical data (regex match) |
