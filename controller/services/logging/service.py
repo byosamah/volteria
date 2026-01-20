@@ -728,6 +728,9 @@ class LoggingService:
             else:
                 logger.warning(f"Unexpected devices format: {type(devices_raw)}")
 
+            # DEBUG: Log device extraction result
+            logger.info(f"Cloud sync: devices={type(devices_raw).__name__}, count={len(all_devices)}")
+
             # Extract logging_frequency for each register
             for device in all_devices:
                 device_id = device.get("id")
@@ -740,11 +743,12 @@ class LoggingService:
                         freq = max(1, reg.get("logging_frequency") or 60)
                         register_frequencies[(device_id, reg_name)] = freq
 
-            # Log extraction summary for debugging
-            logger.debug(
-                f"Cloud sync: extracted {len(all_devices)} devices, "
-                f"{len(register_frequencies)} register frequencies"
-            )
+            # DEBUG: Log frequency extraction summary
+            logger.info(f"Frequencies: {len(register_frequencies)} registers extracted")
+            if register_frequencies:
+                sample = list(register_frequencies.items())[:3]
+                logger.info(f"Sample frequencies: {sample}")
+
             # Log non-default frequencies for visibility
             non_default = {k: v for k, v in register_frequencies.items() if v != 60}
             if non_default:
@@ -770,12 +774,19 @@ class LoggingService:
             # Get logging_frequency from config (default 60s)
             frequency = register_frequencies.get((device_id, register_name), 60)
 
+            # DEBUG: Log frequency lookup for each register
+            logger.info(f"Lookup ({device_id[:8]}, {register_name}): freq={frequency}s")
+
             # Sort readings by timestamp (oldest first for proper sampling)
             sorted_readings = sorted(readings, key=lambda r: r.get("timestamp", ""))
 
             # Downsample: select readings at logging_frequency intervals
             # If we have readings at 1s intervals and freq=10s, take every 10th
             selected = self._downsample_readings(sorted_readings, frequency)
+
+            # DEBUG: Log downsample result
+            logger.info(f"Downsample {register_name}: {len(readings)} → {len(selected)}")
+
             to_sync.extend(selected)
 
         # Push all downsampled readings to cloud in one batch

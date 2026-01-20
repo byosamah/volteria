@@ -338,8 +338,8 @@ class ConfigSync:
             # Control logic
             "register_role": reg.get("register_role"),  # e.g., solar_active_power, load_active_power
 
-            # Logging
-            "logging_frequency": reg.get("logging_frequency"),  # In seconds
+            # Logging (default 60s if not set)
+            "logging_frequency": reg.get("logging_frequency") or 60,  # In seconds
 
             # Advanced fields
             "mask": reg.get("mask"),  # Bit mask config
