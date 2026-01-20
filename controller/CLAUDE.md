@@ -377,206 +377,24 @@ python-dotenv>=1.0.0
    - `dg_inverter` - DG controllers + inverters
    - `full_system` - All device types present
 
-## Config Hot-Reload Improvements (2026-01-18)
+## Key Architecture Decisions
 
-### Simplified Config Change Detection
-- **Before**: Complex notification system with flags and acknowledgments
-- **After**: Services directly compare config content hash every 15 seconds
-- **Benefit**: Simpler, more reliable, detects ALL changes including register renames
+### Config Hot-Reload
+- Services compare config content hash every 15 seconds
+- Atomic file writes prevent partial reads (write to .tmp, then rename)
 
-### Atomic File Writes
-- **Problem**: Reading config while writing could see partial data
-- **Solution**: All platforms now use atomic write pattern (write to .tmp, rename)
-- **Impact**: Readers always see complete file (old or new), never partial
+### Logging Service Principle
+**Log what device service wrote, not what config says should exist.**
+- Iterates SharedState readings directly
+- Handles register renames gracefully
 
-### Register Rename Fix
-- **Problem**: When register renamed, old name kept logging (device service didn't reload)
-- **Root Cause**: Config sync only compared `sites.updated_at`, missed device register changes
-- **Solution**: Services now hash config content (including devices) to detect any change
+### Cloud Sync
+- Clock-aligned downsampling (900s freq → :00, :15, :30, :45)
+- Upload-then-mark pattern (never mark synced unless upload succeeded)
+- `on_conflict` query param required for Supabase upserts
 
-### Files Changed
-- `common/state.py` - Atomic writes for all platforms
-- `services/config/service.py` - Content hash comparison
-- `services/device/service.py` - Hash-based config reload
-- `services/control/service.py` - Hash-based config reload
-- `services/logging/service.py` - Hash-based config reload
-- `services/device/register_reader.py` - Clear old poll states on reload
-
-## Performance Optimizations (2026-01-18)
-
-### Config Watch Interval
-- **Changed**: 5s → 15s in device, control, and logging services
-- **Impact**: 3x fewer local file reads for config change detection
-- **Files**: `services/device/service.py`, `services/control/service.py`, `services/logging/service.py`
-
-### DEBUG Print Removal
-- **Changed**: Removed 15 verbose DEBUG prints from `common/state.py`
-- **Impact**: Cleaner logs, reduced I/O overhead
-- **Before**: Every SharedState.write() logged 10+ DEBUG lines
-- **After**: No DEBUG output in production
-
-### SD Card Wear
-- **Impact**: ~23% reduction in daily writes when on SD card
-- **Calculation**: State file writes reduced from 2/sec to 0.4/sec effective
-
-### OTA Update Safety
-- **Problem**: `git reset --hard` removed runtime directories (`backup/`, `updates/`, `logs/`)
-- **Solution**: Added `.gitkeep` files so directories are tracked in git
-- **Fallback**: Backend update endpoint recreates dirs after git operations
-- **Setup Fix**: `create_directories` now runs AFTER `git clone` in setup script
-
-## Logging Service - No Register Caching (2026-01-19)
-
-### Problem
-When register renamed in cloud config, logging service kept logging with **old register name**:
-1. Config sync updates local config with new name
-2. Device service may not immediately reload config
-3. Logging service looked for readings by CONFIG name (the new name)
-4. But SharedState had readings written by device service using its OLD name
-5. Name mismatch → zero readings logged
-
-### Solution
-Logging service now iterates **SharedState readings directly** instead of looking for readings by config register names.
-
-**Critical Principle**: Log what device service wrote, not what config says should exist.
-
-```python
-# WRONG (caused bug):
-for reg in config.get("registers", []):
-    reading = readings.get(reg["name"])  # Looks for CONFIG name
-
-# CORRECT (current):
-for register_name, reading in device_readings.items():
-    # Logs whatever device service actually wrote
-```
-
-### Key Behaviors
-| Scenario | Before (Bug) | After (Fixed) |
-|----------|--------------|---------------|
-| Register renamed | Name mismatch, no data logged | Logs with SharedState name |
-| Device offline | Blocked waiting for data | Skips device, logs others |
-| Config not synced | Wrong name logged | Logs current device name |
-
-### Files Changed
-- `services/logging/service.py` - `_sample_readings_to_buffer()` iterates SharedState readings
-
-### Testing
-1. Rename register in frontend
-2. Trigger config sync
-3. Data flows immediately with whatever name device service uses
-4. Once device service reloads, new name appears
-
-## Cloud Sync - Clock-Aligned Downsampling (2026-01-19)
-
-### Problem
-Per-register `logging_frequency` was not being respected for cloud sync:
-- Temperature (900s) was logging every 60s instead of every 15 minutes
-- Readings weren't aligned to clock boundaries (e.g., :00, :15, :30, :45)
-
-### Solution
-Clock-aligned bucket selection for downsampling:
-
-```python
-def _downsample_readings(self, readings: list[dict], frequency_seconds: int) -> list[dict]:
-    """Downsample readings to clock-aligned buckets."""
-    if frequency_seconds <= 1:
-        return readings  # No downsampling needed
-
-    selected: list[dict] = []
-    selected_buckets: set[int] = set()
-
-    for reading in readings:
-        ts = parse_timestamp_to_epoch(reading["timestamp"])
-        # Clock-aligned bucket (e.g., 900s = :00, :15, :30, :45)
-        bucket = int(ts // frequency_seconds) * frequency_seconds
-
-        if bucket not in selected_buckets:
-            # Align timestamp to bucket boundary
-            aligned_ts = datetime.fromtimestamp(bucket, timezone.utc).isoformat()
-            aligned_reading = {**reading, "timestamp": aligned_ts}
-            selected.append(aligned_reading)
-            selected_buckets.add(bucket)
-
-    return selected
-```
-
-### Key Behaviors
-| Frequency | Cloud Data Points | Alignment |
-|-----------|-------------------|-----------|
-| 1s | Every second | N/A |
-| 60s | 1 per minute | :00 |
-| 300s | 1 per 5 min | :00, :05, :10... |
-| 900s | 1 per 15 min | :00, :15, :30, :45 |
-
-### Files Changed
-- `services/logging/service.py` - `_downsample_readings()`, `_sync_device_readings_filtered()`
-
-## Cloud Sync - Robustness Fix (2026-01-19)
-
-### Problem
-Data gaps in cloud even when local SQLite had data. Root cause: empty batches after downsampling were marking readings as synced without uploading anything.
-
-### Solution
-Strict **upload-then-mark** pattern with `UploadResult` tracking:
-
-```python
-@dataclass
-class UploadResult:
-    success: bool
-    records_uploaded: int
-    is_duplicate: bool = False  # 409 response
-    error: str | None = None
-
-# CRITICAL: Don't mark synced if nothing to upload
-if not readings:
-    logger.warning(f"No readings after downsampling (original: {count}). NOT marking synced.")
-    return 0  # Will retry next cycle
-
-# Only mark synced AFTER successful upload
-result = await self._upload_with_retry(table, records)
-if result.success:
-    self.local_db.mark_device_readings_synced(reading_ids)
-```
-
-### Robustness Guarantees
-1. **Empty uploads** → Nothing marked synced, retry next cycle
-2. **Upload failure** → Nothing marked synced, retry next cycle
-3. **409 Conflict** → Treated as success (duplicates ignored by Supabase)
-4. **Partial success** → Only successful portion marked synced
-
-### Observability Metrics
-| Metric | Description |
-|--------|-------------|
-| `empty_batch_count` | Batches filtered to empty by downsampling |
-| `duplicate_count` | 409 responses (records already in cloud) |
-| `backfill_mode` | True when >1000 readings pending |
-| `backfill_progress` | "synced/total" during backfill |
-
-### Files Changed
-- `services/logging/cloud_sync.py` - `UploadResult`, `sync_specific_readings()`, all sync methods
-
-## PostgREST on_conflict Requirement (CRITICAL)
-
-When using `Prefer: resolution=ignore-duplicates` with Supabase REST API, you MUST specify `on_conflict` query parameter:
-
+### PostgREST Upserts
 ```
 POST /rest/v1/device_readings?on_conflict=device_id,register_name,timestamp
 ```
-
-**Without `on_conflict`**: Entire batch fails with 409 if ANY record has duplicate key
-**With `on_conflict`**: Duplicates skip silently, new records insert, returns 201
-
-**Conflict columns by table**:
-| Table | on_conflict |
-|-------|-------------|
-| device_readings | device_id,register_name,timestamp |
-| control_logs | site_id,timestamp |
-| alarms | site_id,alarm_type,timestamp |
-
-**The Bug** (fixed 2026-01-20): Cloud sync returned 409 even for new records.
-
-**Root Cause**: Clock-aligned downsampling rounds timestamps to bucket boundaries (e.g., 3600s freq → hour boundary). A reading at 18:46:01 for a 3600s register gets aligned to 18:00:00 - but 18:00:00 may already exist from a previous sync cycle.
-
-**The Fix**: Added `?on_conflict=...` query parameters to all cloud sync POST URLs.
-
-**Files Changed**: `services/logging/cloud_sync.py`
+Without `on_conflict`, entire batch fails if ANY record is duplicate.

@@ -36,39 +36,34 @@ python main_v2.py -v             # Verbose/debug mode
 
 ### Cloud Infrastructure
 ```
-     DigitalOcean (159.223.224.203)
-     +-------------+    +---------------------------+
-     |   Nginx     |--->|  Next.js Frontend (:3000) |
-     |   (SSL)     |    +---------------------------+
-     |  Port 443   |    +---------------------------+
-     |             |--->|  FastAPI Backend (:8000)  |
-     +-------------+    +---------------------------+
-              |
-              v
-       https://volteria.org
+DigitalOcean (159.223.224.203)
++-------------+    +---------------------------+
+|   Nginx     |--->|  Next.js Frontend (:3000) |
+|   (SSL)     |    +---------------------------+
+|  Port 443   |    +---------------------------+
+|             |--->|  FastAPI Backend (:8000)  |
++-------------+    +---------------------------+
+         |
+         v
+  https://volteria.org
 ```
 
 ### Controller Architecture (5-Layer)
 ```
 ┌─────────────────────────────────────────────┐
-│  Layer 5: LOGGING SERVICE                   │
-│  Data logging, cloud sync, alarms           │
+│  Layer 5: LOGGING - Data logging, cloud sync│
 ├─────────────────────────────────────────────┤
-│  Layer 4: CONTROL SERVICE                   │
-│  Zero-feeding algorithm, operation modes    │
+│  Layer 4: CONTROL - Zero-feeding algorithm  │
 ├─────────────────────────────────────────────┤
-│  Layer 3: DEVICE SERVICE                    │
-│  Modbus I/O, polling, register writes       │
+│  Layer 3: DEVICE - Modbus I/O, polling      │
 ├─────────────────────────────────────────────┤
-│  Layer 2: CONFIG SERVICE                    │
-│  Sync, caching, version management          │
+│  Layer 2: CONFIG - Sync, version management │
 ├─────────────────────────────────────────────┤
-│  Layer 1: SYSTEM SERVICE (always alive)     │
-│  Heartbeat, OTA updates, health monitoring  │
+│  Layer 1: SYSTEM - Heartbeat, OTA, health   │
 └─────────────────────────────────────────────┘
 ```
 
-> **Deep Dive**: See [controller/CONTROL_MASTER.md](./controller/CONTROL_MASTER.md) for architecture decisions, design patterns, and troubleshooting.
+> **Deep Dive**: See [controller/CONTROL_MASTER.md](./controller/CONTROL_MASTER.md)
 
 ## Key Concepts
 
@@ -77,7 +72,6 @@ python main_v2.py -v             # Verbose/debug mode
 | **Zero-feeding** | Limits solar output to prevent reverse power to DG (reserve min: 0 kW) |
 | **Device Types** | Load Meters, Solar Inverters, DG Controllers, Temperature Sensors |
 | **Config Modes** | `meter_inverter`, `dg_inverter`, `full_system` |
-| **Sites** | Projects contain Sites; each Site has own devices + settings |
 | **Heartbeat** | Controller → cloud every 30s; offline after 1 min silence |
 | **Safe Mode** | Auto-limits solar when device communication fails |
 
@@ -85,9 +79,7 @@ python main_v2.py -v             # Verbose/debug mode
 | Role | Level | Access |
 |------|-------|--------|
 | Super Admin | 6 | Full system |
-| Backend Admin | 5 | Backend management |
 | Admin | 4 | All projects, create users |
-| Enterprise Admin | 3 | Enterprise scope |
 | Configurator | 2 | Edit + remote control |
 | Viewer | 1 | View only |
 
@@ -96,21 +88,15 @@ python main_v2.py -v             # Verbose/debug mode
 Claude has direct REST API access. **Never ask user to run migrations manually.**
 
 ```bash
-# Query
 curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE?select=*&limit=10" \
   -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I" \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I"
 ```
 
-**Credentials**: URL `https://usgxhzdctzthcqxyxfxl.supabase.co` | DB Password in `.env`
-
 **Run migrations** (Supabase CLI):
 ```bash
-# From project root
 supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_DB_PASSWORD@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 ```
-
-**Schema changes**: Use Supabase CLI (`supabase db push`) or [SQL Editor](https://supabase.com/dashboard/project/usgxhzdctzthcqxyxfxl/sql)
 
 ### Key Tables
 | Table | Purpose |
@@ -119,11 +105,8 @@ supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_
 | `projects`, `sites` | Project/site hierarchy |
 | `site_devices` | Device configs per site |
 | `device_templates` | Reusable device definitions |
-| `control_logs`, `alarms` | Time-series data |
+| `control_logs`, `device_readings` | Time-series data |
 | `controller_heartbeats` | Controller status |
-| `controller_service_status` | 5-layer health tracking |
-
-> **Full schema**: See `database/migrations/` (79 migration files)
 
 ## Deployment
 
@@ -138,826 +121,58 @@ ssh volteria "cd /opt/solar-diesel-controller && git pull && docker-compose up -
 # If 502 errors after deploy
 ssh volteria "docker restart sdc-nginx"
 
-# Check status
-ssh volteria "docker-compose -f /opt/solar-diesel-controller/docker-compose.yml ps"
-
 # View logs
 ssh volteria "docker logs sdc-backend --tail=50"
 ssh volteria "docker logs sdc-frontend --tail=50"
 ```
 
-**Live URL**: https://volteria.org | **Server**: 159.223.224.203 | **GitHub**: github.com/byosamah/volteria
+**Live URL**: https://volteria.org | **Server**: 159.223.224.203
 
 ## Component References
 
 | Component | Documentation |
 |-----------|---------------|
-| Controller | [controller/CLAUDE.md](./controller/CLAUDE.md) + [CONTROL_MASTER.md](./controller/CONTROL_MASTER.md) |
+| Controller | [controller/CLAUDE.md](./controller/CLAUDE.md) |
 | Backend API | [backend/CLAUDE.md](./backend/CLAUDE.md) |
 | Frontend | [frontend/CLAUDE.md](./frontend/CLAUDE.md) |
 | Database | [database/CLAUDE.md](./database/CLAUDE.md) |
-| Deploy | [deploy/CLAUDE.md](./deploy/CLAUDE.md) |
-| Simulator | [simulator/CLAUDE.md](./simulator/CLAUDE.md) |
-| Documentation | [docs/CLAUDE.md](./docs/CLAUDE.md) |
 
 ## Environment Variables
 
 ```bash
-# Next.js (baked at BUILD time - pass as Docker build args)
+# Next.js (baked at BUILD time)
 NEXT_PUBLIC_SUPABASE_URL=https://usgxhzdctzthcqxyxfxl.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
-# Backend/API routes (runtime)
+# Backend (runtime)
 SUPABASE_URL=https://usgxhzdctzthcqxyxfxl.supabase.co
 SUPABASE_SERVICE_KEY=your-service-key
 ```
 
-## Important Notes
-
-1. **Controller entry point**: Use `main_v2.py` (5-layer architecture), not legacy `main.py`
-
-2. **RLS**: `users` table has RLS **disabled** (prevents recursion); all other tables enabled
-
-3. **Offline operation**: Controller works independently; SQLite buffers data, syncs on reconnect
-
-4. **httpx version**: Backend requires `httpx==0.24.1` (newer breaks Supabase)
-
-5. **Heartbeats**: Tied to `controller_id`, not sites. Deleting site/project sets FK to NULL, preserves history
-
-6. **DG reserve**: Minimum is 0 kW (never negative)
-
-7. **Invite flow**: Uses URL fragments (`#access_token=...`), handled by login page
-
-## Recent Updates (2026-01-20)
-
-### Logging Service Debug Enhancement (NEW)
-Comprehensive debug logging for diagnosing data issues without impacting performance:
-
-**New Log Prefixes** (for easy filtering):
-| Prefix | Meaning | Frequency |
-|--------|---------|-----------|
-| `[HEALTH]` | 10-min health summary | 6/hour |
-| `[CLOUD]` | Cloud sync summary | ~20/hour |
-| `[CONFIG]` | Config change details | On change |
-| `[FREQ]` | Frequency lookup issues | On issue (max 10) |
-| `[ERROR]` | Error with full details | On error |
-
-**Filter commands:**
-```bash
-journalctl -u volteria -f | grep -E '\[(HEALTH|CLOUD|CONFIG|FREQ|ERROR)\]'
-```
-
-**Enhanced `/debug` Endpoint** (localhost:8085/debug):
-```json
-{
-  "diagnostics": {
-    "config_hash": "a1b2c3d4",
-    "config_last_change": "2026-01-20T15:00:00Z",
-    "devices_by_type": {"sensors": 2, "inverters": 1},
-    "registers_by_frequency": {"1s": 3, "60s": 10, "900s": 2},
-    "frequency_lookup_misses": 0,
-    "buffer_peak_24h": 500,
-    "clock_buckets_created": 1440,
-    "clock_duplicates_skipped": 5
-  }
-}
-```
-
-**Files Changed**:
-- `controller/services/logging/service.py` - Diagnostics tracking, periodic summary, config details
-- `controller/services/logging/cloud_sync.py` - Full error bodies, sync summaries
-- `controller/services/logging/CLAUDE.md` - Updated documentation
-
-### Controller OTA Update Safety (NEW)
-Prevents runtime directories from being wiped during OTA updates:
-
-**Problem**: `git reset --hard` during updates removed `/opt/volteria/{backup,updates,logs}` directories (not tracked in git), causing systemd NAMESPACE errors and service crashes.
-
-**Solution** (two-layer fix):
-| Layer | Fix | Purpose |
-|-------|-----|---------|
-| Git | Added `.gitkeep` files to `backup/`, `updates/`, `logs/` | Directories survive `git reset` |
-| Backend | Update endpoint recreates dirs after git reset | Failsafe for existing controllers |
-| Setup | `create_directories` now runs AFTER `git clone` | Fresh installs work correctly |
-
-**Files Changed**:
-- `backup/.gitkeep`, `updates/.gitkeep`, `logs/.gitkeep` - New tracked directories
-- `backend/app/routers/controllers.py` - Recreates dirs after git operations
-- `controller/scripts/setup-controller.sh` - Fixed execution order
-
-### Dashboard Metric Labels (NEW)
-Renamed metrics for clarity to avoid confusion between hardware uptime and cloud connectivity:
-
-| Before | After | Location |
-|--------|-------|----------|
-| Running | **Hardware Uptime** | Controller Health card |
-| Connection Status | **Cloud Connection** | Chart title |
-| Uptime: X% | **Connected:** X% | Connection stats |
-| Offline: Xm | **Disconnected:** Xm | Connection stats |
-
-**Description**: "Hardware connection to cloud history (heartbeat gaps)"
-
-**Files Changed**:
-- `frontend/src/components/sites/controller-health-card.tsx`
-- `frontend/src/components/charts/power-flow-chart.tsx`
-
-### Server Maintenance Automation
-Automated cleanup to prevent disk/memory issues:
-
-**Changes Made**:
-| Change | Before | After |
-|--------|--------|-------|
-| Disk cleanup | Manual | Daily 3am (`maintenance.sh`) |
-| SSH sync | Every 1 min | Every 5 min |
-| Docker logs | Unbounded | 10MB max, 3 files |
-| Backend workers | 4 | 2 (saves ~200MB RAM) |
-| Resource limits | None | backend 512M, frontend 384M, nginx 64M |
-
-**Maintenance Script** (`deploy/maintenance.sh`):
-- Docker prune (images >24h, unused volumes/networks)
-- Journal vacuum (7 days retention)
-- APT cleanup
-- Disk/memory health report
-
-**Cron Schedule**:
-```
-*/5 * * * * sync-ssh-keys.sh   # SSH key sync
-0 3 * * * maintenance.sh       # Daily cleanup
-```
-
-### Controller Performance Improvements
-- **Config Watch Interval**: Increased from 5s to 15s in device/control/logging services (3x fewer file reads)
-- **Removed DEBUG prints**: Removed 15 verbose DEBUG print statements from `common/state.py`
-- **SharedState optimization**: Cleaner write() method without debug logging overhead
-- **SD Card Wear Reduction**: ~23% fewer writes when running on SD card
-
-### Historical Data V2 - Local Data Source (NEW)
-Query historical data directly from controller's SQLite database:
-
-**Data Sources**:
-- **Cloud**: Supabase PostgreSQL (default) - multi-site, long-term storage
-- **Local**: Controller SQLite via SSH - single-site, real-time, super admin only
-
-**Data Source Constraints**:
-| Source | Raw Max | Aggregated Max | Sites | Notes |
-|--------|---------|----------------|-------|-------|
-| Cloud | 30 days | 2 years (daily) | Multi-site | RPC LIMIT 50k rows |
-| Local | 1 hour | 30 days | Single site only | SSH timeout, active only |
-
-**Auto-Behavior When Switching to Local**:
-- Resets to 1h date range
-- Sets Raw aggregation (optimal for 1h)
-- Clears parameters from other sites
-- Forces "Active" filter
-
-**Key Files**:
-- `controller/historical_cli.py` - CLI for querying local SQLite (supports --aggregation raw/hourly/daily)
-- `backend/app/routers/controllers.py` - SSH endpoint for historical queries
-- `frontend/src/app/api/historical/local/route.ts` - Frontend API proxy
-- `frontend/src/components/historical/v2/ControlsRow.tsx` - Cloud/Local toggle
-
-### Historical Data V2 - Server-Side Aggregation
-Large dataset support with database-level aggregation:
-
-**Problem**: Client fetching 100,000+ rows is slow and hits Supabase max_rows limits.
-
-**Solution**: PostgreSQL RPC function aggregates data server-side:
-```
-┌─────────────────────────────────────────────┐
-│  Frontend: Select date range + aggregation  │
-│              ↓                              │
-│  API Route: /api/historical                 │
-│              ↓                              │
-│  RPC: get_historical_readings()             │
-│  - Raw: Returns all points (LIMIT 50k)      │
-│  - Hourly: AVG/MIN/MAX per hour             │
-│  - Daily: AVG/MIN/MAX per day               │
-│              ↓                              │
-│  Response: Pre-aggregated data + metadata   │
-└─────────────────────────────────────────────┘
-```
-
-**Date Range Limits** (enforced by UI and auto-switch):
-| Aggregation | Cloud Max | Local Max | Points/Device |
-|-------------|-----------|-----------|---------------|
-| Raw | 30 days | 1 hour | ~50,000 (LIMIT) |
-| Hourly | 90 days | 30 days | ~2,160 |
-| Daily | 2 years | 30 days | ~730 |
-
-**Auto-Selection** (when aggregation="auto"):
-- < 24h → Raw data
-- 24h - 7d → Hourly aggregation
-- > 7d → Daily aggregation
-
-**Key Files**:
-- `database/migrations/078_historical_aggregation.sql` - RPC function
-- `frontend/src/app/api/historical/route.ts` - Uses RPC instead of direct query
-- `frontend/src/components/historical/v2/constants.ts` - MAX_DATE_RANGE limits
-- `frontend/src/components/historical/v2/AggregationSelector.tsx` - Raw/Hourly/Daily + Avg/Min/Max
-
-**Aggregation UI**:
-- Time period: Raw | Hourly | Daily (unavailable periods disabled + strikethrough)
-- Method (for Hourly/Daily): Avg | Min | Max
-- Auto badge when system auto-selected
-- Changes date range → auto-switches to available aggregation
-
-### Historical Chart Improvements
-- **Adaptive Y-Axis**: Domain calculated from actual data values with 10% padding (no longer starts at 0)
-- **Date Presets**: 1h, 24h, 3d, 7d buttons (1h optimal for local raw data)
-- **Raw Disabled Logic**: Raw aggregation disabled for local source when date range > 1 hour
-- **No Browser Caching**: Refresh/Plot buttons always fetch fresh data (`cache: 'no-store'` + `Cache-Control` headers)
-- **Device Register Caching**: In-memory cache for fast device switching (no re-fetch when switching back)
-- **Loading Spinner**: Shows "Loading registers..." while fetching device parameters
-
-### Historical Chart X-Axis Format (2026-01-19)
-Clean, unambiguous timestamp formatting based on data range:
-
-| Range | Format | Example |
-|-------|--------|---------|
-| ≤1 day | Time only | `14:35` |
-| 1-3 days | Day Month Time | `17 Jan 14:00` |
-| >3 days | Day Month | `17 Jan` |
-
-**Key Changes**:
-- 24h preset now uses exact 24 hours (not calendar days)
-- Numbers separated by month text for readability (`17 Jan 14:00` not `17, 14:00`)
-- Threshold increased to 26h to handle data variance edge cases
-
-**Files Changed**:
-- `frontend/src/components/historical/v2/DateRangeSelector.tsx` - 24h preset uses exact hours
-- `frontend/src/components/historical/v2/HistoricalChart.tsx` - Clean X-axis tickFormatter
-
-### Historical Data Chart V2 - Multi-Site Support
-Compare parameters from multiple projects/sites on the same chart:
-
-**Features**:
-- Add parameters from different projects, sites, and devices to same chart
-- Site and device name shown in parameter cards, tooltips, and legend
-- Format: `RegisterName` with `SiteName › DeviceName` below
-- Parameters persist when changing project/site browser selection
-- Date preset buttons (24h, 3d, 7d) highlight correctly when selected
-
-**Parameter Sources**:
-- **Master Device (Site Level)**: Site controller calculated fields (Total Load, Solar Generation, etc.)
-- **Device**: Individual Modbus devices (inverters, meters, sensors)
-
-**Key Files**:
-- `frontend/src/components/historical/v2/ParameterSelector.tsx` - Multi-site parameter selection
-- `frontend/src/components/historical/v2/ParameterCard.tsx` - Card with site/device info
-- `frontend/src/components/historical/v2/OverlayTooltip.tsx` - Tooltip with site/device hierarchy
-- `frontend/src/components/historical/v2/types.ts` - AxisParameter includes siteId, siteName, deviceName
-
-### Historical Data Chart V2 - DOM Overlay Pattern
-Performance-optimized chart for 500+ data points using DOM overlay instead of Recharts event handlers:
-
-**Problem**: Recharts re-renders entire SVG on every mouse event (hover/drag), causing lag with large datasets.
-
-**Solution**: DOM overlay layer that captures mouse events and manipulates elements directly:
-```
-┌─────────────────────────────────────────────┐
-│  ChartContainer (relative positioning)      │
-│  ┌───────────────────────────────────────┐  │
-│  │  Recharts SVG (data visualization)    │  │
-│  │  - No mouse handlers on chart         │  │
-│  │  - Animations disabled for >100 pts   │  │
-│  └───────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────┐  │
-│  │  ChartOverlay (absolute, z-10)        │  │
-│  │  - Vertical cursor line (DOM div)     │  │
-│  │  - Selection rectangle (DOM div)      │  │
-│  │  - Tooltip (React state, minimal)     │  │
-│  └───────────────────────────────────────┘  │
-└─────────────────────────────────────────────┘
-```
-
-**Key Techniques**:
-- Use `useRef` for drag state (no re-renders during interaction)
-- Direct DOM manipulation: `cursorLineRef.current.style.transform = ...`
-- Callback ref with ResizeObserver for reliable dimension tracking
-- Pixel-to-index mapping: `Math.round((relativeX / plotWidth) * (data.length - 1))`
-- Dynamic X-axis formatting based on zoom level (time/date/both)
-
-**Files**:
-- `frontend/src/components/historical/v2/ChartOverlay.tsx` - DOM overlay component
-- `frontend/src/components/historical/v2/OverlayTooltip.tsx` - Positioned tooltip
-- `frontend/src/components/historical/v2/HistoricalChart.tsx` - Main chart (no mouse handlers)
-
-**When to Use**: Any Recharts visualization with 100+ data points that needs hover/zoom interaction.
-
-### Historical Data - Next Steps
-- **Pre-Aggregated Tables**: Materialized hourly/daily summaries for sub-second 1-year queries
-
-### Live Registers Feature (NEW)
-Real-time Modbus register read/write through web UI:
-- **URL**: `/projects/[id]/sites/[siteId]/devices/[deviceId]/live-registers`
-- **Flow**: Frontend → Next.js API → FastAPI → SSH to controller → `register_cli.py` → Modbus device
-- **Features**:
-  - Read registers grouped by section (Logging/Visualization/Alarms)
-  - Write to holding registers with verification
-  - Sequential write queue (500ms delay) prevents Modbus timeouts
-  - Automatic value scaling based on register config
-
-**Key Files**:
-- `frontend/src/components/devices/live-registers/` - UI components
-- `frontend/src/app/api/controllers/[controllerId]/registers/route.ts` - API proxy
-- `backend/app/routers/controllers.py` - SSH execution endpoints
-- `controller/register_cli.py` - Standalone Modbus CLI tool
-
-### Controller Wizard Improvements
-- **NVMe Boot Detection**: Now reads from `approved_hardware.features.nvme_boot` instead of hardcoded list
-- Future hardware types automatically get NVMe setup instructions if `features.nvme_boot: true`
-
-### RAM Buffering for Logging
-Reduces SSD/SD card wear by 60x through RAM buffering:
-```
-Device Service → SharedState (raw readings every 1s)
-       ↓
-RAM BUFFER (sample every 1s, max 10,000 readings ~2-3MB)
-       ↓
-LOCAL SQLITE (flush every 60s = 1 write/min)
-       ↓
-CLOUD SYNC (every 180s, downsampled per-register)
-```
-
-**Key Settings**:
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `local_sample_interval_s` | 1s | Sample into RAM |
-| `local_flush_interval_s` | 60s | Flush RAM to SQLite |
-| `cloud_sync_interval_s` | 180s | Sync to Supabase |
-| `logging_frequency` | per-register | Cloud data density |
-
-### Per-Register Cloud Downsampling
-- Each register has its own `logging_frequency` (1s to 3600s)
-- Cloud sync downsamples based on frequency (e.g., 60s = 1 reading/min)
-- Local SQLite keeps full resolution; cloud gets configurable density
-- All registers sync together in one batch (not separate times)
-
-### Logging Service Improvements (2026-01-19)
-Comprehensive enhancements for precision, observability, and reliability:
-
-**1. Timestamp Alignment**
-All device readings are aligned to 1-second boundaries for cross-device correlation:
-```
-Device A polled at 10.050s → timestamp: "10:00:10.000" (rounded)
-Device B polled at 10.150s → timestamp: "10:00:10.000" (rounded)
-Device C polled at 10.250s → timestamp: "10:00:10.000" (rounded)
-```
-- All registers sampled in same interval share IDENTICAL timestamp
-- Supports sub-second (0.5s) to hours (3600s+) intervals
-- Files: `common/timestamp.py`, `services/logging/service.py`
-
-**2. Unified Scheduler**
-Precise interval execution with drift tracking (replaces simple `asyncio.sleep`):
-- Fires at exact wall-clock boundaries
-- Tracks cumulative drift for observability
-- Skips missed intervals to catch up (no queue buildup)
-- File: `common/scheduler.py`
-
-**3. Observability Metrics** (via `/stats` endpoint)
-| Metric | Description |
-|--------|-------------|
-| `buffer.readings_count` | Current RAM buffer size |
-| `timing.sample_drift_ms` | Sample loop timing drift |
-| `timing.flush_drift_ms` | Flush loop timing drift |
-| `errors.sample_errors` | Sample failures count |
-| `scheduler.*` | Per-scheduler execution stats |
-
-**4. Disk Wear Optimizations**
-- `PRAGMA temp_store=MEMORY` - Temp tables in RAM
-- `PRAGMA cache_size=-2000` - 2MB read cache
-- Idle skip: No flush if buffer empty
-- Delta filter: Skip control_log if <1% change
-
-**5. SQLite Write Retry**
-Exponential backoff on disk errors: 0.5s, 1s, 2s
-
-**6. Cloud Backfill Progress**
-Logs progress when >1000 readings pending (for offline recovery visibility)
-
-**7. Logging Stats API Endpoint**
-`GET /api/controllers/{id}/logging-stats` - Fetches stats from controller's logging service:
-```json
-{
-  "buffer": { "readings_count": 30, "memory_kb": 9.0 },
-  "timing": { "sample_drift_ms": 0.3, "flush_drift_ms": 1.2 },
-  "schedulers": { "sample": { "execution_count": 762, "skipped_count": 0 } },
-  "errors": { "sample_errors": 0, "flush_errors": 0, "cloud_errors": 0 }
-}
-```
-
-### Controller Remote Update
-- **New Endpoint**: `POST /api/controllers/{id}/update`
-- **Auth**: `controller_secret` (SSH password) or admin JWT
-- **Action**: Runs `git fetch + reset --hard` and restarts services on controller
-- **Use Case**: OTA updates without SSH tunnel access
-- **Note**: Uses `reset --hard` to handle local changes gracefully (config.yaml excluded)
-
-### Nginx Routing Fix
-- Controller backend operations (`/update`, `/reboot`, `/ssh`, `/config`, `/test`, `/logs`, `/logging-stats`, `/logging-debug`, `/registers/read`, `/registers/write`, `/historical/query`) route to FastAPI
-- Controller frontend routes (`/heartbeats`, `/lookup`, `/register`, `/registers`) route to Next.js
-
-### Logging System Architecture
-- **Local vs Cloud Separation**: Local writes ALL readings; cloud filters by per-register `logging_frequency`
-- **Local Logging Toggle**: Site settings checkbox (migration 077: `logging_local_enabled`)
-- **Device Readings Table**: Separate `device_readings` table for granular cloud sync
-- **Conflict Handling**: `Prefer: resolution=ignore-duplicates` header + graceful 409 handling
-
-### Controller Setup Improvements
-- **SSH Auto-Assign**: `/register` endpoint auto-assigns SSH credentials
-- **Full Git Clone**: Setup script clones full repo for easier `git pull` updates
-- **Simplified Ethernet**: Setup script skips ethernet gateway config (WiFi primary)
-- **SharedState Caching**: Config service uses SharedState consistently
-
-### API Authentication
-- **Controller Self-Auth**: Reboot/update accept `controller_secret` without user JWT
-- **Use Case**: OTA updates, wizard automation, maintenance scripts
-
-### New Database Migrations
-- **075**: Cleanup users table
-- **076**: Add phone column to users
-- **077**: Add `logging_local_enabled` to sites
-- **078**: Add `get_historical_readings` RPC function for server-side aggregation
-
-### Device Types
-- **Temperature Sensor**: Added `sensor` device type for environmental monitoring
-
-### Device Template Linkage (NEW - 2026-01-18)
-Template registers are now **live references**, not copies. Changes to templates show immediately in linked devices.
-
-**Architecture**:
-```
-┌─────────────────────────────────────────────────────────────┐
-│  TEMPLATE (device_templates table)                          │
-│  - logging_registers, visualization_registers, alarm_registers │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ LIVE REFERENCE (fetched on edit)
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│  DEVICE (site_devices table)                                │
-│  - template_id → links to template                          │
-│  - registers: [template source:"template"] + [manual source:"manual"] │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ SYNC (pushes merged config)
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│  CONTROLLER (local config.yaml)                             │
-│  - Receives merged template + manual registers              │
-│  - source field preserved for debugging                     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Key Behaviors**:
-| Action | Result |
-|--------|--------|
-| Edit template | Device edit dialog shows updated registers immediately (live fetch) |
-| Save template | Confirmation dialog if template has connected devices |
-| Add manual register to device | Saved with `source: "manual"`, editable |
-| Template registers in device | Read-only, `source: "template"` badge |
-| Sync to controller | Sends merged list (template + manual registers) |
-
-**Source Field Values**:
-- `"template"` - Register comes from template, read-only in device
-- `"manual"` - Register added directly to device, editable
-
-**Files Changed**:
-- `frontend/src/components/devices/device-list.tsx` - Fetches template registers live on edit
-- `frontend/src/components/devices/template-form-dialog.tsx` - Confirmation dialog + warning banner
-- `backend/app/routers/controllers.py` - Config includes all device types + device registers
-- `backend/app/routers/sites.py` - Config endpoint updated for all device types
-
-### Controller Config - All Device Types (NEW - 2026-01-18)
-Controller config now includes **all device types**, not just load_meters/inverters/generators.
-
-**Device Categories in Config**:
-```json
-{
-  "devices": {
-    "load_meters": [],      // meter, load_meter, load, subload, energy_meter
-    "inverters": [],        // inverter, solar_meter
-    "generators": [],       // dg, diesel_generator, gas_generator
-    "sensors": [],          // sensor, temperature_humidity_sensor, solar_sensor, etc.
-    "other": []             // wind_turbine, bess, capacitor_bank, etc.
-  }
-}
-```
-
-**Register Types in Config**:
-- `registers` - Logging registers (for control logic + data logging)
-- `visualization_registers` - Live display registers
-- `alarm_registers` - Threshold-based alarm registers
-
-**Important**: Config uses **device registers** (merged template + manual), not raw template registers.
-
-### Logging Service - No Register Caching (2026-01-19)
-Fixed bug where logging service logged old register names after rename:
-
-**Problem**: Logging service looked for readings by CONFIG register name, but device service writes with its own config's name. If device service hasn't reloaded → name mismatch → zero data logged.
-
-**Solution**: Logging service now iterates SharedState readings directly (what device service wrote), not config registers (what should exist).
-
-**Key Principle**: Log what device service actually wrote, not what config says should exist.
-
-**Files Changed**: `controller/services/logging/service.py` - `_sample_readings_to_buffer()` iterates SharedState
-
-### Cloud Sync Per-Register Frequency Fix (2026-01-19)
-Fixed bug where cloud logging ignored per-register `logging_frequency` settings:
-
-**Problem**: All registers logged to cloud at default 60s interval regardless of their `logging_frequency` config.
-
-**Root Causes**:
-1. **Devices dict iteration bug**: Controller code did `for device in config.get("devices", [])` but devices was a DICT (`{sensors: [...], inverters: [...]}`) not a LIST
-2. **Missing logging_frequency**: Registers synced from templates didn't always have `logging_frequency` saved in database
-
-**Data Flow** (how `logging_frequency` propagates):
-```
-┌─────────────────────────────────────────────────────────────┐
-│  TEMPLATE (device_templates.logging_registers)              │
-│  - logging_frequency: 900 (15 min)                          │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ TEMPLATE SYNC (sites.py, devices.py)
-                       │ add_template_source() ensures logging_frequency
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│  DEVICE (site_devices.registers)                            │
-│  - logging_frequency: 900 (always saved, default 60s)       │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ CONFIG ENDPOINT (controllers.py)
-                       │ Fallback lookup from template if missing
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│  CONTROLLER (config.yaml)                                   │
-│  - logging_frequency per register → cloud downsampling      │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Fixes Applied**:
-| Location | Fix |
-|----------|-----|
-| Controller `service.py` | Flatten devices dict before extracting frequencies |
-| Backend `controllers.py` | Config endpoint falls back to template's `logging_frequency` if device register missing it |
-| Backend `sites.py` | `add_template_source()` ensures `logging_frequency` (default 60s) |
-| Backend `devices.py` | Same fix for change-template endpoint |
-| Frontend `register-form.tsx` | Always saves `logging_frequency` field (never undefined) |
-
-**Controller Fix** (`services/logging/service.py`):
-```python
-# Flatten devices dict: {sensors: [...], inverters: [...]} → [...]
-devices_dict = config.get("devices", {})
-all_devices: list = []
-if isinstance(devices_dict, dict):
-    for device_type, device_list in devices_dict.items():
-        if isinstance(device_list, list):
-            all_devices.extend(device_list)
-```
-
-**Template Sync Fix** (`sites.py`, `devices.py`):
-```python
-def add_template_source(registers):
-    result = []
-    for r in registers:
-        reg = {**r, "source": "template"}
-        # Ensure logging_frequency always set (default: 60s)
-        if "logging_frequency" not in reg or reg.get("logging_frequency") is None:
-            reg["logging_frequency"] = 60
-        result.append(reg)
-    return result
-```
-
-**Verification**: After fix, cloud data shows correct intervals:
-- Humidity (1s): 99 readings in 99 seconds ✓
-- Temperature (900s): 1 reading in 15 minutes ✓
-
-### Clock-Aligned Cloud Downsampling (2026-01-19)
-Cloud sync now uses **wall-clock bucket selection** instead of relative intervals for precise timestamp alignment.
-
-**Problem**: Previous downsampling used relative intervals (`ts - last_ts >= frequency`), creating arbitrary timestamps like 21:01:23, 21:16:24, etc.
-
-**Solution**: Clock-aligned bucket selection using floor division:
-```python
-# Calculate clock-aligned bucket
-bucket = int(ts // frequency_seconds) * frequency_seconds
-# Example: ts=1705693205 (21:00:05), freq=900 → bucket=1705693200 (21:00:00)
-```
-
-**Behavior**:
-| Reading Time | Frequency | Bucket | Result |
-|--------------|-----------|--------|--------|
-| 21:00:05 | 15min | 21:00:00 | Selected, timestamp = 21:00:00 |
-| 21:01:23 | 15min | 21:00:00 | Skipped (bucket exists) |
-| 21:15:02 | 15min | 21:15:00 | Selected, timestamp = 21:15:00 |
-
-**Clock Alignment by Frequency**:
-| Frequency | Boundaries |
-|-----------|------------|
-| 5s | :00, :05, :10, :15, :20... |
-| 60s (1min) | :00:00, :01:00, :02:00... |
-| 300s (5min) | :00:00, :05:00, :10:00... |
-| 900s (15min) | :00:00, :15:00, :30:00, :45:00 |
-| 3600s (1hr) | 00:00:00, 01:00:00, 02:00:00... |
-
-**Key Changes**:
-- `_downsample_readings()` - Uses bucket set instead of last_ts tracking
-- `_parse_timestamp_to_epoch()` - New helper for ISO timestamp parsing
-- Timestamps stored as aligned bucket time (not original reading time)
-
-**Files Changed**: `controller/services/logging/service.py`
-
-### Power Flow Chart Timezone Indicator (2026-01-19)
-Added timezone display to power flow chart for clarity when viewing historical data.
-
-**Display**: Shows current timezone (e.g., "Europe/Berlin") in chart header next to refresh button.
-
-**Files Changed**: `frontend/src/components/charts/power-flow-chart.tsx`
-
-### Cloud Sync Robustness Fix (2026-01-19)
-Prevents data gaps by ensuring readings are only marked synced after **confirmed successful upload**.
-
-**Problem**: Data gaps in cloud when local SQLite has data. Root causes:
-1. Empty batches (downsampling filtered all) were marking readings as synced without uploading
-2. Upload failures didn't leave readings for retry on next cycle
-3. Service restarts during sync could orphan readings
-
-**Solution**: Strict "upload-then-mark" pattern:
-```python
-# BEFORE (buggy): Marked synced even if nothing uploaded
-if not readings:
-    if all_reading_ids:
-        self.local_db.mark_device_readings_synced(all_reading_ids)  # BAD
-    return 0
-
-# AFTER (fixed): Only mark if actually uploaded
-if not readings:
-    logger.warning("No readings after downsampling, NOT marking as synced")
-    return 0  # Will retry next cycle
-
-result = await self._upload_with_retry(...)
-if result.success:
-    self.local_db.mark_device_readings_synced(ids_to_mark)  # Only after success
-```
-
-**Key Guarantees**:
-| Scenario | Before (Bug) | After (Fixed) |
-|----------|--------------|---------------|
-| Empty after downsampling | Marked synced, data lost | Stays unsynced, retry next cycle |
-| Upload timeout | Might mark synced | Stays unsynced, retry next cycle |
-| Service restart mid-sync | Orphaned readings | Clean state, retry on restart |
-| 409 Conflict | Treated as success | Still success (ignore-duplicates header) |
-
-**New Observability Metrics** (via `/stats`):
-| Metric | Description |
-|--------|-------------|
-| `empty_batch_count` | Times downsampling produced no records to upload |
-| `duplicate_count` | Times 409 response received (records already exist) |
-| `backfill_mode` | Whether catching up from offline period |
-| `backfill_progress` | Progress during backfill (e.g., "1500/5000") |
-
-**Files Changed**: `controller/services/logging/cloud_sync.py`
-
-### Logging Service Reliability Improvements (2026-01-19)
-Comprehensive improvements to timestamp alignment, observability, disk wear, and failure handling.
-
-#### Timestamp Alignment
-All readings from the same sample cycle now share **identical timestamps** for easy cross-device correlation:
-
-```python
-# Before: Timestamps varied by ~100-200ms between devices
-Device A polled at 10.050s → "00:00:10.050"
-Device B polled at 10.150s → "00:00:10.150"
-
-# After: All aligned to interval boundary
-Device A polled at 10.050s → "00:00:10.000"
-Device B polled at 10.150s → "00:00:10.000"
-```
-
-**Supports**: Sub-second (0.5s) to hours (3600s+) intervals
-
-**Files Added**: `controller/common/timestamp.py`
-- `align_timestamp(ts, interval_seconds)` - Round to interval boundary
-- `get_aligned_now_iso(interval_seconds)` - Get aligned current time
-
-#### Unified Scheduler
-Replaced `asyncio.sleep()` loops with precise interval scheduler that tracks drift:
-
-```
-┌─────────────────────────────────────────────┐
-│  ScheduledLoop                              │
-│  - Fires at exact wall-clock boundaries     │
-│  - Tracks cumulative drift                  │
-│  - Skips missed intervals to catch up       │
-│  - Reports metrics for observability        │
-└─────────────────────────────────────────────┘
-```
-
-**Files Added**: `controller/common/scheduler.py`
-- `ScheduledLoop` - Precise interval execution with drift tracking
-- `SchedulerGroup` - Manage multiple schedulers
-
-**Scheduler Stats** (via `/stats` endpoint):
-```json
-{
-  "schedulers": {
-    "sample": {"drift_total_s": 0.023, "skipped_count": 0, "execution_count": 3600},
-    "flush": {"drift_total_s": 0.156, "skipped_count": 0, "execution_count": 60}
-  }
-}
-```
-
-#### Observability Metrics
-New metrics exposed via `/stats` health endpoint:
-
-| Category | Metrics |
-|----------|---------|
-| **Buffer** | `readings_count`, `state_buffer_count`, `memory_kb` |
-| **Timing** | `last_sample`, `last_flush`, `last_cloud_sync`, `sample_drift_ms`, `flush_drift_ms` |
-| **Errors** | `sample_errors`, `flush_errors`, `cloud_errors` |
-| **Schedulers** | Per-scheduler stats (drift, skipped, execution count) |
-
-#### Disk Wear Optimizations
-Reduces SD card/SSD writes for longer hardware lifetime:
-
-| Optimization | Impact |
-|--------------|--------|
-| **Idle Skip** | Skip flush when buffer empty (0 writes during idle) |
-| **Delta Filter** | Skip control log if values changed <1% (~50% fewer writes) |
-| **PRAGMA temp_store=MEMORY** | No temp file writes |
-| **PRAGMA cache_size=-2000** | 2MB cache reduces reads |
-
-**Estimated Write Reduction**: ~55% (576/day → ~250/day)
-
-#### Backfill Progress Logging
-When catching up after offline period (>1000 pending readings):
-
-```
-INFO: Backfill mode: 15000 readings pending, will log progress every 1000
-INFO: Backfill progress: 1000/15000 (6.7%) synced
-INFO: Backfill progress: 2000/15000 (13.3%) synced
-...
-INFO: Backfill complete: 15000 readings synced
-```
-
-#### Local Write Retry
-SQLite writes now retry with exponential backoff on failure:
-
-| Attempt | Delay | Action |
-|---------|-------|--------|
-| 1 | 0s | Try write |
-| 2 | 0.5s | Retry |
-| 3 | 1.0s | Retry |
-| 4 | 2.0s | Final retry |
-
-**Buffer Retention**: If all retries fail, buffer is kept (up to 5 min / `MAX_BUFFER_AGE_S=300`) for next attempt.
-
-#### Files Changed
-| File | Changes |
-|------|---------|
-| `controller/common/timestamp.py` | NEW - Timestamp alignment utilities |
-| `controller/common/scheduler.py` | NEW - Precise interval scheduler |
-| `controller/services/logging/service.py` | Schedulers, observability, delta filter, buffer retention |
-| `controller/services/logging/local_db.py` | PRAGMA tuning, write retry logic |
-| `controller/services/logging/cloud_sync.py` | Backfill progress tracking |
-
-### Cloud Sync on_conflict Fix (2026-01-20)
-Fixed 409 errors blocking cloud uploads when clock-aligned timestamps created duplicates.
-
-**Problem**: PostgREST `Prefer: resolution=ignore-duplicates` header requires explicit `on_conflict` query parameter. Without it, entire batch fails if ANY record has a duplicate key.
-
-**Example**: Device Address2 (3600s freq) at 18:46:01 → bucket 18:00:00 → duplicate from previous sync → whole batch rejected.
-
-**Fix**: Added `?on_conflict=device_id,register_name,timestamp` to device_readings POST URL.
-
-**Conflict columns by table**:
-| Table | on_conflict |
-|-------|-------------|
-| device_readings | device_id,register_name,timestamp |
-| control_logs | site_id,timestamp |
-| alarms | site_id,alarm_type,timestamp |
-
-**Files Changed**: `controller/services/logging/cloud_sync.py`
-
-**Debugging Added**: `/logs` endpoint for fetching controller logs via SSH.
-
-### Historical Data Refresh Fix (2026-01-20)
-Fixed issue where Refresh/Plot buttons didn't fetch latest data.
-
-**Problem**: When clicking Refresh or Plot, the date range remained at the original timestamps from page load, so users saw stale data.
-
-**Example**:
-1. User loads page at 20:45 → `dateRange = { Jan 19 20:45, Jan 20 20:45 }`
-2. User waits until 21:30
-3. User clicks Refresh → same old range queried → no new data
-
-**Solution**: `fetchData` now slides the date window forward before fetching:
-```typescript
-const duration = dateRange.end.getTime() - dateRange.start.getTime();
-const newEnd = new Date();  // now
-const newStart = new Date(newEnd.getTime() - duration);
-setDateRange({ start: newStart, end: newEnd });
-```
-
-**Behavior**: Refresh/Plot always queries up to current time while keeping the same duration.
-
-**Files Changed**: `frontend/src/components/historical/v2/HistoricalDataClientV2.tsx`
+## Critical Notes
+
+1. **Controller entry point**: Use `main_v2.py`, not legacy `main.py`
+2. **RLS**: `users` table has RLS **disabled** (prevents recursion)
+3. **Offline operation**: Controller buffers to SQLite, syncs on reconnect
+4. **httpx version**: Backend requires `httpx==0.24.1`
+5. **DG reserve**: Minimum is 0 kW (never negative)
+6. **Template linkage**: Template registers are live references, not copies
+
+## Key Architecture Decisions
+
+### Logging System
+- **RAM Buffer** → **SQLite** (every 60s) → **Cloud** (every 180s)
+- Per-register `logging_frequency` controls cloud data density
+- Clock-aligned timestamps for easy cross-device correlation
+
+### Historical Data
+- Server-side aggregation via `get_historical_readings()` RPC
+- Raw (30d max), Hourly (90d), Daily (2y)
+- Local source available via SSH for super admins
+
+### Device Config
+- Devices dict structure: `{load_meters: [], inverters: [], generators: [], sensors: [], other: []}`
+- Config uses merged template + manual registers
 
 ## Never Do
 
