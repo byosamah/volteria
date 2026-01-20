@@ -72,7 +72,7 @@ export function HistoricalDataClientV2({
     if (!isHydrated) {
       const end = new Date();
       const start = new Date();
-      start.setTime(end.getTime() - 1 * 60 * 60 * 1000); // 1 hour ago
+      start.setTime(end.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
       setDateRange({ start, end });
       setIsHydrated(true);
     }
@@ -84,8 +84,8 @@ export function HistoricalDataClientV2({
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("active");
 
   // Aggregation settings
-  const [aggregationType, setAggregationType] = useState<AggregationType>("raw");
-  const [isAutoAggregation, setIsAutoAggregation] = useState(true);
+  const [aggregationType, setAggregationType] = useState<AggregationType>("hourly_avg");
+  const [isAutoAggregation, setIsAutoAggregation] = useState(false);
 
   // Parameters on axes
   const [leftAxisParams, setLeftAxisParams] = useState<AxisParameter[]>([]);
