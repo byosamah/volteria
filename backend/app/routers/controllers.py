@@ -1604,7 +1604,7 @@ async def get_controller_logs(
     try:
         # 1. Get controller info
         result = db.table("controllers").select(
-            "id, serial_number, ssh_username, ssh_host, ssh_port, ssh_password"
+            "id, serial_number, ssh_port, ssh_username, ssh_password"
         ).eq("id", str(controller_id)).single().execute()
 
         if not result.data:
