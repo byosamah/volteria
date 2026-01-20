@@ -1476,10 +1476,16 @@ async def get_logging_stats(
         )
 
 
-@router.get("/{controller_id}/logging-debug")
+class DebugRequest(BaseModel):
+    """Request for debug endpoint (optional secret auth)"""
+    controller_secret: Optional[str] = None
+
+
+@router.post("/{controller_id}/logging-debug")
 async def get_logging_debug(
     controller_id: UUID,
-    current_user: CurrentUser = Depends(require_role(["super_admin", "backend_admin", "admin"])),
+    request: Optional[DebugRequest] = None,
+    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
     db: Client = Depends(get_supabase)
 ):
     """
@@ -1487,6 +1493,8 @@ async def get_logging_debug(
 
     Fetches debug info from the logging service's /debug endpoint (port 8085).
     Used for diagnosing per-register frequency downsampling issues.
+
+    Authentication: controller_secret or admin JWT.
     """
     try:
         # 1. Get controller with SSH credentials
@@ -1508,7 +1516,30 @@ async def get_logging_debug(
                 detail="Controller SSH credentials not configured"
             )
 
-        # 2. Execute curl to get debug info from logging service
+        # 2. Check authentication (controller_secret or admin JWT)
+        can_access = False
+        if request and request.controller_secret:
+            if request.controller_secret == controller.get("ssh_password"):
+                can_access = True
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid controller secret"
+                )
+
+        if not can_access:
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required. Provide JWT token or controller_secret."
+                )
+            if current_user.role not in ["super_admin", "backend_admin", "admin"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Admin role required"
+                )
+
+        # 3. Execute curl to get debug info from logging service
         SSH_HOST = "host.docker.internal"
         command = "curl -s http://localhost:8085/debug"
 
