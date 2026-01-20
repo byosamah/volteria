@@ -132,6 +132,7 @@ class LoggingService:
         self._last_register_frequencies: dict[tuple[str, str], int] = {}
         self._last_devices_type: str = ""
         self._last_devices_count: int = 0
+        self._last_downsample_results: dict[str, dict] = {}  # reg_name -> {input, output, freq}
 
         # Health server
         self._health_app: web.Application | None = None
@@ -794,8 +795,13 @@ class LoggingService:
             # If we have readings at 1s intervals and freq=10s, take every 10th
             selected = self._downsample_readings(sorted_readings, frequency)
 
-            # DEBUG: Log downsample result
+            # DEBUG: Log and store downsample result
             logger.info(f"Downsample {register_name}: {len(readings)} → {len(selected)}")
+            self._last_downsample_results[register_name] = {
+                "input_count": len(readings),
+                "output_count": len(selected),
+                "frequency": frequency,
+            }
 
             to_sync.extend(selected)
 
@@ -1282,6 +1288,7 @@ class LoggingService:
             "last_sync_devices_count": self._last_devices_count,
             "register_frequencies": freq_dict,
             "register_count": len(self._last_register_frequencies),
+            "downsample_results": self._last_downsample_results,
         })
 
 
