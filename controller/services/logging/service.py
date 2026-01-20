@@ -1281,6 +1281,10 @@ class LoggingService:
             for (dev_id, reg_name), freq in self._last_register_frequencies.items()
         }
 
+        # Get cloud sync stats and local db stats
+        cloud_stats = self.cloud_sync.get_stats() if self.cloud_sync else {}
+        db_stats = self.local_db.get_stats()
+
         return web.json_response({
             "config_devices_type": type(devices_raw).__name__,
             "config_devices_keys": list(devices_raw.keys()) if isinstance(devices_raw, dict) else f"list[{len(devices_raw)}]",
@@ -1289,6 +1293,12 @@ class LoggingService:
             "register_frequencies": freq_dict,
             "register_count": len(self._last_register_frequencies),
             "downsample_results": self._last_downsample_results,
+            "cloud_sync": cloud_stats,
+            "local_db": db_stats,
+            "timing": {
+                "last_cloud_sync": self._last_cloud_sync_time.isoformat() if self._last_cloud_sync_time else None,
+                "cloud_errors": self._cloud_error_count,
+            },
         })
 
 
