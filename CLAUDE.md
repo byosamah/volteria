@@ -899,6 +899,28 @@ Fixed 409 errors blocking cloud uploads when clock-aligned timestamps created du
 
 **Debugging Added**: `/logs` endpoint for fetching controller logs via SSH.
 
+### Historical Data Refresh Fix (2026-01-20)
+Fixed issue where Refresh/Plot buttons didn't fetch latest data.
+
+**Problem**: When clicking Refresh or Plot, the date range remained at the original timestamps from page load, so users saw stale data.
+
+**Example**:
+1. User loads page at 20:45 → `dateRange = { Jan 19 20:45, Jan 20 20:45 }`
+2. User waits until 21:30
+3. User clicks Refresh → same old range queried → no new data
+
+**Solution**: `fetchData` now slides the date window forward before fetching:
+```typescript
+const duration = dateRange.end.getTime() - dateRange.start.getTime();
+const newEnd = new Date();  // now
+const newStart = new Date(newEnd.getTime() - duration);
+setDateRange({ start: newStart, end: newEnd });
+```
+
+**Behavior**: Refresh/Plot always queries up to current time while keeping the same duration.
+
+**Files Changed**: `frontend/src/components/historical/v2/HistoricalDataClientV2.tsx`
+
 ## Never Do
 
 - NEVER over-engineer
