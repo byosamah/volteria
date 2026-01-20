@@ -434,8 +434,7 @@ class CloudSync:
                 # Supabase will insert new records and skip existing ones
                 if e.response.status_code == 409:
                     logger.info(
-                        f"Records already exist in {table} (409 with ignore-duplicates), "
-                        f"treating as success"
+                        f"409 response for {table}: body={error_body[:300]}"
                     )
                     return UploadResult(
                         success=True,
