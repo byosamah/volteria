@@ -356,7 +356,8 @@ class LoggingService:
         )
 
         # Initialize cloud sync
-        cloud_config = SharedState.read("controller_config")
+        full_config = SharedState.read("controller_config")
+        cloud_config = full_config.get("cloud", {}) if isinstance(full_config, dict) else {}
         supabase_url = cloud_config.get("supabase_url") or os.environ.get("SUPABASE_URL", "")
         supabase_key = cloud_config.get("supabase_key") or os.environ.get("SUPABASE_SERVICE_KEY", "")
         backend_url = cloud_config.get("backend_url") or os.environ.get("BACKEND_URL", "")
