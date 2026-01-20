@@ -128,6 +128,11 @@ class LoggingService:
         # Delta filter: track last control log for change detection
         self._last_control_log: dict | None = None
 
+        # Debug: store last computed register frequencies for diagnostics
+        self._last_register_frequencies: dict[tuple[str, str], int] = {}
+        self._last_devices_type: str = ""
+        self._last_devices_count: int = 0
+
         # Health server
         self._health_app: web.Application | None = None
         self._health_runner: web.AppRunner | None = None
@@ -730,6 +735,8 @@ class LoggingService:
 
             # DEBUG: Log device extraction result
             logger.info(f"Cloud sync: devices={type(devices_raw).__name__}, count={len(all_devices)}")
+            self._last_devices_type = type(devices_raw).__name__
+            self._last_devices_count = len(all_devices)
 
             # Extract logging_frequency for each register
             for device in all_devices:
@@ -748,6 +755,9 @@ class LoggingService:
             if register_frequencies:
                 sample = list(register_frequencies.items())[:3]
                 logger.info(f"Sample frequencies: {sample}")
+
+            # Store for debug endpoint
+            self._last_register_frequencies = register_frequencies.copy()
 
             # Log non-default frequencies for visibility
             non_default = {k: v for k, v in register_frequencies.items() if v != 60}
@@ -1182,6 +1192,7 @@ class LoggingService:
         self._health_app = web.Application()
         self._health_app.router.add_get("/health", self._health_handler)
         self._health_app.router.add_get("/stats", self._stats_handler)
+        self._health_app.router.add_get("/debug", self._debug_handler)
 
         self._health_runner = web.AppRunner(self._health_app)
         await self._health_runner.setup()
@@ -1250,6 +1261,27 @@ class LoggingService:
                 "flush_errors": self._flush_error_count,
                 "cloud_errors": self._cloud_error_count,
             },
+        })
+
+    async def _debug_handler(self, request: web.Request) -> web.Response:
+        """Return debug info about config and register frequencies"""
+        # Get current config structure
+        config = get_config() or {}
+        devices_raw = config.get("devices", [])
+
+        # Convert tuple keys to strings for JSON serialization
+        freq_dict = {
+            f"{dev_id[:8]}:{reg_name}": freq
+            for (dev_id, reg_name), freq in self._last_register_frequencies.items()
+        }
+
+        return web.json_response({
+            "config_devices_type": type(devices_raw).__name__,
+            "config_devices_keys": list(devices_raw.keys()) if isinstance(devices_raw, dict) else f"list[{len(devices_raw)}]",
+            "last_sync_devices_type": self._last_devices_type,
+            "last_sync_devices_count": self._last_devices_count,
+            "register_frequencies": freq_dict,
+            "register_count": len(self._last_register_frequencies),
         })
 
 

@@ -1476,6 +1476,71 @@ async def get_logging_stats(
         )
 
 
+@router.get("/{controller_id}/logging-debug")
+async def get_logging_debug(
+    controller_id: UUID,
+    current_user: CurrentUser = Depends(require_role(["super_admin", "backend_admin", "admin"])),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Get logging service debug info (register frequencies, config structure).
+
+    Fetches debug info from the logging service's /debug endpoint (port 8085).
+    Used for diagnosing per-register frequency downsampling issues.
+    """
+    try:
+        # 1. Get controller with SSH credentials
+        controller_result = db.table("controllers").select(
+            "id, serial_number, ssh_port, ssh_username, ssh_password"
+        ).eq("id", str(controller_id)).execute()
+
+        if not controller_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Controller {controller_id} not found"
+            )
+
+        controller = controller_result.data[0]
+
+        if not controller.get("ssh_port") or not controller.get("ssh_username"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Controller SSH credentials not configured"
+            )
+
+        # 2. Execute curl to get debug info from logging service
+        SSH_HOST = "host.docker.internal"
+        command = "curl -s http://localhost:8085/debug"
+
+        success, message, output = execute_ssh_command(
+            host=SSH_HOST,
+            port=controller["ssh_port"],
+            username=controller["ssh_username"],
+            password=controller.get("ssh_password", ""),
+            command=command,
+            timeout=10
+        )
+
+        if not success:
+            return {"success": False, "error": f"SSH command failed: {message}"}
+
+        # 3. Parse JSON response
+        import json
+        try:
+            debug_info = json.loads(output.strip())
+            return {"success": True, "debug": debug_info}
+        except json.JSONDecodeError as e:
+            return {"success": False, "error": f"Invalid JSON response: {str(e)[:100]}", "raw": output[:500]}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get logging debug: {str(e)}"
+        )
+
+
 # ============================================
 # ENDPOINTS - UPDATE CONTROLLER SOFTWARE
 # ============================================
