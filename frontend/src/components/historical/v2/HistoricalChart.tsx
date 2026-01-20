@@ -466,7 +466,7 @@ export function HistoricalChart({
           <ResponsiveContainer width="100%" height={380}>
             <ComposedChart
               data={displayData}
-              margin={{ top: 8, right: hasRightParams ? 65 : 20, left: 0, bottom: 5 }}
+              margin={{ top: 8, right: hasRightParams ? 55 : 20, left: 0, bottom: 5 }}
             >
           {/* Gradient definitions */}
           <defs>
@@ -564,7 +564,6 @@ export function HistoricalChart({
                 return value.toFixed(1);
               }}
               width={55}
-              dx={5}
             />
           )}
 
@@ -605,7 +604,7 @@ export function HistoricalChart({
               leftAxisParams={leftAxisParams}
               rightAxisParams={rightAxisParams}
               onZoom={handleOverlayZoom}
-              chartMargins={{ left: 55, right: hasRightParams ? 65 : 20, top: 8, bottom: 5 }}
+              chartMargins={{ left: 55, right: hasRightParams ? 55 : 20, top: 8, bottom: 5 }}
               width={chartDimensions.width}
               height={chartDimensions.height}
               showTooltip={true} // Always show overlay tooltip (overlay blocks Recharts events)
