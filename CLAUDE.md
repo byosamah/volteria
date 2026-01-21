@@ -106,6 +106,7 @@ supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_
 | `site_devices` | Device configs per site |
 | `device_templates` | Reusable device definitions |
 | `control_logs`, `device_readings` | Time-series data |
+| `alarms` | System alarms with auto-resolve |
 | `controller_heartbeats` | Controller status |
 
 ## Deployment
@@ -184,3 +185,23 @@ SUPABASE_SERVICE_KEY=your-service-key
 - NEVER create DB functions without `SET search_path = ''`
 - NEVER create tables without enabling RLS
 - NEVER leave Supabase security advisor warnings unaddressed
+
+## Recent Updates (2026-01-21)
+
+### Device Connection Alarms
+- **`not_reporting` alarm**: Auto-created when device stops sending data (10 min timeout)
+- **Auto-resolve**: Cron job runs every 5 min, resolves alarm when device reconnects
+- **DB functions**: `check_device_connection_status()`, `create_not_reporting_alarm()`, `resolve_not_reporting_alarm()`
+- **Toggle**: Per-device `connection_alarm_enabled` field controls alarm generation
+
+### Config Sync Fix
+- **Trigger fix**: `site_devices.updated_at` no longer updates for operational fields (`is_online`, `last_seen`, `last_error`)
+- **Prevents**: False "sync needed" warnings when controller updates device status
+
+### Controller Fixes
+- **Stale readings**: Device manager deletes old readings when device read fails
+- **Logger fix**: Fixed `logger._logger` AttributeError in register_reader
+
+### Alarms Table Enhancement
+- Shows site and project info for each alarm
+- Removed deprecated `timeout_multiplier` field from UI

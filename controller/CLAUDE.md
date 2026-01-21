@@ -398,3 +398,13 @@ python-dotenv>=1.0.0
 POST /rest/v1/device_readings?on_conflict=device_id,register_name,timestamp
 ```
 Without `on_conflict`, entire batch fails if ANY record is duplicate.
+
+### Device Read Failures
+- When device read fails, stale readings are deleted from SharedState
+- Prevents old data from being logged as current
+- Device marked offline in cloud (`is_online: false`)
+
+### Connection Alarm Settings
+- Per-device `connection_alarm_enabled` controls alarm generation
+- Alarm created by cloud cron job (not controller) when device stops reporting
+- Controller only updates `is_online` and `last_seen` fields

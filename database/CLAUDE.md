@@ -61,6 +61,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 |-------|---------|
 | `site_dashboards` + `dashboard_widgets` | Custom dashboards |
 | `site_alarm_overrides` | Per-site threshold overrides |
+| `cron.job` | Scheduled tasks (pg_cron extension) |
 | `calculated_field_definitions` | Computed metrics formulas |
 | `notification_preferences` + `notifications` | Alert system |
 | `control_commands` | Remote control audit trail |
@@ -87,9 +88,33 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 041-050 | Dashboards | widgets, retention policies |
 | 051-060 | Enterprise | subscriptions, firmware/OTA |
 | 061-077 | Refinements | constraints, FK fixes, cleanup |
-| 078+ | Historical | RPC functions, aggregation |
+| 078-079 | Historical | RPC functions, aggregation |
+| 080-081 | Security | SECURITY DEFINER views, RLS policies |
+| 082+ | Connection alarms | not_reporting alarm infrastructure |
 
 ## RPC Functions
+
+### Device Connection Alarm Functions (Migration 082)
+Automated alarm system for devices that stop reporting data.
+
+```sql
+-- Check all devices and create/resolve alarms (runs via cron every 5 min)
+SELECT * FROM check_device_connection_status(600);  -- 600s = 10 min timeout
+
+-- Create alarm for non-reporting device
+SELECT create_not_reporting_alarm(site_id, device_id, device_name);
+
+-- Resolve alarm when device comes back online
+SELECT resolve_not_reporting_alarm(site_id, device_name);
+
+-- Get list of non-reporting devices
+SELECT * FROM get_non_reporting_devices(600);
+
+-- Check if site controller is online
+SELECT is_site_controller_online(site_id);
+```
+
+**Cron Job**: `check-device-alarms` runs every 5 minutes (`*/5 * * * *`)
 
 ### get_historical_readings (Migration 078)
 Server-side aggregation for historical data visualization. Bypasses max_rows limit by aggregating in database.
