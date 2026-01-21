@@ -117,7 +117,12 @@ class DeviceManager:
                 status.last_error = None
 
             else:
-                # Handle failure
+                # Handle failure - remove stale reading for this register
+                # This ensures only valid data exists in the system
+                # Gap will be visible in charts (no data point = gap)
+                if register_name in status.readings:
+                    del status.readings[register_name]
+
                 status.consecutive_failures += 1
                 status.last_error = error
 
