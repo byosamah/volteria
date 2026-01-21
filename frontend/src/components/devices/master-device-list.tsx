@@ -1210,7 +1210,6 @@ export function MasterDeviceList({
                         <SelectContent>
                           <SelectItem value="RS-485">RS-485</SelectItem>
                           <SelectItem value="RS-232">RS-232</SelectItem>
-                          <SelectItem value="TCP">TCP</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
