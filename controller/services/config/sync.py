@@ -271,7 +271,6 @@ class ConfigSync:
                 # Connection alarm settings
                 "connection_alarm": {
                     "enabled": device.get("connection_alarm_enabled", True),
-                    "timeout_multiplier": device.get("connection_timeout_multiplier", 3.0),
                 },
             }
 

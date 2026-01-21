@@ -214,7 +214,6 @@ interface Device {
   logging_interval_ms: number | null;
   // Connection alarm settings (optional - may not exist in older records)
   connection_alarm_enabled?: boolean | null;
-  connection_timeout_multiplier?: number | null;
   device_templates: {
     name: string;
     device_type: string;
@@ -322,7 +321,6 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   const [editBaudrate, setEditBaudrate] = useState(9600);
   // Connection alarm settings
   const [editConnectionAlarmEnabled, setEditConnectionAlarmEnabled] = useState(true);
-  const [editConnectionTimeoutMultiplier, setEditConnectionTimeoutMultiplier] = useState(3.0);
 
   // Edit form state - Registers tab
   const [editRegisters, setEditRegisters] = useState<ModbusRegister[]>([]);
@@ -372,7 +370,6 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     setEditBaudrate(device.baudrate || 9600);
     // Connection alarm settings
     setEditConnectionAlarmEnabled(device.connection_alarm_enabled ?? true);
-    setEditConnectionTimeoutMultiplier(device.connection_timeout_multiplier ?? 3.0);
     // Calculated Fields tab - load from device
     setEditCalculatedFields(device.calculated_fields || []);
     // Template selection
@@ -701,7 +698,6 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       calculated_fields: editCalculatedFields.length > 0 ? editCalculatedFields : null,
       // Connection alarm settings
       connection_alarm_enabled: editConnectionAlarmEnabled,
-      connection_timeout_multiplier: editConnectionTimeoutMultiplier,
       // Clear all protocol-specific fields first, then set the right ones
       ip_address: null,
       port: null,
@@ -1310,49 +1306,11 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
                   />
                 </div>
 
-                {/* Timeout multiplier - only shown when alarm is enabled */}
+                {/* Info text when alarm is enabled */}
                 {editConnectionAlarmEnabled && (
-                  <div className="space-y-2 pl-4 border-l-2 border-muted">
-                    <Label htmlFor="edit-timeout-multiplier">Timeout Multiplier</Label>
-                    <Input
-                      id="edit-timeout-multiplier"
-                      type="number"
-                      step="0.5"
-                      min="2"
-                      max="10"
-                      value={editConnectionTimeoutMultiplier}
-                      onChange={(e) => setEditConnectionTimeoutMultiplier(parseFloat(e.target.value) || 3.0)}
-                      className="min-h-[44px]"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Timeout = lowest register logging frequency × {editConnectionTimeoutMultiplier}
-                    </p>
-                    {/* Show calculated timeout based on registers */}
-                    {editRegisters.length > 0 && (
-                      <p className="text-xs font-medium text-blue-600">
-                        Calculated timeout:{" "}
-                        {(() => {
-                          const minFreq = Math.min(
-                            ...editRegisters
-                              .map((r) => r.logging_frequency || 60)
-                              .filter((f) => f > 0)
-                          );
-                          const timeout = minFreq * editConnectionTimeoutMultiplier;
-                          // Format based on value
-                          if (timeout < 1) return `${(timeout * 1000).toFixed(0)}ms`;
-                          if (timeout < 60) return `${timeout % 1 === 0 ? timeout.toFixed(0) : timeout.toFixed(1)}s`;
-                          if (timeout < 3600) return `${(timeout / 60).toFixed(1)} min`;
-                          return `${(timeout / 3600).toFixed(1)}h`;
-                        })()}
-                        {" "}(min freq: {Math.min(...editRegisters.map((r) => r.logging_frequency || 60).filter((f) => f > 0))}s)
-                      </p>
-                    )}
-                    {editRegisters.length === 0 && (
-                      <p className="text-xs text-amber-600">
-                        Add logging registers to see calculated timeout
-                      </p>
-                    )}
-                  </div>
+                  <p className="text-xs text-muted-foreground pl-4 border-l-2 border-muted">
+                    Alarm triggers if no data received for 10+ minutes while controller is online
+                  </p>
                 )}
               </div>
             </TabsContent>

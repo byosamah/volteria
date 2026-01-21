@@ -18,6 +18,7 @@ import { toast } from "sonner";
 interface Alarm {
   id: string;
   project_id: string;
+  site_id: string | null;
   alarm_type: string;
   device_name: string | null;
   message: string;
@@ -25,6 +26,13 @@ interface Alarm {
   acknowledged: boolean;
   acknowledged_by: string | null;
   created_at: string;
+  // Joined data
+  sites?: {
+    name: string;
+    projects?: {
+      name: string;
+    };
+  } | null;
 }
 
 export function AlarmsTable() {
@@ -33,11 +41,19 @@ export function AlarmsTable() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "unacknowledged">("unacknowledged");
 
-  // Fetch alarms
+  // Fetch alarms with site and project info
   const fetchAlarms = async () => {
     let query = supabase
       .from("alarms")
-      .select("*")
+      .select(`
+        *,
+        sites:site_id (
+          name,
+          projects:project_id (
+            name
+          )
+        )
+      `)
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -48,7 +64,6 @@ export function AlarmsTable() {
     const { data, error } = await query;
 
     if (!error && data) {
-      // Cast data to the expected type (Supabase returns the relation as an object)
       setAlarms(data as unknown as Alarm[]);
     }
     setLoading(false);
@@ -156,6 +171,7 @@ export function AlarmsTable() {
             <thead>
               <tr className="border-b">
                 <th className="text-left py-3 px-4 font-medium">Time</th>
+                <th className="text-left py-3 px-4 font-medium">Source</th>
                 <th className="text-left py-3 px-4 font-medium">Type</th>
                 <th className="text-left py-3 px-4 font-medium">Message</th>
                 <th className="text-center py-3 px-4 font-medium">Severity</th>
@@ -175,6 +191,17 @@ export function AlarmsTable() {
                 >
                   <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
                     {new Date(alarm.created_at).toLocaleString()}
+                  </td>
+                  <td className="py-3 px-4 text-xs">
+                    {alarm.sites ? (
+                      <span>
+                        <span className="font-medium">{alarm.sites.projects?.name || "—"}</span>
+                        <span className="text-muted-foreground"> &gt; </span>
+                        <span>{alarm.sites.name}</span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="py-3 px-4 font-mono text-xs">
                     {alarm.alarm_type.replace(/_/g, " ")}
