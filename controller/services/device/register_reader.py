@@ -125,7 +125,7 @@ class RegisterReader:
                 )
 
                 log_device_read(
-                    logger._logger,
+                    logger.logger,
                     device.name,
                     register.name,
                     value,
@@ -143,7 +143,7 @@ class RegisterReader:
                 )
 
                 log_device_read(
-                    logger._logger,
+                    logger.logger,
                     device.name,
                     register.name,
                     None,
