@@ -220,6 +220,7 @@ export default async function SiteDetailPage({
         template_id,
         template_synced_at,
         logging_interval_ms,
+        connection_alarm_enabled,
         device_templates (
           name,
           device_type,
