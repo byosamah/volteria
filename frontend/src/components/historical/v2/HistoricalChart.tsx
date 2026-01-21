@@ -494,6 +494,7 @@ export function HistoricalChart({
             tickLine={false}
             axisLine={false}
             dy={8}
+            padding={{ left: 10, right: hasRightParams ? 30 : 10 }}
             // Smart interval: show ~8-12 ticks regardless of data density
             interval={Math.max(0, Math.floor(displayData.length / 10) - 1)}
             tickFormatter={(timestamp: string) => {
@@ -589,7 +590,7 @@ export function HistoricalChart({
                 value: line.label,
                 fill: line.color,
                 fontSize: 10,
-                position: "right",
+                position: line.axis,
               }}
             />
           ))}
@@ -604,7 +605,7 @@ export function HistoricalChart({
               leftAxisParams={leftAxisParams}
               rightAxisParams={rightAxisParams}
               onZoom={handleOverlayZoom}
-              chartMargins={{ left: 55, right: hasRightParams ? 70 : 20, top: 8, bottom: 5 }}
+              chartMargins={{ left: 55, right: hasRightParams ? 60 : 20, top: 8, bottom: 5 }}
               width={chartDimensions.width}
               height={chartDimensions.height}
               showTooltip={true} // Always show overlay tooltip (overlay blocks Recharts events)

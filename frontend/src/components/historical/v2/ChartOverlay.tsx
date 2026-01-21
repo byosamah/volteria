@@ -78,6 +78,8 @@ export function ChartOverlay({
   );
 
   // Update cursor line position directly (no React state)
+  // Note: cursor is inside a clipping container that starts at plotLeft,
+  // so we use coordinates relative to that container (subtract plotLeft)
   const updateCursorLine = useCallback(
     (x: number | null, visible: boolean) => {
       if (!cursorLineRef.current) return;
@@ -87,15 +89,17 @@ export function ChartOverlay({
         return;
       }
 
-      // Clamp to plot area
+      // Clamp to plot area and convert to container-relative coordinates
       const clampedX = Math.max(plotLeft, Math.min(plotRight, x));
-      cursorLineRef.current.style.transform = `translateX(${clampedX}px)`;
+      const relativeX = clampedX - plotLeft;
+      cursorLineRef.current.style.transform = `translateX(${relativeX}px)`;
       cursorLineRef.current.style.opacity = "1";
     },
     [plotLeft, plotRight]
   );
 
   // Update selection rectangle directly (no React state)
+  // Note: selection is inside a clipping container that starts at plotLeft
   const updateSelection = useCallback(() => {
     if (!selectionRef.current) return;
 
@@ -106,10 +110,11 @@ export function ChartOverlay({
 
     const startX = Math.max(plotLeft, Math.min(plotRight, dragStartX.current));
     const endX = Math.max(plotLeft, Math.min(plotRight, dragEndX.current));
-    const left = Math.min(startX, endX);
+    // Convert to container-relative coordinates
+    const relativeLeft = Math.min(startX, endX) - plotLeft;
     const selWidth = Math.abs(endX - startX);
 
-    selectionRef.current.style.transform = `translateX(${left}px)`;
+    selectionRef.current.style.transform = `translateX(${relativeLeft}px)`;
     selectionRef.current.style.width = `${selWidth}px`;
     selectionRef.current.style.opacity = "1";
   }, [plotLeft, plotRight]);
@@ -247,34 +252,45 @@ export function ChartOverlay({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Vertical cursor line - only for large datasets */}
-      {showTooltip && (
+      {/* Clipping container for cursor and selection - constrains to plot area */}
+      <div
+        className="absolute pointer-events-none overflow-hidden"
+        style={{
+          left: plotLeft,
+          top: plotTop,
+          width: plotWidth,
+          height: plotHeight,
+        }}
+      >
+        {/* Vertical cursor line - only for large datasets */}
+        {showTooltip && (
+          <div
+            ref={cursorLineRef}
+            className="absolute bg-border"
+            style={{
+              top: 0,
+              left: 0,
+              width: 2,
+              height: "100%",
+              opacity: 0,
+              willChange: "transform",
+            }}
+          />
+        )}
+
+        {/* Selection rectangle */}
         <div
-          ref={cursorLineRef}
-          className="absolute pointer-events-none bg-border"
+          ref={selectionRef}
+          className="absolute bg-primary/15 border-l-2 border-r-2 border-primary/50"
           style={{
-            top: plotTop,
+            top: 0,
             left: 0,
-            width: 2,
-            height: plotHeight,
+            height: "100%",
             opacity: 0,
-            willChange: "transform",
+            willChange: "transform, width",
           }}
         />
-      )}
-
-      {/* Selection rectangle */}
-      <div
-        ref={selectionRef}
-        className="absolute pointer-events-none bg-primary/15 border-l-2 border-r-2 border-primary/50"
-        style={{
-          top: plotTop,
-          left: 0,
-          height: plotHeight,
-          opacity: 0,
-          willChange: "transform, width",
-        }}
-      />
+      </div>
 
       {/* Tooltip - only for large datasets, small datasets use Recharts tooltip */}
       {showTooltip && tooltipData.visible && tooltipData.dataPoint && (
