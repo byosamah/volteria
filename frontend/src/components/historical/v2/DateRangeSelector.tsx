@@ -6,14 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { DATE_PRESETS, MAX_DATE_RANGE } from "./constants";
-import type { DateRange } from "./types";
+import type { DateRange, RangeMode } from "./types";
 
 interface DateRangeSelectorProps {
   dateRange: DateRange;
   onDateRangeChange: (range: DateRange) => void;
+  onRangeModeChange?: (mode: RangeMode) => void;
 }
 
-export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSelectorProps) {
+export function DateRangeSelector({ dateRange, onDateRangeChange, onRangeModeChange }: DateRangeSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(new Date());
   const [selectingStart, setSelectingStart] = useState(true);
@@ -51,6 +52,8 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
       end.setHours(23, 59, 59, 999);
     }
 
+    // Presets are relative - they slide to "now" on Plot/Refresh
+    onRangeModeChange?.("relative");
     onDateRangeChange({ start, end });
     setIsOpen(false);
   };
@@ -149,6 +152,9 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
 
     if (date > today) return;
 
+    // Custom date selection = absolute mode (keeps exact dates on Plot/Refresh)
+    onRangeModeChange?.("absolute");
+
     // Use max daily range (server-side aggregation handles long ranges)
     const maxRangeDays = MAX_DATE_RANGE.daily;
 
@@ -191,6 +197,9 @@ export function DateRangeSelector({ dateRange, onDateRangeChange }: DateRangeSel
   const handleTimeChange = (which: "start" | "end", timeStr: string) => {
     const [hours, minutes] = timeStr.split(":").map(Number);
     if (isNaN(hours) || isNaN(minutes)) return;
+
+    // Manual time input = absolute mode (keeps exact dates on Plot/Refresh)
+    onRangeModeChange?.("absolute");
 
     if (which === "start") {
       const newStart = new Date(dateRange.start);

@@ -119,6 +119,9 @@ export type AggregationMethod = "avg" | "min" | "max";
 // Data source
 export type DataSource = "cloud" | "local";
 
+// Range mode: relative (presets slide to now) vs absolute (custom dates stay fixed)
+export type RangeMode = "relative" | "absolute";
+
 // Global chart type (default for new parameters)
 export type ChartType = "line" | "area" | "bar";
 

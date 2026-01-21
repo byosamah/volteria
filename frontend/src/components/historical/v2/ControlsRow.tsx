@@ -14,7 +14,7 @@ import { Cloud, HardDrive, Download, Play, Filter } from "lucide-react";
 import { DateRangeSelector } from "./DateRangeSelector";
 import { AggregationSelector } from "./AggregationSelector";
 import { getAvailableAggregations } from "./constants";
-import type { Project, Site, DateRange, DataSource, ActiveFilter, AggregationType, AggregationGroup } from "./types";
+import type { Project, Site, DateRange, DataSource, ActiveFilter, AggregationType, AggregationGroup, RangeMode } from "./types";
 
 interface ControlsRowProps {
   projects: Project[];
@@ -25,6 +25,8 @@ interface ControlsRowProps {
   onSiteChange: (siteId: string) => void;
   dateRange: DateRange;
   onDateRangeChange: (range: DateRange) => void;
+  rangeMode: RangeMode;
+  onRangeModeChange: (mode: RangeMode) => void;
   aggregationType: AggregationType;
   onAggregationChange: (type: AggregationType) => void;
   isAutoAggregation: boolean;
@@ -49,6 +51,8 @@ export function ControlsRow({
   onSiteChange,
   dateRange,
   onDateRangeChange,
+  rangeMode,
+  onRangeModeChange,
   aggregationType,
   onAggregationChange,
   isAutoAggregation,
@@ -145,6 +149,7 @@ export function ControlsRow({
             <DateRangeSelector
               dateRange={dateRange}
               onDateRangeChange={onDateRangeChange}
+              onRangeModeChange={onRangeModeChange}
             />
           </div>
 

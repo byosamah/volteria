@@ -45,6 +45,7 @@ import type {
   Device,
   ActiveFilter,
   AggregationType,
+  RangeMode,
 } from "./types";
 
 export function HistoricalDataClientV2({
@@ -66,6 +67,9 @@ export function HistoricalDataClientV2({
   // Date range (initialized on client to avoid hydration mismatch)
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
+
+  // Range mode: relative (presets slide to now) vs absolute (custom dates stay fixed)
+  const [rangeMode, setRangeMode] = useState<RangeMode>("relative");
 
   // Initialize date range on client side only (avoids hydration mismatch)
   useEffect(() => {
@@ -454,18 +458,19 @@ export function HistoricalDataClientV2({
     const allParams = [...leftAxisParams, ...rightAxisParams];
     if (allParams.length === 0 || !dateRange) return;
 
-    // Slide date window to current time (keeps same duration)
-    // This ensures Refresh/Plot always fetches the latest data
-    const now = new Date();
-    const duration = dateRange.end.getTime() - dateRange.start.getTime();
-    const newEnd = now;
-    const newStart = new Date(now.getTime() - duration);
+    // RELATIVE mode: slide to now (presets like 1h, 24h, 3d, 7d)
+    // ABSOLUTE mode: keep exact dates (custom selection via calendar/time input)
+    let effectiveDateRange = dateRange;
 
-    // Update state so UI reflects the new range
-    setDateRange({ start: newStart, end: newEnd });
-
-    // Use new range for this fetch (state update is async)
-    const effectiveDateRange = { start: newStart, end: newEnd };
+    if (rangeMode === "relative") {
+      const now = new Date();
+      const duration = dateRange.end.getTime() - dateRange.start.getTime();
+      const newEnd = now;
+      const newStart = new Date(now.getTime() - duration);
+      effectiveDateRange = { start: newStart, end: newEnd };
+      setDateRange(effectiveDateRange);
+    }
+    // ABSOLUTE: use dateRange as-is, no sliding
 
     setIsLoading(true);
 
@@ -570,7 +575,7 @@ export function HistoricalDataClientV2({
     } finally {
       setIsLoading(false);
     }
-  }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, dataSource, transformApiToChartData, setDateRange]);
+  }, [leftAxisParams, rightAxisParams, dateRange, aggregationType, dataSource, rangeMode, transformApiToChartData, setDateRange]);
 
   // Clear chart data when all parameters are removed (but don't auto-fetch)
   useEffect(() => {
@@ -747,6 +752,8 @@ export function HistoricalDataClientV2({
             onSiteChange={handleSiteChange}
             dateRange={dateRange}
             onDateRangeChange={handleDateRangeChange}
+            rangeMode={rangeMode}
+            onRangeModeChange={setRangeMode}
             aggregationType={aggregationType}
             onAggregationChange={handleAggregationChange}
             isAutoAggregation={isAutoAggregation}
