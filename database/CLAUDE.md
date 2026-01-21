@@ -144,6 +144,50 @@ CHECK (severity IN ('info', 'warning', 'major', 'critical'))
 4. **JSONB for flexibility** - registers, alarm_definitions, metadata
 5. **Run migrations in order** - Dependencies exist between files
 
+## Supabase Best Practices (REQUIRED)
+
+**All new database code MUST pass Supabase security advisors with zero warnings.**
+
+### Functions
+```sql
+-- ALWAYS include SET search_path = '' to prevent search path injection
+CREATE OR REPLACE FUNCTION public.my_function()
+RETURNS void LANGUAGE plpgsql
+SET search_path = ''  -- REQUIRED
+AS $function$
+BEGIN
+    -- Use fully qualified table names: public.table_name
+    SELECT * FROM public.my_table;
+END;
+$function$;
+```
+
+### Tables
+```sql
+-- ALWAYS enable RLS on new tables
+ALTER TABLE public.new_table ENABLE ROW LEVEL SECURITY;
+
+-- Create specific policies (avoid USING (true) for INSERT/UPDATE/DELETE)
+CREATE POLICY "Users can view own project data" ON public.new_table
+    FOR SELECT USING (
+        project_id IN (SELECT project_id FROM public.user_projects WHERE user_id = auth.uid())
+    );
+```
+
+### Pre-commit Checklist
+1. Run `get_advisors(type: 'security')` after migrations
+2. Zero `function_search_path_mutable` warnings
+3. Avoid `rls_policy_always_true` for write operations
+4. Use `public.table_name` in all function bodies
+
+### Known Exceptions (documented)
+| Item | Reason |
+|------|--------|
+| `users` RLS disabled | Prevents infinite recursion |
+| Permissive INSERT on `controller_heartbeats`, `device_readings` | Controller auth via secret, not JWT |
+
+---
+
 ## Creating New Migrations
 
 ```sql
@@ -152,8 +196,9 @@ CHECK (severity IN ('info', 'warning', 'major', 'critical'))
 -- 1. IF NOT EXISTS / IF EXISTS checks
 -- 2. Comments explaining purpose
 -- 3. Timestamp columns with defaults
+-- 4. SET search_path = '' for functions
 
-CREATE TABLE IF NOT EXISTS new_table (
+CREATE TABLE IF NOT EXISTS public.new_table (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     -- columns...
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -161,8 +206,12 @@ CREATE TABLE IF NOT EXISTS new_table (
 );
 
 -- Add RLS
-ALTER TABLE new_table ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.new_table ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own data" ON new_table
-    FOR SELECT USING (auth.uid() IS NOT NULL);
+-- Specific policy (not USING (true))
+CREATE POLICY "Users can view own data" ON public.new_table
+    FOR SELECT USING (
+        auth.uid() IS NOT NULL
+        AND user_id = auth.uid()
+    );
 ```

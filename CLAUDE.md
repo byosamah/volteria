@@ -181,3 +181,6 @@ SUPABASE_SERVICE_KEY=your-service-key
 - NEVER use fallback systems
 - NEVER use caching
 - NEVER deploy without running `npm run build` first
+- NEVER create DB functions without `SET search_path = ''`
+- NEVER create tables without enabling RLS
+- NEVER leave Supabase security advisor warnings unaddressed
