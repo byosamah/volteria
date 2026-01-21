@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { DATE_PRESETS, MAX_DATE_RANGE } from "./constants";
 import type { DateRange, RangeMode } from "./types";
+
+// Hour/minute options for time select dropdowns
+const HOURS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, "0"));
+const MINUTES = ["00", "15", "30", "45"]; // 15-min intervals
 
 interface DateRangeSelectorProps {
   dateRange: DateRange;
@@ -29,11 +33,6 @@ export function DateRangeSelector({ dateRange, onDateRangeChange, onRangeModeCha
       minute: "2-digit",
       hour12: false,
     });
-  };
-
-  // Format time for input
-  const formatTimeInput = (date: Date) => {
-    return date.toTimeString().slice(0, 5); // HH:MM
   };
 
   // Handle preset click
@@ -193,21 +192,28 @@ export function DateRangeSelector({ dateRange, onDateRangeChange, onRangeModeCha
     }
   };
 
-  // Handle time change
-  const handleTimeChange = (which: "start" | "end", timeStr: string) => {
-    const [hours, minutes] = timeStr.split(":").map(Number);
-    if (isNaN(hours) || isNaN(minutes)) return;
+  // Get hour/minute from date for select values
+  const getHour = (date: Date) => date.getHours().toString().padStart(2, "0");
+  const getMinute = (date: Date) => {
+    const m = date.getMinutes();
+    // Snap to nearest 15-min interval
+    const snapped = Math.round(m / 15) * 15;
+    return (snapped === 60 ? 0 : snapped).toString().padStart(2, "0");
+  };
 
-    // Manual time input = absolute mode (keeps exact dates on Plot/Refresh)
+  // Handle time selection from dropdowns
+  const handleTimeSelect = (which: "start" | "end", hour: string, minute: string) => {
     onRangeModeChange?.("absolute");
+    const h = parseInt(hour, 10);
+    const m = parseInt(minute, 10);
 
     if (which === "start") {
       const newStart = new Date(dateRange.start);
-      newStart.setHours(hours, minutes, 0, 0);
+      newStart.setHours(h, m, 0, 0);
       onDateRangeChange({ ...dateRange, start: newStart });
     } else {
       const newEnd = new Date(dateRange.end);
-      newEnd.setHours(hours, minutes, 59, 999);
+      newEnd.setHours(h, m, 59, 999);
       onDateRangeChange({ ...dateRange, end: newEnd });
     }
   };
@@ -307,28 +313,70 @@ export function DateRangeSelector({ dateRange, onDateRangeChange, onRangeModeCha
               ))}
             </div>
 
-            {/* Time inputs */}
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t">
+            {/* Time selectors */}
+            <div className="grid grid-cols-2 gap-4 pt-3 border-t">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Start Time</label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="time"
-                    value={formatTimeInput(dateRange.start)}
-                    onChange={(e) => handleTimeChange("start", e.target.value)}
-                    className="h-8 text-sm"
-                  />
+                <div className="flex items-center gap-1">
+                  <Select
+                    value={getHour(dateRange.start)}
+                    onValueChange={(h) => handleTimeSelect("start", h, getMinute(dateRange.start))}
+                  >
+                    <SelectTrigger className="w-16 h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HOURS.map((h) => (
+                        <SelectItem key={h} value={h}>{h}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-muted-foreground font-medium">:</span>
+                  <Select
+                    value={getMinute(dateRange.start)}
+                    onValueChange={(m) => handleTimeSelect("start", getHour(dateRange.start), m)}
+                  >
+                    <SelectTrigger className="w-16 h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MINUTES.map((m) => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">End Time</label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="time"
-                    value={formatTimeInput(dateRange.end)}
-                    onChange={(e) => handleTimeChange("end", e.target.value)}
-                    className="h-8 text-sm"
-                  />
+                <div className="flex items-center gap-1">
+                  <Select
+                    value={getHour(dateRange.end)}
+                    onValueChange={(h) => handleTimeSelect("end", h, getMinute(dateRange.end))}
+                  >
+                    <SelectTrigger className="w-16 h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HOURS.map((h) => (
+                        <SelectItem key={h} value={h}>{h}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-muted-foreground font-medium">:</span>
+                  <Select
+                    value={getMinute(dateRange.end)}
+                    onValueChange={(m) => handleTimeSelect("end", getHour(dateRange.end), m)}
+                  >
+                    <SelectTrigger className="w-16 h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MINUTES.map((m) => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
