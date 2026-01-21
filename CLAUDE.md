@@ -192,7 +192,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 - **`not_reporting` alarm**: Auto-created when device stops sending data (10 min timeout)
 - **Auto-resolve**: Cron job runs every 5 min, resolves alarm when device reconnects
 - **DB functions**: `check_device_connection_status()`, `create_not_reporting_alarm()`, `resolve_not_reporting_alarm()`
-- **Toggle**: Per-device `connection_alarm_enabled` field controls alarm generation
+- **Toggle**: Per-device `connection_alarm_enabled` controls alarm creation (device still goes offline)
+- **Migration 083**: Device status (`is_online`) updates regardless of alarm toggle
 
 ### Config Sync Fix
 - **Trigger fix**: `site_devices.updated_at` no longer updates for operational fields (`is_online`, `last_seen`, `last_error`)
@@ -201,6 +202,10 @@ SUPABASE_SERVICE_KEY=your-service-key
 ### Controller Fixes
 - **Stale readings**: Device manager deletes old readings when device read fails
 - **Logger fix**: Fixed `logger._logger` AttributeError in register_reader
+
+### Frontend Fixes
+- **connection_alarm_enabled**: Site page query now includes field for correct toggle state
+- **Master device physical**: Removed TCP from dropdown (RTU settings only: RS-485, RS-232)
 
 ### Alarms Table Enhancement
 - Shows site and project info for each alarm
