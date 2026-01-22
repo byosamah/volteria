@@ -51,19 +51,14 @@ export default async function ProjectSettingsPage({
     notFound();
   }
 
-  // Fetch site count for validation (can't delete project with sites)
+  // Fetch active site count for validation (can't delete project with active sites)
+  // Note: We only check for sites here. Sites check for devices.
+  // Hierarchy: Project → Active Sites, Site → Active Devices
   const { count: siteCount } = await supabase
     .from("sites")
     .select("*", { count: "exact", head: true })
     .eq("project_id", id)
     .eq("is_active", true);
-
-  // Fetch device count for validation (can't delete project with devices)
-  // Note: Devices are now at site level, so we count from site_devices
-  const { count: deviceCount } = await supabase
-    .from("site_devices")
-    .select("*, sites!inner(*)", { count: "exact", head: true })
-    .eq("sites.project_id", id);
 
   return (
     <DashboardLayout user={{
@@ -131,7 +126,6 @@ export default async function ProjectSettingsPage({
                 projectId={id}
                 projectName={project.name}
                 siteCount={siteCount ?? 0}
-                deviceCount={deviceCount ?? 0}
                 userRole={userProfile?.role || undefined}
               />
             </div>
