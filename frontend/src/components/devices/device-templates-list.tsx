@@ -275,11 +275,12 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
     router.refresh();
   };
 
-  // Check if template is in use by any device in sites
+  // Check if template is in use by any ACTIVE device in ACTIVE sites
   const checkTemplateUsage = async (templateId: string): Promise<TemplateUsageInfo[]> => {
     const supabase = createClient();
 
     // Query site_devices joined with sites and projects
+    // Filter: only enabled devices in active sites
     const { data, error } = await supabase
       .from("site_devices")
       .select(`
@@ -290,13 +291,16 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
           id,
           name,
           project_id,
+          is_active,
           projects!inner (
             id,
             name
           )
         )
       `)
-      .eq("template_id", templateId);
+      .eq("template_id", templateId)
+      .eq("enabled", true)
+      .eq("sites.is_active", true);
 
     if (error) {
       console.error("Error checking template usage:", error);
@@ -325,7 +329,8 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
   const handleDeleteTemplate = async (template: DeviceTemplate) => {
     setIsCheckingUsage(true);
     try {
-      const usage = await checkTemplateUsage(template.template_id);
+      // Use template.id (UUID) not template.template_id (slug like "goodwe_100kw")
+      const usage = await checkTemplateUsage(template.id);
 
       if (usage.length > 0) {
         // Template is in use - block deletion and show info

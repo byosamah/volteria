@@ -5,11 +5,11 @@
  *
  * Soft deletes a site (sets is_active = false).
  * Requires confirmation dialog.
+ * Uses API route to bypass RLS (frontend Supabase client only has SELECT).
  */
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -36,22 +36,21 @@ export function DeleteSiteButton({ siteId, siteName, projectId, userRole }: Dele
   const canDelete = userRole && !["configurator", "viewer"].includes(userRole);
   if (!canDelete) return null;
   const router = useRouter();
-  const supabase = createClient();
   const [loading, setLoading] = useState(false);
 
   const handleDelete = async () => {
     setLoading(true);
 
     try {
-      // Soft delete the site (set is_active = false)
-      const { error } = await supabase
-        .from("sites")
-        .update({ is_active: false })
-        .eq("id", siteId);
+      // Call API route which uses backend (service_role bypasses RLS)
+      const response = await fetch(`/api/sites/${siteId}`, {
+        method: "DELETE",
+      });
 
-      if (error) {
-        console.error("Error deleting site:", error);
-        toast.error(error.message || "Failed to delete site");
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        console.error("Error deleting site:", data);
+        toast.error(data.error || "Failed to delete site");
         setLoading(false);
         return;
       }
