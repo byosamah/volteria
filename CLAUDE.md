@@ -186,6 +186,26 @@ SUPABASE_SERVICE_KEY=your-service-key
 - NEVER create tables without enabling RLS
 - NEVER leave Supabase security advisor warnings unaddressed
 
+## Recent Updates (2026-01-22)
+
+### Deletion Bug Fixes
+- **Site deletion**: Frontend now uses API route (`/api/sites/[siteId]`) instead of direct Supabase UPDATE (RLS only allows SELECT for authenticated users)
+- **Template deletion**: Fixed `checkTemplateUsage()` to use `template.id` (UUID) not `template_id` (slug), and filter for active sites + enabled devices only
+- **Project deletion**: Simplified to only check active sites (sites already check for devices)
+
+### Cascade Delete Fixes (DB Migrations)
+- **`site_devices.site_id`**: Changed FK from NO ACTION to CASCADE - deleting a site now cascades to its devices
+- **`site_devices.template_id`**: Changed FK from NO ACTION to SET NULL - deleting a template unlinks devices (they keep manual registers)
+
+### Deletion Hierarchy
+```
+Project → checks active sites only
+   ↓
+Site → checks active devices (enabled = true)
+   ↓
+Template → checks active devices in active sites
+```
+
 ## Recent Updates (2026-01-21)
 
 ### Device Connection Alarms
