@@ -125,8 +125,8 @@ export function HistoricalChart({
     height: 0,
   });
 
-  // Check if sparse data (< 30 points)
-  const isSparseData = data.length > 0 && data.length < 30;
+  // Show individual dots when few data points (visual aid, not a warning)
+  const showDots = data.length > 0 && data.length < 30;
 
   // Filter data based on zoom
   const displayData = useMemo(() => {
@@ -257,7 +257,6 @@ export function HistoricalChart({
       return params.map((param) => {
         const dataKey = `${param.deviceId}:${param.registerName}`;
         const name = `${param.registerName}`;
-        const showDots = isSparseData;
 
         // Disable animation and active dot for large datasets
         const animationProps = isLargeDataset
@@ -320,7 +319,7 @@ export function HistoricalChart({
         }
       });
     },
-    [isSparseData, isLargeDataset]
+    [showDots, isLargeDataset]
   );
 
   // Check if we have any parameters
@@ -397,12 +396,6 @@ export function HistoricalChart({
 
         {/* Right side - metadata and actions */}
         <div className="flex items-center gap-3">
-          {/* Sparse data warning */}
-          {isSparseData && (
-            <span className="text-[11px] text-amber-600 bg-amber-500/10 px-2.5 py-1 rounded-full font-medium">
-              Sparse data
-            </span>
-          )}
 
           {/* Aggregation badge */}
           {aggregationLabel && metadata?.originalPoints && (
