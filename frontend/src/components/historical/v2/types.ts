@@ -58,6 +58,8 @@ export interface AxisParameter {
   color: string;
   chartType: "line" | "area" | "bar";
   status?: RegisterStatus;
+  firstSeen?: string;  // ISO timestamp (Non-Active only)
+  lastSeen?: string;   // ISO timestamp (Non-Active only)
 }
 
 // Register status: active (in current config) or inactive (has data but not in config)

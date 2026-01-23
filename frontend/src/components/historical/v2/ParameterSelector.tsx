@@ -86,6 +86,8 @@ export function ParameterSelector({
         color: getNextColor(usedColors),
         chartType: (register.preferred_chart_type as ChartType) || defaultChartType,
         status: register.status,
+        firstSeen: register.firstSeen,
+        lastSeen: register.lastSeen,
       };
     },
     [leftAxisParams, rightAxisParams, defaultChartType]

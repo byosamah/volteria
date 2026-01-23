@@ -17,6 +17,14 @@ import {
 import { COLOR_PALETTE, CHART_TYPE_OPTIONS } from "./constants";
 import type { AxisParameter, ChartType } from "./types";
 
+/** Format ISO date to short display: "Jan 15 '26" */
+function formatShortDate(iso: string): string {
+  const date = new Date(iso);
+  const month = date.toLocaleString("en-US", { month: "short" });
+  const day = date.getDate();
+  return `${month} ${day} '${String(date.getFullYear()).slice(-2)}`;
+}
+
 interface ParameterCardProps {
   parameter: AxisParameter;
   onRemove: () => void;
@@ -153,6 +161,11 @@ export function ParameterCard({
         <p className="text-xs text-muted-foreground truncate">
           {parameter.siteName} › {parameter.deviceName} {parameter.unit && `• ${parameter.unit}`}
         </p>
+        {isInactive && parameter.firstSeen && parameter.lastSeen && (
+          <p className="text-xs text-muted-foreground">
+            {formatShortDate(parameter.firstSeen)} – {formatShortDate(parameter.lastSeen)}
+          </p>
+        )}
       </div>
 
       {/* Chart type selector */}
