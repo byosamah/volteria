@@ -113,7 +113,20 @@
       "Bash(dir:*)",
       "Bash(pip show:*)",
       "Bash(C:/Users/Hp/AppData/Roaming/Python/Python314/Scripts/uvicorn.exe:*)",
-      "Bash(netstat:*)"
+      "Bash(netstat:*)",
+      "Skill(check-logging)",
+      "Skill(reflect)",
+      "WebFetch(domain:github.com)",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "mcp__plugin_supabase_supabase__get_advisors",
+      "mcp__plugin_supabase_supabase__list_migrations",
+      "mcp__plugin_supabase_supabase__list_extensions",
+      "Bash(Remove-Item -Force \"C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\.next\\\\dev\\\\lock\")",
+      "Bash(unzip:*)",
+      "Bash(if not exist \"C:\\\\Users\\\\Hp\\\\volteria\\\\.claude\\\\skills\" mkdir \"C:\\\\Users\\\\Hp\\\\volteria\\\\.claude\\\\skills\")",
+      "Bash(git ls-tree:*)",
+      "Bash(del nul:*)",
+      "Bash(git rm:*)"
     ]
   }
 }
