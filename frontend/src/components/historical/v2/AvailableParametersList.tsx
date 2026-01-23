@@ -249,16 +249,12 @@ export function AvailableParametersList({
   );
 }
 
-/** Format ISO date to short display: "Jan 15" (same year) or "Jan 15 '25" (different year) */
+/** Format ISO date to short display: "Jan 15 '26" */
 function formatShortDate(iso: string): string {
   const date = new Date(iso);
-  const now = new Date();
   const month = date.toLocaleString("en-US", { month: "short" });
   const day = date.getDate();
-  if (date.getFullYear() !== now.getFullYear()) {
-    return `${month} ${day} '${String(date.getFullYear()).slice(-2)}`;
-  }
-  return `${month} ${day}`;
+  return `${month} ${day} '${String(date.getFullYear()).slice(-2)}`;
 }
 
 interface DraggableRegisterItemProps {
