@@ -14,11 +14,12 @@ const MINUTES = ["00", "15", "30", "45"]; // 15-min intervals
 
 interface DateRangeSelectorProps {
   dateRange: DateRange;
+  rangeMode?: RangeMode;
   onDateRangeChange: (range: DateRange) => void;
   onRangeModeChange?: (mode: RangeMode) => void;
 }
 
-export function DateRangeSelector({ dateRange, onDateRangeChange, onRangeModeChange }: DateRangeSelectorProps) {
+export function DateRangeSelector({ dateRange, rangeMode, onDateRangeChange, onRangeModeChange }: DateRangeSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(new Date());
   const [selectingStart, setSelectingStart] = useState(true);
@@ -57,8 +58,10 @@ export function DateRangeSelector({ dateRange, onDateRangeChange, onRangeModeCha
     setIsOpen(false);
   };
 
-  // Get current preset if matching
+  // Get current preset if matching (only for relative/preset selections)
   const getCurrentPreset = () => {
+    if (rangeMode === "absolute") return null;
+
     const diffMs = dateRange.end.getTime() - dateRange.start.getTime();
     const diffHours = Math.round(diffMs / (1000 * 60 * 60));
 

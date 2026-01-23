@@ -148,6 +148,7 @@ export function ControlsRow({
             <label className="text-xs font-medium text-muted-foreground">Date &amp; Time</label>
             <DateRangeSelector
               dateRange={dateRange}
+              rangeMode={rangeMode}
               onDateRangeChange={onDateRangeChange}
               onRangeModeChange={onRangeModeChange}
             />
