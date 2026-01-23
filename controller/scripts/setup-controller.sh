@@ -136,13 +136,14 @@ configure_network() {
     log_info "Timezone set to Asia/Dubai"
 
     # Persist DNS on WiFi connection (survives reconnects and reboots)
-    # "preconfigured" is the default connection name from Raspberry Pi Imager
-    if nmcli con show "preconfigured" > /dev/null 2>&1; then
-        nmcli con modify "preconfigured" ipv4.dns "8.8.8.8 8.8.4.4"
-        nmcli con modify "preconfigured" ipv4.ignore-auto-dns no
-        log_info "Persistent DNS set on WiFi connection"
+    # Detect active WiFi connection name (varies: "preconfigured", "netplan-wlan0-*", etc.)
+    WIFI_CON=$(nmcli -t -f NAME,TYPE con show --active | grep wifi | cut -d: -f1 | head -1)
+    if [[ -n "$WIFI_CON" ]]; then
+        nmcli con modify "$WIFI_CON" ipv4.dns "8.8.8.8 8.8.4.4"
+        nmcli con modify "$WIFI_CON" ipv4.ignore-auto-dns no
+        log_info "Persistent DNS set on WiFi connection: ${WIFI_CON}"
     else
-        log_warn "WiFi connection 'preconfigured' not found — set DNS manually"
+        log_warn "No active WiFi connection found — set DNS manually after WiFi is configured"
     fi
 
     # WiFi: Configured via Raspberry Pi Imager (DHCP) - don't touch

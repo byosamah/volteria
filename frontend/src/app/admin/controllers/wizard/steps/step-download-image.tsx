@@ -178,6 +178,12 @@ export function StepDownloadImage({ onConfirm, confirmed, hardwareType, hardware
               <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
+              <span><span className="font-medium">DNS Resilience</span> <span className="text-xs">(persistent DNS + 5-min watchdog + daily check)</span></span>
+            </li>
+            <li className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
               Local SQLite database for offline operation
             </li>
             <li className="flex items-center gap-2">
