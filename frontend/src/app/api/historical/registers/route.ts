@@ -60,39 +60,40 @@ export async function GET(request: NextRequest) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Query unique register names per device from device_readings
-    // This uses a simple approach: select distinct device_id, register_name
-    const { data: readingsData, error: readingsError } = await supabase
-      .from("device_readings")
-      .select("device_id, register_name")
-      .in("device_id", deviceIds)
-      .gte("timestamp", startDate.toISOString());
+    // Query unique register names per device using RPC (database-level DISTINCT)
+    // This avoids PostgREST's default 1000-row limit which truncated results
+    const { data: readingsData, error: readingsError } = await supabase.rpc(
+      "get_distinct_register_names",
+      {
+        p_device_ids: deviceIds,
+        p_since: startDate.toISOString(),
+      }
+    );
 
     if (readingsError) {
-      console.error("[historical/registers] Query error:", readingsError.message);
+      console.error("[historical/registers] RPC error:", readingsError.message);
       return NextResponse.json(
         { error: "Failed to fetch historical registers" },
         { status: 500 }
       );
     }
 
-    // Group unique register names by device
-    const deviceRegisterMap = new Map<string, Set<string>>();
+    // Group register names by device (already distinct from DB)
+    const deviceRegisterMap = new Map<string, string[]>();
 
     for (const row of readingsData || []) {
       if (!deviceRegisterMap.has(row.device_id)) {
-        deviceRegisterMap.set(row.device_id, new Set());
+        deviceRegisterMap.set(row.device_id, []);
       }
-      deviceRegisterMap.get(row.device_id)!.add(row.register_name);
+      deviceRegisterMap.get(row.device_id)!.push(row.register_name);
     }
 
     // Convert to response format
     const registers: DeviceRegisters[] = [];
     for (const deviceId of deviceIds) {
-      const registerNames = deviceRegisterMap.get(deviceId);
       registers.push({
         deviceId,
-        registerNames: registerNames ? Array.from(registerNames).sort() : [],
+        registerNames: deviceRegisterMap.get(deviceId) || [],
       });
     }
 
