@@ -165,6 +165,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 - **RAM Buffer** → **SQLite** (every 60s) → **Cloud** (every 180s)
 - Per-register `logging_frequency` controls cloud data density
 - Clock-aligned timestamps for easy cross-device correlation
+- **Config-filtered sampling**: Logging service only logs registers present in current config (source of truth)
+- **Register rename**: Old name stops logging immediately after config sync; old data preserved as "Non-Active" in Historical Data
 
 ### Historical Data
 - Server-side aggregation via `get_historical_readings()` RPC
@@ -185,6 +187,19 @@ SUPABASE_SERVICE_KEY=your-service-key
 - NEVER create DB functions without `SET search_path = ''`
 - NEVER create tables without enabling RLS
 - NEVER leave Supabase security advisor warnings unaddressed
+
+## Recent Updates (2026-01-23)
+
+### Register Rename Fix (Controller + Frontend)
+- **Controller**: Logging service now filters SharedState readings against current config — only registers in active config get logged
+- **Controller**: Device service clears stale reading buffers on config reload (no old names persist in SharedState)
+- **Frontend**: Historical Data "Non-Active" registers now show correctly — uses `get_distinct_register_names` RPC instead of raw query (PostgREST 1000-row limit was hiding old names)
+- **Migration 084**: `get_distinct_register_names()` RPC for efficient DISTINCT query on device_readings
+- **Deploy controller**: Use `POST /api/controllers/{id}/update` with `controller_secret` — triggers git pull + service restart via SSH tunnel
+
+### Historical Chart Fixes
+- **Preset highlight bug**: Quick range buttons (1h, 24h, etc.) no longer highlight when a custom date/time range happens to match a preset duration. Uses `rangeMode` to distinguish preset (relative) from custom (absolute) selections.
+- **Sparse data badge removed**: Removed misleading "Sparse data" badge from chart — was confusing since data density varies by device/register.
 
 ## Recent Updates (2026-01-22)
 
