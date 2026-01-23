@@ -550,9 +550,11 @@ class LoggingService:
         )
         logger.debug(f"FLOW[sample]: {reading_count} readings from {device_count} devices @ {current_timestamp}")
 
-        # Read config for unit lookups (optional enrichment)
+        # Read config for unit lookups and register filtering
+        # Only log registers that exist in current config (source of truth)
         config = get_config() or {}
         register_units: dict[tuple[str, str], str] = {}
+        config_registers: set[tuple[str, str]] = set()
         for device in config.get("devices", []):
             device_id = device.get("id")
             if device_id:
@@ -560,11 +562,16 @@ class LoggingService:
                     reg_name = reg.get("name")
                     if reg_name:
                         register_units[(device_id, reg_name)] = reg.get("unit", "")
+                        config_registers.add((device_id, reg_name))
 
-        # Iterate SharedState readings (what device service actually wrote)
+        # Iterate SharedState readings, filtered by current config
         async with self._readings_buffer_lock:
             for device_id, device_data in readings_state.get("devices", {}).items():
                 for register_name, reading in device_data.get("readings", {}).items():
+                    # Only log registers in current config (skip renamed/removed)
+                    if config_registers and (device_id, register_name) not in config_registers:
+                        continue
+
                     # Get unit from config if available
                     unit = register_units.get((device_id, register_name), "")
 

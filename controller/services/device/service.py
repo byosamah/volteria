@@ -416,6 +416,20 @@ class DeviceService:
                     self.register_reader.stop_polling()
                     await self.register_reader.start_polling(self._devices)
 
+                    # Force SharedState update to clear stale register entries
+                    # register_device() already created fresh DeviceStatus (empty readings)
+                    # This ensures SharedState.readings doesn't contain old names
+                    await self.device_manager.update_shared_state()
+
+                    # Clear reading buffers for registers no longer in config
+                    valid_keys = set()
+                    for device in self._devices:
+                        for reg in device.registers:
+                            valid_keys.add(f"{device.id}:{reg.name}")
+                    stale_keys = [k for k in self.device_manager._reading_buffers if k not in valid_keys]
+                    for k in stale_keys:
+                        del self.device_manager._reading_buffers[k]
+
                     current_hash = new_hash
 
                     logger.info(
