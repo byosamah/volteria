@@ -310,10 +310,13 @@ function DraggableRegisterItem({
         </div>
         <p className="text-xs text-muted-foreground truncate">
           {register.siteName} › {register.deviceName}
-          {isInactive && register.firstSeen && register.lastSeen
-            ? ` • ${formatShortDate(register.firstSeen)} – ${formatShortDate(register.lastSeen)}`
-            : register.unit ? ` • ${register.unit}` : ""}
+          {!isInactive && register.unit ? ` • ${register.unit}` : ""}
         </p>
+        {isInactive && register.firstSeen && register.lastSeen && (
+          <p className="text-xs text-muted-foreground">
+            {formatShortDate(register.firstSeen)} – {formatShortDate(register.lastSeen)}
+          </p>
+        )}
       </div>
 
       {/* Quick add buttons */}
