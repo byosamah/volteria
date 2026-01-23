@@ -420,10 +420,10 @@ class CloudSync:
         last_error = None
 
         # Conflict columns for each table (for ON CONFLICT DO NOTHING)
+        # Alarms excluded: no id in payload, Supabase auto-generates UUIDs
         conflict_columns = {
             "device_readings": "device_id,register_name,timestamp",
-            "control_logs": "site_id,timestamp",  # Adjust if different
-            "alarms": "site_id,alarm_type,created_at",  # Adjust if different
+            "control_logs": "site_id,timestamp",
         }
         on_conflict = conflict_columns.get(table, "")
 
