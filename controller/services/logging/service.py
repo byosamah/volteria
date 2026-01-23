@@ -38,7 +38,7 @@ from common.timestamp import get_aligned_now_iso
 from common.scheduler import ScheduledLoop
 
 from .local_db import LocalDatabase
-from .cloud_sync import CloudSync
+from .cloud_sync import CloudSync, BackfillPhase
 from .alarm_evaluator import AlarmEvaluator, TriggeredAlarm
 
 logger = get_service_logger("logging")
@@ -688,7 +688,11 @@ class LoggingService:
                 await asyncio.sleep(1)  # Check again in 1s
                 continue
 
-            await asyncio.sleep(self._cloud_sync_interval)
+            # Accelerated sync during backfill (30s instead of 180s)
+            if self.cloud_sync and self.cloud_sync.backfill.phase != BackfillPhase.NORMAL:
+                await asyncio.sleep(30)  # 6x faster during backfill
+            else:
+                await asyncio.sleep(self._cloud_sync_interval)
 
             if not self.cloud_sync:
                 logger.debug("FLOW[cloud]: No cloud_sync instance")
@@ -740,10 +744,39 @@ class LoggingService:
         if not self.cloud_sync:
             return 0
 
-        # Get all unsynced readings from SQLite (batch for this sync window)
-        unsynced = self.local_db.get_unsynced_device_readings(limit=5000)
+        # Count pending to determine strategy
+        pending_count = self.local_db.get_unsynced_device_readings_count()
+        if pending_count == 0:
+            # Reset backfill state when fully caught up
+            if self.cloud_sync.backfill.phase != BackfillPhase.NORMAL:
+                elapsed = ""
+                if self.cloud_sync.backfill.started_at:
+                    elapsed_s = (datetime.now(timezone.utc) - self.cloud_sync.backfill.started_at).total_seconds()
+                    elapsed = f" in {elapsed_s / 60:.1f} minutes"
+                logger.info(
+                    f"[CLOUD] Backfill complete: {self.cloud_sync.backfill.synced_count} "
+                    f"readings recovered{elapsed}"
+                )
+                self.cloud_sync.backfill.reset()
+            return 0
+
+        # Two-phase backfill strategy:
+        # Phase RECENT_FIRST: sync newest 5000 (dashboard shows current state quickly)
+        # Phase FILLING_GAPS or NORMAL: sync oldest 5000 (fill gaps chronologically)
+        if pending_count > CloudSync.BACKFILL_THRESHOLD and not self.cloud_sync.backfill.recent_synced:
+            # First cycle after detecting backfill: sync newest
+            unsynced = self.local_db.get_unsynced_device_readings_newest(limit=5000)
+        else:
+            # Normal or gap-filling: sync oldest first
+            unsynced = self.local_db.get_unsynced_device_readings(limit=5000)
+
         if not unsynced:
             return 0
+
+        # Tag readings with source for cloud tracking
+        source = "backfill" if self.cloud_sync.backfill.phase != BackfillPhase.NORMAL else "live"
+        for reading in unsynced:
+            reading["source"] = source
 
         # Read FRESH config for logging_frequency lookups
         config = get_config()
@@ -1403,6 +1436,9 @@ class LoggingService:
                 "buffer_peak_24h": self._buffer_peak_24h,
                 "clock_buckets_created": self._clock_buckets_created,
                 "clock_duplicates_skipped": self._clock_duplicates_skipped,
+                "backfill_phase": self.cloud_sync.backfill.phase.value if self.cloud_sync else "no_cloud",
+                "backfill_total": self.cloud_sync.backfill.total_pending if self.cloud_sync else 0,
+                "backfill_synced": self.cloud_sync.backfill.synced_count if self.cloud_sync else 0,
             },
         })
 

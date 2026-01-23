@@ -14,6 +14,7 @@ Robustness Guarantees:
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any
 
 import httpx
@@ -31,6 +32,31 @@ class UploadResult:
     records_uploaded: int
     is_duplicate: bool = False  # True if 409 (records already exist)
     error: str | None = None
+
+
+class BackfillPhase(Enum):
+    """Phase of backfill recovery after offline period."""
+    NORMAL = "normal"          # < threshold pending, sync oldest-first
+    RECENT_FIRST = "recent"    # First cycle: sync newest batch for dashboard
+    FILLING_GAPS = "filling"   # Subsequent cycles: fill older data
+
+
+@dataclass
+class BackfillTracker:
+    """Tracks backfill progress during offline recovery."""
+    phase: BackfillPhase = BackfillPhase.NORMAL
+    total_pending: int = 0
+    synced_count: int = 0
+    recent_synced: bool = False  # True after newest batch synced
+    started_at: datetime | None = None
+
+    def reset(self):
+        """Reset tracker to normal state."""
+        self.phase = BackfillPhase.NORMAL
+        self.total_pending = 0
+        self.synced_count = 0
+        self.recent_synced = False
+        self.started_at = None
 
 
 class CloudSync:
@@ -73,10 +99,8 @@ class CloudSync:
         self._empty_batch_count = 0  # Track empty batches (downsampling filtered all)
         self._duplicate_count = 0  # Track 409 responses (duplicates ignored)
 
-        # Backfill tracking
-        self._backfill_mode = False
-        self._backfill_total = 0
-        self._backfill_synced = 0
+        # Backfill tracking (two-phase: recent-first, then fill gaps)
+        self.backfill = BackfillTracker()
 
     async def sync_logs(self) -> int:
         """
@@ -262,16 +286,20 @@ class CloudSync:
         Returns:
             Number of readings uploaded to cloud
         """
-        # Detect backfill mode
+        # Detect backfill mode (>1000 pending = was offline)
         if total_pending is not None and total_pending > self.BACKFILL_THRESHOLD:
-            if not self._backfill_mode:
-                self._backfill_mode = True
-                self._backfill_total = total_pending
-                self._backfill_synced = 0
-                logger.info(
-                    f"[CLOUD] Backfill mode: {total_pending} readings pending, "
-                    f"will log progress every {self.BACKFILL_THRESHOLD}"
-                )
+            if self.backfill.phase == BackfillPhase.NORMAL:
+                self.backfill.total_pending = total_pending
+                self.backfill.synced_count = 0
+                self.backfill.started_at = datetime.now(timezone.utc)
+                if not self.backfill.recent_synced:
+                    self.backfill.phase = BackfillPhase.RECENT_FIRST
+                    logger.info(
+                        f"[CLOUD] Backfill started: {total_pending} readings pending, "
+                        f"syncing newest first for dashboard"
+                    )
+                else:
+                    self.backfill.phase = BackfillPhase.FILLING_GAPS
 
         # Empty after downsampling = readings fell into already-uploaded buckets
         # Mark as synced so they don't pile up (frequency filtering already happened)
@@ -291,6 +319,7 @@ class CloudSync:
                 "value": reading["value"],
                 "unit": reading.get("unit"),
                 "timestamp": reading["timestamp"],
+                "source": reading.get("source", "live"),
             }
             records.append(record)
 
@@ -312,21 +341,25 @@ class CloudSync:
                 self._duplicate_count += 1
 
             # Backfill progress tracking
-            if self._backfill_mode:
-                self._backfill_synced += len(ids_to_mark)
-                # Log progress every BACKFILL_THRESHOLD records
-                if self._backfill_synced % self.BACKFILL_THRESHOLD < len(ids_to_mark):
-                    pct = (self._backfill_synced / self._backfill_total) * 100
+            if self.backfill.phase != BackfillPhase.NORMAL:
+                self.backfill.synced_count += len(ids_to_mark)
+
+                # Phase transition: after first batch, switch to gap-filling
+                if self.backfill.phase == BackfillPhase.RECENT_FIRST:
+                    self.backfill.recent_synced = True
+                    self.backfill.phase = BackfillPhase.FILLING_GAPS
                     logger.info(
-                        f"[CLOUD] Backfill progress: {self._backfill_synced}/{self._backfill_total} "
+                        f"[CLOUD] Backfill phase 1 done: synced newest batch, "
+                        f"dashboard should show current data"
+                    )
+
+                # Log progress every BACKFILL_THRESHOLD records
+                if self.backfill.synced_count % self.BACKFILL_THRESHOLD < len(ids_to_mark):
+                    pct = (self.backfill.synced_count / max(1, self.backfill.total_pending)) * 100
+                    logger.info(
+                        f"[CLOUD] Backfill progress: {self.backfill.synced_count}/{self.backfill.total_pending} "
                         f"({pct:.1f}%) synced"
                     )
-                # Exit backfill mode when caught up
-                if self._backfill_synced >= self._backfill_total:
-                    logger.info(
-                        f"[CLOUD] Backfill complete: {self._backfill_synced} readings synced"
-                    )
-                    self._backfill_mode = False
 
             dup_note = " (duplicates ignored)" if result.is_duplicate else ""
             logger.debug(
@@ -526,6 +559,8 @@ class CloudSync:
             "error_count": self._error_count,
             "empty_batch_count": self._empty_batch_count,  # Downsampling produced empty
             "duplicate_count": self._duplicate_count,  # 409 responses
-            "backfill_mode": self._backfill_mode,
-            "backfill_progress": f"{self._backfill_synced}/{self._backfill_total}" if self._backfill_mode else None,
+            "backfill_phase": self.backfill.phase.value,
+            "backfill_total": self.backfill.total_pending,
+            "backfill_synced": self.backfill.synced_count,
+            "backfill_started_at": self.backfill.started_at.isoformat() if self.backfill.started_at else None,
         }

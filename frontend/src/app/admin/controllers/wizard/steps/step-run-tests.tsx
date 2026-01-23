@@ -50,6 +50,11 @@ const REAL_TESTS: TestResult[] = [
     description: "OTA Update Mechanism",
     status: "pending",
   },
+  {
+    name: "backfill_capability",
+    description: "Backfill Recovery",
+    status: "pending",
+  },
 ];
 
 // Simulated tests (no real devices connected during wizard)
@@ -424,6 +429,10 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
           <div>
             <strong>OTA Update Mechanism:</strong> Confirms the OTA updater is ready
             to receive firmware updates from the cloud.
+          </div>
+          <div>
+            <strong>Backfill Recovery:</strong> Verifies the logging service supports
+            smart backfill for offline data recovery (syncs newest data first after reconnect).
           </div>
         </div>
       </details>

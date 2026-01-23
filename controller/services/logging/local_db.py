@@ -123,6 +123,7 @@ class LocalDatabase:
                     value REAL NOT NULL,
                     unit TEXT,
                     timestamp TEXT NOT NULL,
+                    source TEXT DEFAULT 'live',
                     synced_at TEXT,
                     created_at TEXT DEFAULT (datetime('now'))
                 )
@@ -153,6 +154,13 @@ class LocalDatabase:
                 CREATE INDEX IF NOT EXISTS idx_device_readings_unsynced
                 ON device_readings(synced_at) WHERE synced_at IS NULL
             """)
+
+            # Migration: add source column if not exists
+            try:
+                cursor.execute("SELECT source FROM device_readings LIMIT 1")
+            except sqlite3.OperationalError:
+                cursor.execute("ALTER TABLE device_readings ADD COLUMN source TEXT DEFAULT 'live'")
+                logger.info("Migrated device_readings: added 'source' column")
 
             conn.commit()
 
@@ -484,8 +492,8 @@ class LocalDatabase:
 
                     cursor.executemany("""
                         INSERT INTO device_readings (
-                            site_id, device_id, register_name, value, unit, timestamp
-                        ) VALUES (?, ?, ?, ?, ?, ?)
+                            site_id, device_id, register_name, value, unit, timestamp, source
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, [
                         (
                             r["site_id"],
@@ -494,6 +502,7 @@ class LocalDatabase:
                             r["value"],
                             r.get("unit"),
                             r["timestamp"],
+                            r.get("source", "live"),
                         )
                         for r in readings
                     ])
@@ -528,6 +537,28 @@ class LocalDatabase:
 
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
+
+    def get_unsynced_device_readings_newest(self, limit: int = 5000) -> list[dict]:
+        """Get newest unsynced device readings (for priority sync after reconnect)"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT * FROM device_readings
+                WHERE synced_at IS NULL
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (limit,))
+
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def get_unsynced_device_readings_count(self) -> int:
+        """Count total unsynced device readings"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM device_readings WHERE synced_at IS NULL")
+            return cursor.fetchone()[0]
 
     def mark_device_readings_synced(self, reading_ids: list[int]) -> None:
         """Mark device readings as synced"""
