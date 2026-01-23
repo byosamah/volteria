@@ -249,6 +249,18 @@ export function AvailableParametersList({
   );
 }
 
+/** Format ISO date to short display: "Jan 15" (same year) or "Jan 15 '25" (different year) */
+function formatShortDate(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const month = date.toLocaleString("en-US", { month: "short" });
+  const day = date.getDate();
+  if (date.getFullYear() !== now.getFullYear()) {
+    return `${month} ${day} '${String(date.getFullYear()).slice(-2)}`;
+  }
+  return `${month} ${day}`;
+}
+
 interface DraggableRegisterItemProps {
   register: AvailableRegister;
   onAddToAxis: (register: AvailableRegister, axis: "left" | "right") => void;
@@ -297,7 +309,10 @@ function DraggableRegisterItem({
           )}
         </div>
         <p className="text-xs text-muted-foreground truncate">
-          {register.siteName} › {register.deviceName} {register.unit && `• ${register.unit}`}
+          {register.siteName} › {register.deviceName}
+          {isInactive && register.firstSeen && register.lastSeen
+            ? ` • ${formatShortDate(register.firstSeen)} – ${formatShortDate(register.lastSeen)}`
+            : register.unit ? ` • ${register.unit}` : ""}
         </p>
       </div>
 

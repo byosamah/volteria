@@ -74,6 +74,8 @@ export interface AvailableRegister {
   siteName: string;
   preferred_chart_type?: string;
   status?: RegisterStatus;
+  firstSeen?: string;  // ISO timestamp (Non-Active only)
+  lastSeen?: string;   // ISO timestamp (Non-Active only)
 }
 
 // Reference line configuration

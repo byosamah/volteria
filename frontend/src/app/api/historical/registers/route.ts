@@ -10,15 +10,21 @@
  * - days: Number of days to look back (optional, default: 90)
  *
  * Returns:
- * - registers: Array of { deviceId, registerNames: string[] }
+ * - registers: Array of { deviceId, registers: RegisterInfo[] }
  */
 
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
+interface RegisterInfo {
+  name: string;
+  firstSeen: string;  // ISO timestamp
+  lastSeen: string;   // ISO timestamp
+}
+
 interface DeviceRegisters {
   deviceId: string;
-  registerNames: string[];
+  registers: RegisterInfo[];
 }
 
 export async function GET(request: NextRequest) {
@@ -78,14 +84,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Group register names by device (already distinct from DB)
-    const deviceRegisterMap = new Map<string, string[]>();
+    // Group registers by device with timestamps (already distinct from DB)
+    const deviceRegisterMap = new Map<string, RegisterInfo[]>();
 
     for (const row of readingsData || []) {
       if (!deviceRegisterMap.has(row.device_id)) {
         deviceRegisterMap.set(row.device_id, []);
       }
-      deviceRegisterMap.get(row.device_id)!.push(row.register_name);
+      deviceRegisterMap.get(row.device_id)!.push({
+        name: row.register_name,
+        firstSeen: row.first_seen,
+        lastSeen: row.last_seen,
+      });
     }
 
     // Convert to response format
@@ -93,7 +103,7 @@ export async function GET(request: NextRequest) {
     for (const deviceId of deviceIds) {
       registers.push({
         deviceId,
-        registerNames: deviceRegisterMap.get(deviceId) || [],
+        registers: deviceRegisterMap.get(deviceId) || [],
       });
     }
 

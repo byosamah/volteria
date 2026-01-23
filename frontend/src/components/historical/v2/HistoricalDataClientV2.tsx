@@ -253,22 +253,29 @@ export function HistoricalDataClientV2({
         if (historicalResponse.ok) {
           const historicalData = await historicalResponse.json();
           const deviceHistorical = historicalData.registers?.find(
-            (r: { deviceId: string; registerNames: string[] }) => r.deviceId === selectedDeviceId
+            (r: { deviceId: string; registers: Array<{ name: string; firstSeen: string; lastSeen: string }> }) => r.deviceId === selectedDeviceId
           );
 
-          if (deviceHistorical?.registerNames) {
-            inactiveRegs = deviceHistorical.registerNames
-              .filter((name: string) => !configRegisterNames.has(name))
-              .map((name: string) => ({
-                id: `${selectedDeviceId}:${name}`,
-                name: name,
+          if (deviceHistorical?.registers) {
+            inactiveRegs = deviceHistorical.registers
+              .filter((r: { name: string }) => !configRegisterNames.has(r.name))
+              .map((r: { name: string; firstSeen: string; lastSeen: string }) => ({
+                id: `${selectedDeviceId}:${r.name}`,
+                name: r.name,
                 unit: "", // Inactive registers don't have unit info in DB
                 deviceId: selectedDeviceId,
                 deviceName: deviceName,
                 siteId: selectedSiteId,
                 siteName: selectedSiteName,
+                firstSeen: r.firstSeen,
+                lastSeen: r.lastSeen,
                 status: "inactive" as const,
-              }));
+              }))
+              .sort((a: AvailableRegister, b: AvailableRegister) => {
+                // Sort by lastSeen descending (most recently active first)
+                if (!a.lastSeen || !b.lastSeen) return 0;
+                return new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime();
+              });
           }
         }
 
