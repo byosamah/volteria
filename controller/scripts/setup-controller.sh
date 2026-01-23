@@ -127,13 +127,23 @@ install_dependencies() {
     log_info "System dependencies installed"
 }
 
-# Configure network settings (timezone only)
+# Configure network settings (timezone + persistent DNS)
 configure_network() {
     log_step "Configuring network settings..."
 
     # Set timezone to Asia/Dubai (UAE)
     timedatectl set-timezone Asia/Dubai
     log_info "Timezone set to Asia/Dubai"
+
+    # Persist DNS on WiFi connection (survives reconnects and reboots)
+    # "preconfigured" is the default connection name from Raspberry Pi Imager
+    if nmcli con show "preconfigured" > /dev/null 2>&1; then
+        nmcli con modify "preconfigured" ipv4.dns "8.8.8.8 8.8.4.4"
+        nmcli con modify "preconfigured" ipv4.ignore-auto-dns no
+        log_info "Persistent DNS set on WiFi connection"
+    else
+        log_warn "WiFi connection 'preconfigured' not found — set DNS manually"
+    fi
 
     # WiFi: Configured via Raspberry Pi Imager (DHCP) - don't touch
     # Ethernet: NOT configured here - each site has different requirements
@@ -149,6 +159,47 @@ configure_network() {
     CURRENT_IPS=$(hostname -I)
     log_info "Current IP addresses: ${CURRENT_IPS}"
     log_info "Ethernet not configured (set up manually per site requirements)"
+}
+
+# Install DNS watchdog (cron every 5min + daily 1am safety net)
+install_dns_watchdog() {
+    log_step "Installing DNS watchdog..."
+
+    # Copy watchdog script
+    mkdir -p "${VOLTERIA_DIR}/scripts"
+    cp "${CONTROLLER_DIR}/scripts/dns-watchdog.sh" "${VOLTERIA_DIR}/scripts/"
+    chmod +x "${VOLTERIA_DIR}/scripts/dns-watchdog.sh"
+
+    # Install cron job (runs every 5 minutes)
+    echo "*/5 * * * * root /opt/volteria/scripts/dns-watchdog.sh" > /etc/cron.d/volteria-dns
+    chmod 644 /etc/cron.d/volteria-dns
+    log_info "DNS watchdog cron installed (every 5 min)"
+
+    # Install 1am daily conditional network restart (systemd timer)
+    cat > "${SYSTEMD_DIR}/volteria-network-restart.service" << 'EOF'
+[Unit]
+Description=Conditional network restart if DNS is broken
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'if ! host google.com > /dev/null 2>&1; then systemctl restart NetworkManager; logger "1am network restart: DNS was broken, restarted NetworkManager"; fi'
+EOF
+
+    cat > "${SYSTEMD_DIR}/volteria-network-restart.timer" << 'EOF'
+[Unit]
+Description=Daily DNS check at 1am (restart only if broken)
+
+[Timer]
+OnCalendar=*-*-* 01:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now volteria-network-restart.timer
+    log_info "Daily 1am DNS check timer installed"
 }
 
 # Create directory structure
@@ -678,6 +729,7 @@ main() {
     install_dependencies
     configure_network
     setup_controller_code
+    install_dns_watchdog
     create_directories  # Must run AFTER git clone (which removes /opt/volteria)
     setup_python_env
     create_volteria_user

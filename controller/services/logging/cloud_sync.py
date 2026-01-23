@@ -423,7 +423,7 @@ class CloudSync:
         conflict_columns = {
             "device_readings": "device_id,register_name,timestamp",
             "control_logs": "site_id,timestamp",  # Adjust if different
-            "alarms": "site_id,alarm_type,timestamp",  # Adjust if different
+            "alarms": "site_id,alarm_type,created_at",  # Adjust if different
         }
         on_conflict = conflict_columns.get(table, "")
 

@@ -73,7 +73,7 @@ url = f"{supabase_url}/rest/v1/{table}?on_conflict=device_id,register_name,times
 **Conflict columns**:
 - `device_readings`: device_id,register_name,timestamp
 - `control_logs`: site_id,timestamp
-- `alarms`: site_id,alarm_type,timestamp
+- `alarms`: site_id,alarm_type,created_at
 
 ## Robustness Patterns
 
