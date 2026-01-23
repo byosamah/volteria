@@ -177,6 +177,23 @@ SUPABASE_SERVICE_KEY=your-service-key
 - Devices dict structure: `{load_meters: [], inverters: [], generators: [], sensors: [], other: []}`
 - Config uses merged template + manual registers
 
+## Controller SSH Access
+
+**Always read credentials from the `controllers` table** — never ask the user for passwords.
+
+```sql
+SELECT id, serial_number, ssh_port, ssh_username, ssh_password FROM controllers WHERE serial_number = 'SERIAL';
+```
+
+**SSH path** (from Windows, through DO server):
+```bash
+ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p <ssh_port> <ssh_username>@localhost '<command>'"
+```
+
+- Identify controller by serial number (user may provide serial or controller ID)
+- Multiple controllers will exist in the future — always query the right one
+- Pi WiFi connection name varies by OS image — never hardcode, detect with `nmcli`
+
 ## Never Do
 
 - NEVER over-engineer
@@ -187,6 +204,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 - NEVER create DB functions without `SET search_path = ''`
 - NEVER create tables without enabling RLS
 - NEVER leave Supabase security advisor warnings unaddressed
+- NEVER ask user for controller SSH passwords — read from controllers table
 
 ## Recent Updates (2026-01-23)
 
