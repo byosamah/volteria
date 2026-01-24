@@ -59,26 +59,31 @@ Per-register `logging_frequency` determines how many readings reach the cloud:
 ### Function Map
 
 **service.py (LoggingService)**:
-- `start()` :179 - Start all schedulers & tasks
-- `_sample_callback()` :432 - ScheduledLoop: sample SharedState → RAM
-- `_flush_callback()` :454 - ScheduledLoop: flush RAM → SQLite
-- `_cloud_sync_loop()` :671 - Background: periodic cloud upload
-- `_sync_device_readings_filtered()` :715 - Apply per-register downsampling
-- `_downsample_readings()` :866 - Clock-aligned bucket selection
-- `_write_control_log_summary()` :1031 - Aggregate control state (delta filter)
-- `_evaluate_alarms()` :1134 - Check threshold conditions
-- `_start_health_server()` :1262 - HTTP on port 8085
+- `_run_db()` :167 - Thread pool wrapper for SQLite (CRITICAL: never call local_db directly)
+- `start()` :187 - Start all schedulers & tasks
+- `_sample_callback()` :440 - ScheduledLoop: sample SharedState → RAM
+- `_flush_callback()` :462 - ScheduledLoop: flush RAM → SQLite
+- `_cloud_sync_loop()` :686 - Background: periodic cloud upload
+- `_sync_device_readings_filtered()` :734 - Apply per-register downsampling
+- `_downsample_readings()` :914 - Clock-aligned bucket selection
+- `_write_control_log_summary()` :1079 - Aggregate control state (delta filter)
+- `_evaluate_alarms()` :1183 - Check threshold conditions
+- `_start_health_server()` :1317 - HTTP on port 8085
+- `ALERT_DRIFT_MS = 5000` :53 - Drift threshold for alarm (raised from 1000ms)
 
 **local_db.py (LocalDatabase)**:
-- `insert_device_readings_batch()` :448 - Batch insert with retry [0.5s, 1s, 2s]
-- `get_unsynced_device_readings()` :517 - Fetch pending (limit 5000)
-- `mark_device_readings_synced()` :532 - Mark after successful upload
-- `cleanup_old_data()` :341 - Retention-based deletion
+- `resolve_alarms_by_type()` :283 - Bulk resolve + resync to cloud
+- `cleanup_old_data()` :363 - Retention-based deletion
+- `insert_device_readings_batch()` :470 - Batch insert with retry [0.5s, 1s, 2s]
+- `get_unsynced_device_readings()` :540 - Fetch pending (limit 100)
+- `get_unsynced_device_readings_newest()` :555 - Fetch newest (limit 5000, backfill phase 1)
+- `get_unsynced_device_readings_count()` :570 - Count pending readings
+- `mark_device_readings_synced()` :577 - Mark after successful upload
 
 **cloud_sync.py (CloudSync)**:
-- `sync_specific_readings()` :239 - Sync downsampled readings
-- `_upload_with_retry()` :370 - HTTP POST with retry & 409 handling
-- `sync_alarm_immediately()` :476 - Critical alarms bypass delay
+- `sync_specific_readings()` :263 - Sync downsampled readings
+- `_upload_with_retry()` :403 - HTTP POST with retry & 409 handling
+- `sync_alarm_immediately()` :509 - Critical alarms bypass delay
 
 **alarm_evaluator.py (AlarmEvaluator)**:
 - `evaluate()` :67 - Check all alarm conditions against readings
@@ -153,7 +158,7 @@ When modifying logging code, verify these invariants:
 | Rule | Why |
 |------|-----|
 | Never cache `logging_frequency` | Config can change at any time via cloud sync |
-| Upload-then-mark pattern | Never mark synced before upload succeeds (cloud_sync.py:303) |
+| Upload-then-mark pattern | Never mark synced before upload succeeds (cloud_sync.py:403) |
 | Clock-aligned timestamps | Cross-device correlation requires identical bucket boundaries |
 | Stale reading deletion on device failure | Intentional gaps, not stale data (device_manager) |
 | `on_conflict` parameter required | Supabase upserts need conflict columns specified |
@@ -163,10 +168,13 @@ When modifying logging code, verify these invariants:
 | Default `logging_frequency` = 60s | Reasonable cloud data density |
 | Atomic file writes (SharedState) | Temp → fsync → rename prevents corruption |
 | asyncio.Lock for RAM buffer | Concurrent sample/flush safety |
-| Delta filter for control logs | Skip if <1% change (service.py:1072) |
+| Delta filter for control logs | Skip if <1% change (service.py:1079) |
 | Retry backoff for SQLite | [0.5s, 1s, 2s], max 3 attempts |
 | 409 = success for cloud sync | Duplicate already exists in Supabase |
-| Fresh config read each sync cycle | service.py:742 - no stale frequency data |
+| Fresh config read each sync cycle | service.py:734 - no stale frequency data |
+| All local_db calls via `_run_db()` | Never block asyncio event loop (service.py:167) |
+| ALERT_DRIFT_MS = 5000ms | Realistic for Pi SD card I/O (raised from 1000ms) |
+| Drift alarms auto-resolve after 3 healthy checks | Prevent alarm spam for transient I/O spikes |
 
 ---
 
@@ -314,12 +322,27 @@ PRAGMA cache_size=-2000;  -- 2MB
 ## 6. Observability Metrics
 
 ### LoggingService Metrics (service.py)
-- `_sample_drift_ms` :118 - Scheduler timing drift
-- `_flush_drift_ms` :119 - Flush timing drift
 - `_sample_error_count` :113 - Sample failures
 - `_flush_error_count` :114 - Flush failures
 - `_cloud_error_count` :115 - Cloud sync failures
+- `_sample_drift_ms` :118 - Scheduler timing drift
+- `_flush_drift_ms` :119 - Flush timing drift
 - `_buffer_peak_24h` :139 - Peak buffer size in 24h
+- `ALERT_DRIFT_MS = 5000` :53 - Drift alarm threshold (5s)
+
+### Drift Alarm Auto-Resolve
+- LOGGING_HIGH_DRIFT alarms auto-resolve after 3 consecutive healthy checks
+- Uses `local_db.resolve_alarms_by_type("LOGGING_HIGH_DRIFT")` :283
+- Prevents alarm spam for conditions that self-heal (SD card I/O spikes)
+
+### Thread Pool Pattern (CRITICAL)
+All `local_db.*` calls from async code MUST use:
+```python
+await self._run_db(self._local_db.method_name, arg1, arg2)
+```
+- Wraps synchronous sqlite3 in `run_in_executor` (thread pool)
+- Without this: 15-22s event loop stalls on Pi SD card I/O
+- Location: `service.py` :167
 
 ### CloudSync Metrics
 - `BATCH_SIZE = 100` - Records per upload

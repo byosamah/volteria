@@ -138,6 +138,14 @@ ssh volteria "docker logs sdc-frontend --tail=50"
 | Frontend | [frontend/CLAUDE.md](./frontend/CLAUDE.md) |
 | Database | [database/CLAUDE.md](./database/CLAUDE.md) |
 
+## Diagnostic Skills
+
+| Skill | Command | Use When |
+|-------|---------|----------|
+| Controller | `/check-controller` | Service health, SSH access, safe mode, architecture, SharedState |
+| Setup | `/check-setup` | Wizard flow, provisioning, registration, SSH tunnel setup, tests |
+| Logging | `/check-logging` | Data flow, SQLite, cloud sync, downsampling, drift, alarms |
+
 ## Environment Variables
 
 ```bash

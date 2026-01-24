@@ -115,6 +115,8 @@
       "Bash(C:/Users/Hp/AppData/Roaming/Python/Python314/Scripts/uvicorn.exe:*)",
       "Bash(netstat:*)",
       "Skill(check-logging)",
+      "Skill(check-controller)",
+      "Skill(check-setup)",
       "Skill(reflect)",
       "WebFetch(domain:github.com)",
       "mcp__plugin_supabase_supabase__list_projects",
@@ -126,7 +128,9 @@
       "Bash(if not exist \"C:\\\\Users\\\\Hp\\\\volteria\\\\.claude\\\\skills\" mkdir \"C:\\\\Users\\\\Hp\\\\volteria\\\\.claude\\\\skills\")",
       "Bash(git ls-tree:*)",
       "Bash(del nul:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(powershell \"Start-Sleep -Seconds 60; Write-Host ''Done waiting''\")",
+      "Bash(powershell \"Start-Sleep -Seconds 90; Write-Host ''Done - checking after flush cycle''\")"
     ]
   }
 }
