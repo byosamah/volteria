@@ -532,14 +532,20 @@ export function ControllersList({ controllers: initialControllers, hardwareTypes
       }
 
       // Finally, HARD DELETE the controller record
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("controllers")
         .delete()
-        .eq("id", deleteController.id);
+        .eq("id", deleteController.id)
+        .select();
 
       if (error) {
         console.error("Error deleting controller:", error);
         toast.error(error.message || "Failed to delete controller");
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        toast.error("Failed to delete controller - insufficient permissions");
         return;
       }
 
