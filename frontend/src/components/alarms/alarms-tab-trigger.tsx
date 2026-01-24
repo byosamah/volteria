@@ -23,13 +23,11 @@ interface AlarmsTabTriggerProps {
 
 interface AlarmSummary {
   highestSeverity: "critical" | "warning" | "info" | null;
-  unacknowledgedCount: number;
 }
 
 export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
   const [summary, setSummary] = useState<AlarmSummary>({
     highestSeverity: null,
-    unacknowledgedCount: 0,
   });
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -38,30 +36,26 @@ export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("alarms")
-        .select("severity, acknowledged, resolved")
-        .eq("site_id", siteId);
+        .select("severity")
+        .eq("site_id", siteId)
+        .eq("resolved", false);
 
       if (error || !data) return;
 
       let highestSeverity: "critical" | "warning" | "info" | null = null;
-      let unacknowledgedCount = 0;
 
       for (const alarm of data) {
-        if (!alarm.acknowledged) unacknowledgedCount++;
-
-        // Dot color based on unresolved alarms only
-        if (!alarm.resolved) {
-          if (alarm.severity === "critical") {
-            highestSeverity = "critical";
-          } else if (alarm.severity === "warning" && highestSeverity !== "critical") {
-            highestSeverity = "warning";
-          } else if (alarm.severity === "info" && !highestSeverity) {
-            highestSeverity = "info";
-          }
+        if (alarm.severity === "critical") {
+          highestSeverity = "critical";
+          break;
+        } else if (alarm.severity === "warning") {
+          highestSeverity = "warning";
+        } else if (alarm.severity === "info" && !highestSeverity) {
+          highestSeverity = "info";
         }
       }
 
-      setSummary({ highestSeverity, unacknowledgedCount });
+      setSummary({ highestSeverity });
     } catch {
       // Silently fail
     }
@@ -122,18 +116,13 @@ export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
   const dotColor = getDotColor();
 
   return (
-    <TabsTrigger value={value} className="relative gap-1.5">
+    <TabsTrigger value={value} className="relative">
       Alarms
       {dotColor && (
         <span
-          className={`h-2 w-2 rounded-full ${dotColor}`}
+          className={`ml-2 h-2 w-2 rounded-full ${dotColor}`}
           title={getDotTitle()}
         />
-      )}
-      {summary.unacknowledgedCount > 0 && (
-        <span className="inline-flex items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-medium leading-none text-destructive-foreground">
-          {summary.unacknowledgedCount}
-        </span>
       )}
     </TabsTrigger>
   );
