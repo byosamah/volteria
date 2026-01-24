@@ -246,6 +246,11 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - **Migration 085**: INSERT/UPDATE policies for controllers table (controller auth via secret)
 - **Migration 087**: DELETE policy for admin controller deletion
 
+### Device Template Type Filter Fix (Frontend)
+- **Problem**: Templates list filter dropdown had 8 hardcoded legacy types — modern types (diesel/gas generators, BESS, wind turbine, etc.) were invisible
+- **Fix**: Extracted `DEVICE_TYPE_OPTIONS` to shared `frontend/src/lib/device-constants.ts` — filter dropdown, section groups, and template form all use same source of truth
+- **Linked**: Adding a new type to `device-constants.ts` auto-updates both the form and the filter
+
 ## Recent Updates (2026-01-23)
 
 ### Register Rename Fix (Controller + Frontend)
