@@ -408,3 +408,13 @@ Without `on_conflict`, entire batch fails if ANY record is duplicate.
 - Per-device `connection_alarm_enabled` controls alarm generation
 - Alarm created by cloud cron job (not controller) when device stops reporting
 - Controller only updates `is_online` and `last_seen` fields
+
+### SQLite + Asyncio (CRITICAL)
+- `local_db` uses synchronous `sqlite3` — all calls block the event loop
+- All `local_db.*` calls from async code MUST use `await self._run_db(method, *args)` (runs in thread pool via `run_in_executor`)
+- NEVER call `local_db` methods directly from async functions — causes 15-22s event loop stalls on Pi SD card I/O
+
+### Transient Alarm Auto-Resolve
+- LOGGING_HIGH_DRIFT, LOGGING_BUFFER_BUILDUP auto-resolve after 3 consecutive healthy checks
+- Uses `local_db.resolve_alarms_by_type()` to bulk-resolve + resync to cloud
+- Prevents alarm spam accumulation for conditions that self-heal

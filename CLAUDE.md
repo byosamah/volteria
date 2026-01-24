@@ -158,6 +158,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 4. **httpx version**: Backend requires `httpx==0.24.1`
 5. **DG reserve**: Minimum is 0 kW (never negative)
 6. **Template linkage**: Template registers are live references, not copies
+7. **Controller deploy order**: `POST /api/controllers/{id}/update` pulls from git — commit and push BEFORE deploying
+8. **Setup script auto-updates**: Controller setup clones from main — code fixes are automatically available to new controllers after push
 
 ## Key Architecture Decisions
 
@@ -167,6 +169,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 - Clock-aligned timestamps for easy cross-device correlation
 - **Config-filtered sampling**: Logging service only logs registers present in current config (source of truth)
 - **Register rename**: Old name stops logging immediately after config sync; old data preserved as "Non-Active" in Historical Data
+- **SQLite in thread pool**: All `local_db` calls run via `run_in_executor` — never block asyncio event loop
+- **Smart backfill**: After offline recovery, syncs newest first (dashboard current), then fills gaps chronologically
 
 ### Historical Data
 - Server-side aggregation via `get_historical_readings()` RPC
@@ -205,6 +209,34 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER create tables without enabling RLS
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
+
+## Recent Updates (2026-01-24)
+
+### Logging Drift Fix (Controller)
+- **Root cause**: Blocking `sqlite3` calls on asyncio event loop caused 15-22s scheduler drift
+- **Fix**: All `local_db.*` calls now use `_run_db()` (wraps in `run_in_executor` thread pool)
+- **Threshold**: Raised `ALERT_DRIFT_MS` from 1000ms → 5000ms (realistic for Pi SD card I/O)
+- **Auto-resolve**: LOGGING_HIGH_DRIFT alarms auto-resolve after 3 consecutive healthy checks
+- **New method**: `local_db.resolve_alarms_by_type()` for bulk alarm resolution
+
+### Alarms Page Fix (Frontend)
+- **Problem**: Main `/alarms` page only showed Active/Acknowledged, missing Resolved state
+- **Fix**: Added 3-state display (Active → Acknowledged → Resolved), resolve button, unresolved filter
+- **Consistency**: Now matches site-level `AlarmsViewer` behavior
+
+### Smart Backfill (Controller Logging)
+- **Two-phase strategy**: After offline recovery, sync newest 5000 first (dashboard current), then fill gaps oldest-first
+- **`source` field**: Device readings tagged `live` or `backfill` for tracking
+- **Migration 086**: Added `source` column to `device_readings` table
+
+### DNS Resilience (Controller Setup)
+- Cron watchdog (every 5 min) checks DNS, restarts NetworkManager if broken
+- Daily systemd timer safety net at 1am UTC
+- Persistent DNS on WiFi via `nmcli` connection settings
+
+### Controllers RLS (Database)
+- **Migration 085**: INSERT/UPDATE policies for controllers table (controller auth via secret)
+- **Migration 087**: DELETE policy for admin controller deletion
 
 ## Recent Updates (2026-01-23)
 

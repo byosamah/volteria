@@ -785,3 +785,5 @@ npx shadcn@latest add dialog
    - Yellow warning banner shows connected device/site count
    - Confirmation dialog appears on save
    - Uses `/api/devices/templates/{id}/usage` endpoint
+
+10. **Alarm States**: Alarms have 3 states: Active → Acknowledged → Resolved. Both `/alarms` page and site-level `AlarmsViewer` must show all states consistently with matching UI (badge colors, action buttons, filters).
