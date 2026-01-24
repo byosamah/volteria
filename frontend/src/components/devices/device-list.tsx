@@ -7,7 +7,7 @@
  * Groups devices by type (energy meters, inverters, generators).
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -280,6 +280,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   const canDelete = userRole && !["configurator", "viewer"].includes(userRole);
   const router = useRouter();
   const [devices, setDevices] = useState(initialDevices);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   // Get the display reading for a device based on its type
   // Note: These are aggregate readings (sum of all devices of each type)
@@ -848,7 +851,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         {/* Device info */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Status indicator - green pulse when online, gray when offline */}
-          <div className="flex-shrink-0" title={device.is_online ? "Online" : `Last seen: ${formatLastSeen(device.last_seen)}`}>
+          <div className="flex-shrink-0" title={device.is_online ? "Online" : mounted ? `Last seen: ${formatLastSeen(device.last_seen)}` : "Offline"}>
             {device.is_online ? (
               <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>

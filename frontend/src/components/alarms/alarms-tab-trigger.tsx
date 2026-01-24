@@ -38,7 +38,7 @@ export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
         .from("alarms")
         .select("severity")
         .eq("site_id", siteId)
-        .eq("resolved", false);
+        .eq("acknowledged", false);
 
       if (error || !data) return;
 
