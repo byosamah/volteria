@@ -6,7 +6,7 @@
 
 Activate this skill when:
 - Files touched: `controller/supervisor.py`, `controller/main_v2.py`, `controller/services/system/*`, `controller/services/config/*`, `controller/services/device/*`, `controller/services/control/*`, `controller/common/*`
-- Topics: controller services, heartbeat, safe mode, modbus, SSH tunnel, device polling, control loop, operation mode, supervisor, service health, connection pool, SharedState
+- Topics: controller services, heartbeat, safe mode, modbus, SSH tunnel, device polling, control loop, operation mode, supervisor, service health, connection pool, SharedState, config sync, live readings, data flow, frontend polling, historical data
 
 ---
 
@@ -182,7 +182,108 @@ File-based IPC with atomic writes (`common/state.py`).
 
 ---
 
-## 3. SSH Tunnel Architecture
+## 3. Config Sync Process
+
+### Timing & Triggers
+
+| Trigger | Interval | Source |
+|---------|----------|--------|
+| Periodic sync | 3600s (hourly) | `service.py:36` `SYNC_INTERVAL_SECONDS` |
+| Command poll | 5s | `service.py:422` `_command_poll_loop()` |
+| Manual sync | On demand | `POST /sync` on port 8082 (`service.py:591`) |
+| Cloud command | On demand | `sync_config` in `control_commands` table |
+
+### What Gets Synced (service.py :178-194)
+
+Config service fetches from Supabase and extracts **meaningful fields** for change detection:
+- `devices` (all device configs)
+- `calculated_fields`
+- `site_level_alarms` + `alarm_overrides`
+- `logging` settings (frequencies)
+- `safe_mode` settings
+- `dg_reserve_kw`, `operation_mode`, `control_interval_ms`
+
+### Change Detection (MD5 Hash)
+
+```
+Fetch cloud config → Extract meaningful fields
+    → JSON serialize (sorted keys) → MD5 hash
+    → Compare with previous hash
+    → If different: write config + notify services
+    → If same: skip (no unnecessary reloads)
+```
+
+- Uses `hashlib.md5()` with consistent JSON ordering (`service.py:193`)
+- Logs hash preview (first 8 chars) when change detected (`service.py:200`)
+- Ignores timestamp-only changes (e.g., `updated_at` on device status updates)
+
+### Local Cache
+
+| Path | Purpose |
+|------|---------|
+| `/opt/volteria/data/state/config.json` | SharedState (atomic write, 100ms TTL) |
+| `/opt/volteria/data/config_history/` | Versioned history |
+| `v_<timestamp>.json` | Individual version files |
+
+- **Retention**: Last 5 versions (`cache.py:34`, `max_versions=5`)
+- **Rollback**: Can revert to previous versions (`cache.py:147-173`)
+
+### Hot-Reload Flow
+
+```
+Config service writes config.json + config_status.json (new version)
+    ↓
+Services detect change via is_config_changed() (hash comparison)
+    ↓
+Each service reloads config and acknowledges
+    ↓
+Required acknowledgers: {"device", "control", "logging"}
+    ↓
+Config clears changed flag when all 3 acknowledge
+```
+
+- Notification: `state.py:285` `notify_config_changed(version)`
+- Acknowledgment: `state.py:255` `acknowledge_config_change(service_name)`
+- Device service: clears stale reading buffers on reload (renamed registers get fresh poll keys)
+
+### Offline Operation
+
+- **Startup**: Loads cached config before attempting cloud sync (`service.py:217-218`)
+- **Cache load order**: SharedState first → latest version file fallback (`cache.py:77-101`)
+- **Full operation**: All 5 services run normally with cached config (control loop, Modbus polling, logging)
+- **Cloud unavailable**: Service continues with last-known config, retries on next interval
+
+### Diagnostic Commands
+
+```bash
+# Check current config version & last sync
+cat /opt/volteria/data/state/config_status.json | python3 -m json.tool
+
+# Check config content (truncated)
+cat /opt/volteria/data/state/config.json | python3 -m json.tool | head -80
+
+# Check config history versions
+ls -la /opt/volteria/data/config_history/
+
+# Force immediate sync
+curl -X POST http://127.0.0.1:8082/sync
+
+# Check config service health
+curl http://127.0.0.1:8082/health | python3 -m json.tool
+
+# Check for sync errors in logs
+journalctl -u volteria-config --since "1 hour ago" | grep -iE "error|hash|changed"
+```
+
+### Config Synced Feedback (service.py :394-420)
+
+After successful sync, updates cloud:
+- `sites.config_synced_at` — timestamp of last successful sync
+- `sites.controller_config_version` — current config version hash
+
+---
+
+## 4. SSH Tunnel Architecture
 
 ### Reverse SSH Tunnel
 ```
@@ -211,7 +312,7 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ---
 
-## 4. Safe Mode
+## 5. Safe Mode
 
 ### Triggers
 1. **Supervisor** (supervisor.py :334-337): Critical service fails 3x restart attempts
@@ -233,7 +334,7 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ---
 
-## 5. Operation Modes
+## 6. Operation Modes
 
 | Mode | Key Settings | Description |
 |------|-------------|-------------|
@@ -258,7 +359,7 @@ solar_limit_pct = (solar_limit / capacity) * 100
 
 ---
 
-## 6. Deployment/Update Flow
+## 7. Deployment/Update Flow
 
 ### Remote Update
 ```
@@ -279,7 +380,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 
 ---
 
-## 7. Validation Rules
+## 8. Validation Rules
 
 | Rule | Why |
 |------|-----|
@@ -300,7 +401,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 
 ---
 
-## 8. Diagnostic Protocol
+## 9. Diagnostic Protocol
 
 ### Step-by-Step Workflow
 
@@ -405,7 +506,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 
 ---
 
-## 9. Observability Metrics
+## 10. Observability Metrics
 
 ### Per-Service
 - **System**: `_consecutive_heartbeat_failures` (max 5 → critical)
@@ -422,7 +523,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 
 ---
 
-## 10. Raspberry Pi File Paths
+## 11. Raspberry Pi File Paths
 
 | Path | Purpose |
 |------|---------|
@@ -440,7 +541,99 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 
 ---
 
-## 11. Related Skills
+## 12. Live Readings Data Flow
+
+### End-to-End Path
+
+```
+Device (Modbus) → RegisterReader → SharedState (readings.json) [1s poll]
+       ↓
+  RAM Buffer [sample every 1s, max 10,000]
+       ↓
+  SQLite (flush every 60s, WAL mode)
+       ↓
+  Cloud Sync (every 180s, per-register downsampling)
+       ↓
+  Supabase (device_readings + control_logs tables)
+       ↓
+  Frontend API (GET /api/dashboards/[siteId]/live-data)
+       ↓
+  Dashboard Canvas (polls every 30s, configurable per dashboard)
+```
+
+### Frontend Polling
+
+**Dashboard Canvas** (`dashboard-canvas.tsx`):
+- **Default interval**: 30s (configurable via `site_dashboards.refresh_interval_seconds`)
+- **Page Visibility API**: Pauses polling when tab hidden, refetches on tab visible
+- **Cleanup**: Clears interval on component unmount
+
+**Live Power Display** (`live-power-display.tsx`):
+- **Supabase Realtime**: postgres_changes subscription on `control_logs` table
+- **Stale detection**: Every 10s checks if data > 30s old
+- **Page Visibility**: Pauses stale check when tab hidden
+
+### API Routes
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/dashboards/[siteId]/live-data` | GET | Latest readings + device status + site aggregates |
+| `/api/historical` | GET | Aggregated time-series (uses RPC) |
+| `/api/controllers/[id]/registers` | POST | On-demand register read via SSH (not polling) |
+
+### Live Data Response Shape
+
+```json
+{
+  "registers": { "[device_id]": { "[register_name]": { "value", "unit", "timestamp" } } },
+  "device_status": { "[device_id]": { "is_online", "last_seen", "name" } },
+  "site_aggregates": { "total_load_kw", "solar_output_kw", "dg_power_kw", "solar_limit_pct" }
+}
+```
+
+### Historical Data RPC
+
+**Function**: `get_historical_readings()` (migration 079)
+
+**Auto-aggregation**:
+| Date Range | Mode | Resolution |
+|------------|------|------------|
+| < 24 hours | `raw` | Original timestamps |
+| 24h – 7 days | `hourly` | Grouped by hour (min/max/avg) |
+| > 7 days | `daily` | Grouped by day (min/max/avg) |
+
+**Limits**: 500,000 rows per query (all modes)
+
+### Debugging at Each Stage
+
+```bash
+# 1. SharedState: Is device reading?
+cat /opt/volteria/data/state/readings.json | python3 -m json.tool
+
+# 2. SQLite: Is it buffered?
+sqlite3 /opt/volteria/data/controller.db \
+  "SELECT device_id, register_name, value, timestamp FROM device_readings ORDER BY id DESC LIMIT 5"
+
+# 3. SQLite: Is it synced to cloud?
+sqlite3 /opt/volteria/data/controller.db \
+  "SELECT COUNT(*) as pending FROM device_readings WHERE synced_at IS NULL"
+
+# 4. Cloud: Did it reach Supabase? (run from any machine)
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device_id=eq.DEVICE_UUID&order=timestamp.desc&limit=5" \
+  -H "apikey: SERVICE_KEY" | python3 -m json.tool
+
+# 5. Frontend: Check browser Network tab for:
+#    GET /api/dashboards/[siteId]/live-data (should fire every 30s)
+```
+
+### Cross-Reference
+
+- **Controller → SQLite → Cloud**: See `check-logging` for detailed SQLite buffer, downsampling, and cloud sync mechanics
+- **Config that controls density**: Per-register `logging_frequency` (default 60s) → how many readings reach cloud
+
+---
+
+## 13. Related Skills
 
 - **`check-logging`**: Deep dive into logging service (RAM buffer, SQLite, cloud sync, downsampling, alarm evaluation, drift tracking)
 - **`check-setup`**: Controller provisioning flow (wizard, setup script, registration, SSH tunnel setup, testing)

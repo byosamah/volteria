@@ -24,6 +24,8 @@ Device (Modbus) → RegisterReader → SharedState (readings.json)
    Cloud Sync (every 180s, per-register downsampling)
         ↓
    Supabase (device_readings, control_logs, alarms)
+        ↓
+   Frontend (30s poll + realtime subscription → see check-controller §12)
 ```
 
 ### Timing
