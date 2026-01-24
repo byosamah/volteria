@@ -51,6 +51,7 @@ import { toast } from "sonner";
 import { RegisterForm, type ModbusRegister } from "./register-form";
 
 import type { CalculatedFieldSelection, DeviceType } from "@/lib/types";
+import { DEVICE_TYPE_OPTIONS } from "@/lib/device-constants";
 
 // Device template type (local interface with flexible fields for DB operations)
 interface DeviceTemplate {
@@ -76,22 +77,6 @@ interface DeviceTemplate {
   registers?: ModbusRegister[] | null;
 }
 
-// Available hardware types with labels (for device templates)
-const DEVICE_TYPE_OPTIONS: { value: DeviceType; label: string }[] = [
-  { value: "gas_generator_controller", label: "Gas Generator Controller" },
-  { value: "diesel_generator_controller", label: "Diesel Generator Controller" },
-  { value: "energy_meter", label: "Energy Meter" },
-  { value: "capacitor_bank", label: "Capacitor Bank" },
-  { value: "inverter", label: "Solar Inverter" },
-  { value: "solar_radiation_sensor", label: "Solar Radiation Sensor" },
-  { value: "wind_sensor", label: "Wind Sensor" },
-  { value: "wind_turbine", label: "Wind Turbine" },
-  { value: "bess", label: "Battery Energy Storage System" },
-  { value: "fuel_level_sensor", label: "Fuel Level Sensor" },
-  { value: "fuel_flow_meter", label: "Fuel Flow Meter" },
-  { value: "temperature_humidity_sensor", label: "Temperature & Humidity Sensor" },
-  { value: "other_hardware", label: "Other Hardware" },
-];
 
 // Predefined calculated fields per hardware type
 const CALCULATED_FIELDS_BY_TYPE: Partial<Record<DeviceType, { field_id: string; name: string; unit: string }[]>> = {

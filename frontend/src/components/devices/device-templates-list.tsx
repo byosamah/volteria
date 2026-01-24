@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner";
 import { TemplateFormDialog } from "./template-form-dialog";
 import { DuplicateTemplateDialog } from "./duplicate-template-dialog";
+import { DEVICE_TYPE_OPTIONS, LEGACY_TYPE_MAP } from "@/lib/device-constants";
 
 // Device template type
 interface DeviceTemplate {
@@ -65,26 +66,32 @@ interface DeviceTemplatesListProps {
 // Device type badge colors
 const deviceTypeColors: Record<string, string> = {
   inverter: "bg-amber-100 text-amber-800",
-  load_meter: "bg-blue-100 text-blue-800",
-  dg: "bg-slate-100 text-slate-800",
-  sensor: "bg-purple-100 text-purple-800",
+  wind_turbine: "bg-sky-100 text-sky-800",
+  bess: "bg-violet-100 text-violet-800",
+  gas_generator_controller: "bg-slate-100 text-slate-800",
+  diesel_generator_controller: "bg-slate-100 text-slate-800",
+  energy_meter: "bg-blue-100 text-blue-800",
+  capacitor_bank: "bg-indigo-100 text-indigo-800",
   fuel_level_sensor: "bg-orange-100 text-orange-800",
+  fuel_flow_meter: "bg-orange-100 text-orange-800",
   temperature_humidity_sensor: "bg-teal-100 text-teal-800",
   solar_radiation_sensor: "bg-yellow-100 text-yellow-800",
   wind_sensor: "bg-cyan-100 text-cyan-800",
+  other_hardware: "bg-gray-100 text-gray-800",
+  // Legacy
+  load_meter: "bg-blue-100 text-blue-800",
+  dg: "bg-slate-100 text-slate-800",
+  sensor: "bg-purple-100 text-purple-800",
 };
 
-// Device type labels
-const deviceTypeLabels: Record<string, string> = {
-  inverter: "Solar Inverter",
-  load_meter: "Energy Meter",
-  dg: "Generator Controller",
-  sensor: "Sensor (Generic)",
-  fuel_level_sensor: "Fuel Level",
-  temperature_humidity_sensor: "Temp & Humidity",
-  solar_radiation_sensor: "Solar Radiation",
-  wind_sensor: "Wind Sensor",
-};
+// Device type labels (for badge display)
+const deviceTypeLabels: Record<string, string> = Object.fromEntries([
+  ...DEVICE_TYPE_OPTIONS.map(o => [o.value, o.label]),
+  // Legacy
+  ["load_meter", "Energy Meter"],
+  ["dg", "Generator Controller"],
+  ["sensor", "Sensor (Generic)"],
+]);
 
 // Device type icons (as components)
 const deviceTypeIcons: Record<string, React.ReactNode> = {
@@ -101,12 +108,23 @@ const deviceTypeIcons: Record<string, React.ReactNode> = {
       <path d="m19.07 4.93-1.41 1.41" />
     </svg>
   ),
-  load_meter: (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-blue-600">
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+  wind_turbine: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-sky-600">
+      <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" />
+      <path d="M9.6 4.6A2 2 0 1 1 11 8H2" />
+      <path d="M12.6 19.4A2 2 0 1 0 14 16H2" />
     </svg>
   ),
-  dg: (
+  bess: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-violet-600">
+      <rect x="2" y="7" width="16" height="10" rx="2" />
+      <path d="M22 11v2" />
+      <path d="M6 11v2" />
+      <path d="M10 11v2" />
+      <path d="M14 11v2" />
+    </svg>
+  ),
+  gas_generator_controller: (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-slate-600">
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <path d="M9 17v-2" />
@@ -114,12 +132,37 @@ const deviceTypeIcons: Record<string, React.ReactNode> = {
       <path d="M15 17v-6" />
     </svg>
   ),
-  sensor: (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-purple-600">
-      <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+  diesel_generator_controller: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-slate-600">
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 17v-2" />
+      <path d="M12 17v-4" />
+      <path d="M15 17v-6" />
+    </svg>
+  ),
+  energy_meter: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-blue-600">
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  ),
+  capacitor_bank: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-indigo-600">
+      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
     </svg>
   ),
   fuel_level_sensor: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-orange-600">
+      <path d="M3 22h12" />
+      <path d="M4 9h10" />
+      <path d="M4 15h10" />
+      <path d="M6 2v2" />
+      <path d="M12 2v2" />
+      <rect x="2" y="4" width="14" height="18" rx="2" />
+      <path d="M20 2v10c0 1.1-.9 2-2 2" />
+      <path d="M20 6h-2" />
+    </svg>
+  ),
+  fuel_flow_meter: (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-orange-600">
       <path d="M3 22h12" />
       <path d="M4 9h10" />
@@ -158,30 +201,74 @@ const deviceTypeIcons: Record<string, React.ReactNode> = {
       <path d="M12.6 19.4A2 2 0 1 0 14 16H2" />
     </svg>
   ),
+  other_hardware: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-gray-600">
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M12 8v8" />
+      <path d="M8 12h8" />
+    </svg>
+  ),
+  // Legacy
+  load_meter: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-blue-600">
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  ),
+  dg: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-slate-600">
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 17v-2" />
+      <path d="M12 17v-4" />
+      <path d="M15 17v-6" />
+    </svg>
+  ),
+  sensor: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-purple-600">
+      <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+    </svg>
+  ),
 };
 
 // Section background colors
 const sectionBgColors: Record<string, string> = {
   inverter: "bg-amber-100",
-  load_meter: "bg-blue-100",
-  dg: "bg-slate-100",
-  sensor: "bg-purple-100",
+  wind_turbine: "bg-sky-100",
+  bess: "bg-violet-100",
+  gas_generator_controller: "bg-slate-100",
+  diesel_generator_controller: "bg-slate-100",
+  energy_meter: "bg-blue-100",
+  capacitor_bank: "bg-indigo-100",
   fuel_level_sensor: "bg-orange-100",
+  fuel_flow_meter: "bg-orange-100",
   temperature_humidity_sensor: "bg-teal-100",
   solar_radiation_sensor: "bg-yellow-100",
   wind_sensor: "bg-cyan-100",
+  other_hardware: "bg-gray-100",
+  // Legacy
+  load_meter: "bg-blue-100",
+  dg: "bg-slate-100",
+  sensor: "bg-purple-100",
 };
 
-// Section titles
+// Section titles (plural form for group headings)
 const sectionTitles: Record<string, string> = {
   inverter: "Solar Inverters",
-  load_meter: "Energy Meters",
-  dg: "Generator Controllers",
-  sensor: "Sensors (Generic)",
+  wind_turbine: "Wind Turbines",
+  bess: "Battery Energy Storage",
+  gas_generator_controller: "Gas Generator Controllers",
+  diesel_generator_controller: "Diesel Generator Controllers",
+  energy_meter: "Energy Meters",
+  capacitor_bank: "Capacitor Banks",
   fuel_level_sensor: "Fuel Level Sensors",
+  fuel_flow_meter: "Fuel Flow Meters",
   temperature_humidity_sensor: "Temperature & Humidity Sensors",
   solar_radiation_sensor: "Solar Radiation Sensors",
   wind_sensor: "Wind Sensors",
+  other_hardware: "Other Hardware",
+  // Legacy
+  load_meter: "Energy Meters (Legacy)",
+  dg: "Generator Controllers (Legacy)",
+  sensor: "Sensors (Legacy)",
 };
 
 export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, enterprises }: DeviceTemplatesListProps) {
@@ -470,14 +557,9 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
           className="min-h-[44px] px-3 rounded-md border border-input bg-background sm:w-48"
         >
           <option value="all">All Types</option>
-          <option value="inverter">Solar Inverters</option>
-          <option value="load_meter">Energy Meters</option>
-          <option value="dg">Generator Controllers</option>
-          <option value="sensor">Sensors (Generic)</option>
-          <option value="fuel_level_sensor">Fuel Level Sensors</option>
-          <option value="temperature_humidity_sensor">Temp & Humidity</option>
-          <option value="solar_radiation_sensor">Solar Radiation</option>
-          <option value="wind_sensor">Wind Sensors</option>
+          {DEVICE_TYPE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
         </select>
 
         {/* Brand Filter */}
@@ -575,8 +657,7 @@ export function DeviceTemplatesList({ templates, userRole, userEnterpriseId, ent
       ) : (
         <div className="space-y-8">
           {/* Render each device type section */}
-          {/* All device types including new sensor subtypes */}
-          {(["inverter", "load_meter", "dg", "sensor", "fuel_level_sensor", "temperature_humidity_sensor", "solar_radiation_sensor", "wind_sensor"] as const).map((type) => {
+          {[...DEVICE_TYPE_OPTIONS.map(o => o.value), ...Object.keys(LEGACY_TYPE_MAP)].map((type) => {
             const typeTemplates = templatesByType[type];
             if (!typeTemplates || typeTemplates.length === 0) return null;
 
