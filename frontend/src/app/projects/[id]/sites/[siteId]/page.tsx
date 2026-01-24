@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ControlLogsViewer } from "@/components/logs/control-logs-viewer";
 import { ControlLogsTabTrigger } from "@/components/logs/control-logs-tab-trigger";
 import { AlarmsViewer } from "@/components/alarms/alarms-viewer";
+import { AlarmsTabTrigger } from "@/components/alarms/alarms-tab-trigger";
 import { DeviceList } from "@/components/devices/device-list";
 import { MasterDeviceList } from "@/components/devices/master-device-list";
 import { SiteStatusHeader } from "@/components/sites/site-status-header";
@@ -587,7 +588,7 @@ export default async function SiteDetailPage({
           <TabsList>
             <TabsTrigger value="devices">Devices</TabsTrigger>
             <ControlLogsTabTrigger value="logs" siteId={siteId} />
-            <TabsTrigger value="alarms">Alarms</TabsTrigger>
+            <AlarmsTabTrigger value="alarms" siteId={siteId} />
           </TabsList>
 
           <TabsContent value="devices" className="space-y-4">
