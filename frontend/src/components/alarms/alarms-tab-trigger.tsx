@@ -38,9 +38,8 @@ export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("alarms")
-        .select("severity, acknowledged")
-        .eq("site_id", siteId)
-        .eq("resolved", false);
+        .select("severity, acknowledged, resolved")
+        .eq("site_id", siteId);
 
       if (error || !data) return;
 
@@ -50,12 +49,15 @@ export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
       for (const alarm of data) {
         if (!alarm.acknowledged) unacknowledgedCount++;
 
-        if (alarm.severity === "critical") {
-          highestSeverity = "critical";
-        } else if (alarm.severity === "warning" && highestSeverity !== "critical") {
-          highestSeverity = "warning";
-        } else if (alarm.severity === "info" && !highestSeverity) {
-          highestSeverity = "info";
+        // Dot color based on unresolved alarms only
+        if (!alarm.resolved) {
+          if (alarm.severity === "critical") {
+            highestSeverity = "critical";
+          } else if (alarm.severity === "warning" && highestSeverity !== "critical") {
+            highestSeverity = "warning";
+          } else if (alarm.severity === "info" && !highestSeverity) {
+            highestSeverity = "info";
+          }
         }
       }
 
