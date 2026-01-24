@@ -25,6 +25,8 @@ interface Alarm {
   severity: string;
   acknowledged: boolean;
   acknowledged_by: string | null;
+  resolved: boolean;
+  resolved_at: string | null;
   created_at: string;
   // Joined data
   sites?: {
@@ -39,7 +41,7 @@ export function AlarmsTable() {
   const supabase = createClient();
   const [alarms, setAlarms] = useState<Alarm[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "unacknowledged">("unacknowledged");
+  const [filter, setFilter] = useState<"all" | "unacknowledged" | "unresolved">("unacknowledged");
 
   // Fetch alarms with site and project info
   const fetchAlarms = async () => {
@@ -59,6 +61,8 @@ export function AlarmsTable() {
 
     if (filter === "unacknowledged") {
       query = query.eq("acknowledged", false);
+    } else if (filter === "unresolved") {
+      query = query.eq("resolved", false);
     }
 
     const { data, error } = await query;
@@ -115,6 +119,25 @@ export function AlarmsTable() {
     }
   };
 
+  // Resolve alarm
+  const handleResolve = async (alarmId: string) => {
+    const { error } = await supabase
+      .from("alarms")
+      .update({ resolved: true, resolved_at: new Date().toISOString() })
+      .eq("id", alarmId);
+
+    if (error) {
+      toast.error("Failed to resolve alarm");
+    } else {
+      toast.success("Alarm resolved");
+      setAlarms((prev) =>
+        prev.map((a) =>
+          a.id === alarmId ? { ...a, resolved: true } : a
+        )
+      );
+    }
+  };
+
   // Severity badge
   const SeverityBadge = ({ severity }: { severity: string }) => {
     const variants: Record<string, "destructive" | "default" | "secondary"> = {
@@ -150,6 +173,13 @@ export function AlarmsTable() {
           Unacknowledged
         </Button>
         <Button
+          variant={filter === "unresolved" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setFilter("unresolved")}
+        >
+          Unresolved
+        </Button>
+        <Button
           variant={filter === "all" ? "default" : "outline"}
           size="sm"
           onClick={() => setFilter("all")}
@@ -163,6 +193,8 @@ export function AlarmsTable() {
         <div className="text-center py-8 text-muted-foreground">
           {filter === "unacknowledged"
             ? "No unacknowledged alarms"
+            : filter === "unresolved"
+            ? "No unresolved alarms"
             : "No alarms recorded yet"}
         </div>
       ) : (
@@ -218,7 +250,9 @@ export function AlarmsTable() {
                     <SeverityBadge severity={alarm.severity} />
                   </td>
                   <td className="py-3 px-4 text-center">
-                    {alarm.acknowledged ? (
+                    {alarm.resolved ? (
+                      <Badge className="bg-green-100 text-green-800">Resolved</Badge>
+                    ) : alarm.acknowledged ? (
                       <Badge variant="outline">Acknowledged</Badge>
                     ) : (
                       <Badge variant="secondary">Active</Badge>
@@ -232,6 +266,15 @@ export function AlarmsTable() {
                         onClick={() => handleAcknowledge(alarm.id)}
                       >
                         Acknowledge
+                      </Button>
+                    )}
+                    {alarm.acknowledged && !alarm.resolved && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleResolve(alarm.id)}
+                      >
+                        Resolve
                       </Button>
                     )}
                   </td>

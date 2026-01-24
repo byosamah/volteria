@@ -280,6 +280,20 @@ class LocalDatabase:
             conn.commit()
             return cursor.lastrowid
 
+    def resolve_alarms_by_type(self, alarm_type: str) -> int:
+        """Mark all unresolved alarms of a given type as resolved.
+        Resets synced_at so the resolved status gets synced to cloud."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+            cursor.execute("""
+                UPDATE alarms
+                SET resolved = 1, resolved_at = ?, synced_at = NULL
+                WHERE alarm_type = ? AND resolved = 0
+            """, (now, alarm_type))
+            conn.commit()
+            return cursor.rowcount
+
     def get_unsynced_logs(self, limit: int = 100) -> list[dict]:
         """Get control logs that haven't been synced"""
         with self._get_connection() as conn:

@@ -50,7 +50,7 @@ HEALTH_PORT = 8085
 RETENTION_CHECK_INTERVAL_S = 3600  # Check retention every hour
 
 # Health alert thresholds
-ALERT_DRIFT_MS = 1000  # Warn if scheduler drift > 1 second
+ALERT_DRIFT_MS = 5000  # Warn if scheduler drift > 5 seconds
 ALERT_BUFFER_SIZE = 5000  # Warn if buffer > 5000 readings
 ALERT_CONSECUTIVE_ERRORS = 3  # Warn after 3 consecutive errors
 
@@ -145,6 +145,9 @@ class LoggingService:
         # Periodic summary: track last summary time (10-minute intervals)
         self._last_health_summary_time: datetime | None = None
 
+        # Drift auto-resolve: track consecutive low-drift checks
+        self._consecutive_low_drift_checks: int = 0
+
         # Health server
         self._health_app: web.Application | None = None
         self._health_runner: web.AppRunner | None = None
@@ -160,6 +163,11 @@ class LoggingService:
         # Schedulers for precise-interval tasks (initialized in start())
         self._sample_scheduler: ScheduledLoop | None = None
         self._flush_scheduler: ScheduledLoop | None = None
+
+    async def _run_db(self, func, *args):
+        """Run a blocking local_db method in a thread to avoid blocking the event loop."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, func, *args)
 
     def _find_config_path(self) -> str:
         """Find configuration file"""
@@ -642,11 +650,11 @@ class LoggingService:
         async with self._readings_buffer_lock:
             readings_batch = self._device_readings_buffer.copy()
 
-        # Try to write device readings to SQLite
+        # Try to write device readings to SQLite (in thread to avoid blocking event loop)
         write_success = True
         if readings_batch:
             try:
-                count = self.local_db.insert_device_readings_batch(readings_batch)
+                count = await self._run_db(self.local_db.insert_device_readings_batch, readings_batch)
                 logger.debug(f"Flushed {count} readings to SQLite")
             except Exception as e:
                 write_success = False
@@ -745,7 +753,7 @@ class LoggingService:
             return 0
 
         # Count pending to determine strategy
-        pending_count = self.local_db.get_unsynced_device_readings_count()
+        pending_count = await self._run_db(self.local_db.get_unsynced_device_readings_count)
         if pending_count == 0:
             # Reset backfill state when fully caught up
             if self.cloud_sync.backfill.phase != BackfillPhase.NORMAL:
@@ -765,10 +773,10 @@ class LoggingService:
         # Phase FILLING_GAPS or NORMAL: sync oldest 5000 (fill gaps chronologically)
         if pending_count > CloudSync.BACKFILL_THRESHOLD and not self.cloud_sync.backfill.recent_synced:
             # First cycle after detecting backfill: sync newest
-            unsynced = self.local_db.get_unsynced_device_readings_newest(limit=5000)
+            unsynced = await self._run_db(self.local_db.get_unsynced_device_readings_newest, 5000)
         else:
             # Normal or gap-filling: sync oldest first
-            unsynced = self.local_db.get_unsynced_device_readings(limit=5000)
+            unsynced = await self._run_db(self.local_db.get_unsynced_device_readings, 5000)
 
         if not unsynced:
             return 0
@@ -978,7 +986,7 @@ class LoggingService:
             await asyncio.sleep(RETENTION_CHECK_INTERVAL_S)
 
             try:
-                deleted = self.local_db.cleanup_old_data(self._retention_days)
+                deleted = await self._run_db(self.local_db.cleanup_old_data, self._retention_days)
                 if deleted > 0:
                     logger.info(f"Retention cleanup: deleted {deleted} old records")
             except Exception as e:
@@ -1136,25 +1144,26 @@ class LoggingService:
         # Always use current timestamp for log entries (ensures uniqueness)
         current_timestamp = datetime.now(timezone.utc).isoformat()
 
-        # Write control log (device_readings is None - readings are in separate table)
-        self.local_db.insert_control_log(
-            timestamp=current_timestamp,
-            site_id=self._site_id,
-            total_load_kw=current_load,
-            solar_output_kw=current_solar,
-            dg_power_kw=current_dg,
-            solar_limit_pct=state.get("solar_limit_pct", 100),
-            solar_limit_kw=state.get("solar_limit_kw", 0),
-            safe_mode_active=current_safe_mode,
-            config_mode=state.get("config_mode", "full_system"),
-            operation_mode=state.get("operation_mode", "zero_dg_reverse"),
-            load_meters_online=state.get("load_meters_online", 0),
-            inverters_online=state.get("inverters_online", 0),
-            generators_online=state.get("generators_online", 0),
-            execution_time_ms=state.get("execution_time_ms", 0),
-            device_readings=None,  # Readings now in separate device_readings table
-            load_min_max=(load_min, load_max),
-            solar_min_max=(solar_min, solar_max),
+        # Write control log (in thread to avoid blocking event loop)
+        await self._run_db(
+            self.local_db.insert_control_log,
+            current_timestamp,        # timestamp
+            self._site_id,            # site_id
+            current_load,             # total_load_kw
+            current_solar,            # solar_output_kw
+            current_dg,               # dg_power_kw
+            state.get("solar_limit_pct", 100),    # solar_limit_pct
+            state.get("solar_limit_kw", 0),       # solar_limit_kw
+            current_safe_mode,        # safe_mode_active
+            state.get("config_mode", "full_system"),      # config_mode
+            state.get("operation_mode", "zero_dg_reverse"),  # operation_mode
+            state.get("load_meters_online", 0),   # load_meters_online
+            state.get("inverters_online", 0),     # inverters_online
+            state.get("generators_online", 0),    # generators_online
+            state.get("execution_time_ms", 0),    # execution_time_ms
+            None,                     # device_readings (now in separate table)
+            (load_min, load_max),     # load_min_max
+            (solar_min, solar_max),   # solar_min_max
         )
         logger.debug("Wrote control log summary")
 
@@ -1197,16 +1206,17 @@ class LoggingService:
 
     async def _process_alarm(self, alarm: TriggeredAlarm) -> None:
         """Process a triggered alarm"""
-        # Insert to local database
-        self.local_db.insert_alarm(
-            alarm_id=str(uuid.uuid4()),
-            site_id=self._site_id,
-            alarm_type=alarm.alarm_id,
-            message=alarm.message,
-            severity=alarm.severity,
-            timestamp=alarm.timestamp.isoformat(),
-            device_id=alarm.device_id,
-            device_name=alarm.device_name,
+        # Insert to local database (in thread to avoid blocking event loop)
+        await self._run_db(
+            self.local_db.insert_alarm,
+            str(uuid.uuid4()),              # alarm_id
+            self._site_id,                  # site_id
+            alarm.alarm_id,                 # alarm_type
+            alarm.message,                  # message
+            alarm.severity,                 # severity
+            alarm.timestamp.isoformat(),    # timestamp
+            alarm.device_id,                # device_id
+            alarm.device_name,              # device_name
         )
 
         # Sync critical alarms immediately
@@ -1257,29 +1267,36 @@ class LoggingService:
         # Check scheduler drift
         max_drift = max(self._sample_drift_ms, self._flush_drift_ms)
         if max_drift > ALERT_DRIFT_MS:
+            self._consecutive_low_drift_checks = 0
             if self._last_drift_alert is None or (now - self._last_drift_alert) > cooldown:
                 self._last_drift_alert = now
-                self.local_db.insert_alarm(
-                    alarm_id=str(uuid.uuid4()),
-                    site_id=self._site_id,
-                    alarm_type="LOGGING_HIGH_DRIFT",
-                    message=f"Logging scheduler drift is {max_drift:.0f}ms (threshold: {ALERT_DRIFT_MS}ms)",
-                    severity="warning",
-                    timestamp=now.isoformat(),
+                await self._run_db(
+                    self.local_db.insert_alarm,
+                    str(uuid.uuid4()), self._site_id, "LOGGING_HIGH_DRIFT",
+                    f"Logging scheduler drift is {max_drift:.0f}ms (threshold: {ALERT_DRIFT_MS}ms)",
+                    "warning", now.isoformat(),
                 )
                 logger.warning(f"Logging health alert: scheduler drift {max_drift:.0f}ms")
+        else:
+            # Drift is healthy — track consecutive good checks for auto-resolve
+            self._consecutive_low_drift_checks += 1
+            if self._consecutive_low_drift_checks >= 3:
+                # Auto-resolve outstanding LOGGING_HIGH_DRIFT alarms
+                await self._run_db(
+                    self.local_db.resolve_alarms_by_type, "LOGGING_HIGH_DRIFT",
+                )
+                if self._consecutive_low_drift_checks == 3:
+                    logger.info("Drift recovered: auto-resolved LOGGING_HIGH_DRIFT alarms")
 
         # Check buffer buildup
         if buffer_count > ALERT_BUFFER_SIZE:
             if self._last_buffer_alert is None or (now - self._last_buffer_alert) > cooldown:
                 self._last_buffer_alert = now
-                self.local_db.insert_alarm(
-                    alarm_id=str(uuid.uuid4()),
-                    site_id=self._site_id,
-                    alarm_type="LOGGING_BUFFER_BUILDUP",
-                    message=f"Logging buffer has {buffer_count} readings (threshold: {ALERT_BUFFER_SIZE})",
-                    severity="warning",
-                    timestamp=now.isoformat(),
+                await self._run_db(
+                    self.local_db.insert_alarm,
+                    str(uuid.uuid4()), self._site_id, "LOGGING_BUFFER_BUILDUP",
+                    f"Logging buffer has {buffer_count} readings (threshold: {ALERT_BUFFER_SIZE})",
+                    "warning", now.isoformat(),
                 )
                 logger.warning(f"Logging health alert: buffer buildup {buffer_count} readings")
 
@@ -1289,13 +1306,11 @@ class LoggingService:
             if self._last_error_alert is None or (now - self._last_error_alert) > cooldown:
                 self._last_error_alert = now
                 error_type = "sample" if self._consecutive_sample_errors >= ALERT_CONSECUTIVE_ERRORS else "flush"
-                self.local_db.insert_alarm(
-                    alarm_id=str(uuid.uuid4()),
-                    site_id=self._site_id,
-                    alarm_type="LOGGING_CONSECUTIVE_ERRORS",
-                    message=f"Logging {error_type} has failed {max_consecutive} times consecutively",
-                    severity="major",
-                    timestamp=now.isoformat(),
+                await self._run_db(
+                    self.local_db.insert_alarm,
+                    str(uuid.uuid4()), self._site_id, "LOGGING_CONSECUTIVE_ERRORS",
+                    f"Logging {error_type} has failed {max_consecutive} times consecutively",
+                    "major", now.isoformat(),
                 )
                 logger.error(f"Logging health alert: {max_consecutive} consecutive {error_type} errors")
 
@@ -1332,7 +1347,7 @@ class LoggingService:
 
     async def _stats_handler(self, request: web.Request) -> web.Response:
         """Return logging statistics with observability metrics"""
-        db_stats = self.local_db.get_stats()
+        db_stats = await self._run_db(self.local_db.get_stats)
         sync_stats = self.cloud_sync.get_stats() if self.cloud_sync else {}
 
         # Calculate buffer memory estimate (~300 bytes per reading)
@@ -1405,7 +1420,7 @@ class LoggingService:
 
         # Get cloud sync stats and local db stats
         cloud_stats = self.cloud_sync.get_stats() if self.cloud_sync else {}
-        db_stats = self.local_db.get_stats()
+        db_stats = await self._run_db(self.local_db.get_stats)
 
         # Get current buffer count
         async with self._readings_buffer_lock:
