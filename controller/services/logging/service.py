@@ -1291,7 +1291,7 @@ class LoggingService:
         formatted_message = alarm.get_formatted_message()
 
         # Insert to local database (in thread to avoid blocking event loop)
-        await self._run_db(
+        local_alarm_id = await self._run_db(
             self.local_db.insert_alarm,
             str(uuid.uuid4()),              # alarm_id
             self._site_id,                  # site_id
@@ -1303,16 +1303,22 @@ class LoggingService:
             alarm.device_name,              # device_name
         )
 
-        # Sync critical alarms immediately
+        # Sync critical/major alarms immediately
         if self._instant_sync_alarms and alarm.severity in ["critical", "major"]:
             if self.cloud_sync:
-                await self.cloud_sync.sync_alarm_immediately({
+                success = await self.cloud_sync.sync_alarm_immediately({
                     "alarm_type": alarm.alarm_id,
-                    "message": alarm.message,
+                    "message": formatted_message,
                     "severity": alarm.severity,
                     "device_name": alarm.device_name,
                     "timestamp": alarm.timestamp.isoformat(),
                 })
+                # Mark as synced to prevent duplicate sync via sync_alarms()
+                if success and local_alarm_id:
+                    await self._run_db(
+                        self.local_db.mark_alarms_synced,
+                        [local_alarm_id],
+                    )
 
     async def _check_logging_health(self, buffer_count: int) -> None:
         """
