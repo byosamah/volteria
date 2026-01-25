@@ -337,6 +337,36 @@ class LoggingService:
             for alarm_def in device.get("alarm_definitions", []):
                 self._alarm_definitions.append(self._parse_alarm_definition(alarm_def))
 
+        # Convert alarm_registers.thresholds to alarm_definitions
+        # This enables device register threshold alarms configured in the frontend
+        for device in config.get("devices", []):
+            device_id = device.get("id")
+            device_name = device.get("name")
+            for alarm_reg in device.get("alarm_registers", []):
+                thresholds = alarm_reg.get("thresholds") or []
+                if not thresholds:
+                    continue
+                reg_name = alarm_reg.get("name", "")
+                alarm_def = {
+                    "id": f"reg_{device_id}_{reg_name}",
+                    "name": f"{reg_name} Alarm",
+                    "source_type": "modbus_register",
+                    "source_key": reg_name,
+                    "device_id": device_id,
+                    "device_name": device_name,
+                    "conditions": [
+                        {
+                            "operator": t.get("operator", ">"),
+                            "value": t.get("value", 0),
+                            "severity": t.get("severity", "warning"),
+                            "message": t.get("message") or f"{reg_name} {t.get('operator', '>')} {t.get('value', 0)}"
+                        }
+                        for t in thresholds
+                    ],
+                    "cooldown_seconds": 300,
+                }
+                self._alarm_definitions.append(self._parse_alarm_definition(alarm_def))
+
         # Load device-level calculated fields to log
         for device in config.get("devices", []):
             device_id = device.get("id")
@@ -412,6 +442,8 @@ class LoggingService:
             enabled_by_default=data.get("enabled_by_default", True),
             cooldown_seconds=data.get("cooldown_seconds", 300),
             description=data.get("description", ""),
+            device_id=data.get("device_id"),
+            device_name=data.get("device_name"),
         )
 
     async def _buffer_loop(self) -> None:
@@ -442,18 +474,25 @@ class LoggingService:
         Scheduler callback for sampling device readings into RAM buffer.
 
         Called by ScheduledLoop at precise _local_sample_interval intervals.
+        Also evaluates device register alarms against current readings.
         """
         # Skip if local logging is disabled
         if not self._local_enabled:
             return
 
         try:
-            await self._sample_readings_to_buffer()
+            # Sample readings and get them back for alarm evaluation
+            device_readings = await self._sample_readings_to_buffer()
             self._last_sample_time = datetime.now(timezone.utc)
             if self._sample_scheduler:
                 self._sample_drift_ms = self._sample_scheduler.drift_ms
             # Reset consecutive errors on success
             self._consecutive_sample_errors = 0
+
+            # Evaluate device register alarms against current readings
+            if device_readings and self._alarm_definitions:
+                state = get_control_state() or {}
+                await self._evaluate_alarms(state, device_readings)
         except Exception as e:
             self._sample_error_count += 1
             self._consecutive_sample_errors += 1
@@ -525,7 +564,7 @@ class LoggingService:
                 self._sample_error_count += 1
                 logger.error(f"Sample loop error: {e}")
 
-    async def _sample_readings_to_buffer(self) -> None:
+    async def _sample_readings_to_buffer(self) -> dict | None:
         """
         Sample current device readings into RAM buffer.
 
@@ -538,12 +577,15 @@ class LoggingService:
         easy cross-device correlation.
 
         Buffer is flushed to SQLite by _local_flush_loop.
+
+        Returns:
+            dict: Device readings for alarm evaluation {device_id: {register_name: value}}
         """
         # Get device readings from shared state
         readings_state = SharedState.read("readings")
         if not readings_state or not readings_state.get("devices"):
             logger.debug("FLOW[sample]: No readings in SharedState")
-            return
+            return None
 
         # Align timestamp to sample interval boundary
         # This ensures all readings from this cycle have identical timestamps
@@ -598,6 +640,18 @@ class LoggingService:
                 excess = len(self._device_readings_buffer) - 10000
                 self._device_readings_buffer = self._device_readings_buffer[excess:]
                 logger.warning(f"RAM buffer overflow, dropped {excess} oldest readings")
+
+        # Build device_readings dict for alarm evaluation
+        # Structure: {device_id: {register_name: value}}
+        device_readings: dict[str, dict[str, float | None]] = {}
+        for device_id, device_data in readings_state.get("devices", {}).items():
+            device_readings[device_id] = {
+                reg_name: reg_data.get("value")
+                for reg_name, reg_data in device_data.get("readings", {}).items()
+                if reg_data.get("value") is not None
+            }
+
+        return device_readings
 
     async def _local_flush_loop(self) -> None:
         """
@@ -1180,8 +1234,14 @@ class LoggingService:
         self._load_buffer.clear()
         self._solar_buffer.clear()
 
-    async def _evaluate_alarms(self, state: dict) -> None:
-        """Evaluate alarms against current state"""
+    async def _evaluate_alarms(self, state: dict, device_readings: dict | None = None) -> None:
+        """
+        Evaluate alarms against current state and device readings.
+
+        Args:
+            state: Control state (total_load_kw, solar_output_kw, etc.)
+            device_readings: Device register values {device_id: {register_name: value}}
+        """
         if not self._alarm_definitions:
             return
 
@@ -1193,6 +1253,10 @@ class LoggingService:
             "solar_limit_pct": state.get("solar_limit_pct", 100),
             "safe_mode_active": 1 if state.get("safe_mode_active") else 0,
         }
+
+        # Add device registers for modbus_register alarms
+        if device_readings:
+            readings["device_registers"] = device_readings
 
         # Evaluate
         triggered = self.alarm_evaluator.evaluate(

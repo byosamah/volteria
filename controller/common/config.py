@@ -91,6 +91,8 @@ class AlarmDefinition:
     enabled_by_default: bool = True
     cooldown_seconds: int = 300
     description: str = ""
+    device_id: str | None = None      # Device ID for device-specific alarms
+    device_name: str | None = None    # Device name for alarm display
 
 
 @dataclass

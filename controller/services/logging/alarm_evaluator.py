@@ -90,8 +90,12 @@ class AlarmEvaluator:
             if not alarm_def.enabled_by_default:
                 continue
 
-            # Get the value to check
-            value = self._get_value(readings, alarm_def.source_type, alarm_def.source_key)
+            # Use device info from alarm definition if available, else from params
+            alarm_device_id = alarm_def.device_id or device_id
+            alarm_device_name = alarm_def.device_name or device_name
+
+            # Get the value to check (pass device_id for device-specific lookups)
+            value = self._get_value(readings, alarm_def.source_type, alarm_def.source_key, alarm_device_id)
             if value is None:
                 continue
 
@@ -99,7 +103,7 @@ class AlarmEvaluator:
             for condition in alarm_def.conditions:
                 if self._check_condition(value, condition):
                     # Check cooldown
-                    state_key = f"{device_id or 'global'}:{alarm_def.id}"
+                    state_key = f"{alarm_device_id or 'global'}:{alarm_def.id}"
                     state = self._alarm_states.get(state_key)
 
                     if state and state.last_triggered:
@@ -117,8 +121,8 @@ class AlarmEvaluator:
                         source_key=alarm_def.source_key,
                         value=value,
                         threshold=condition.value,
-                        device_id=device_id,
-                        device_name=device_name,
+                        device_id=alarm_device_id,
+                        device_name=alarm_device_name,
                         timestamp=now,
                     )
                     triggered.append(alarm)
@@ -137,7 +141,7 @@ class AlarmEvaluator:
                         alarm_id=alarm_def.id,
                         severity=condition.severity,
                         message=condition.message,
-                        device_name=device_name,
+                        device_name=alarm_device_name,
                     )
 
                     # Only trigger once per alarm definition
@@ -150,10 +154,34 @@ class AlarmEvaluator:
         readings: dict[str, Any],
         source_type: str,
         source_key: str,
+        device_id: str | None = None,
     ) -> float | None:
-        """Extract value from readings based on source type"""
+        """
+        Extract value from readings based on source type.
+
+        Args:
+            readings: Dict with control state values and optional device_registers
+            source_type: Type of data source (modbus_register, device_info, etc.)
+            source_key: Register name or field key
+            device_id: Device ID for device-specific lookups
+        """
         if source_type == "modbus_register":
-            # Direct register reading
+            # Check device_registers dict first (new path for device alarms)
+            device_registers = readings.get("device_registers", {})
+            if device_registers:
+                # Prefer specific device if device_id is provided
+                if device_id and device_id in device_registers:
+                    value = device_registers[device_id].get(source_key)
+                    if value is not None:
+                        return value
+                # Fallback: search all devices for the register name
+                for regs in device_registers.values():
+                    if source_key in regs:
+                        value = regs.get(source_key)
+                        if value is not None:
+                            return value
+
+            # Legacy path: direct register reading from readings dict
             value = readings.get(source_key)
             if isinstance(value, dict):
                 return value.get("value")
