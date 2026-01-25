@@ -1,3 +1,8 @@
+---
+name: check-controller
+description: Check Volteria controller architecture, services, SSH access, config sync, safe mode, and live readings. Use when debugging controller issues, understanding service flow, or checking data path.
+---
+
 # Check Controller - Volteria Controller Architecture Reference
 
 > Master reference for the 5-layer controller: supervisor, services, SharedState, SSH tunnels, safe mode, and diagnostics.
@@ -33,20 +38,22 @@ systemctl is-active volteria-system volteria-config volteria-device volteria-con
 systemctl is-active volteria-ups-monitor volteria-watchdog
 ```
 
-**Health endpoints** (run on Pi):
+**Health endpoints** (run on Pi — check ALL 5, don't skip any):
 ```bash
 curl http://127.0.0.1:8081/health | python3 -m json.tool  # System
-curl http://127.0.0.1:8082/health | python3 -m json.tool  # Config
+curl http://127.0.0.1:8082/health | python3 -m json.tool  # Config ← often skipped, verify!
 curl http://127.0.0.1:8083/health | python3 -m json.tool  # Device
 curl http://127.0.0.1:8084/health | python3 -m json.tool  # Control
 curl http://127.0.0.1:8085/health | python3 -m json.tool  # Logging
 ```
 
-**SharedState** (run on Pi):
+**SharedState** (run on Pi — check tmpfs first, fallback to disk):
 ```bash
-cat /opt/volteria/data/state/readings.json | python3 -m json.tool
-cat /opt/volteria/data/state/control_state.json | python3 -m json.tool
-cat /opt/volteria/data/state/config.json | python3 -m json.tool | head -50
+# Production (tmpfs):
+cat /run/volteria/state/readings.json | python3 -m json.tool
+cat /run/volteria/state/control_state.json | python3 -m json.tool
+cat /run/volteria/state/config.json | python3 -m json.tool | head -50
+# Fallback (disk): /opt/volteria/data/state/
 ```
 
 **Logs** (run on Pi):
@@ -319,6 +326,8 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 ---
 
 ## 5. Safe Mode
+
+> **Note**: Safe mode and control_state features are still in development. Skip these during diagnostics unless specifically requested.
 
 ### Triggers
 1. **Supervisor** (supervisor.py :334-337): Critical service fails 3x restart attempts

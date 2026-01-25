@@ -1,3 +1,8 @@
+---
+name: check-setup
+description: Check Volteria wizard setup flow, SSH tunnel establishment, controller provisioning, and deployment. Use when setting up new controllers or debugging registration issues.
+---
+
 # Check Setup - Volteria Controller Provisioning Reference
 
 > Master reference for the 6-step wizard: hardware registration, OS flash, software setup, cloud connection, heartbeat verification, and SSH-based testing.
@@ -60,9 +65,9 @@ cat /etc/volteria/config.yaml | grep -A5 controller
 [1. Hardware Info] → [2. Flash Image] → [3. Software Setup]
        ↓                   ↓                    ↓
   DB: controller row   SD card flash      Pi: setup-controller.sh
-                                                ↓
-                                         POST /api/controllers/register
-                                                ↓
+                                               ↓
+                                        POST /api/controllers/register
+                                               ↓
 [4. Cloud Connection] ← ← ← ← ← ← Controller registered in DB
        ↓
 [5. Verify Online] → Poll controller_heartbeats (5s, 5min timeout)
@@ -464,7 +469,7 @@ ping -c 3 google.com
 
 ---
 
-## 7. Validation Rules
+## 8. Validation Rules
 
 | Rule | Why |
 |------|-----|
@@ -484,7 +489,7 @@ ping -c 3 google.com
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### Common Failures Per Step
 
@@ -514,7 +519,7 @@ ping -c 3 google.com
 
 ---
 
-## 9. Observability
+## 10. Observability
 
 ### Wizard Progress Metrics
 - `wizard_step` in controllers table (1-6, NULL = complete)
@@ -535,7 +540,7 @@ ping -c 3 google.com
 
 ---
 
-## 10. Related Skills
+## 11. Related Skills
 
 - **`check-controller`**: After wizard completes — ongoing diagnostics, service architecture, SharedState, safe mode
 - **`check-logging`**: Logging service deep dive — RAM buffer, SQLite, cloud sync, downsampling, drift
