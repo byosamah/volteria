@@ -155,6 +155,36 @@ export function AlarmsTable() {
     );
   };
 
+  // Get alarm type display name for system alarms
+  const getAlarmTypeName = (type: string) => {
+    const names: Record<string, string> = {
+      communication_lost: "Communication Lost",
+      control_error: "Control Error",
+      safe_mode_triggered: "Safe Mode Triggered",
+      not_reporting: "Not Reporting",
+      controller_offline: "Controller Offline",
+      write_failed: "Write Failed",
+      command_not_taken: "Command Not Taken",
+    };
+    return names[type] || type;
+  };
+
+  // Get condition display for alarms
+  const getConditionDisplay = (alarm: Alarm) => {
+    // Device threshold alarms: extract condition from message
+    if (alarm.alarm_type.startsWith("reg_")) {
+      // Message format: "User Msg - RegisterName > Value (Device)"
+      const match = alarm.message.match(/- (.+?) \(/);
+      if (match) return match[1].trim(); // "Ambient Temperature > 50"
+
+      // Fallback: extract register name from alarm_type
+      const parts = alarm.alarm_type.split("_");
+      if (parts.length >= 3) return parts.slice(2).join("_");
+    }
+    // System alarms: use readable name
+    return getAlarmTypeName(alarm.alarm_type);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -204,11 +234,12 @@ export function AlarmsTable() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b">
-                <th className="text-left py-3 px-4 font-medium">Time</th>
-                <th className="text-left py-3 px-4 font-medium">Source</th>
-                <th className="text-left py-3 px-4 font-medium">Description</th>
-                <th className="text-left py-3 px-4 font-medium">Device</th>
+                <th className="text-left py-3 px-4 font-medium">Date & Time</th>
                 <th className="text-center py-3 px-4 font-medium">Severity</th>
+                <th className="text-left py-3 px-4 font-medium">Condition</th>
+                <th className="text-left py-3 px-4 font-medium">Device</th>
+                <th className="text-left py-3 px-4 font-medium">Message</th>
+                <th className="text-left py-3 px-4 font-medium">Source</th>
                 <th className="text-center py-3 px-4 font-medium">Status</th>
                 <th className="text-right py-3 px-4 font-medium">Actions</th>
               </tr>
@@ -226,6 +257,18 @@ export function AlarmsTable() {
                   <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
                     {new Date(alarm.created_at).toLocaleString()}
                   </td>
+                  <td className="py-3 px-4 text-center">
+                    <SeverityBadge severity={alarm.severity} />
+                  </td>
+                  <td className="py-3 px-4 whitespace-nowrap">
+                    {getConditionDisplay(alarm)}
+                  </td>
+                  <td className="py-3 px-4 text-sm">
+                    {alarm.device_name || <span className="text-muted-foreground">-</span>}
+                  </td>
+                  <td className="py-3 px-4 max-w-xs truncate" title={alarm.message}>
+                    {alarm.message}
+                  </td>
                   <td className="py-3 px-4 text-xs">
                     {alarm.sites ? (
                       <span>
@@ -237,22 +280,13 @@ export function AlarmsTable() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="py-3 px-4 max-w-xs truncate" title={alarm.message}>
-                    {alarm.message}
-                  </td>
-                  <td className="py-3 px-4 text-sm">
-                    {alarm.device_name || <span className="text-muted-foreground">-</span>}
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <SeverityBadge severity={alarm.severity} />
-                  </td>
                   <td className="py-3 px-4 text-center">
                     {alarm.resolved ? (
                       <Badge className="bg-green-100 text-green-800">Resolved</Badge>
                     ) : alarm.acknowledged ? (
                       <Badge variant="outline">Acknowledged</Badge>
                     ) : (
-                      <Badge variant="secondary">Active</Badge>
+                      <Badge variant="destructive">Active</Badge>
                     )}
                   </td>
                   <td className="py-3 px-4 text-right">

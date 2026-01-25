@@ -223,6 +223,22 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
     return names[type] || type;
   };
 
+  // Get condition display for alarms
+  const getConditionDisplay = (alarm: Alarm) => {
+    // Device threshold alarms: extract condition from message
+    if (alarm.alarm_type.startsWith("reg_")) {
+      // Message format: "User Msg - RegisterName > Value (Device)"
+      const match = alarm.message.match(/- (.+?) \(/);
+      if (match) return match[1].trim(); // "Ambient Temperature > 50"
+
+      // Fallback: extract register name from alarm_type
+      const parts = alarm.alarm_type.split("_");
+      if (parts.length >= 3) return parts.slice(2).join("_");
+    }
+    // System alarms: use readable name
+    return getAlarmTypeName(alarm.alarm_type);
+  };
+
   // Count unacknowledged alarms
   const unacknowledgedCount = alarms.filter((a) => !a.acknowledged).length;
 
@@ -327,7 +343,7 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                       ) : alarm.acknowledged ? (
                         <Badge variant="outline" className="text-xs">Ack&apos;d</Badge>
                       ) : (
-                        <Badge variant="destructive" className="text-xs">New</Badge>
+                        <Badge variant="destructive" className="text-xs">Active</Badge>
                       )}
                     </div>
                     <span className="text-xs font-mono text-muted-foreground">
@@ -335,9 +351,9 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                     </span>
                   </div>
 
-                  {/* Type and Device */}
+                  {/* Condition and Device */}
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">{getAlarmTypeName(alarm.alarm_type)}</p>
+                    <p className="text-sm font-medium">{getConditionDisplay(alarm)}</p>
                     {alarm.device_name && (
                       <p className="text-xs text-muted-foreground">Device: {alarm.device_name}</p>
                     )}
@@ -390,9 +406,9 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Time</TableHead>
+                    <TableHead>Date & Time</TableHead>
                     <TableHead>Severity</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>Condition</TableHead>
                     <TableHead>Device</TableHead>
                     <TableHead>Message</TableHead>
                     <TableHead>Status</TableHead>
@@ -410,7 +426,7 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                       </TableCell>
                       <TableCell>{getSeverityBadge(alarm.severity)}</TableCell>
                       <TableCell className="whitespace-nowrap">
-                        {getAlarmTypeName(alarm.alarm_type)}
+                        {getConditionDisplay(alarm)}
                       </TableCell>
                       <TableCell>{alarm.device_name || "-"}</TableCell>
                       <TableCell className="max-w-[300px] truncate">
@@ -422,7 +438,7 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                         ) : alarm.acknowledged ? (
                           <Badge variant="outline">Acknowledged</Badge>
                         ) : (
-                          <Badge variant="destructive">New</Badge>
+                          <Badge variant="destructive">Active</Badge>
                         )}
                       </TableCell>
                       <TableCell>
