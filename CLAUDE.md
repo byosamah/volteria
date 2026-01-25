@@ -218,6 +218,31 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
 
+## Recent Updates (2026-01-25)
+
+### SOL532-E16 (R2000) Hardware Support
+Full support for Seeed reComputer Industrial R2000:
+- **Setup Script**: Auto-detects R2000 via `/dev/ttyACM1-3` presence, configures UPS monitor, watchdog, 4G modem
+- **Wizard Step 2**: SSH credentials box (`recomputer` / `12345678`), hardware verification commands (RS485, UPS, 4G)
+- **Wizard Step 3**: R2000 verification section with serial port and UPS checks
+- **Wizard Step 6**: Hardware-specific tests (serial_ports, ups_monitor, watchdog)
+- **New Services**: `volteria-ups-monitor` (GPIO16 power loss detection), `volteria-watchdog` (auto-reboot on hang)
+- **Backend Tests**: `test_serial_ports()`, `test_ups_monitor()`, `test_watchdog()` in `ssh_tests.py`
+
+### Hardware Features (SOL532-E16)
+| Feature | Details |
+|---------|---------|
+| Boot | Pre-flashed eMMC (no SD card) |
+| Serial | 3x RS-485 (`/dev/ttyACM1-3`) + 1x RS-232 (`/dev/ttyACM0`) |
+| UPS | SuperCAP with GPIO16 monitoring |
+| Watchdog | Hardware `/dev/watchdog` (1-255s timeout) |
+| Cellular | 4G LTE modem (Quectel EC25, optional) |
+| Default SSH | `recomputer` / `12345678` |
+
+### Alarm Tab Indicator Fix (Frontend)
+- **Problem**: Alarm tab dot indicator had hydration mismatch and incorrect trigger logic
+- **Fix**: Simplified to dot-only indicator, show unacknowledged count regardless of resolved state
+
 ## Recent Updates (2026-01-24)
 
 ### Logging Drift Fix (Controller)
