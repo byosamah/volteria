@@ -418,3 +418,8 @@ Without `on_conflict`, entire batch fails if ANY record is duplicate.
 - LOGGING_HIGH_DRIFT, LOGGING_BUFFER_BUILDUP auto-resolve after 3 consecutive healthy checks
 - Uses `local_db.resolve_alarms_by_type()` to bulk-resolve + resync to cloud
 - Prevents alarm spam accumulation for conditions that self-heal
+
+### ServiceLoggerAdapter Compatibility
+- `get_service_logger()` returns a `ServiceLoggerAdapter`, not a raw `logging.Logger`
+- ServiceLoggerAdapter IS directly compatible with Logger interface (has .info, .warning, .error, etc.)
+- Pass logger directly to functions expecting `logging.Logger` — do NOT use `logger._logger` (attribute doesn't exist)

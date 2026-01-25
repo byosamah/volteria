@@ -220,6 +220,15 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-01-25)
 
+### Device Threshold Alarms (Controller)
+Device register threshold alarms now work end-to-end:
+- **Config loading**: `alarm_registers[].thresholds` converted to `alarm_definitions` at startup
+- **Evaluation**: Thresholds checked against device readings every 1s in `_sample_callback()`
+- **AlarmDefinition**: Added `device_id` and `device_name` fields for device-specific alarms
+- **Data flow**: Frontend config → Controller → SQLite → Cloud (Supabase alarms table)
+- **Cooldown**: 300s default prevents duplicate alarms for same threshold
+- **Alarm type format**: `reg_{device_id}_{register_name}`
+
 ### Connection Alarm Severity Unification
 Unified device and controller connection alarm UI with severity levels:
 - **Migration 089**: Added `connection_alarm_severity` column to `site_devices` table

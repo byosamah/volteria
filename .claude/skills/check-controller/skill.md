@@ -384,9 +384,18 @@ POST /api/controllers/{id}/update
 ```
 
 ### Git Pull Permission Errors
-If `git pull` fails with permission errors (e.g., `.claude` directory), update specific files only:
+If `git pull` fails with permission errors, check ownership first:
 ```bash
-cd /opt/volteria/controller && git fetch origin main && git checkout origin/main -- services/config/sync.py
+# Fix .git ownership (common issue: some files owned by root)
+sudo chown -R voltadmin:voltadmin /opt/volteria/.git
+
+# Then pull normally
+cd /opt/volteria && git fetch origin main && git pull origin main
+```
+
+If permission issues persist (e.g., `.claude` directory), update specific files only:
+```bash
+cd /opt/volteria && git fetch origin main && git checkout origin/main -- controller/services/config/sync.py
 ```
 This bypasses problematic directories while updating the needed file.
 

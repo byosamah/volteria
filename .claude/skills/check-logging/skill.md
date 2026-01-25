@@ -180,4 +180,73 @@ Connection alarms now include `severity` field synced from cloud:
 grep -A3 "connection_alarm" /run/volteria/state/config.json
 ```
 
-<!-- Updated: 2026-01-25 - Added connection alarm severity info -->
+---
+
+## Device Threshold Alarms
+
+### How They Work
+Device register threshold alarms are configured in the frontend (alarm_registers with thresholds) and evaluated by the controller.
+
+**Data Flow:**
+```
+Frontend: alarm_registers[].thresholds configured per device
+    ↓
+Config Sync: alarm_registers synced to controller
+    ↓
+Logging Service: Converts alarm_registers → alarm_definitions at config load
+    ↓
+Sample Callback: Evaluates thresholds against device readings every 1s
+    ↓
+SQLite: Triggered alarms stored locally
+    ↓
+Cloud Sync: Alarms synced to Supabase (every 180s or instant for critical)
+```
+
+### Alarm Definition Format (internal)
+```json
+{
+  "id": "reg_{device_id}_{register_name}",
+  "name": "{register_name} Alarm",
+  "source_type": "modbus_register",
+  "source_key": "{register_name}",
+  "device_id": "{device_id}",
+  "device_name": "{device_name}",
+  "conditions": [
+    {"operator": ">", "value": 10, "severity": "warning", "message": "..."}
+  ],
+  "cooldown_seconds": 300
+}
+```
+
+### Verify Alarm Definitions Loaded
+```bash
+journalctl -u volteria-logging --since "5 min ago" | grep "alarm definitions"
+# Should show: "Config loaded: X alarm definitions" where X > 0
+```
+
+### Check Triggered Alarms
+```bash
+# Local SQLite
+sqlite3 /opt/volteria/data/controller.db "SELECT alarm_type, device_name, message, severity FROM alarms ORDER BY id DESC LIMIT 5"
+
+# Cloud (Supabase)
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?alarm_type=like.reg_*&order=created_at.desc&limit=5" \
+  -H "apikey: SERVICE_ROLE_KEY"
+```
+
+### Cooldown Behavior
+- Default cooldown: 300 seconds (5 minutes)
+- Same alarm won't re-trigger within cooldown period
+- Each threshold condition evaluated independently
+- First matching condition triggers (then breaks)
+
+### Troubleshooting
+
+| Issue | Check | Fix |
+|-------|-------|-----|
+| No alarm definitions loaded | `grep "alarm definitions" journalctl` | Verify alarm_registers have thresholds in config |
+| Alarms not triggering | Check device readings in SharedState | Verify register name matches exactly |
+| Alarms not syncing | `curl :8085/stats` for unsynced count | Check cloud connectivity |
+| Duplicate alarms | Normal if > cooldown apart | Cooldown prevents rapid duplicates |
+
+<!-- Updated: 2026-01-25 - Added device threshold alarms documentation -->
