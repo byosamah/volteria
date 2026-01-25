@@ -383,6 +383,13 @@ POST /api/controllers/{id}/update
     → SSH to controller: git pull + systemctl restart volteria-*
 ```
 
+### Git Pull Permission Errors
+If `git pull` fails with permission errors (e.g., `.claude` directory), update specific files only:
+```bash
+cd /opt/volteria/controller && git fetch origin main && git checkout origin/main -- services/config/sync.py
+```
+This bypasses problematic directories while updating the needed file.
+
 ### Reboot (Double Confirmation in UI)
 ```
 POST /api/controllers/{id}/reboot

@@ -150,3 +150,34 @@ curl -s -X POST "https://volteria.org/api/controllers/CONTROLLER_ID/update" \
 ```
 
 This triggers git pull + service restart via SSH tunnel. Use when code fix is deployed but controller hasn't picked it up.
+
+---
+
+## Connection Alarms & Severity
+
+### Alarm Severity Hierarchy
+```
+info < warning < minor < major < critical
+```
+
+**Color coding**: warning=yellow, minor=amber, major=orange, critical=red
+
+### Connection Alarm Config (in config.json)
+Connection alarms now include `severity` field synced from cloud:
+```json
+"connection_alarm": {
+  "enabled": true,
+  "severity": "warning"  // warning | minor | major | critical
+}
+```
+
+- **Device alarms**: Created by cloud cron job when device stops reporting (10 min timeout)
+- **Severity**: Per-device setting stored in `site_devices.connection_alarm_severity`
+- **Config sync**: `sync.py` includes both `enabled` and `severity` fields
+
+### Verify Connection Alarm Config
+```bash
+grep -A3 "connection_alarm" /run/volteria/state/config.json
+```
+
+<!-- Updated: 2026-01-25 - Added connection alarm severity info -->

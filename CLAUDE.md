@@ -220,6 +220,15 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-01-25)
 
+### Connection Alarm Severity Unification
+Unified device and controller connection alarm UI with severity levels:
+- **Migration 089**: Added `connection_alarm_severity` column to `site_devices` table
+- **Migration 090**: Added 'minor' severity level to alarms constraint (info < warning < minor < major < critical)
+- **Migration 091**: Updated `create_not_reporting_alarm()` to use device-specific severity
+- **Frontend**: Both device and controller alarms now have identical card-based UI with toggle + severity dropdown
+- **Controller sync.py**: Connection alarm config now includes `severity` field alongside `enabled`
+- **Color coding**: warning=yellow, minor=amber, major=orange, critical=red
+
 ### SOL532-E16 (R2000) Hardware Support
 Full support for Seeed reComputer Industrial R2000:
 - **Setup Script**: Auto-detects R2000 via `/dev/ttyACM1-3` presence, configures UPS monitor, watchdog, 4G modem
