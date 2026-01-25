@@ -377,7 +377,6 @@ export function MasterDeviceList({
   const [editStatusAlarm, setEditStatusAlarm] = useState<StatusAlarmConfig>({
     enabled: true,
     offline_severity: "critical",
-    offline_timeout_seconds: 60,
   });
 
   // Check if user can edit controller readings (super_admin or backend_admin only)
@@ -523,7 +522,6 @@ export function MasterDeviceList({
         setEditStatusAlarm({
           enabled: true,
           offline_severity: "critical",
-          offline_timeout_seconds: 60,
         });
       }
 
@@ -608,20 +606,17 @@ export function MasterDeviceList({
       (a) => a.id === "controller_offline" || a.source_type === "heartbeat"
     );
     if (statusAlarmDef) {
-      const criticalCond = statusAlarmDef.conditions?.find((c) => c.severity === "critical");
-      const warningCond = statusAlarmDef.conditions?.find((c) => c.severity === "warning");
-      const severity = criticalCond ? "critical" : warningCond ? "warning" : "critical";
-      const timeoutCond = criticalCond || warningCond;
+      // Find the configured severity from conditions
+      const condition = statusAlarmDef.conditions?.[0];
+      const severity = condition?.severity || "critical";
       setEditStatusAlarm({
         enabled: statusAlarmDef.enabled_by_default ?? true,
-        offline_severity: severity as "warning" | "critical",
-        offline_timeout_seconds: timeoutCond?.value || 60,
+        offline_severity: severity as "warning" | "minor" | "major" | "critical",
       });
     } else {
       setEditStatusAlarm({
         enabled: true,
         offline_severity: "critical",
-        offline_timeout_seconds: 60,
       });
     }
   };
@@ -649,7 +644,6 @@ export function MasterDeviceList({
       setEditStatusAlarm({
         enabled: true,
         offline_severity: "critical",
-        offline_timeout_seconds: 60,
       });
       // Reset calculated fields to all selected
       setEditSelectedCalculatedFields(availableCalculatedFields.map(f => f.field_id));

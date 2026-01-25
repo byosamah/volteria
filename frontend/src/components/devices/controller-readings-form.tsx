@@ -63,8 +63,7 @@ export interface ReadingSelection {
 // Online/Offline status alarm config
 export interface StatusAlarmConfig {
   enabled: boolean;
-  offline_severity: "warning" | "critical";
-  offline_timeout_seconds: number;
+  offline_severity: "warning" | "minor" | "major" | "critical";
 }
 
 // Props for the controller readings form
@@ -443,7 +442,7 @@ export function ControllerReadingsForm({
                     <span className="text-sm text-muted-foreground w-24">Severity</span>
                     <Select
                       value={statusAlarm.offline_severity}
-                      onValueChange={(value: "warning" | "critical") =>
+                      onValueChange={(value: "warning" | "minor" | "major" | "critical") =>
                         onStatusAlarmChange({ ...statusAlarm, offline_severity: value })
                       }
                       disabled={disabled}
@@ -458,6 +457,18 @@ export function ControllerReadingsForm({
                             Warning
                           </span>
                         </SelectItem>
+                        <SelectItem value="minor">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-500" />
+                            Minor
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="major">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-orange-500" />
+                            Major
+                          </span>
+                        </SelectItem>
                         <SelectItem value="critical">
                           <span className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-red-500" />
@@ -466,25 +477,6 @@ export function ControllerReadingsForm({
                         </SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-
-                  {/* Timeout */}
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-muted-foreground w-24">Timeout</span>
-                    <Input
-                      type="number"
-                      value={statusAlarm.offline_timeout_seconds}
-                      onChange={(e) =>
-                        onStatusAlarmChange({
-                          ...statusAlarm,
-                          offline_timeout_seconds: parseInt(e.target.value) || 60,
-                        })
-                      }
-                      disabled={disabled}
-                      className="w-24 h-8"
-                      min={10}
-                    />
-                    <span className="text-sm text-muted-foreground">seconds</span>
                   </div>
                 </div>
               )}

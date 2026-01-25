@@ -138,16 +138,18 @@ export function AlarmsTable() {
     }
   };
 
-  // Severity badge
+  // Severity badge with proper colors
   const SeverityBadge = ({ severity }: { severity: string }) => {
-    const variants: Record<string, "destructive" | "default" | "secondary"> = {
-      critical: "destructive",
-      warning: "default",
-      info: "secondary",
+    const styles: Record<string, string> = {
+      critical: "bg-red-500 text-white hover:bg-red-600",
+      major: "bg-orange-500 text-white hover:bg-orange-600",
+      minor: "bg-amber-500 text-white hover:bg-amber-600",
+      warning: "bg-yellow-500 text-black hover:bg-yellow-600",
+      info: "bg-blue-100 text-blue-800 hover:bg-blue-200",
     };
 
     return (
-      <Badge variant={variants[severity] || "secondary"} className="capitalize">
+      <Badge className={`capitalize ${styles[severity] || "bg-gray-100 text-gray-800"}`}>
         {severity}
       </Badge>
     );

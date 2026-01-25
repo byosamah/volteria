@@ -196,8 +196,12 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
     switch (severity) {
       case "critical":
         return <Badge variant="destructive">Critical</Badge>;
+      case "major":
+        return <Badge className="bg-orange-500 hover:bg-orange-600 text-white">Major</Badge>;
+      case "minor":
+        return <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Minor</Badge>;
       case "warning":
-        return <Badge className="bg-amber-500 hover:bg-amber-600">Warning</Badge>;
+        return <Badge className="bg-yellow-500 hover:bg-yellow-600 text-black">Warning</Badge>;
       case "info":
         return <Badge variant="secondary">Info</Badge>;
       default:

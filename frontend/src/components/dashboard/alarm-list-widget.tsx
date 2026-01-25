@@ -50,7 +50,8 @@ interface AlarmListWidgetProps {
 const SEVERITY_CONFIG = {
   critical: { icon: AlertTriangle, color: "text-red-500", bg: "bg-red-50 dark:bg-red-950/30" },
   major: { icon: AlertCircle, color: "text-orange-500", bg: "bg-orange-50 dark:bg-orange-950/30" },
-  warning: { icon: AlertTriangle, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-950/30" },
+  minor: { icon: AlertCircle, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-950/30" },
+  warning: { icon: AlertTriangle, color: "text-yellow-500", bg: "bg-yellow-50 dark:bg-yellow-950/30" },
   info: { icon: Info, color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-950/30" },
 };
 

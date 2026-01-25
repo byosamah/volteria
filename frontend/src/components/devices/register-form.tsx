@@ -65,8 +65,8 @@ export interface ModbusRegister {
 // Severity options for alarm thresholds
 const SEVERITY_OPTIONS: { value: AlarmSeverity; label: string; color: string }[] = [
   { value: "warning", label: "Warning", color: "bg-yellow-100 text-yellow-800 border-yellow-300" },
-  { value: "minor", label: "Minor", color: "bg-orange-100 text-orange-800 border-orange-300" },
-  { value: "major", label: "Major", color: "bg-orange-200 text-orange-900 border-orange-400" },
+  { value: "minor", label: "Minor", color: "bg-amber-100 text-amber-800 border-amber-300" },
+  { value: "major", label: "Major", color: "bg-orange-100 text-orange-800 border-orange-300" },
   { value: "critical", label: "Critical", color: "bg-red-100 text-red-800 border-red-300" },
 ];
 

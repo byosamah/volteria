@@ -205,7 +205,6 @@ export function MasterDeviceTemplateForm({
   const [statusAlarm, setStatusAlarm] = useState<StatusAlarmConfig>({
     enabled: true,
     offline_severity: "critical",
-    offline_timeout_seconds: 60,
   });
 
   // Site-level alarms (power outage detection, etc.)
@@ -436,17 +435,17 @@ export function MasterDeviceTemplateForm({
           (a) => a.id === "controller_offline" || a.source_type === "heartbeat"
         );
         if (statusAlarmDef) {
-          const criticalCond = statusAlarmDef.conditions?.find((c) => c.severity === "critical");
+          // Find the configured severity from conditions
+          const condition = statusAlarmDef.conditions?.[0];
+          const severity = condition?.severity || "critical";
           setStatusAlarm({
             enabled: statusAlarmDef.enabled_by_default ?? true,
-            offline_severity: (criticalCond?.severity as "warning" | "critical") || "critical",
-            offline_timeout_seconds: criticalCond?.value || 60,
+            offline_severity: severity as "warning" | "minor" | "major" | "critical",
           });
         } else {
           setStatusAlarm({
             enabled: true,
             offline_severity: "critical",
-            offline_timeout_seconds: 60,
           });
         }
 
@@ -505,7 +504,6 @@ export function MasterDeviceTemplateForm({
         setStatusAlarm({
           enabled: true,
           offline_severity: "critical",
-          offline_timeout_seconds: 60,
         });
 
         // Reset site-level alarms to defaults
@@ -625,6 +623,7 @@ export function MasterDeviceTemplateForm({
       });
 
       // Add status alarm (online/offline)
+      // Uses fixed 60-second timeout (controller sends heartbeat every 30s, so 2 missed = offline)
       if (statusAlarm.enabled) {
         alarmDefinitions.push({
           id: "controller_offline",
@@ -635,9 +634,9 @@ export function MasterDeviceTemplateForm({
           conditions: [
             {
               operator: ">",
-              value: statusAlarm.offline_timeout_seconds,
+              value: 60,
               severity: statusAlarm.offline_severity,
-              message: `Controller offline for more than ${statusAlarm.offline_timeout_seconds} seconds`,
+              message: "Controller offline - no heartbeat received",
             },
           ],
           enabled_by_default: true,

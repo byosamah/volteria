@@ -271,6 +271,7 @@ class ConfigSync:
                 # Connection alarm settings
                 "connection_alarm": {
                     "enabled": device.get("connection_alarm_enabled", True),
+                    "severity": device.get("connection_alarm_severity", "warning"),
                 },
             }
 

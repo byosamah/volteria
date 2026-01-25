@@ -42,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import Link from "next/link";
 import { RegisterForm, type ModbusRegister } from "./register-form";
@@ -214,6 +215,7 @@ interface Device {
   logging_interval_ms: number | null;
   // Connection alarm settings (optional - may not exist in older records)
   connection_alarm_enabled?: boolean | null;
+  connection_alarm_severity?: string | null;
   device_templates: {
     name: string;
     device_type: string;
@@ -324,6 +326,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
   const [editBaudrate, setEditBaudrate] = useState(9600);
   // Connection alarm settings
   const [editConnectionAlarmEnabled, setEditConnectionAlarmEnabled] = useState(true);
+  const [editConnectionAlarmSeverity, setEditConnectionAlarmSeverity] = useState<"warning" | "minor" | "major" | "critical">("warning");
 
   // Edit form state - Registers tab
   const [editRegisters, setEditRegisters] = useState<ModbusRegister[]>([]);
@@ -373,6 +376,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
     setEditBaudrate(device.baudrate || 9600);
     // Connection alarm settings
     setEditConnectionAlarmEnabled(device.connection_alarm_enabled ?? true);
+    setEditConnectionAlarmSeverity((device.connection_alarm_severity as "warning" | "minor" | "major" | "critical") || "warning");
     // Calculated Fields tab - load from device
     setEditCalculatedFields(device.calculated_fields || []);
     // Template selection
@@ -701,6 +705,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
       calculated_fields: editCalculatedFields.length > 0 ? editCalculatedFields : null,
       // Connection alarm settings
       connection_alarm_enabled: editConnectionAlarmEnabled,
+      connection_alarm_severity: editConnectionAlarmSeverity,
       // Clear all protocol-specific fields first, then set the right ones
       ip_address: null,
       port: null,
@@ -1287,34 +1292,92 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
               )}
 
               {/* Connection Alarm Section */}
-              <div className="space-y-4 pt-4 border-t">
-                <div>
-                  <p className="text-sm font-medium">Connection Alarm</p>
-                  <p className="text-xs text-muted-foreground">
-                    Trigger alarm when device stops responding
-                  </p>
-                </div>
-
-                {/* Enable/disable toggle */}
+              <div className="space-y-3 pt-4 border-t">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="edit-connection-alarm" className="cursor-pointer">
-                    Enable connection alarm
-                  </Label>
-                  <input
-                    type="checkbox"
-                    id="edit-connection-alarm"
-                    checked={editConnectionAlarmEnabled}
-                    onChange={(e) => setEditConnectionAlarmEnabled(e.target.checked)}
-                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
+                  <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                    Connection Status Alarm
+                  </h4>
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  Alert when device stops responding.
+                </p>
 
-                {/* Info text when alarm is enabled */}
-                {editConnectionAlarmEnabled && (
-                  <p className="text-xs text-muted-foreground pl-4 border-l-2 border-muted">
-                    Alarm triggers if no data received for 10+ minutes while controller is online
-                  </p>
-                )}
+                <div className="rounded-lg border p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4 text-red-600 dark:text-red-400"
+                        >
+                          <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                          <line x1="12" y1="2" x2="12" y2="12" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Device Offline</p>
+                        <p className="text-xs text-muted-foreground">
+                          Triggers when no data for 10+ minutes
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={editConnectionAlarmEnabled}
+                      onCheckedChange={setEditConnectionAlarmEnabled}
+                    />
+                  </div>
+
+                  {editConnectionAlarmEnabled && (
+                    <div className="pl-11 space-y-3">
+                      {/* Severity */}
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-muted-foreground w-24">Severity</span>
+                        <Select
+                          value={editConnectionAlarmSeverity}
+                          onValueChange={(value: "warning" | "minor" | "major" | "critical") =>
+                            setEditConnectionAlarmSeverity(value)
+                          }
+                        >
+                          <SelectTrigger className="w-32 h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="warning">
+                              <span className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                                Warning
+                              </span>
+                            </SelectItem>
+                            <SelectItem value="minor">
+                              <span className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                                Minor
+                              </span>
+                            </SelectItem>
+                            <SelectItem value="major">
+                              <span className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-orange-500" />
+                                Major
+                              </span>
+                            </SelectItem>
+                            <SelectItem value="critical">
+                              <span className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-red-500" />
+                                Critical
+                              </span>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </TabsContent>
 
