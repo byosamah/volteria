@@ -540,7 +540,22 @@ ping -c 3 google.com
 
 ---
 
-## 11. Related Skills
+## 11. Key Architecture Decisions (for new controllers)
+
+### Alarm System
+- **Condition column**: Alarms store condition in separate `condition` column, NOT embedded in message
+- **Orphan alarms**: Auto-resolved when alarm register removed from config (on config change)
+- **Deduplication**: Device threshold alarms (`reg_*`) use cooldown, not resolution sync
+- **Severity hierarchy**: info < warning < minor < major < critical
+- **Severity colors**: warning=yellow, minor=amber, major=orange, critical=red
+
+### Frontend Dashboard
+- **Severity dot colors**: All 5 levels mapped (blue only for `info`)
+- **Alarm display format**: Line 1 = condition + message, Line 2 = device/site info
+
+---
+
+## 12. Related Skills
 
 - **`check-controller`**: After wizard completes — ongoing diagnostics, service architecture, SharedState, safe mode
 - **`check-logging`**: Logging service deep dive — RAM buffer, SQLite, cloud sync, downsampling, drift

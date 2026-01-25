@@ -429,6 +429,8 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Write verification: 200ms delay + 1% tolerance | Confirm inverter accepted command |
 | Connection pool idle timeout: 300s | Cleanup stale Modbus connections |
 | SQLite calls via `_run_db()` in thread pool | Never block asyncio event loop |
+| Orphan alarms auto-resolved on config change | Prevents stale alarms when registers removed |
+| Alarm condition in separate column | Never embed condition in message field |
 | RTU Direct: asyncio.Lock per serial port | Prevent bus contention on RS-485 |
 | SOL532-E16: watchdog feed every 30s | System reboots if service hangs >60s |
 | SOL532-E16: UPS monitor on GPIO16 | Graceful shutdown on power loss |

@@ -263,7 +263,21 @@ Cloud resolutions now sync back to controller:
 - Queries cloud for alarms resolved in last hour
 - Updates local SQLite resolved status
 - Enables proper deduplication after UI resolution
+- **Skip `reg_*` alarms**: Device threshold alarms use cooldown deduplication, not resolution sync
 
 Log indicator: `[CLOUD] Synced N alarm resolutions from cloud to local`
 
-<!-- Updated: 2026-01-25 - Added bidirectional resolution sync, fixed duplicate immediate sync -->
+### Orphan Alarm Auto-Resolution
+When alarm register is removed from config, existing unresolved alarms are auto-resolved:
+- On config change, old definition IDs compared to new definition IDs
+- Missing definitions = orphaned alarm types
+- `resolve_alarms_by_type()` called for each orphaned type
+- Log indicator: `[CONFIG] Auto-resolved X orphan alarm(s): alarm_id`
+
+### Alarm Data Storage
+**IMPORTANT**: Store condition in separate `condition` column, never embed in message field.
+- `message`: User-defined message only (e.g., "major issue")
+- `condition`: Threshold condition text (e.g., "Ambient Temperature < 50")
+- `alarm_type`: For `reg_*` alarms: `reg_{device_id}_{register_name}`
+
+<!-- Updated: 2026-01-26 - Added orphan alarm auto-resolution, condition column storage -->
