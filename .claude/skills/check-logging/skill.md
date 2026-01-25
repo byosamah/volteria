@@ -257,4 +257,13 @@ Example: `"Temperature High - Ambient Temperature > 50 (Sensor Device)"`
 | Duplicate alarms while active | Check logs for "Skipping duplicate" | Deduplication working correctly |
 | Alarms not deduplicating | Check resolved status in SQLite | Ensure previous alarm is unresolved |
 
-<!-- Updated: 2026-01-25 - Added deduplication and message formatting -->
+### Resolution Sync (Bidirectional)
+Cloud resolutions now sync back to controller:
+- `sync_resolved_alarms()` runs every 180s (cloud sync interval)
+- Queries cloud for alarms resolved in last hour
+- Updates local SQLite resolved status
+- Enables proper deduplication after UI resolution
+
+Log indicator: `[CLOUD] Synced N alarm resolutions from cloud to local`
+
+<!-- Updated: 2026-01-25 - Added bidirectional resolution sync, fixed duplicate immediate sync -->
