@@ -1297,7 +1297,7 @@ class LoggingService:
             alarm.device_name,
         )
         if has_existing:
-            self._logger.debug(
+            logger.debug(
                 f"Skipping duplicate alarm: {alarm.alarm_id} (unresolved exists)"
             )
             return
