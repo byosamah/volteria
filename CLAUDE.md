@@ -218,6 +218,30 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
 
+## Recent Updates (2026-01-26)
+
+### Alarm Condition Storage (Database + Controller)
+- **Separate column**: Alarms now store condition in separate `condition` column (e.g., "Ambient Temperature < 50")
+- **Message column**: Contains only user-defined message (e.g., "major issue")
+- **Migration 092**: Added `condition` column to `alarms` table
+- **Frontend display**: Dashboard shows "condition - message" format with device/site info below
+
+### Orphan Alarm Auto-Resolution (Controller)
+When alarm register is removed from config:
+- On config change, old definition IDs compared to new definition IDs
+- Missing definitions = orphaned alarm types
+- `resolve_alarms_by_type()` called for each orphaned type
+- Log indicator: `[CONFIG] Auto-resolved X orphan alarm(s): alarm_id`
+
+### Dashboard Recent Alarms Fix (Frontend)
+- **Severity colors**: All 5 levels now mapped (critical=red, major=orange, minor=amber, warning=yellow, info=blue)
+- **Display format**: Line 1 = condition + message, Line 2 = device • project > site
+- **Previously**: Major/minor showed as blue (wrong)
+
+### Alarm Deduplication Fix (Controller)
+- **Skip `reg_*` in resolution sync**: Device threshold alarms use cooldown deduplication, not resolution sync
+- **Prevents**: Repeating alarms while condition still active
+
 ## Recent Updates (2026-01-25)
 
 ### Device Threshold Alarms (Controller)
@@ -227,14 +251,8 @@ Device register threshold alarms now work end-to-end:
 - **AlarmDefinition**: Added `device_id`, `device_name`, and `operator` fields
 - **Data flow**: Frontend config → Controller → SQLite → Cloud (Supabase alarms table)
 - **Deduplication**: If unresolved alarm exists for same type+device, new alarms are skipped
-- **Message format**: `"{user_message} - {register} {op} {value} ({device})"` (e.g., "Temperature High - Ambient Temperature > 50 (Sensor Device)")
 - **Cooldown**: 300s default between re-triggers when no unresolved alarm exists
 - **Alarm type format**: `reg_{device_id}_{register_name}`
-
-### Alarms Page Improvements (Frontend)
-- **Column rename**: "Type" → "Description" to show formatted message
-- **Separate columns**: Description and Device columns for clarity
-- **Message display**: Shows full formatted message from controller
 
 ### Connection Alarm Severity Unification
 Unified device and controller connection alarm UI with severity levels:
