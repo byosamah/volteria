@@ -40,15 +40,18 @@ class TriggeredAlarm:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def get_formatted_message(self) -> str:
-        """Return user message with condition details.
+        """Return user message only (no condition appended)."""
+        return self.message or f"{self.source_key} alarm"
 
-        Format: "{user_message} - {register} {operator} {threshold}"
-        Frontend extracts condition from this for the Condition column.
+    def get_condition_text(self) -> str | None:
+        """Return condition text for separate storage.
+
+        Format: "{register} {operator} {threshold}"
+        Example: "Ambient Temperature > 25"
         """
-        base = self.message or f"{self.source_key} alarm"
         if self.operator and self.threshold is not None:
-            return f"{base} - {self.source_key} {self.operator} {self.threshold}"
-        return base
+            return f"{self.source_key} {self.operator} {self.threshold}"
+        return None
 
 
 class AlarmEvaluator:

@@ -22,6 +22,7 @@ interface Alarm {
   alarm_type: string;
   device_name: string | null;
   message: string;
+  condition: string | null;
   severity: string;
   acknowledged: boolean;
   acknowledged_by: string | null;
@@ -171,12 +172,12 @@ export function AlarmsTable() {
 
   // Get condition display for alarms
   const getConditionDisplay = (alarm: Alarm) => {
-    // Device threshold alarms: extract condition from message
+    // Device threshold alarms: use condition column if available
     if (alarm.alarm_type.startsWith("reg_")) {
-      // Message format: "User Msg - RegisterName > Value (Device)"
-      const match = alarm.message.match(/- (.+?) \(/);
-      if (match) return match[1].trim(); // "Ambient Temperature > 50"
-
+      // Prefer condition column (new format)
+      if (alarm.condition) {
+        return alarm.condition;
+      }
       // Fallback: extract register name from alarm_type
       const parts = alarm.alarm_type.split("_");
       if (parts.length >= 3) return parts.slice(2).join("_");

@@ -1287,8 +1287,9 @@ class LoggingService:
             )
             return
 
-        # Use formatted message with condition details
-        formatted_message = alarm.get_formatted_message()
+        # Get message and condition separately
+        message = alarm.get_formatted_message()
+        condition = alarm.get_condition_text()
 
         # Insert to local database (in thread to avoid blocking event loop)
         local_alarm_id = await self._run_db(
@@ -1296,11 +1297,12 @@ class LoggingService:
             str(uuid.uuid4()),              # alarm_id
             self._site_id,                  # site_id
             alarm.alarm_id,                 # alarm_type
-            formatted_message,              # message (formatted)
+            message,                        # message (user message only)
             alarm.severity,                 # severity
             alarm.timestamp.isoformat(),    # timestamp
             alarm.device_id,                # device_id
             alarm.device_name,              # device_name
+            condition,                      # condition (e.g., "Temp > 25")
         )
 
         # Sync critical/major alarms immediately
@@ -1308,7 +1310,8 @@ class LoggingService:
             if self.cloud_sync:
                 success = await self.cloud_sync.sync_alarm_immediately({
                     "alarm_type": alarm.alarm_id,
-                    "message": formatted_message,
+                    "message": message,
+                    "condition": condition,
                     "severity": alarm.severity,
                     "device_name": alarm.device_name,
                     "timestamp": alarm.timestamp.isoformat(),

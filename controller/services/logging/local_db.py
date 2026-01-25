@@ -97,6 +97,7 @@ class LocalDatabase:
                     device_id TEXT,
                     device_name TEXT,
                     message TEXT,
+                    condition TEXT,
                     severity TEXT DEFAULT 'warning',
                     timestamp TEXT NOT NULL,
 
@@ -112,6 +113,12 @@ class LocalDatabase:
                     created_at TEXT DEFAULT (datetime('now'))
                 )
             """)
+
+            # Add condition column if it doesn't exist (for existing databases)
+            try:
+                cursor.execute("ALTER TABLE alarms ADD COLUMN condition TEXT")
+            except Exception:
+                pass  # Column already exists
 
             # Device readings table (separate from control_logs)
             cursor.execute("""
@@ -256,6 +263,7 @@ class LocalDatabase:
         timestamp: str,
         device_id: str | None = None,
         device_name: str | None = None,
+        condition: str | None = None,
     ) -> int:
         """Insert an alarm entry"""
         with self._get_connection() as conn:
@@ -264,8 +272,8 @@ class LocalDatabase:
             cursor.execute("""
                 INSERT INTO alarms (
                     alarm_id, site_id, alarm_type, device_id, device_name,
-                    message, severity, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    message, condition, severity, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 alarm_id,
                 site_id,
@@ -273,6 +281,7 @@ class LocalDatabase:
                 device_id,
                 device_name,
                 message,
+                condition,
                 severity,
                 timestamp,
             ))
