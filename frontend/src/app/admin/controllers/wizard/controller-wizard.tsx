@@ -269,10 +269,16 @@ export function ControllerWizard({ hardwareTypes, existingController }: Controll
         );
       case 2:
         // Step 2: Flash Image (write OS to SD card first)
+        // Find the selected hardware type to pass hardware features
+        // This allows Step 2 to show hardware-specific instructions (e.g., eMMC boot for R2000)
+        const selectedHardwareStep2 = hardwareTypes.find(
+          (h) => h.id === controllerData.hardware_type_id
+        );
         return (
           <StepFlashInstructions
             onConfirm={setStepConfirmed}
             confirmed={stepConfirmed}
+            hardwareFeatures={selectedHardwareStep2?.features || null}
           />
         );
       case 3:

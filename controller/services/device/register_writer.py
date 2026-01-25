@@ -7,12 +7,12 @@ Handles writing registers with verification (read-back).
 import asyncio
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Union
 
-from common.config import DeviceConfig
+from common.config import DeviceConfig, Protocol
 from common.exceptions import WriteError, CommandNotTakenError
 from common.logging_setup import get_service_logger, log_device_write
-from .modbus_client import ModbusClient
+from .modbus_client import ModbusClient, ModbusSerialClient
 from .connection_pool import ConnectionPool
 
 logger = get_service_logger("device.writer")
@@ -45,6 +45,28 @@ class RegisterWriter:
     def __init__(self, connection_pool: ConnectionPool):
         self._pool = connection_pool
 
+    async def _get_client_for_device(
+        self,
+        device: DeviceConfig,
+    ) -> tuple[Union[ModbusClient, ModbusSerialClient], asyncio.Lock | None]:
+        """
+        Get the appropriate client and optional bus lock for a device.
+
+        Returns:
+            Tuple of (client, bus_lock or None)
+        """
+        if device.protocol == Protocol.RTU_DIRECT:
+            client, bus_lock = await self._pool.get_serial_connection(
+                port=device.serial_port,
+                baudrate=device.baudrate,
+                parity=device.parity,
+                stopbits=device.stopbits,
+            )
+            return client, bus_lock
+        else:
+            client = await self._pool.get_connection(device.host, device.port)
+            return client, None
+
     async def write_register(
         self,
         device: DeviceConfig,
@@ -55,6 +77,9 @@ class RegisterWriter:
         """
         Write a register with optional verification.
 
+        For RTU_DIRECT devices, holds the per-port bus lock during the
+        entire write+verify sequence to prevent interleaving.
+
         Args:
             device: Device configuration
             register_address: Register address to write
@@ -64,8 +89,27 @@ class RegisterWriter:
         Returns:
             WriteResult with outcome details
         """
-        client = await self._pool.get_connection(device.host, device.port)
+        client, bus_lock = await self._get_client_for_device(device)
 
+        if bus_lock:
+            async with bus_lock:
+                return await self._do_write_register(
+                    client, device, register_address, value, verify
+                )
+        else:
+            return await self._do_write_register(
+                client, device, register_address, value, verify
+            )
+
+    async def _do_write_register(
+        self,
+        client: Union[ModbusClient, ModbusSerialClient],
+        device: DeviceConfig,
+        register_address: int,
+        value: int,
+        verify: bool,
+    ) -> WriteResult:
+        """Internal write logic (protocol-agnostic)"""
         for attempt in range(self.MAX_RETRIES):
             try:
                 # Write register
@@ -192,6 +236,8 @@ class RegisterWriter:
         2. Write limit percentage to limit register
         3. Verify limit was applied
 
+        For RTU_DIRECT devices, holds the bus lock for the entire sequence.
+
         Args:
             device: Inverter device config
             limit_pct: Power limit percentage (0-100)
@@ -202,8 +248,30 @@ class RegisterWriter:
         Returns:
             WriteResult with outcome
         """
-        client = await self._pool.get_connection(device.host, device.port)
+        client, bus_lock = await self._get_client_for_device(device)
 
+        if bus_lock:
+            async with bus_lock:
+                return await self._do_write_solar_limit(
+                    client, device, limit_pct, enable_register,
+                    limit_register, enable_value
+                )
+        else:
+            return await self._do_write_solar_limit(
+                client, device, limit_pct, enable_register,
+                limit_register, enable_value
+            )
+
+    async def _do_write_solar_limit(
+        self,
+        client: Union[ModbusClient, ModbusSerialClient],
+        device: DeviceConfig,
+        limit_pct: float,
+        enable_register: int,
+        limit_register: int,
+        enable_value: int,
+    ) -> WriteResult:
+        """Internal solar limit write logic (protocol-agnostic)"""
         # Clamp limit to valid range
         limit_pct = max(0, min(100, limit_pct))
         limit_value = int(limit_pct * 10)  # Sungrow uses 0.1% resolution

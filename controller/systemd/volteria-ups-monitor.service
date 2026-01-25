@@ -1,0 +1,14 @@
+[Unit]
+Description=Volteria UPS Power Loss Monitor
+After=volteria-system.service
+Wants=volteria-system.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/volteria/venv/bin/python3 /opt/volteria/controller/scripts/ups-monitor.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

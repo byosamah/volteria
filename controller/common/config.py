@@ -107,6 +107,11 @@ class DeviceConfig:
     alarm_definitions: list[AlarmDefinition] = field(default_factory=list)
     rated_power_kw: float | None = None
     rated_power_kva: float | None = None
+    # RTU Direct serial port settings (used when protocol == RTU_DIRECT)
+    serial_port: str = ""         # e.g., "/dev/ttyACM1"
+    baudrate: int = 9600          # 9600, 19200, 38400, 115200
+    parity: str = "N"             # N=None, E=Even, O=Odd
+    stopbits: int = 1             # 1 or 2
 
 
 @dataclass
@@ -286,6 +291,10 @@ def load_site_config(data: dict) -> SiteConfig:
             registers=registers,
             rated_power_kw=d.get("rated_power_kw"),
             rated_power_kva=d.get("rated_power_kva"),
+            serial_port=d.get("serial_port", d.get("port_path", "")),
+            baudrate=d.get("baudrate", 9600),
+            parity=d.get("parity", "N"),
+            stopbits=d.get("stopbits", 1),
         ))
 
     calculated_fields = [

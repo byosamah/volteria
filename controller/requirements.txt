@@ -2,6 +2,7 @@
 
 # Modbus communication
 pymodbus>=3.6.0
+pyserial>=3.5  # Required for RTU Direct serial connections
 
 # Async HTTP server (for service health endpoints)
 aiohttp>=3.9.0
@@ -29,3 +30,6 @@ python-dotenv>=1.0.0
 
 # System metrics (CPU, memory, disk)
 psutil>=5.9.0
+
+# GPIO access for UPS power loss detection (SOL532-E16)
+gpiod>=2.0

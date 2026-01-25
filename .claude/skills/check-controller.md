@@ -28,6 +28,11 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 systemctl is-active volteria-system volteria-config volteria-device volteria-control volteria-logging
 ```
 
+**SOL532-E16 extra services**:
+```bash
+systemctl is-active volteria-ups-monitor volteria-watchdog
+```
+
 **Health endpoints** (run on Pi):
 ```bash
 curl http://127.0.0.1:8081/health | python3 -m json.tool  # System
@@ -115,7 +120,8 @@ Supervisor (main_v2.py → supervisor.py)
 | `services/config/service.py` | - | Config sync (hourly) |
 | `services/config/sync.py` | - | Fetch site config |
 | `services/device/service.py` | - | Device management |
-| `services/device/connection_pool.py` | - | Modbus connection reuse |
+| `services/device/connection_pool.py` | - | Modbus TCP + serial connection reuse |
+| `services/device/modbus_client.py` | - | ModbusTcpClient + ModbusSerialClient |
 | `services/device/register_reader.py` | - | Register polling |
 | `services/device/register_writer.py` | - | Inverter writes |
 | `services/device/device_manager.py` | - | Online/offline tracking |
@@ -398,6 +404,9 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Write verification: 200ms delay + 1% tolerance | Confirm inverter accepted command |
 | Connection pool idle timeout: 300s | Cleanup stale Modbus connections |
 | SQLite calls via `_run_db()` in thread pool | Never block asyncio event loop |
+| RTU Direct: asyncio.Lock per serial port | Prevent bus contention on RS-485 |
+| SOL532-E16: watchdog feed every 30s | System reboots if service hangs >60s |
+| SOL532-E16: UPS monitor on GPIO16 | Graceful shutdown on power loss |
 
 ---
 
@@ -504,6 +513,17 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Readings not syncing | SQLite pending count | Check cloud_sync errors in logging logs |
 | High drift alarms | `curl :8085/stats` | Check SD card I/O, CPU load |
 
+### SOL532-E16 Specific Issues
+
+| Symptom | Check | Fix |
+|---------|-------|-----|
+| RTU Direct device offline | `lsof /dev/ttyACMX` | Check serial port access, permissions |
+| Serial timeouts | `mbpoll` manual test | Verify baudrate, parity, slave ID |
+| UPS monitor not running | `systemctl status volteria-ups-monitor` | Check gpiod, GPIO16 access |
+| Watchdog not running | `systemctl status volteria-watchdog` | Check /dev/watchdog exists |
+| 4G not connecting | `mmcli -m 0 --simple-status` | Check SIM, APN config |
+| Auto-reboot loops | Watchdog timeout | Check service health, increase timeout |
+
 ---
 
 ## 10. Observability Metrics
@@ -539,9 +559,152 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | `/etc/volteria/env` | Environment variables |
 | `/var/log/volteria/` | Log files |
 
+### SOL532-E16 Specific Paths
+
+| Path | Purpose |
+|------|---------|
+| `/dev/ttyACM0` | RS-232 serial port |
+| `/dev/ttyACM1-3` | RS-485 serial ports (3 ports) |
+| `/dev/watchdog` | Hardware watchdog device |
+| `/sys/class/gpio/gpio16/value` | UPS power status (1=OK, 0=loss) |
+| `/etc/udev/rules.d/99-volteria-serial.rules` | Serial port permissions |
+| `/opt/volteria/controller/scripts/ups-monitor.py` | UPS monitor script |
+| `/opt/volteria/controller/scripts/watchdog-feeder.sh` | Watchdog feeder script |
+
 ---
 
-## 12. Live Readings Data Flow
+## 12. SOL532-E16 (R2000) Specifics
+
+### Extra Services
+| Service | Port | Purpose |
+|---------|------|---------|
+| volteria-ups-monitor | N/A | GPIO16 power loss detection → graceful shutdown |
+| volteria-watchdog | N/A | Hardware watchdog feeder (60s timeout) |
+
+### RTU Direct Protocol (Serial Modbus)
+SOL532-E16 supports direct RS-485/RS-232 connections without gateway.
+
+**Serial Port Paths**:
+| Port | Device | Purpose |
+|------|--------|---------|
+| `/dev/ttyACM0` | RS-232 | Legacy serial devices |
+| `/dev/ttyACM1` | RS-485 #1 | Modbus RTU devices |
+| `/dev/ttyACM2` | RS-485 #2 | Modbus RTU devices |
+| `/dev/ttyACM3` | RS-485 #3 | Modbus RTU devices |
+
+**Connection Pool Keys**: `(port, baudrate)` → one asyncio.Lock per serial port
+
+**RTU Direct Device Config**:
+```yaml
+devices:
+  load_meters:
+    - name: "Load Meter 1"
+      template: "meatrol_me431"
+      protocol: "rtu_direct"
+      serial_port: "/dev/ttyACM1"
+      baudrate: 9600
+      parity: "N"
+      stopbits: 1
+      slave_id: 1
+```
+
+### RTU Direct Diagnostics
+
+```bash
+# Check serial port access
+ls -la /dev/ttyACM*
+groups volteria  # Should include dialout
+
+# Check for device contention (only one process should access each port)
+lsof /dev/ttyACM1
+
+# Test Modbus connectivity manually (install mbpoll if needed)
+mbpoll -a 1 -b 9600 -P none -t 3 -r 1 -c 5 /dev/ttyACM1
+
+# Check device service for serial errors
+journalctl -u volteria-device --since "10 min ago" | grep -iE "serial|ttyACM|timeout"
+```
+
+### RTU Direct Common Issues
+
+| Issue | Check | Fix |
+|-------|-------|-----|
+| Permission denied on /dev/ttyACM* | `groups volteria` | `usermod -aG dialout volteria`, restart services |
+| Timeout on all reads | `mbpoll -a X -b Y /dev/ttyACM1` | Check wiring, slave ID, baudrate |
+| Intermittent timeouts | `lsof /dev/ttyACMX` | Ensure single process access per port |
+| Wrong data values | Check parity/stopbits | Match device settings exactly |
+| Bus contention errors | Multiple devices on same port | Verify unique slave IDs |
+
+### UPS Monitor Diagnostics
+
+```bash
+# Check service
+systemctl status volteria-ups-monitor
+journalctl -u volteria-ups-monitor --since "10 min ago"
+
+# Check GPIO16 state (1=power OK, 0=power loss)
+cat /sys/class/gpio/gpio16/value
+
+# Check if gpiod is working
+python3 -c "import gpiod; print(gpiod.is_gpiochip_device('/dev/gpiochip0'))"
+```
+
+**UPS Shutdown Sequence** (on power loss):
+1. GPIO16 goes LOW → detected within 100ms
+2. Stop volteria-logging (Layer 5)
+3. Stop volteria-control (Layer 4)
+4. Stop volteria-device (Layer 3)
+5. Stop volteria-config (Layer 2)
+6. Stop volteria-system (Layer 1)
+7. Execute `sudo poweroff` (total <15s)
+
+### Hardware Watchdog Diagnostics
+
+```bash
+# Check service
+systemctl status volteria-watchdog
+journalctl -u volteria-watchdog --since "10 min ago"
+
+# Check watchdog device
+ls -la /dev/watchdog
+
+# Check if being fed (should see writes every 30s)
+journalctl -u volteria-watchdog -f
+```
+
+**Watchdog Behavior**: Write to `/dev/watchdog` every 30s. If no write for 60s → automatic reboot.
+
+### 4G Connectivity Diagnostics
+
+```bash
+# Check modem detection
+mmcli -L                          # List modems
+mmcli -m 0 --simple-status        # Connection status
+
+# Check signal strength
+mmcli -m 0 | grep "signal quality"
+
+# Check NetworkManager profile
+nmcli con show volteria-4g
+
+# Check active connection
+nmcli con show --active
+
+# Test connectivity
+ping -I wwan0 -c 3 google.com
+```
+
+**4G Common Issues**:
+| Issue | Check | Fix |
+|-------|-------|-----|
+| Modem not detected | `mmcli -L` | Check SIM inserted, reboot |
+| Connection fails | `mmcli -m 0 --simple-status` | Check APN in config.yaml |
+| No internet through 4G | `ip route` | Check default route priority |
+| 4G overrides Ethernet | `nmcli con show volteria-4g` | Check priority is 400 |
+
+---
+
+## 13. Live Readings Data Flow
 
 ### End-to-End Path
 
@@ -633,7 +796,7 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 
 ---
 
-## 13. Related Skills
+## 14. Related Skills
 
 - **`check-logging`**: Deep dive into logging service (RAM buffer, SQLite, cloud sync, downsampling, alarm evaluation, drift tracking)
-- **`check-setup`**: Controller provisioning flow (wizard, setup script, registration, SSH tunnel setup, testing)
+- **`check-setup`**: Controller provisioning flow (wizard, setup script, registration, SSH tunnel setup, testing, SOL532-E16 hardware-specific setup)

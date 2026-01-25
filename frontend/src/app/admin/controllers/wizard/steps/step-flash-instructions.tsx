@@ -3,18 +3,184 @@
 /**
  * Step 2: Flash Instructions
  *
- * Visual guide for flashing Raspberry Pi OS to SD card using Raspberry Pi Imager.
- * No custom image needed - we use standard Raspberry Pi OS Lite.
+ * Visual guide for preparing the controller hardware:
+ * - Raspberry Pi: Flash Raspberry Pi OS to SD card using Raspberry Pi Imager
+ * - R2000 (eMMC): Power on pre-configured device, connect Ethernet
  */
 
 interface StepFlashInstructionsProps {
   onConfirm: (confirmed: boolean) => void;
   confirmed: boolean;
+  hardwareFeatures?: Record<string, unknown> | null;
 }
 
 const PI_IMAGER_URL = "https://www.raspberrypi.com/software/";
 
-export function StepFlashInstructions({ onConfirm, confirmed }: StepFlashInstructionsProps) {
+export function StepFlashInstructions({ onConfirm, confirmed, hardwareFeatures }: StepFlashInstructionsProps) {
+  // Check if hardware uses eMMC boot (pre-flashed, no SD card needed)
+  const isEmmcBoot = hardwareFeatures?.boot_source === "emmc";
+
+  // R2000 / eMMC-based hardware instructions
+  if (isEmmcBoot) {
+    return (
+      <div className="space-y-6">
+        {/* Introduction */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="font-medium text-blue-800 mb-2">Power On the reComputer Industrial R2000</h3>
+          <p className="text-sm text-blue-700">
+            This controller comes pre-configured with the operating system on eMMC storage.
+            No SD card flashing is needed.
+          </p>
+        </div>
+
+        {/* Step-by-step instructions */}
+        <div className="space-y-4">
+          <h4 className="font-medium">Follow these steps:</h4>
+
+          {/* Step 1 */}
+          <div className="flex gap-4 p-4 border rounded-lg">
+            <div className="flex-shrink-0 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
+              1
+            </div>
+            <div>
+              <h5 className="font-medium">Connect DC Power</h5>
+              <p className="text-sm text-muted-foreground">
+                Connect DC power (<span className="font-medium">9-36V</span>) via the terminal block connector.
+                Ensure polarity is correct before powering on.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 2 */}
+          <div className="flex gap-4 p-4 border rounded-lg">
+            <div className="flex-shrink-0 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
+              2
+            </div>
+            <div>
+              <h5 className="font-medium">Connect Ethernet Cable</h5>
+              <p className="text-sm text-muted-foreground">
+                Connect an Ethernet cable to the <span className="font-medium">Gigabit port (Port 1)</span>.
+                This will be the primary network connection.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 3 */}
+          <div className="flex gap-4 p-4 border rounded-lg">
+            <div className="flex-shrink-0 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
+              3
+            </div>
+            <div>
+              <h5 className="font-medium">Insert nano-SIM (Optional)</h5>
+              <p className="text-sm text-muted-foreground">
+                If using 4G cellular connectivity, insert a nano-SIM card into the SIM slot.
+                This provides fallback internet when Ethernet is unavailable.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 4 */}
+          <div className="flex gap-4 p-4 border rounded-lg">
+            <div className="flex-shrink-0 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
+              4
+            </div>
+            <div>
+              <h5 className="font-medium">Power On</h5>
+              <p className="text-sm text-muted-foreground">
+                Apply power to the terminal block. The controller boots automatically from the
+                internal eMMC storage.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 5 */}
+          <div className="flex gap-4 p-4 border rounded-lg">
+            <div className="flex-shrink-0 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
+              5
+            </div>
+            <div>
+              <h5 className="font-medium">Wait for Boot</h5>
+              <p className="text-sm text-muted-foreground">
+                Wait <span className="font-medium">30-60 seconds</span> for the boot process to complete.
+                The system LED will stabilize when ready.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Info about hardware features */}
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex gap-3">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
+            >
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            <div>
+              <h4 className="font-medium text-green-800">Built-in Industrial Features</h4>
+              <ul className="text-sm text-green-700 mt-1 space-y-1">
+                <li>3x RS485 serial ports + 1x RS232 port</li>
+                <li>SuperCAP UPS for safe shutdown on power loss</li>
+                <li>Hardware watchdog for auto-recovery</li>
+                {hardwareFeatures?.cellular_4g && <li>4G LTE modem for cellular connectivity</li>}
+                <li>DC 9-36V wide voltage input range</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* What comes next */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex gap-3">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4" />
+              <path d="M12 8h.01" />
+            </svg>
+            <div>
+              <h4 className="font-medium text-blue-800">What&apos;s Next</h4>
+              <p className="text-sm text-blue-700">
+                In the next step, you&apos;ll SSH into the R2000 and run the setup script.
+                The script will verify hardware I/O and install all Volteria controller software.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Confirmation checkbox */}
+        <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-muted/50">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(e) => onConfirm(e.target.checked)}
+            className="w-5 h-5 rounded border-gray-300"
+          />
+          <span className="text-sm">
+            I have powered on the R2000 and connected Ethernet
+          </span>
+        </label>
+      </div>
+    );
+  }
+
+  // Default: Raspberry Pi SD card flashing instructions
   return (
     <div className="space-y-6">
       {/* Introduction */}

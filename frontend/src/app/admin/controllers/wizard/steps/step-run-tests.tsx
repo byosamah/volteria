@@ -57,6 +57,14 @@ const REAL_TESTS: TestResult[] = [
   },
 ];
 
+// Hardware-specific tests (SOL532-E16 / R2000)
+// These are added dynamically when the API returns them
+const HARDWARE_TEST_DESCRIPTIONS: Record<string, string> = {
+  serial_ports: "Serial Ports (RS485/RS232)",
+  ups_monitor: "UPS Power Loss Monitor",
+  watchdog: "Hardware Watchdog",
+};
+
 // Simulated tests (no real devices connected during wizard)
 const SIMULATION_TESTS: TestResult[] = [
   {
@@ -146,6 +154,19 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
         }
         return { ...test, status: "passed", message: "Test completed" };
       });
+
+      // Add hardware-specific tests that came back from API but aren't in INITIAL_TESTS
+      for (const apiResult of data.results) {
+        const isInInitial = INITIAL_TESTS.some((t) => t.name === apiResult.name);
+        if (!isInInitial && HARDWARE_TEST_DESCRIPTIONS[apiResult.name]) {
+          updatedTests.push({
+            name: apiResult.name,
+            description: HARDWARE_TEST_DESCRIPTIONS[apiResult.name],
+            status: apiResult.status as TestResult["status"],
+            message: apiResult.message,
+          });
+        }
+      }
 
       setTests(updatedTests);
 
@@ -244,7 +265,7 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
         </p>
         <div className="border rounded-lg divide-y">
           {tests
-            .filter((t) => REAL_TESTS.some((rt) => rt.name === t.name))
+            .filter((t) => REAL_TESTS.some((rt) => rt.name === t.name) || HARDWARE_TEST_DESCRIPTIONS[t.name])
             .map((test) => (
               <div key={test.name} className="p-4 flex items-center gap-4">
                 {getStatusIcon(test.status)}
@@ -433,6 +454,18 @@ export function StepRunTests({ controllerId, onComplete }: StepRunTestsProps) {
           <div>
             <strong>Backfill Recovery:</strong> Verifies the logging service supports
             smart backfill for offline data recovery (syncs newest data first after reconnect).
+          </div>
+          <div>
+            <strong>Serial Ports (R2000 only):</strong> Verifies all 4 serial ports are
+            detected: 3x RS485 (/dev/ttyACM1-3) + 1x RS232 (/dev/ttyACM0).
+          </div>
+          <div>
+            <strong>UPS Power Loss Monitor (R2000 only):</strong> Checks the SuperCAP UPS
+            monitor service is running for safe shutdown on power loss.
+          </div>
+          <div>
+            <strong>Hardware Watchdog (R2000 only):</strong> Verifies the hardware watchdog
+            service is active for automatic reboot on system hang.
           </div>
         </div>
       </details>

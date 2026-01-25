@@ -77,11 +77,28 @@ cat /etc/volteria/config.yaml | grep -A5 controller
 | Step | Name | Component | What Happens |
 |------|------|-----------|-------------|
 | 1 | Hardware Info | `step-hardware-info.tsx` | Create controller row (status: draft) |
-| 2 | Flash Image | `step-flash-instructions.tsx` | Guide: Pi Imager → SD card |
-| 3 | Software Setup | `step-download-image.tsx` | Run setup script on Pi |
+| 2 | Flash Image | `step-flash-instructions.tsx` | Guide: Pi Imager → SD card (or eMMC info for R2000) |
+| 3 | Software Setup | `step-download-image.tsx` | Run setup script + R2000 verification |
 | 4 | Cloud Connection | `step-cloud-connection.tsx` | Verify registration (serial in DB) |
 | 5 | Verify Online | `step-verify-online.tsx` | Poll heartbeats, trigger SSH setup |
-| 6 | Run Tests | `step-run-tests.tsx` | 5 SSH tests via backend |
+| 6 | Run Tests | `step-run-tests.tsx` | 5-8 SSH tests (hardware-specific) |
+
+### Hardware-Specific Wizard Branching
+
+**Step 2 (`step-flash-instructions.tsx`)**: Receives `hardwareFeatures` prop
+- `boot_source === "emmc"` → Show R2000 eMMC instructions (no SD flashing)
+- Otherwise → Show standard Pi Imager + SD card guide
+
+**Step 3 (`step-download-image.tsx`)**: R2000 verification section
+- `rs485_ports > 0 || ups_supercap` → Show "Section B: R2000 Verification"
+  - Check serial ports: `ls /dev/ttyACM*`
+  - Check UPS: `cat /sys/class/gpio/gpio16/value`
+  - Check 4G: `mmcli -L`
+- Conditional items in "What gets installed" list
+
+**Step 6 (`step-run-tests.tsx`)**: Hardware-specific tests
+- Dynamically adds tests from API based on hardware_type
+- `HARDWARE_TEST_DESCRIPTIONS` maps test names to display labels
 
 ### State Management (controller-wizard.tsx :70-82)
 - `controllerId`: UUID (null until step 1)
@@ -135,14 +152,23 @@ cat /etc/volteria/config.yaml | grep -A5 controller
 | 19 | `verify_installation()` | :645 | systemctl + health checks |
 | 20 | `print_summary()` | :682 | Summary output |
 
-### Hardware Detection (detect_hardware() :72-78)
+### Hardware Detection (detect_hardware() :72-85)
 ```bash
 if [[ -b /dev/nvme0n1 ]]; then
     echo "SOL564-NVME16-128"   # NVMe present
+elif [[ -c /dev/ttyACM1 && -c /dev/ttyACM2 && -c /dev/ttyACM3 ]]; then
+    echo "SOL532-E16"          # R2000 with serial ports
 else
     echo "raspberry_pi_5"       # Standard Pi 5
 fi
 ```
+
+### SOL532-E16 (reComputer Industrial R2000) Detection
+- **Trigger**: `/dev/ttyACM1`, `/dev/ttyACM2`, `/dev/ttyACM3` all present AND no NVMe
+- **Boot**: Pre-flashed eMMC (no SD card needed)
+- **Extra services**: volteria-ups-monitor, volteria-watchdog
+- **Serial ports**: 3x RS-485 + 1x RS-232
+- **4G modem**: Quectel EC25 (optional, requires SIM)
 
 ### Serial Number (get_serial_number() :63-69)
 - Source: `/proc/cpuinfo` Serial field, last 17 chars
@@ -260,7 +286,7 @@ ssh root@159.223.224.203 "sshpass -p '<password>' ssh -o StrictHostKeyChecking=n
 - Timeout: 15s
 - Library: paramiko
 
-### 5 Real Tests
+### Core Tests (All Hardware)
 
 | # | Test | Function | Line | What It Checks |
 |---|------|----------|------|----------------|
@@ -269,6 +295,16 @@ ssh root@159.223.224.203 "sshpass -p '<password>' ssh -o StrictHostKeyChecking=n
 | 3 | `communication` | `test_cloud_communication()` | :173 | curl Supabase API from Pi |
 | 4 | `config_sync` | `test_config_sync()` | :216 | config.yaml exists + has content |
 | 5 | `ota_check` | `test_ota_mechanism()` | :253 | System service active + firmware API |
+
+### Hardware-Specific Tests (SOL532-E16 Only)
+
+| # | Test | Function | What It Checks |
+|---|------|----------|----------------|
+| 6 | `serial_ports` | `test_serial_ports()` | `ls /dev/ttyACM*` returns 4 devices |
+| 7 | `ups_monitor` | `test_ups_monitor()` | `systemctl is-active volteria-ups-monitor` |
+| 8 | `watchdog` | `test_watchdog()` | `systemctl is-active volteria-watchdog` |
+
+**Note**: Hardware tests are only run when controller's hardware_type is SOL532-E16.
 
 ### Test Execution Flow (ssh_tests.py :305-354)
 ```
@@ -298,7 +334,96 @@ POST /ssh-test/{controller_id}?ssh_port=XXXX
 
 ---
 
-## 6. Adding New Hardware Types
+## 6. SOL532-E16 Specific Setup
+
+### Hardware-Specific Configuration (configure_hardware_specific())
+When `HARDWARE="SOL532-E16"`, setup script runs:
+1. `setup_serial_ports()` - udev rules for /dev/ttyACM0-3
+2. `setup_ups_monitor()` - GPIO16 power loss detection
+3. `setup_hardware_watchdog()` - Auto-reboot on hang
+4. `setup_4g_modem()` - ModemManager + GSM profile
+
+### Serial Port Setup
+```bash
+# Udev rules at /etc/udev/rules.d/99-volteria-serial.rules
+# Maps consistent names: ttyACM0=RS232, ttyACM1-3=RS485
+
+# Verify serial ports
+ls -la /dev/ttyACM*   # Should show 4 devices
+
+# Check permissions
+groups volteria       # Should include dialout
+```
+
+### UPS Monitor Service
+```bash
+# Check service status
+systemctl status volteria-ups-monitor
+
+# Check GPIO16 state (1=power OK, 0=power loss)
+cat /sys/class/gpio/gpio16/value
+
+# View logs
+journalctl -u volteria-ups-monitor --since "10 min ago"
+```
+
+**Behavior on power loss**:
+- GPIO16 goes LOW → detect within 100ms
+- Stop services 5→1 (logging, control, device, config, system)
+- Execute `sudo poweroff` within 15s (SuperCAP window)
+
+### Hardware Watchdog Service
+```bash
+# Check service status
+systemctl status volteria-watchdog
+
+# View logs
+journalctl -u volteria-watchdog --since "10 min ago"
+```
+
+**Behavior**: Writes to `/dev/watchdog` every 30s. If missed for 60s → auto-reboot.
+
+### 4G Modem Setup
+```bash
+# Check modem detection
+mmcli -L                          # List modems
+mmcli -m 0 --simple-status        # Modem status
+
+# Check NetworkManager profile
+nmcli con show volteria-4g        # GSM profile
+
+# Check connection priority
+nmcli con show volteria-4g | grep priority  # Should be 400 (lowest)
+
+# Manual connection test
+nmcli con up volteria-4g
+ping -c 3 google.com
+```
+
+**Priority order**: Ethernet (600) > WiFi (500) > 4G (400)
+
+### Wizard Step Differences (SOL532-E16)
+
+| Step | Standard Pi 5 | SOL532-E16 (R2000) |
+|------|--------------|-------------------|
+| 2 | Pi Imager flash to SD | "Pre-flashed eMMC - no flash needed" |
+| 3 | Setup script only | + Serial port verification section |
+| 6 | 5 system tests | + serial_ports, ups_monitor, watchdog tests |
+
+### Troubleshooting SOL532-E16
+
+| Issue | Check | Fix |
+|-------|-------|-----|
+| Serial ports missing | `ls /dev/ttyACM*` | Reboot, check USB cable |
+| volteria user no serial access | `groups volteria` | `usermod -aG dialout volteria` |
+| UPS monitor not starting | `journalctl -u volteria-ups-monitor` | Check gpiod installed, GPIO16 accessible |
+| Watchdog not starting | `ls /dev/watchdog` | Check kernel module loaded |
+| 4G not connecting | `mmcli -m 0 --simple-status` | Check SIM inserted, APN correct |
+| 4G takes over when Ethernet up | `nmcli con show` | Check priority (Ethernet should be 600) |
+
+---
+
+## 7. Adding New Hardware Types
 
 ### What to Modify
 

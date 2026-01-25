@@ -3,6 +3,18 @@ SSH-based Controller Testing API
 
 Provides real SSH tests against controllers via reverse tunnels.
 Tests are executed from the server which has direct access to tunnel ports.
+
+Standard tests (all hardware):
+1. SSH Tunnel - Connection via reverse tunnel
+2. Service Health - Check 5 systemd services
+3. Cloud Communication - Network connectivity to Supabase
+4. Configuration Sync - Config file exists
+5. OTA Mechanism - Update service and firmware endpoint
+
+Hardware-specific tests (SOL532-E16 / R2000):
+6. Serial Ports - Verify RS485/RS232 ports accessible
+7. UPS Monitor - Verify UPS monitor service running
+8. Watchdog - Verify hardware watchdog service running
 """
 
 import paramiko
@@ -302,21 +314,131 @@ def test_ota_mechanism(ssh_port: int) -> SSHTestResult:
     )
 
 
+# --- Hardware-specific tests for SOL532-E16 (R2000) ---
+
+def test_serial_ports(ssh_port: int) -> SSHTestResult:
+    """Test 6: Verify RS485/RS232 serial ports are accessible (R2000 only)."""
+    result = execute_ssh_command(
+        ssh_port,
+        "ls /dev/ttyACM* 2>/dev/null | wc -l"
+    )
+
+    if "error" in result:
+        return SSHTestResult(
+            name="serial_ports",
+            status="failed",
+            message=f"Failed to check serial ports: {result['error']}",
+            duration_ms=result["duration_ms"],
+        )
+
+    try:
+        count = int(result.get("stdout", "0").strip())
+    except ValueError:
+        count = 0
+
+    if count >= 4:
+        return SSHTestResult(
+            name="serial_ports",
+            status="passed",
+            message=f"All {count} serial ports detected (3x RS485 + 1x RS232) ({result['duration_ms']}ms)",
+            duration_ms=result["duration_ms"],
+        )
+
+    return SSHTestResult(
+        name="serial_ports",
+        status="failed",
+        message=f"Expected 4 serial ports, found {count}",
+        duration_ms=result["duration_ms"],
+    )
+
+
+def test_ups_monitor(ssh_port: int) -> SSHTestResult:
+    """Test 7: Verify UPS monitor service is running (R2000 only)."""
+    result = execute_ssh_command(
+        ssh_port,
+        "systemctl is-active volteria-ups-monitor 2>/dev/null || echo 'inactive'"
+    )
+
+    if "error" in result:
+        return SSHTestResult(
+            name="ups_monitor",
+            status="failed",
+            message=f"Failed to check UPS monitor: {result['error']}",
+            duration_ms=result["duration_ms"],
+        )
+
+    status = result.get("stdout", "").strip()
+
+    if status == "active":
+        return SSHTestResult(
+            name="ups_monitor",
+            status="passed",
+            message=f"UPS monitor service running ({result['duration_ms']}ms)",
+            duration_ms=result["duration_ms"],
+        )
+
+    return SSHTestResult(
+        name="ups_monitor",
+        status="failed",
+        message=f"UPS monitor status: {status}",
+        duration_ms=result["duration_ms"],
+    )
+
+
+def test_watchdog(ssh_port: int) -> SSHTestResult:
+    """Test 8: Verify hardware watchdog service is running (R2000 only)."""
+    result = execute_ssh_command(
+        ssh_port,
+        "systemctl is-active volteria-watchdog 2>/dev/null || echo 'inactive'"
+    )
+
+    if "error" in result:
+        return SSHTestResult(
+            name="watchdog",
+            status="failed",
+            message=f"Failed to check watchdog: {result['error']}",
+            duration_ms=result["duration_ms"],
+        )
+
+    status = result.get("stdout", "").strip()
+
+    if status == "active":
+        return SSHTestResult(
+            name="watchdog",
+            status="passed",
+            message=f"Hardware watchdog active ({result['duration_ms']}ms)",
+            duration_ms=result["duration_ms"],
+        )
+
+    return SSHTestResult(
+        name="watchdog",
+        status="failed",
+        message=f"Watchdog status: {status}",
+        duration_ms=result["duration_ms"],
+    )
+
+
 @router.post("/{controller_id}", response_model=SSHTestResponse)
 async def run_ssh_tests(
     controller_id: str,
     ssh_port: int,
+    hardware_type: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
     """
     Run real SSH-based tests against a controller.
 
-    Tests:
+    Standard Tests:
     1. SSH Tunnel - Actually connects via reverse tunnel
     2. Service Health - Checks all 5 systemd services
     3. Cloud Communication - Tests network connectivity to Supabase
     4. Configuration Sync - Verifies config file exists
     5. OTA Mechanism - Checks update service and script
+
+    Hardware-specific Tests (SOL532-E16):
+    6. Serial Ports - Verify RS485/RS232 ports accessible
+    7. UPS Monitor - Verify UPS monitor service running
+    8. Watchdog - Verify hardware watchdog service running
     """
     import time
     start_time = time.time()
@@ -330,6 +452,9 @@ async def run_ssh_tests(
     if tunnel_result.status == "failed":
         # SSH tunnel down, skip remaining tests
         skipped_tests = ["service_health", "communication", "config_sync", "ota_check"]
+        # Also skip hardware-specific tests if applicable
+        if hardware_type == "SOL532-E16":
+            skipped_tests.extend(["serial_ports", "ups_monitor", "watchdog"])
         for name in skipped_tests:
             results.append(SSHTestResult(
                 name=name,
@@ -338,11 +463,17 @@ async def run_ssh_tests(
                 duration_ms=0,
             ))
     else:
-        # Run remaining tests
+        # Run standard tests
         results.append(test_service_health(ssh_port))
         results.append(test_cloud_communication(ssh_port))
         results.append(test_config_sync(ssh_port))
         results.append(test_ota_mechanism(ssh_port))
+
+        # Run hardware-specific tests for SOL532-E16
+        if hardware_type == "SOL532-E16":
+            results.append(test_serial_ports(ssh_port))
+            results.append(test_ups_monitor(ssh_port))
+            results.append(test_watchdog(ssh_port))
 
     total_duration = int((time.time() - start_time) * 1000)
 

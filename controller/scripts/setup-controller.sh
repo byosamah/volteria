@@ -72,6 +72,8 @@ get_serial_number() {
 detect_hardware() {
     if [[ -b /dev/nvme0n1 ]]; then
         echo "SOL564-NVME16-128"
+    elif [[ -c /dev/ttyACM1 && -c /dev/ttyACM2 && -c /dev/ttyACM3 ]]; then
+        echo "SOL532-E16"
     else
         echo "raspberry_pi_5"
     fi
@@ -123,6 +125,13 @@ install_dependencies() {
         curl \
         jq \
         network-manager
+
+    # Install modem-manager for SOL532-E16 (4G modem support)
+    HARDWARE_CHECK=$(detect_hardware)
+    if [[ "$HARDWARE_CHECK" == "SOL532-E16" ]]; then
+        apt-get install -y modem-manager
+        log_info "ModemManager installed for 4G modem support"
+    fi
 
     log_info "System dependencies installed"
 }
@@ -465,9 +474,28 @@ services:
     local_write_interval_s: 10
     cloud_sync_interval_s: 120
     local_retention_days: 7
-
-# Site configuration will be synced from cloud after registration
 EOF
+
+    # Add hardware section for SOL532-E16
+    if [[ "$HARDWARE" == "SOL532-E16" ]]; then
+        cat >> "${CONFIG_DIR}/config.yaml" << 'EOF'
+
+hardware:
+  ups_enabled: true
+  watchdog_enabled: true
+  watchdog_timeout_s: 60
+  serial_ports:
+    rs485: ["/dev/ttyACM1", "/dev/ttyACM2", "/dev/ttyACM3"]
+    rs232: ["/dev/ttyACM0"]
+  cellular:
+    enabled: false
+    apn: ""
+EOF
+    fi
+
+    # Add trailing comment
+    echo "" >> "${CONFIG_DIR}/config.yaml"
+    echo "# Site configuration will be synced from cloud after registration" >> "${CONFIG_DIR}/config.yaml"
 
     chmod 600 "${CONFIG_DIR}/config.yaml"
     chown volteria:volteria "${CONFIG_DIR}/config.yaml"
@@ -716,6 +744,144 @@ print_summary() {
     echo "=============================================="
 }
 
+# Setup serial port udev rules for SOL532-E16 (persistent naming)
+setup_serial_ports() {
+    log_step "Configuring serial ports for SOL532-E16..."
+
+    # Create udev rules for persistent serial port naming
+    # The STM32 MCU on reComputer Industrial creates ttyACM devices via USB
+    cat > /etc/udev/rules.d/99-volteria-serial.rules << 'EOF'
+# Volteria SOL532-E16 Serial Port Rules
+# Persistent naming for Seeed reComputer Industrial R2000 serial ports
+# STM32 MCU exposes 4 ports via USB ACM: 1x RS232 + 3x RS485
+
+# RS232 port (ttyACM0)
+SUBSYSTEM=="tty", KERNEL=="ttyACM0", SYMLINK+="volteria-rs232"
+
+# RS485 ports (ttyACM1, ttyACM2, ttyACM3)
+SUBSYSTEM=="tty", KERNEL=="ttyACM1", SYMLINK+="volteria-rs485-1"
+SUBSYSTEM=="tty", KERNEL=="ttyACM2", SYMLINK+="volteria-rs485-2"
+SUBSYSTEM=="tty", KERNEL=="ttyACM3", SYMLINK+="volteria-rs485-3"
+EOF
+
+    # Reload udev rules
+    udevadm control --reload-rules
+    udevadm trigger
+
+    # Ensure volteria user is in dialout group (already done in create_volteria_user)
+    usermod -a -G dialout volteria 2>/dev/null || true
+
+    log_info "Serial port udev rules installed"
+    log_info "  RS232: /dev/ttyACM0 (/dev/volteria-rs232)"
+    log_info "  RS485: /dev/ttyACM1-3 (/dev/volteria-rs485-1..3)"
+}
+
+# Setup UPS monitor service for SOL532-E16 (SuperCAP power loss detection)
+setup_ups_monitor() {
+    log_step "Configuring UPS power loss monitor..."
+
+    # Copy UPS monitor service file
+    cp "${CONTROLLER_DIR}/systemd/volteria-ups-monitor.service" "${SYSTEMD_DIR}/"
+
+    # Enable and start the UPS monitor
+    systemctl daemon-reload
+    systemctl enable volteria-ups-monitor.service
+    systemctl start volteria-ups-monitor.service
+
+    if systemctl is-active --quiet volteria-ups-monitor.service; then
+        log_info "UPS monitor service started (GPIO16 power loss detection)"
+    else
+        log_warn "UPS monitor service failed to start - check journalctl -u volteria-ups-monitor"
+    fi
+}
+
+# Setup hardware watchdog for SOL532-E16
+setup_hardware_watchdog() {
+    log_step "Configuring hardware watchdog..."
+
+    # Copy watchdog feeder script
+    mkdir -p "${VOLTERIA_DIR}/scripts"
+    cp "${CONTROLLER_DIR}/scripts/watchdog-feeder.sh" "${VOLTERIA_DIR}/scripts/"
+    chmod +x "${VOLTERIA_DIR}/scripts/watchdog-feeder.sh"
+
+    # Copy watchdog service file
+    cp "${CONTROLLER_DIR}/systemd/volteria-watchdog.service" "${SYSTEMD_DIR}/"
+
+    # Enable and start the watchdog
+    systemctl daemon-reload
+    systemctl enable volteria-watchdog.service
+    systemctl start volteria-watchdog.service
+
+    if systemctl is-active --quiet volteria-watchdog.service; then
+        log_info "Hardware watchdog service started (60s timeout, 30s feed interval)"
+    else
+        log_warn "Hardware watchdog service failed to start - check journalctl -u volteria-watchdog"
+    fi
+}
+
+# Setup 4G modem for SOL532-E16 (Quectel EC25 via ModemManager)
+setup_4g_modem() {
+    log_step "Configuring 4G modem..."
+
+    # Check if modem is detected
+    if ! command -v mmcli &>/dev/null; then
+        log_warn "ModemManager not installed - skipping 4G setup"
+        return
+    fi
+
+    # Wait briefly for modem detection
+    sleep 2
+    MODEM_LIST=$(mmcli -L 2>/dev/null || echo "")
+
+    if [[ -z "$MODEM_LIST" || "$MODEM_LIST" == *"No modems"* ]]; then
+        log_warn "No 4G modem detected - skipping cellular setup"
+        log_info "Modem will be configured automatically when hardware is available"
+        return
+    fi
+
+    log_info "4G modem detected: ${MODEM_LIST}"
+
+    # Check if volteria-4g connection already exists
+    if nmcli con show "volteria-4g" &>/dev/null; then
+        log_info "volteria-4g connection already exists"
+    else
+        # Create NetworkManager GSM connection profile
+        # APN left empty - will be configured per-site via config.yaml
+        # Priority 400 = lower than ethernet (600) and wifi (500) = fallback only
+        nmcli con add type gsm ifname "*" con-name "volteria-4g" \
+            apn "" \
+            connection.autoconnect yes \
+            connection.autoconnect-priority 400
+
+        log_info "4G connection profile created (volteria-4g)"
+        log_info "  Priority: 400 (fallback after ethernet=600, wifi=500)"
+        log_info "  APN: empty (configure per-site in config.yaml)"
+    fi
+
+    # Show modem status
+    MODEM_IDX=$(mmcli -L 2>/dev/null | grep -oP '/Modem/\K[0-9]+' | head -1)
+    if [[ -n "$MODEM_IDX" ]]; then
+        MODEM_STATUS=$(mmcli -m "$MODEM_IDX" --output-keyvalue 2>/dev/null | grep "state" | head -1 || echo "unknown")
+        log_info "Modem status: ${MODEM_STATUS}"
+    fi
+}
+
+# Configure hardware-specific features based on detected hardware
+configure_hardware_specific() {
+    log_step "Configuring hardware-specific features..."
+    case "$HARDWARE" in
+        "SOL532-E16")
+            setup_serial_ports
+            setup_ups_monitor
+            setup_hardware_watchdog
+            setup_4g_modem
+            ;;
+        *)
+            log_info "No hardware-specific configuration needed"
+            ;;
+    esac
+}
+
 # Main installation flow
 main() {
     echo ""
@@ -739,6 +905,8 @@ main() {
     generate_config
     create_env_file
     install_systemd_services
+    HARDWARE=$(detect_hardware)
+    configure_hardware_specific
     disable_cloud_init
     setup_ssh_tunnel
     register_controller

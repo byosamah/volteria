@@ -54,16 +54,19 @@ export async function POST(
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    // Get controller
+    // Get controller with hardware type info
     const { data: controller, error: controllerError } = await supabase
       .from("controllers")
-      .select("*")
+      .select("*, approved_hardware:hardware_type_id(hardware_type)")
       .eq("id", controllerId)
       .single();
 
     if (controllerError || !controller) {
       return NextResponse.json({ message: "Controller not found" }, { status: 404 });
     }
+
+    // Determine hardware type for hardware-specific tests
+    const hardwareType = controller.approved_hardware?.hardware_type || null;
 
     const results: TestResult[] = [];
 
@@ -96,16 +99,18 @@ export async function POST(
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData?.session?.access_token;
 
-        const response = await fetch(
-          `${BACKEND_URL}/api/ssh-test/${controllerId}?ssh_port=${sshPort}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token && { "Authorization": `Bearer ${token}` }),
-            },
-          }
-        );
+        // Build URL with hardware_type if available (for hardware-specific tests)
+        const testUrl = hardwareType
+          ? `${BACKEND_URL}/api/ssh-test/${controllerId}?ssh_port=${sshPort}&hardware_type=${encodeURIComponent(hardwareType)}`
+          : `${BACKEND_URL}/api/ssh-test/${controllerId}?ssh_port=${sshPort}`;
+
+        const response = await fetch(testUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token && { "Authorization": `Bearer ${token}` }),
+          },
+        });
 
         if (response.ok) {
           const sshTestData: SSHTestResponse = await response.json();
@@ -206,7 +211,11 @@ export async function POST(
     const totalCount = results.length;
 
     // Only system test failures count (demo tests always pass)
-    const systemTestNames = ["ssh_tunnel", "service_health", "communication", "config_sync", "ota_check"];
+    // Include hardware-specific tests in system tests (they are real SSH tests too)
+    const systemTestNames = [
+      "ssh_tunnel", "service_health", "communication", "config_sync", "ota_check",
+      "serial_ports", "ups_monitor", "watchdog",
+    ];
     const systemFailures = results.filter(
       (r) => systemTestNames.includes(r.name) && r.status === "failed"
     ).length;

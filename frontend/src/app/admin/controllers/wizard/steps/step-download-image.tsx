@@ -6,6 +6,7 @@
  * Guide for setting up the Volteria controller software:
  * - SSH connection via WiFi
  * - NVMe boot setup for SOL564-NVME16-128
+ * - R2000 hardware verification for SOL532-E16
  * - One-line install command
  */
 
@@ -27,6 +28,14 @@ export function StepDownloadImage({ onConfirm, confirmed, hardwareType, hardware
 
   // Check if hardware requires NVMe boot setup from database features
   const requiresNvmeBoot = hardwareFeatures?.nvme_boot === true;
+
+  // Check if hardware is R2000 (has RS485 ports or SuperCAP UPS)
+  const isR2000 = (hardwareFeatures?.rs485_ports as number) > 0 || hardwareFeatures?.ups_supercap === true;
+
+  // Check specific R2000 features for conditional display
+  const hasCellular = hardwareFeatures?.cellular_4g === true;
+  const hasUpsSupercap = hardwareFeatures?.ups_supercap === true;
+  const hasWatchdog = hardwareFeatures?.watchdog === true;
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -131,6 +140,52 @@ export function StepDownloadImage({ onConfirm, confirmed, hardwareType, hardware
         </div>
       )}
 
+      {/* Step B: R2000 Hardware Verification - Only for R2000 (not NVMe) */}
+      {isR2000 && !requiresNvmeBoot && (
+        <div className="border-2 border-blue-200 rounded-lg p-5 space-y-4 bg-blue-50/30">
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">B</span>
+            <div>
+              <h3 className="font-semibold text-blue-900">R2000 Hardware Verification</h3>
+              <p className="text-sm text-blue-700">Verify the industrial I/O is detected correctly</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* B1: Check serial ports */}
+            <div className="bg-white rounded-lg p-4 border border-blue-200">
+              <p className="text-sm font-medium text-blue-900 mb-2">B1. Check serial ports</p>
+              <CommandBox command="ls /dev/ttyACM*" cmdKey="serial" />
+              <div className="bg-blue-100 rounded p-2 mt-2 text-xs text-blue-800">
+                Expected output: <code>/dev/ttyACM0  /dev/ttyACM1  /dev/ttyACM2  /dev/ttyACM3</code>
+                <br />
+                <span className="text-blue-600">ttyACM0 = RS232, ttyACM1-3 = RS485</span>
+              </div>
+            </div>
+
+            {/* B2: Check UPS status */}
+            <div className="bg-white rounded-lg p-4 border border-blue-200">
+              <p className="text-sm font-medium text-blue-900 mb-2">B2. Check UPS status</p>
+              <CommandBox command="cat /sys/class/gpio/gpio16/value" cmdKey="ups" />
+              <div className="bg-blue-100 rounded p-2 mt-2 text-xs text-blue-800">
+                Expected output: <code>1</code> (1 = power OK, 0 = running on SuperCAP)
+              </div>
+            </div>
+
+            {/* B3: Check modem (only if cellular) */}
+            {hasCellular && (
+              <div className="bg-white rounded-lg p-4 border border-blue-200">
+                <p className="text-sm font-medium text-blue-900 mb-2">B3. Check 4G modem</p>
+                <CommandBox command="mmcli -L" cmdKey="modem" />
+                <div className="bg-blue-100 rounded p-2 mt-2 text-xs text-blue-800">
+                  Expected: A modem device should be listed (e.g., <code>/org/freedesktop/ModemManager1/Modem/0</code>)
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Step C: Run Setup Script */}
       <div className="border-2 border-green-200 rounded-lg p-5 space-y-4 bg-green-50/30">
         <div className="flex items-center gap-3">
@@ -192,6 +247,32 @@ export function StepDownloadImage({ onConfirm, confirmed, hardwareType, hardware
               </svg>
               Configuration at /etc/volteria/config.yaml
             </li>
+
+            {/* R2000-specific install items */}
+            {hasUpsSupercap && (
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-blue-800"><span className="font-medium">UPS Power Loss Monitor</span> <span className="text-xs">(safe shutdown on power loss)</span></span>
+              </li>
+            )}
+            {hasWatchdog && (
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-blue-800"><span className="font-medium">Hardware Watchdog</span> <span className="text-xs">(auto-reboot on system hang)</span></span>
+              </li>
+            )}
+            {hasCellular && (
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-blue-800"><span className="font-medium">4G Modem Configuration</span> <span className="text-xs">(cellular fallback connectivity)</span></span>
+              </li>
+            )}
           </ul>
         </div>
 

@@ -8,11 +8,11 @@ and per-register polling intervals.
 import asyncio
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Union
 
-from common.config import DeviceConfig, ModbusRegister, RegisterDataType
+from common.config import DeviceConfig, ModbusRegister, Protocol, RegisterDataType
 from common.logging_setup import get_service_logger, log_device_read
-from .modbus_client import ModbusClient
+from .modbus_client import ModbusClient, ModbusSerialClient
 from .connection_pool import ConnectionPool
 from .device_manager import DeviceManager
 
@@ -76,6 +76,9 @@ class RegisterReader:
         """
         Poll all due registers from a device.
 
+        For RTU_DIRECT protocol, acquires the per-port bus lock to serialize
+        access (multiple slaves share one RS485 bus).
+
         Args:
             device: Device configuration
 
@@ -85,8 +88,18 @@ class RegisterReader:
         now = datetime.now(timezone.utc)
         results = {}
 
-        # Get client for this device
-        client = await self._pool.get_connection(device.host, device.port)
+        # Get client based on protocol
+        bus_lock: asyncio.Lock | None = None
+
+        if device.protocol == Protocol.RTU_DIRECT:
+            client, bus_lock = await self._pool.get_serial_connection(
+                port=device.serial_port,
+                baudrate=device.baudrate,
+                parity=device.parity,
+                stopbits=device.stopbits,
+            )
+        else:
+            client = await self._pool.get_connection(device.host, device.port)
 
         # Poll each register that is due
         for register in device.registers:
@@ -102,12 +115,20 @@ class RegisterReader:
                 if elapsed_ms < state.poll_interval_ms:
                     continue
 
-            # Read register with retry
-            value = await self._read_register_with_retry(
-                client=client,
-                device=device,
-                register=register,
-            )
+            # Read register with retry — hold bus lock for serial
+            if bus_lock:
+                async with bus_lock:
+                    value = await self._read_register_with_retry(
+                        client=client,
+                        device=device,
+                        register=register,
+                    )
+            else:
+                value = await self._read_register_with_retry(
+                    client=client,
+                    device=device,
+                    register=register,
+                )
 
             # Update state
             state.last_polled = now
@@ -154,7 +175,7 @@ class RegisterReader:
 
     async def _read_register_with_retry(
         self,
-        client: ModbusClient,
+        client: Union[ModbusClient, ModbusSerialClient],
         device: DeviceConfig,
         register: ModbusRegister,
     ) -> float | None:
@@ -230,5 +251,15 @@ class RegisterReader:
             logger.warning(f"Register not found: {device.name}.{register_name}")
             return None
 
-        client = await self._pool.get_connection(device.host, device.port)
-        return await self._read_register_with_retry(client, device, register)
+        if device.protocol == Protocol.RTU_DIRECT:
+            client, bus_lock = await self._pool.get_serial_connection(
+                port=device.serial_port,
+                baudrate=device.baudrate,
+                parity=device.parity,
+                stopbits=device.stopbits,
+            )
+            async with bus_lock:
+                return await self._read_register_with_retry(client, device, register)
+        else:
+            client = await self._pool.get_connection(device.host, device.port)
+            return await self._read_register_with_retry(client, device, register)

@@ -1,0 +1,12 @@
+[Unit]
+Description=Volteria Hardware Watchdog Feeder
+After=volteria-system.service
+
+[Service]
+Type=simple
+ExecStart=/opt/volteria/scripts/watchdog-feeder.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
