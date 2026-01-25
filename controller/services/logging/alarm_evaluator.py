@@ -135,9 +135,9 @@ class AlarmEvaluator:
                     self._alarm_states[state_key].trigger_count += 1
                     self._alarm_states[state_key].is_active = True
 
-                    # Log alarm
+                    # Log alarm (use logger directly - ServiceLoggerAdapter is compatible)
                     log_alarm(
-                        logger._logger,
+                        logger,
                         alarm_id=alarm_def.id,
                         severity=condition.severity,
                         message=condition.message,
