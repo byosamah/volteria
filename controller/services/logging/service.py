@@ -1107,11 +1107,26 @@ class LoggingService:
                         for device in (get_config() or {}).get("devices", [])
                     )
 
+                    # Capture old alarm definition IDs before reload
+                    old_def_ids = {d.id for d in self._alarm_definitions}
+
                     # Reload configuration
                     await self._load_config()
 
                     # Reload alarm definitions
                     self.alarm_evaluator.update_definitions(self._alarm_definitions)
+
+                    # Auto-resolve orphan alarms (definitions that no longer exist)
+                    new_def_ids = {d.id for d in self._alarm_definitions}
+                    orphaned_ids = old_def_ids - new_def_ids
+                    for alarm_id in orphaned_ids:
+                        count = await self._run_db(
+                            self.local_db.resolve_alarms_by_type, alarm_id
+                        )
+                        if count > 0:
+                            logger.info(
+                                f"[CONFIG] Auto-resolved {count} orphan alarm(s): {alarm_id}"
+                            )
 
                     current_hash = new_hash
 

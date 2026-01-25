@@ -147,7 +147,10 @@ export default async function DashboardPage() {
     Promise.resolve(
       supabase
         .from("alarms")
-        .select("id, alarm_type, message, severity, created_at")
+        .select(`
+          id, alarm_type, message, condition, severity, device_name, created_at,
+          sites:site_id (name, projects:project_id (name))
+        `)
         .eq("acknowledged", false)
         .order("created_at", { ascending: false })
         .limit(5)
@@ -169,10 +172,16 @@ export default async function DashboardPage() {
   const alarms: Array<{
     id: string;
     alarm_type: string;
-    message: string;
+    message: string | null;
+    condition: string | null;
     severity: string;
+    device_name: string | null;
     created_at: string;
-  }> = alarmsResult.data && !alarmsResult.error ? alarmsResult.data : [];
+    sites: {
+      name: string;
+      projects: { name: string } | null;
+    } | null;
+  }> = alarmsResult.data && !alarmsResult.error ? (alarmsResult.data as never[]) : [];
   const unacknowledgedCount = alarms.length;
 
   return (
@@ -318,33 +327,57 @@ export default async function DashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {alarms.map((alarm) => (
-                    <div
-                      key={alarm.id}
-                      className="flex items-start gap-3 p-3 rounded-lg bg-muted/50"
-                    >
+                  {alarms.map((alarm) => {
+                    // Severity colors
+                    const dotColor = {
+                      critical: "bg-red-500",
+                      major: "bg-orange-500",
+                      minor: "bg-amber-500",
+                      warning: "bg-yellow-500",
+                      info: "bg-blue-500",
+                    }[alarm.severity] || "bg-gray-500";
+
+                    // Display title: condition for reg_* alarms, else alarm_type
+                    const displayTitle = alarm.alarm_type.startsWith("reg_")
+                      ? alarm.condition || alarm.alarm_type.split("_").slice(2).join(" ")
+                      : alarm.alarm_type.replace(/_/g, " ");
+
+                    // Combine with message if exists
+                    const titleWithMessage = alarm.message
+                      ? `${displayTitle} - ${alarm.message}`
+                      : displayTitle;
+
+                    // Location info: device • project > site
+                    const locationParts = [
+                      alarm.device_name,
+                      alarm.sites?.projects?.name && alarm.sites?.name
+                        ? `${alarm.sites.projects.name} > ${alarm.sites.name}`
+                        : alarm.sites?.name,
+                    ].filter(Boolean);
+                    const location = locationParts.join(" • ");
+
+                    return (
                       <div
-                        className={`h-2 w-2 rounded-full mt-2 ${
-                          alarm.severity === "critical"
-                            ? "bg-red-500"
-                            : alarm.severity === "warning"
-                            ? "bg-yellow-500"
-                            : "bg-blue-500"
-                        }`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">
-                          {alarm.alarm_type.replace(/_/g, " ")}
-                        </p>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {alarm.message}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          <FormattedDate date={alarm.created_at} />
-                        </p>
+                        key={alarm.id}
+                        className="flex items-start gap-3 p-3 rounded-lg bg-muted/50"
+                      >
+                        <div className={`h-2 w-2 rounded-full mt-2 ${dotColor}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {titleWithMessage}
+                          </p>
+                          {location && (
+                            <p className="text-sm text-muted-foreground truncate">
+                              {location}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-1">
+                            <FormattedDate date={alarm.created_at} />
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
