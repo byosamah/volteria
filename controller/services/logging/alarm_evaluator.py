@@ -34,9 +34,24 @@ class TriggeredAlarm:
     source_key: str
     value: float
     threshold: float
+    operator: str = ""  # >, <, >=, <=, ==, !=
     device_id: str | None = None
     device_name: str | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def get_formatted_message(self) -> str:
+        """Format alarm message with condition details.
+
+        Format: {user_message} - {register} {operator} {threshold} ({device})
+        Example: "Temperature High - Ambient Temperature > 50 (Sensor Device)"
+        """
+        base = self.message or f"{self.source_key} alarm"
+        if self.operator and self.threshold is not None:
+            condition = f"{self.source_key} {self.operator} {self.threshold}"
+            if self.device_name:
+                return f"{base} - {condition} ({self.device_name})"
+            return f"{base} - {condition}"
+        return base
 
 
 class AlarmEvaluator:
@@ -121,6 +136,7 @@ class AlarmEvaluator:
                         source_key=alarm_def.source_key,
                         value=value,
                         threshold=condition.value,
+                        operator=condition.operator,
                         device_id=alarm_device_id,
                         device_name=alarm_device_name,
                         timestamp=now,

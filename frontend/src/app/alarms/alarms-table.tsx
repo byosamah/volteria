@@ -206,8 +206,8 @@ export function AlarmsTable() {
               <tr className="border-b">
                 <th className="text-left py-3 px-4 font-medium">Time</th>
                 <th className="text-left py-3 px-4 font-medium">Source</th>
-                <th className="text-left py-3 px-4 font-medium">Type</th>
-                <th className="text-left py-3 px-4 font-medium">Message</th>
+                <th className="text-left py-3 px-4 font-medium">Description</th>
+                <th className="text-left py-3 px-4 font-medium">Device</th>
                 <th className="text-center py-3 px-4 font-medium">Severity</th>
                 <th className="text-center py-3 px-4 font-medium">Status</th>
                 <th className="text-right py-3 px-4 font-medium">Actions</th>
@@ -237,16 +237,11 @@ export function AlarmsTable() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="py-3 px-4 font-mono text-xs">
-                    {alarm.alarm_type.replace(/_/g, " ")}
-                    {alarm.device_name && (
-                      <span className="text-muted-foreground ml-1">
-                        ({alarm.device_name})
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 max-w-xs truncate">
+                  <td className="py-3 px-4 max-w-xs truncate" title={alarm.message}>
                     {alarm.message}
+                  </td>
+                  <td className="py-3 px-4 text-sm">
+                    {alarm.device_name || <span className="text-muted-foreground">-</span>}
                   </td>
                   <td className="py-3 px-4 text-center">
                     <SeverityBadge severity={alarm.severity} />

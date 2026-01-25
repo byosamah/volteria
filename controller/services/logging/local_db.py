@@ -294,6 +294,32 @@ class LocalDatabase:
             conn.commit()
             return cursor.rowcount
 
+    def has_unresolved_alarm(
+        self,
+        site_id: str,
+        alarm_type: str,
+        device_name: str | None = None,
+    ) -> bool:
+        """Check if an unresolved alarm already exists for this type/device.
+
+        Used to prevent duplicate alarms while a threshold is still exceeded.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if device_name:
+                cursor.execute("""
+                    SELECT 1 FROM alarms
+                    WHERE site_id = ? AND alarm_type = ? AND device_name = ? AND resolved = 0
+                    LIMIT 1
+                """, (site_id, alarm_type, device_name))
+            else:
+                cursor.execute("""
+                    SELECT 1 FROM alarms
+                    WHERE site_id = ? AND alarm_type = ? AND resolved = 0
+                    LIMIT 1
+                """, (site_id, alarm_type))
+            return cursor.fetchone() is not None
+
     def get_unsynced_logs(self, limit: int = 100) -> list[dict]:
         """Get control logs that haven't been synced"""
         with self._get_connection() as conn:

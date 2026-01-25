@@ -1270,13 +1270,29 @@ class LoggingService:
 
     async def _process_alarm(self, alarm: TriggeredAlarm) -> None:
         """Process a triggered alarm"""
+        # Check for existing unresolved alarm to prevent duplicates
+        has_existing = await self._run_db(
+            self.local_db.has_unresolved_alarm,
+            self._site_id,
+            alarm.alarm_id,
+            alarm.device_name,
+        )
+        if has_existing:
+            self._logger.debug(
+                f"Skipping duplicate alarm: {alarm.alarm_id} (unresolved exists)"
+            )
+            return
+
+        # Use formatted message with condition details
+        formatted_message = alarm.get_formatted_message()
+
         # Insert to local database (in thread to avoid blocking event loop)
         await self._run_db(
             self.local_db.insert_alarm,
             str(uuid.uuid4()),              # alarm_id
             self._site_id,                  # site_id
             alarm.alarm_id,                 # alarm_type
-            alarm.message,                  # message
+            formatted_message,              # message (formatted)
             alarm.severity,                 # severity
             alarm.timestamp.isoformat(),    # timestamp
             alarm.device_id,                # device_id
