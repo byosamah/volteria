@@ -224,10 +224,17 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 Device register threshold alarms now work end-to-end:
 - **Config loading**: `alarm_registers[].thresholds` converted to `alarm_definitions` at startup
 - **Evaluation**: Thresholds checked against device readings every 1s in `_sample_callback()`
-- **AlarmDefinition**: Added `device_id` and `device_name` fields for device-specific alarms
+- **AlarmDefinition**: Added `device_id`, `device_name`, and `operator` fields
 - **Data flow**: Frontend config → Controller → SQLite → Cloud (Supabase alarms table)
-- **Cooldown**: 300s default prevents duplicate alarms for same threshold
+- **Deduplication**: If unresolved alarm exists for same type+device, new alarms are skipped
+- **Message format**: `"{user_message} - {register} {op} {value} ({device})"` (e.g., "Temperature High - Ambient Temperature > 50 (Sensor Device)")
+- **Cooldown**: 300s default between re-triggers when no unresolved alarm exists
 - **Alarm type format**: `reg_{device_id}_{register_name}`
+
+### Alarms Page Improvements (Frontend)
+- **Column rename**: "Type" → "Description" to show formatted message
+- **Separate columns**: Description and Device columns for clarity
+- **Message display**: Shows full formatted message from controller
 
 ### Connection Alarm Severity Unification
 Unified device and controller connection alarm UI with severity levels:

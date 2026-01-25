@@ -234,11 +234,18 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?alarm_type=like
   -H "apikey: SERVICE_ROLE_KEY"
 ```
 
-### Cooldown Behavior
-- Default cooldown: 300 seconds (5 minutes)
-- Same alarm won't re-trigger within cooldown period
+### Deduplication & Cooldown
+- **Deduplication**: If an unresolved alarm exists for this type+device, new alarms are skipped
+- **Cooldown**: 300 seconds (5 minutes) between re-triggers of same alarm ID
 - Each threshold condition evaluated independently
 - First matching condition triggers (then breaks)
+
+### Message Format
+Alarms use a formatted message that includes all context:
+```
+{user_message} - {register_name} {operator} {threshold} ({device_name})
+```
+Example: `"Temperature High - Ambient Temperature > 50 (Sensor Device)"`
 
 ### Troubleshooting
 
@@ -247,6 +254,7 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?alarm_type=like
 | No alarm definitions loaded | `grep "alarm definitions" journalctl` | Verify alarm_registers have thresholds in config |
 | Alarms not triggering | Check device readings in SharedState | Verify register name matches exactly |
 | Alarms not syncing | `curl :8085/stats` for unsynced count | Check cloud connectivity |
-| Duplicate alarms | Normal if > cooldown apart | Cooldown prevents rapid duplicates |
+| Duplicate alarms while active | Check logs for "Skipping duplicate" | Deduplication working correctly |
+| Alarms not deduplicating | Check resolved status in SQLite | Ensure previous alarm is unresolved |
 
-<!-- Updated: 2026-01-25 - Added device threshold alarms documentation -->
+<!-- Updated: 2026-01-25 - Added deduplication and message formatting -->
