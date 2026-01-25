@@ -320,6 +320,47 @@ class LocalDatabase:
                 """, (site_id, alarm_type))
             return cursor.fetchone() is not None
 
+    def sync_alarm_resolution(
+        self,
+        site_id: str,
+        alarm_type: str,
+        device_name: str | None,
+        resolved_at: str | None,
+    ) -> int:
+        """Sync alarm resolution status from cloud to local.
+
+        Updates local alarms to match cloud resolved status.
+        This enables proper deduplication after UI resolution.
+
+        Args:
+            site_id: Site ID
+            alarm_type: Alarm type (e.g., reg_{device_id}_{register_name})
+            device_name: Device name (optional)
+            resolved_at: Resolution timestamp from cloud
+
+        Returns:
+            Number of alarms updated
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            resolved_time = resolved_at or datetime.now(timezone.utc).isoformat()
+
+            if device_name:
+                cursor.execute("""
+                    UPDATE alarms
+                    SET resolved = 1, resolved_at = ?
+                    WHERE site_id = ? AND alarm_type = ? AND device_name = ? AND resolved = 0
+                """, (resolved_time, site_id, alarm_type, device_name))
+            else:
+                cursor.execute("""
+                    UPDATE alarms
+                    SET resolved = 1, resolved_at = ?
+                    WHERE site_id = ? AND alarm_type = ? AND resolved = 0
+                """, (resolved_time, site_id, alarm_type))
+
+            conn.commit()
+            return cursor.rowcount
+
     def get_unsynced_logs(self, limit: int = 100) -> list[dict]:
         """Get control logs that haven't been synced"""
         with self._get_connection() as conn:

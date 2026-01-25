@@ -13,7 +13,7 @@ Robustness Guarantees:
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Any
 
@@ -550,6 +550,68 @@ class CloudSync:
         except Exception as e:
             logger.error(f"Failed to immediately sync alarm: {e}")
             return False
+
+    async def sync_resolved_alarms(self) -> int:
+        """
+        Sync alarm resolution status FROM cloud TO local SQLite.
+
+        When users resolve alarms in the UI (cloud), this syncs that status
+        back to the controller so deduplication checks work correctly.
+
+        Returns:
+            Number of local alarms updated
+        """
+        try:
+            # Query cloud for resolved alarms for this site (last hour to limit scope)
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.supabase_url}/rest/v1/alarms",
+                    params={
+                        "select": "alarm_type,device_name,resolved_at",
+                        "site_id": f"eq.{self.site_id}",
+                        "resolved": "eq.true",
+                        # Only get recently resolved to limit query size
+                        "resolved_at": f"gte.{(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}",
+                    },
+                    headers={
+                        "apikey": self.supabase_key,
+                        "Authorization": f"Bearer {self.supabase_key}",
+                    },
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                resolved_alarms = response.json()
+
+            if not resolved_alarms:
+                return 0
+
+            # Update local SQLite for each resolved alarm
+            updated_count = 0
+            for alarm in resolved_alarms:
+                alarm_type = alarm.get("alarm_type")
+                device_name = alarm.get("device_name")
+                resolved_at = alarm.get("resolved_at")
+
+                if not alarm_type:
+                    continue
+
+                # Update local alarm to resolved
+                count = self.local_db.sync_alarm_resolution(
+                    site_id=self.site_id,
+                    alarm_type=alarm_type,
+                    device_name=device_name,
+                    resolved_at=resolved_at,
+                )
+                updated_count += count
+
+            if updated_count > 0:
+                logger.info(f"[CLOUD] Synced {updated_count} alarm resolutions from cloud to local")
+
+            return updated_count
+
+        except Exception as e:
+            logger.warning(f"[CLOUD] Failed to sync alarm resolutions: {e}")
+            return 0
 
     def get_stats(self) -> dict:
         """Get sync statistics with robustness metrics"""

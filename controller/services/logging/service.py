@@ -765,6 +765,10 @@ class LoggingService:
                 logs_synced = await self.cloud_sync.sync_logs()
                 alarms_synced = await self.cloud_sync.sync_alarms()
 
+                # Sync alarm resolutions FROM cloud TO local (bidirectional sync)
+                # This ensures UI resolutions are reflected locally for deduplication
+                await self.cloud_sync.sync_resolved_alarms()
+
                 # Sync device_readings with per-register frequency filtering
                 readings_synced = await self._sync_device_readings_filtered()
 

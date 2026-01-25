@@ -40,18 +40,12 @@ class TriggeredAlarm:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def get_formatted_message(self) -> str:
-        """Format alarm message with condition details.
+        """Return user message only.
 
-        Format: {user_message} - {register} {operator} {threshold} ({device})
-        Example: "Temperature High - Ambient Temperature > 50 (Sensor Device)"
+        Condition details (register, operator, threshold) are displayed
+        in a separate Condition column in the UI, extracted from alarm_type.
         """
-        base = self.message or f"{self.source_key} alarm"
-        if self.operator and self.threshold is not None:
-            condition = f"{self.source_key} {self.operator} {self.threshold}"
-            if self.device_name:
-                return f"{base} - {condition} ({self.device_name})"
-            return f"{base} - {condition}"
-        return base
+        return self.message or f"{self.source_key} alarm"
 
 
 class AlarmEvaluator:
