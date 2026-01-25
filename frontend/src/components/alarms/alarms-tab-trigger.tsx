@@ -22,7 +22,7 @@ interface AlarmsTabTriggerProps {
 }
 
 interface AlarmSummary {
-  highestSeverity: "critical" | "warning" | "info" | null;
+  highestSeverity: "critical" | "major" | "minor" | "warning" | "info" | null;
 }
 
 export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
@@ -42,17 +42,25 @@ export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
 
       if (error || !data) return;
 
-      let highestSeverity: "critical" | "warning" | "info" | null = null;
+      let highestSeverity: "critical" | "major" | "minor" | "warning" | "info" | null = null;
 
+      // Severity hierarchy: critical > major > minor > warning > info
+      const severityRank: Record<string, number> = {
+        critical: 5,
+        major: 4,
+        minor: 3,
+        warning: 2,
+        info: 1,
+      };
+
+      let highestRank = 0;
       for (const alarm of data) {
-        if (alarm.severity === "critical") {
-          highestSeverity = "critical";
-          break;
-        } else if (alarm.severity === "warning") {
-          highestSeverity = "warning";
-        } else if (alarm.severity === "info" && !highestSeverity) {
-          highestSeverity = "info";
+        const rank = severityRank[alarm.severity] || 0;
+        if (rank > highestRank) {
+          highestRank = rank;
+          highestSeverity = alarm.severity as typeof highestSeverity;
         }
+        if (highestRank === 5) break; // Critical is max, stop early
       }
 
       setSummary({ highestSeverity });
@@ -91,8 +99,12 @@ export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
     switch (summary.highestSeverity) {
       case "critical":
         return "bg-destructive";
-      case "warning":
+      case "major":
+        return "bg-orange-500";
+      case "minor":
         return "bg-amber-500";
+      case "warning":
+        return "bg-yellow-500";
       case "info":
         return "bg-blue-400";
       default:
@@ -104,6 +116,10 @@ export function AlarmsTabTrigger({ siteId, value }: AlarmsTabTriggerProps) {
     switch (summary.highestSeverity) {
       case "critical":
         return "Critical alarms";
+      case "major":
+        return "Major alarms";
+      case "minor":
+        return "Minor alarms";
       case "warning":
         return "Warning alarms";
       case "info":
