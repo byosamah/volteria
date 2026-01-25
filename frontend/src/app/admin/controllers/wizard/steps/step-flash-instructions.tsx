@@ -106,6 +106,92 @@ export function StepFlashInstructions({ onConfirm, confirmed, hardwareFeatures }
               </p>
             </div>
           </div>
+
+          {/* Step 6 - SSH Access */}
+          <div className="flex gap-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50">
+            <div className="flex-shrink-0 w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+              6
+            </div>
+            <div className="flex-1">
+              <h5 className="font-medium text-blue-900">SSH into Controller</h5>
+              <p className="text-sm text-blue-800 mb-3">
+                Connect via SSH to verify the controller is accessible:
+              </p>
+
+              {/* Credentials box */}
+              <div className="bg-white border border-blue-300 rounded-lg p-3 mb-3">
+                <h6 className="text-xs font-medium text-blue-900 mb-2 uppercase tracking-wide">Seeed Default Credentials</h6>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 text-blue-700 font-medium">Username:</span>
+                    <code className="bg-blue-100 px-2 py-0.5 rounded font-mono">recomputer</code>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 text-blue-700 font-medium">Password:</span>
+                    <code className="bg-blue-100 px-2 py-0.5 rounded font-mono">12345678</code>
+                  </div>
+                </div>
+              </div>
+
+              {/* SSH command */}
+              <div className="bg-gray-900 text-gray-100 rounded-lg p-3 font-mono text-sm mb-2">
+                <div className="text-gray-400"># Connect via IP address</div>
+                <div>ssh recomputer@&lt;IP_ADDRESS&gt;</div>
+                <div className="mt-2 text-gray-400"># Or via mDNS (local network)</div>
+                <div>ssh recomputer@recomputer.local</div>
+              </div>
+
+              <p className="text-xs text-blue-600">
+                Find the IP address from your router&apos;s DHCP lease table or use a network scanner.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 7 - Hardware Verification */}
+          <div className="flex gap-4 p-4 border rounded-lg">
+            <div className="flex-shrink-0 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
+              7
+            </div>
+            <div className="flex-1">
+              <h5 className="font-medium">Verify Hardware Features (Optional)</h5>
+              <p className="text-sm text-muted-foreground mb-3">
+                Run these commands to verify the industrial features are working:
+              </p>
+
+              {/* RS485 Ports */}
+              <div className="mb-3">
+                <h6 className="text-sm font-medium mb-1">RS485/RS232 Ports</h6>
+                <div className="bg-gray-900 text-gray-100 rounded-lg p-2 font-mono text-xs">
+                  <div className="text-gray-400"># List serial ports</div>
+                  <div>ls -la /dev/ttyACM*</div>
+                  <div className="mt-1 text-green-400"># Expected: ttyACM0 (RS232), ttyACM1-3 (RS485)</div>
+                </div>
+              </div>
+
+              {/* UPS Status */}
+              <div className="mb-3">
+                <h6 className="text-sm font-medium mb-1">SuperCAP UPS Status</h6>
+                <div className="bg-gray-900 text-gray-100 rounded-lg p-2 font-mono text-xs">
+                  <div className="text-gray-400"># Check power status GPIO</div>
+                  <div>cat /sys/class/gpio/gpio16/value</div>
+                  <div className="mt-1 text-green-400"># 1 = power OK, 0 = power loss detected</div>
+                </div>
+              </div>
+
+              {/* 4G Modem */}
+              {!!hardwareFeatures?.cellular_4g && (
+                <div>
+                  <h6 className="text-sm font-medium mb-1">4G Modem</h6>
+                  <div className="bg-gray-900 text-gray-100 rounded-lg p-2 font-mono text-xs">
+                    <div className="text-gray-400"># Power on the 4G modem</div>
+                    <div>sudo /home/recomputer/power_4g.sh</div>
+                    <div className="mt-1 text-gray-400"># Check modem device appears</div>
+                    <div>ls /dev/ttyUSB*</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Info about hardware features */}
@@ -130,8 +216,40 @@ export function StepFlashInstructions({ onConfirm, confirmed, hardwareFeatures }
                 <li>3x RS485 serial ports + 1x RS232 port</li>
                 <li>SuperCAP UPS for safe shutdown on power loss</li>
                 <li>Hardware watchdog for auto-recovery</li>
-                {hardwareFeatures?.cellular_4g && <li>4G LTE modem for cellular connectivity</li>}
+                {!!hardwareFeatures?.cellular_4g && <li>4G LTE modem for cellular connectivity</li>}
                 <li>DC 9-36V wide voltage input range</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Security warning */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex gap-3">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5"
+            >
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+            </svg>
+            <div>
+              <h4 className="font-medium text-amber-800">Default Credentials Are Insecure</h4>
+              <p className="text-sm text-amber-700 mb-2">
+                The setup script in Step 3 will automatically secure the system:
+              </p>
+              <ul className="text-sm text-amber-700 list-disc list-inside space-y-0.5">
+                <li>Create secure <code className="bg-amber-100 px-1 rounded">voltadmin</code> user</li>
+                <li>Set a strong password</li>
+                <li>Configure SSH access</li>
+                <li>Disable the default <code className="bg-amber-100 px-1 rounded">recomputer</code> user</li>
               </ul>
             </div>
           </div>
@@ -157,8 +275,8 @@ export function StepFlashInstructions({ onConfirm, confirmed, hardwareFeatures }
             <div>
               <h4 className="font-medium text-blue-800">What&apos;s Next</h4>
               <p className="text-sm text-blue-700">
-                In the next step, you&apos;ll SSH into the R2000 and run the setup script.
-                The script will verify hardware I/O and install all Volteria controller software.
+                In the next step, you&apos;ll run the setup script which will secure the system,
+                verify all hardware I/O (RS485, UPS, watchdog), and install Volteria controller software.
               </p>
             </div>
           </div>
@@ -173,7 +291,7 @@ export function StepFlashInstructions({ onConfirm, confirmed, hardwareFeatures }
             className="w-5 h-5 rounded border-gray-300"
           />
           <span className="text-sm">
-            I have powered on the R2000 and connected Ethernet
+            I have powered on the R2000, connected Ethernet, and verified SSH access
           </span>
         </label>
       </div>
