@@ -220,6 +220,18 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-01-26)
 
+### React Hydration Fix (Frontend)
+- **Issue**: React error #418 (hydration mismatch) caused by `Date.now()` and `toLocaleString()` during SSR
+- **Root cause**: Server renders at T0, client hydrates at T0+100ms, different timestamps cause DOM mismatch
+- **Fix pattern**: Add `mounted` state with `useEffect(() => { setMounted(true); }, [])`, only compute time values after mount
+- **Files fixed**:
+  - `site-status-header.tsx` - FormattedTimeSince component
+  - `controller-health-card.tsx` - FormattedTimeSince component
+  - `alarms-viewer.tsx` - Use FormattedDate component
+  - `sync-status.tsx` - Client-side hooks for date formatting
+  - `master-device-list.tsx` - Mounted check for isControllerOnline/formatTimeSince
+  - `controller-reboot-action.tsx` - Mounted check for isControllerOnline
+
 ### Alarm Condition Storage (Database + Controller)
 - **Separate column**: Alarms now store condition in separate `condition` column (e.g., "Ambient Temperature < 50")
 - **Message column**: Contains only user-defined message (e.g., "major issue")
