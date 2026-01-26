@@ -14,7 +14,7 @@
  * - Calls backend API which handles SSH reboot
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,8 +73,13 @@ export function ControllerRebootAction({
   const [confirmText, setConfirmText] = useState("");
   const [isRebooting, setIsRebooting] = useState(false);
 
-  // Check if reboot is allowed
-  const isOnline = isControllerOnline(lastHeartbeat);
+  // Client-side mounting state to prevent hydration mismatch
+  // Date.now() differs between server and client, causing React error #418
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  // Check if reboot is allowed (only compute after mount to avoid hydration mismatch)
+  const isOnline = mounted ? isControllerOnline(lastHeartbeat) : false;
   const canReboot = isOnline && REBOOTABLE_STATUSES.includes(controllerStatus);
 
   // Get disabled reason for tooltip
