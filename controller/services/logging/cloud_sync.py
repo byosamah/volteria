@@ -597,10 +597,9 @@ class CloudSync:
                 if not alarm_type:
                     continue
 
-                # Skip device threshold alarms (reg_*) - use cooldown deduplication instead
-                # Resolution sync would mark new alarms as resolved immediately, breaking dedup
-                if alarm_type.startswith("reg_"):
-                    continue
+                # Note: We DO sync resolutions for reg_* (device threshold) alarms.
+                # This allows new alarms to trigger after user manually resolves.
+                # Cooldown (5 min) only prevents rapid re-triggering of same condition.
 
                 # Update local alarm to resolved
                 count = self.local_db.sync_alarm_resolution(
