@@ -13,7 +13,7 @@
  * - Otherwise: Show "Synced"
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -35,8 +35,8 @@ interface SyncStatusProps {
 
 type SyncState = "synced" | "sync_needed" | "never_synced" | "offline";
 
-// Format relative time for sync display
-function formatSyncTime(timestamp: string | null): string {
+// Format relative time for sync display (client-side only)
+function formatSyncTimeValue(timestamp: string | null): string {
   if (!timestamp) return "";
   const diff = Date.now() - new Date(timestamp).getTime();
   const minutes = Math.floor(diff / 60000);
@@ -49,6 +49,33 @@ function formatSyncTime(timestamp: string | null): string {
   return `${days}d ago`;
 }
 
+// Client-only hook to avoid hydration mismatch
+// Date.now() differs between server and client, causing React error #418
+function useFormattedSyncTime(timestamp: string | null): string {
+  const [formatted, setFormatted] = useState<string>("");
+
+  useEffect(() => {
+    if (timestamp) {
+      setFormatted(formatSyncTimeValue(timestamp));
+    }
+  }, [timestamp]);
+
+  return formatted;
+}
+
+// Client-only hook for formatted date
+function useFormattedDate(timestamp: string | null): string {
+  const [formatted, setFormatted] = useState<string>("");
+
+  useEffect(() => {
+    if (timestamp) {
+      setFormatted(new Date(timestamp).toLocaleString());
+    }
+  }, [timestamp]);
+
+  return formatted;
+}
+
 export function SyncStatus({
   projectId,
   controllerStatus,
@@ -57,6 +84,10 @@ export function SyncStatus({
 }: SyncStatusProps) {
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
+
+  // Client-side formatted times to avoid hydration mismatch
+  const formattedSyncTime = useFormattedSyncTime(configSyncedAt);
+  const formattedSyncDate = useFormattedDate(configSyncedAt);
 
   // Determine sync state
   const getSyncState = (): SyncState => {
@@ -92,7 +123,7 @@ export function SyncStatus({
     }
   > = {
     synced: {
-      label: configSyncedAt ? `Synced ${formatSyncTime(configSyncedAt)}` : "Synced",
+      label: formattedSyncTime ? `Synced ${formattedSyncTime}` : "Synced",
       variant: "outline",
       className: "border-green-500 text-green-600",
       icon: (
@@ -109,8 +140,8 @@ export function SyncStatus({
           <path d="M20 6 9 17l-5-5" />
         </svg>
       ),
-      tooltip: configSyncedAt
-        ? `Last synced: ${new Date(configSyncedAt).toLocaleString()}`
+      tooltip: formattedSyncDate
+        ? `Last synced: ${formattedSyncDate}`
         : "Controller has the latest configuration",
     },
     sync_needed: {
