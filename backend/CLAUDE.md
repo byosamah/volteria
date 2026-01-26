@@ -409,9 +409,20 @@ The API prevents duplicate Slave ID + connection combinations:
 6. **Controller Config Device Types**: Config endpoint (`/controllers/{id}/config`) categorizes devices into:
    - `load_meters`: meter, load_meter, load, subload, energy_meter
    - `inverters`: inverter, solar_meter
-   - `generators`: dg, diesel_generator, gas_generator
-   - `sensors`: sensor, temperature_humidity_sensor, solar_sensor, wind_sensor, fuel_level_sensor
-   - `other`: wind_turbine, bess, capacitor_bank, etc.
+   - `generators`: dg, diesel_generator, gas_generator, diesel_generator_controller, gas_generator_controller
+   - `sensors`: sensor, temperature_humidity_sensor, solar_sensor, wind_sensor, fuel_level_sensor, solar_radiation_sensor, fuel_flow_meter
+   - `other`: wind_turbine, bess, capacitor_bank, other_hardware
+
+7. **Alarm Severity Levels**: 5 levels in order: `info`, `warning`, `minor`, `major`, `critical`
+
+8. **Connection Alarm Fields**: Site devices include:
+   - `connection_alarm_enabled`: boolean - whether to create not_reporting alarms
+   - `connection_alarm_severity`: string - 'warning' | 'minor' | 'major' | 'critical'
+
+9. **Alarm Response Fields**: Alarm objects include:
+   - `condition`: string - threshold condition text (e.g., "Ambient Temperature < 50")
+   - `resolved`: boolean - whether alarm is resolved
+   - `resolved_at`: datetime - when alarm was resolved
 
 7. **Device Registers in Config**: Config uses **device registers** (merged template + manual), not raw template registers. Includes `registers`, `visualization_registers`, and `alarm_registers`.
 
@@ -445,3 +456,39 @@ Automatically logs all POST/PATCH/PUT/DELETE requests to `audit_logs` table:
 - Parses resource type/ID from URL path
 - Records success/failed status based on response code
 - Excludes `/health` and `/api/auth/*` endpoints
+
+### Historical Data RPC
+The backend proxies calls to Supabase's `get_historical_readings()` RPC function for server-side aggregation:
+
+```python
+# Aggregation levels and retention
+- 'raw': 30 days max (cloud), 1 hour max (local)
+- 'hourly': 90 days max
+- 'daily': 2 years max
+- 'auto': System selects based on date range
+
+# Returns per reading
+{
+    "site_id": "uuid",
+    "device_id": "uuid",
+    "register_name": "Total Active Power",
+    "bucket": "2026-01-26T00:00:00Z",
+    "value": 150.5,
+    "min_value": 140.2,
+    "max_value": 165.8,
+    "sample_count": 60,
+    "unit": "kW"
+}
+```
+
+### Calculated Fields Schema
+```python
+class CalculatedFieldDefinition:
+    field_id: str              # Unique identifier
+    name: str                  # Display name
+    scope: str                 # "controller" | "device"
+    calculation_type: str      # "sum" | "difference" | "cumulative" | "average" | "max" | "min"
+    time_window: str | None    # "hour" | "day" | "week" | "month" | "year"
+    unit: str                  # e.g., "kWh", "kW"
+    is_system: bool            # True for built-in fields
+```

@@ -105,10 +105,6 @@ src/app/
 │   ├── hardware/
 │   │   ├── page.tsx                   # Approved hardware list with delete (super_admin)
 │   │   └── loading.tsx                # Loading skeleton
-│   ├── controller-templates/
-│   │   ├── page.tsx                   # Controller templates list (super_admin only)
-│   │   ├── loading.tsx                # Loading skeleton
-│   │   └── controller-templates-list.tsx  # Main client component with CRUD
 │   ├── data-usage/
 │   │   ├── page.tsx                   # Data usage admin
 │   │   ├── data-usage-list.tsx        # Usage list component
@@ -118,9 +114,19 @@ src/app/
 ├── debug/
 │   └── auth/page.tsx                  # Debug auth endpoint
 │
-└── api/                               # Next.js API Routes (20+ routes)
+└── api/                               # Next.js API Routes (39 routes)
+    ├── health/route.ts                # Health check endpoint
     ├── controllers/
-    │   └── heartbeats/route.ts        # Heartbeat polling for connection status
+    │   ├── heartbeats/route.ts        # Heartbeat polling for connection status
+    │   ├── lookup/route.ts            # Lookup controller by serial
+    │   ├── register/route.ts          # Register new controller
+    │   └── [controllerId]/
+    │       ├── config/route.ts        # Controller config
+    │       ├── reboot/route.ts        # Reboot controller
+    │       ├── registers/route.ts     # Controller registers
+    │       ├── ssh-setup/route.ts     # SSH setup for controller
+    │       ├── ssh/route.ts           # Execute SSH commands
+    │       └── test/route.ts          # Run controller tests
     ├── dashboards/
     │   └── [siteId]/
     │       ├── route.ts               # Dashboard CRUD
@@ -129,19 +135,32 @@ src/app/
     │           ├── route.ts           # Widget CRUD
     │           ├── [widgetId]/route.ts  # Single widget ops
     │           └── batch/route.ts     # Batch widget updates
-    ├── historical/route.ts            # Historical data query
+    ├── historical/
+    │   ├── route.ts                   # Historical data query (cloud)
+    │   ├── local/route.ts             # Historical data (local SQLite via SSH)
+    │   └── registers/route.ts         # Available registers for device
     ├── sites/
     │   └── [siteId]/
+    │       ├── route.ts               # Site CRUD (DELETE bypasses RLS)
     │       ├── status/route.ts        # Site status
     │       ├── heartbeats/route.ts    # Site heartbeats
     │       ├── controller-health/route.ts  # Controller health
+    │       ├── sync/route.ts          # Trigger config sync
+    │       ├── sync-templates/route.ts # Sync device templates
+    │       ├── template-sync-status/route.ts  # Template sync status
     │       └── test/route.ts          # Site tests
     ├── projects/
     │   └── [projectId]/
     │       └── status/route.ts        # Project status (online/offline counts)
     ├── devices/
-    │   └── [deviceId]/
-    │       └── registers/route.ts     # Device registers
+    │   ├── [deviceId]/
+    │   │   └── registers/route.ts     # Device registers
+    │   ├── site/[siteId]/[deviceId]/
+    │   │   ├── change-template/route.ts  # Change device template
+    │   │   └── unlink-template/route.ts  # Unlink device from template
+    │   └── templates/[templateId]/
+    │       ├── usage/route.ts         # Template usage count
+    │       └── duplicate/route.ts     # Duplicate template
     └── admin/
         ├── invite/route.ts            # Send email invitations
         └── users/
@@ -150,7 +169,8 @@ src/app/
                 ├── route.ts           # Get/Update/Delete user
                 └── projects/
                     ├── route.ts       # List/Assign user projects
-                    └── [projectId]/route.ts  # Remove project assignment
+                    ├── [projectId]/route.ts  # Remove project assignment
+                    └── [projectId]/notifications/route.ts  # Project notifications
 ```
 
 ## Site Creation Wizard (7 Steps)
@@ -231,9 +251,16 @@ src/components/
 │   ├── device-list.tsx                # Project devices (with online status)
 │   ├── device-templates-list.tsx      # Available templates
 │   ├── master-device-list.tsx         # Master devices list
+│   ├── master-device-template-form.tsx # Master device template editor
+│   ├── master-device-templates-list.tsx # Master device templates list
 │   ├── register-form.tsx              # Modbus register config
 │   ├── template-form-dialog.tsx       # Create/edit template
-│   └── calculated-fields-form.tsx     # Calculated fields selector
+│   ├── duplicate-template-dialog.tsx  # Template duplication dialog
+│   ├── calculated-fields-form.tsx     # Calculated fields selector
+│   ├── bit-mask-selector.tsx          # Bit mask configuration
+│   ├── controller-readings-form.tsx   # Controller readings editor
+│   ├── enumeration-editor.tsx         # Enumeration value mapping
+│   └── group-combobox.tsx             # Device group selection
 │
 ├── charts/                            # Recharts visualizations
 │   ├── power-flow-chart.tsx           # Live power flow (1h/6h/24h/7d)
@@ -288,11 +315,16 @@ src/components/
 │   └── v2/                            # Historical V2 (server-side aggregation)
 │       ├── HistoricalDataClientV2.tsx # Main orchestrator
 │       ├── HistoricalChart.tsx        # Recharts visualization
-│       ├── ChartOverlay.tsx           # DOM overlay for performance
-│       ├── OverlayTooltip.tsx         # Positioned tooltip
+│       ├── ChartOverlay.tsx           # DOM overlay for performance (accounts for right Y-axis width)
+│       ├── OverlayTooltip.tsx         # Positioned tooltip with site/device hierarchy
 │       ├── ParameterSelector.tsx      # Device/register selection
+│       ├── ParameterCard.tsx          # Parameter card with site/device info
+│       ├── AvailableParametersList.tsx # Register list with loading state
+│       ├── AdvancedOptions.tsx        # Reference lines and calculated fields
+│       ├── AxisDropZone.tsx           # Drag-and-drop axis management
 │       ├── AggregationSelector.tsx    # Raw/Hourly/Daily selector
 │       ├── DateRangeSelector.tsx      # Calendar with presets
+│       ├── ControlsRow.tsx            # All controls in single row
 │       ├── constants.ts               # MAX_DATE_RANGE, colors
 │       └── types.ts                   # TypeScript interfaces
 │
@@ -462,7 +494,16 @@ interface Site { id, project_id, name, control_method, ... }
 
 ### Device Types
 ```typescript
-type DeviceType = "inverter" | "dg" | "load_meter"
+// See frontend/src/lib/device-constants.ts for canonical list
+type DeviceType =
+  | "inverter" | "wind_turbine" | "bess"
+  | "gas_generator_controller" | "diesel_generator_controller"
+  | "energy_meter" | "capacitor_bank"
+  | "fuel_level_sensor" | "fuel_flow_meter"
+  | "temperature_humidity_sensor" | "solar_radiation_sensor" | "wind_sensor"
+  | "other_hardware"
+  // Legacy (still valid): "load_meter" | "dg" | "sensor"
+
 type Protocol = "tcp" | "rtu_gateway" | "rtu_direct"
 
 interface DeviceTemplate { id, template_id, name, device_type, brand, model, ... }
@@ -482,7 +523,7 @@ interface ControlLog {
 type AlarmType = "communication_lost" | "control_error" | "safe_mode_triggered" |
                  "not_reporting" | "controller_offline" | "write_failed" |
                  "command_not_taken" | "threshold_alarm"
-type AlarmSeverity = "info" | "warning" | "major" | "critical"
+type AlarmSeverity = "info" | "warning" | "minor" | "major" | "critical"
 
 interface Alarm {
   id, project_id, alarm_type, device_name, message, severity,
@@ -604,21 +645,6 @@ interface CalculatedFieldDefinition {
 - **Sync Status**: Shows "Synced Xm ago" with tooltip
 
 ## New Features (Phase 6)
-
-### Controller Templates (`/admin/controller-templates`)
-Super admin page for creating and managing controller templates:
-- **Template List**: View all templates with stats (active, alarm count)
-- **Create/Edit Dialog**: Multi-section form with tabs
-  - Basic Info: Template ID, name, description, controller type, hardware type
-  - Registers: Modbus register configuration (reuses RegisterForm)
-  - Alarms: Alarm definitions with threshold conditions
-  - Calculated Fields: Select which calculations to include
-- **Alarm Definition Editor**: Collapsible cards for each alarm
-  - ID, name, description fields
-  - Source type and key selection
-  - Threshold condition builder (operator, value, severity, message)
-  - Enable by default toggle
-  - Cooldown configuration
 
 ### Site Alarm Configuration (`/projects/[id]/sites/[siteId]/alarms`)
 Site-level alarm customization page:

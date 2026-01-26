@@ -242,6 +242,11 @@ When alarm register is removed from config:
 - **Skip `reg_*` in resolution sync**: Device threshold alarms use cooldown deduplication, not resolution sync
 - **Prevents**: Repeating alarms while condition still active
 
+### Historical Chart Tooltip Fix (Frontend)
+- **rightYAxisWidth prop**: ChartOverlay now accounts for right Y-axis width when calculating hover position
+- **Calculation**: `dataRight = plotRight - rightYAxisWidth - xAxisPadding.right`
+- **Previously**: Tooltip position was off when right Y-axis was present
+
 ## Recent Updates (2026-01-25)
 
 ### Device Threshold Alarms (Controller)

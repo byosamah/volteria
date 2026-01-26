@@ -90,7 +90,10 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 061-077 | Refinements | constraints, FK fixes, cleanup |
 | 078-079 | Historical | RPC functions, aggregation |
 | 080-081 | Security | SECURITY DEFINER views, RLS policies |
-| 082+ | Connection alarms | not_reporting alarm infrastructure |
+| 082-083 | Connection alarms | not_reporting alarm infrastructure |
+| 084-088 | Historical fixes | distinct register names RPC, source column, controllers RLS |
+| 089-091 | Alarm severity | connection_alarm_severity, 'minor' level, device-specific severity |
+| 092+ | Alarm improvements | condition column for threshold display |
 
 ## RPC Functions
 
@@ -141,17 +144,25 @@ SELECT * FROM get_historical_readings(
 
 ### Device Type Constraint
 ```sql
-CHECK (device_type IN ('inverter', 'load_meter', 'dg', 'sensor'))
+-- Modern types (see frontend/src/lib/device-constants.ts for canonical list)
+CHECK (device_type IN (
+    'inverter', 'wind_turbine', 'bess',
+    'gas_generator_controller', 'diesel_generator_controller',
+    'energy_meter', 'capacitor_bank',
+    'fuel_level_sensor', 'fuel_flow_meter',
+    'temperature_humidity_sensor', 'solar_radiation_sensor', 'wind_sensor',
+    'other_hardware',
+    -- Legacy types (still valid for backwards compatibility)
+    'load_meter', 'dg', 'sensor'
+))
 ```
 
-### Measurement Type Constraint
-```sql
-CHECK (measurement_type IN ('load', 'sub_load', 'solar', 'generator', 'fuel', 'sensor'))
-```
+> **Source of Truth**: `frontend/src/lib/device-constants.ts` defines canonical device types used across the platform.
 
 ### Severity Levels
 ```sql
-CHECK (severity IN ('info', 'warning', 'major', 'critical'))
+-- 5 levels: info < warning < minor < major < critical
+CHECK (severity IN ('info', 'warning', 'minor', 'major', 'critical'))
 ```
 
 ## Row Level Security (RLS)

@@ -23,6 +23,7 @@ export function OverlayTooltip({
   timezone,
 }: OverlayTooltipProps) {
   // Extract values for each parameter from the data point
+  // Show all parameters, including those with null values (display as "—")
   const entries = useMemo(() => {
     return parameters.map((param) => {
       const dataKey = `${param.deviceId}:${param.registerName}`;
@@ -35,7 +36,7 @@ export function OverlayTooltip({
         value: typeof value === "number" ? value : null,
         color: param.color,
       };
-    }).filter((entry) => entry.value !== null);
+    });
   }, [parameters, dataPoint]);
 
   // Calculate tooltip position (avoid overflow)

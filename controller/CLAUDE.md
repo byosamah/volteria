@@ -423,3 +423,24 @@ Without `on_conflict`, entire batch fails if ANY record is duplicate.
 - `get_service_logger()` returns a `ServiceLoggerAdapter`, not a raw `logging.Logger`
 - ServiceLoggerAdapter IS directly compatible with Logger interface (has .info, .warning, .error, etc.)
 - Pass logger directly to functions expecting `logging.Logger` — do NOT use `logger._logger` (attribute doesn't exist)
+
+```python
+# CORRECT usage
+logger = get_service_logger("my_service")
+logger.info("message")  # Works directly
+
+# WRONG - attribute doesn't exist
+logger._logger.info("message")  # AttributeError!
+```
+
+### Health Auto-Resolve Thresholds
+- `ALERT_DRIFT_MS = 5000` — drift above this triggers LOGGING_HIGH_DRIFT alarm
+- Auto-resolve after 3 consecutive healthy checks (drift < 1000ms)
+- Uses `resolve_alarms_by_type()` for bulk resolution + cloud resync
+
+### Orphan Alarm Auto-Resolution
+When alarm registers are removed from config:
+- Config sync compares old vs new alarm definition IDs
+- Missing definitions = orphaned alarm types
+- `resolve_alarms_by_type()` called for each orphaned type
+- Log indicator: `[CONFIG] Auto-resolved X orphan alarm(s): alarm_id`

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useEffect, useState } from "react";
+import { useRef, useCallback, useState } from "react";
 import type { AxisParameter, ChartDataPoint } from "./types";
 import { OverlayTooltip } from "./OverlayTooltip";
 
@@ -10,11 +10,17 @@ interface ChartOverlayProps {
   rightAxisParams: AxisParameter[];
   onZoom: (startIdx: number, endIdx: number) => void;
   chartMargins: { left: number; right: number; top: number; bottom: number };
+  xAxisPadding: { left: number; right: number }; // Recharts XAxis padding
+  yAxisWidth: number; // Width of the left YAxis (pushes data area right)
+  rightYAxisWidth?: number; // Width of the right YAxis (0 if no right axis)
   width: number;
   height: number;
   showTooltip?: boolean; // Whether to show overlay tooltip (false = let Recharts handle it)
   timezone?: string; // IANA timezone for display
 }
+
+// Legend takes approximately 60px at bottom
+const LEGEND_HEIGHT = 60;
 
 export function ChartOverlay({
   data,
@@ -22,6 +28,9 @@ export function ChartOverlay({
   rightAxisParams,
   onZoom,
   chartMargins,
+  xAxisPadding,
+  yAxisWidth,
+  rightYAxisWidth = 0,
   width,
   height,
   showTooltip = true,
@@ -49,24 +58,36 @@ export function ChartOverlay({
   const plotRight = width - chartMargins.right;
   const plotWidth = plotRight - plotLeft;
   const plotTop = chartMargins.top;
-  const plotBottom = height - chartMargins.bottom;
+  // Account for legend height - legend sits below the chart area
+  const plotBottom = height - chartMargins.bottom - LEGEND_HEIGHT;
   const plotHeight = plotBottom - plotTop;
 
-  // Convert pixel X position to data index (binary search for nearest)
+  // Data area accounts for both YAxis widths and XAxis padding
+  // Left: offset by left Y-axis width + XAxis padding
+  // Right: offset by right Y-axis width + XAxis padding
+  // (Recharts draws Y-axes INSIDE the margin area, reducing the data area)
+  const dataLeft = plotLeft + yAxisWidth + xAxisPadding.left;
+  const dataRight = plotRight - rightYAxisWidth - xAxisPadding.right;
+  const dataWidth = dataRight - dataLeft;
+
+  // Convert pixel X position to data index
+  // Uses data area (with XAxis padding) for accurate index calculation
+  // Returns -1 if outside data area (no tooltip in padding zones)
   const pixelToIndex = useCallback(
     (pixelX: number): number => {
       if (data.length === 0) return -1;
 
-      // Clamp to plot area
-      const clampedX = Math.max(plotLeft, Math.min(plotRight, pixelX));
-      const relativeX = clampedX - plotLeft;
-      const ratio = relativeX / plotWidth;
+      // Reject if outside data area (in XAxis padding zones)
+      if (pixelX < dataLeft || pixelX > dataRight) return -1;
+
+      const relativeX = pixelX - dataLeft;
+      const ratio = relativeX / dataWidth;
 
       // Linear mapping to index
       const index = Math.round(ratio * (data.length - 1));
       return Math.max(0, Math.min(data.length - 1, index));
     },
-    [data.length, plotLeft, plotRight, plotWidth]
+    [data.length, dataLeft, dataRight, dataWidth]
   );
 
   // Check if position is within plot area
@@ -163,10 +184,10 @@ export function ChartOverlay({
       // Update tooltip when not dragging
       if (inPlot && data.length > 0) {
         const index = pixelToIndex(x);
-        const dataPoint = data[index];
 
-        // Only show tooltip if we have a valid data point
-        if (dataPoint && index >= 0 && index < data.length) {
+        // Only show tooltip if we have a valid data point (index = -1 means outside data area)
+        if (index >= 0 && index < data.length) {
+          const dataPoint = data[index];
           setTooltipData({
             x: Math.max(plotLeft, Math.min(plotRight, x)),
             y,
@@ -199,8 +220,8 @@ export function ChartOverlay({
         const startIdx = pixelToIndex(dragStartX.current);
         const endIdx = pixelToIndex(dragEndX.current);
 
-        // Only zoom if selection spans at least 3 points
-        if (Math.abs(endIdx - startIdx) >= 2) {
+        // Only zoom if both indices are valid and selection spans at least 3 points
+        if (startIdx >= 0 && endIdx >= 0 && Math.abs(endIdx - startIdx) >= 2) {
           const minIdx = Math.min(startIdx, endIdx);
           const maxIdx = Math.max(startIdx, endIdx);
           onZoom(minIdx, maxIdx);

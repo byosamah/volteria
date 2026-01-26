@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useState, useMemo, useEffect } from "react";
+import { useRef, useCallback, useState, useMemo } from "react";
 import {
   ComposedChart,
   Line,
@@ -450,7 +450,7 @@ export function HistoricalChart({
       </div>
 
       {/* Chart area - use DOM overlay for large datasets to avoid Recharts re-renders */}
-      <div className="px-1 select-none">
+      <div className="select-none">
         <div
           ref={chartContainerCallback}
           className="relative"
@@ -598,7 +598,10 @@ export function HistoricalChart({
               leftAxisParams={leftAxisParams}
               rightAxisParams={rightAxisParams}
               onZoom={handleOverlayZoom}
-              chartMargins={{ left: 55, right: hasRightParams ? 60 : 20, top: 8, bottom: 5 }}
+              chartMargins={{ left: 0, right: hasRightParams ? 60 : 20, top: 8, bottom: 5 }}
+              xAxisPadding={{ left: 10, right: hasRightParams ? 30 : 10 }}
+              yAxisWidth={55}
+              rightYAxisWidth={hasRightParams ? 55 : 0}
               width={chartDimensions.width}
               height={chartDimensions.height}
               showTooltip={true} // Always show overlay tooltip (overlay blocks Recharts events)
