@@ -130,7 +130,14 @@
       "Bash(del nul:*)",
       "Bash(git rm:*)",
       "Bash(powershell \"Start-Sleep -Seconds 60; Write-Host ''Done waiting''\")",
-      "Bash(powershell \"Start-Sleep -Seconds 90; Write-Host ''Done - checking after flush cycle''\")"
+      "Bash(powershell \"Start-Sleep -Seconds 90; Write-Host ''Done - checking after flush cycle''\")",
+      "Bash(tasklist:*)",
+      "Bash(wmic process where \"name=''node.exe''\" get processid,commandline)",
+      "Bash(wmic process where \"name=''node.exe''\" get processid)",
+      "Bash(wmic process where \"name=''node.exe''\" call terminate)",
+      "Bash(ln:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)"
     ]
   }
 }

@@ -209,6 +209,11 @@ export function MasterDeviceList({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Client-side mounting state to prevent hydration mismatch
+  // Date.now() differs between server and client, causing React error #418
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   // Heartbeat polling state - for live connection status
   const [heartbeats, setHeartbeats] = useState<Record<string, string>>({});
   const [isPolling, setIsPolling] = useState(false);
@@ -968,13 +973,14 @@ export function MasterDeviceList({
                     {/* Online/Offline indicator - uses live heartbeat data for controllers */}
                     {device.device_type === "controller" && device.controller_id ? (
                       // Controller: use polled heartbeat data with visible status text
+                      // Only compute online status after mount to avoid hydration mismatch
                       (() => {
                         const heartbeat = getControllerHeartbeat(device.controller_id);
-                        const online = isControllerOnline(heartbeat);
+                        const online = mounted ? isControllerOnline(heartbeat) : false;
                         return (
                           <div
                             className="flex items-center gap-1.5 flex-shrink-0"
-                            title={online ? "Online" : heartbeat ? formatTimeSince(heartbeat) : "Offline"}
+                            title={online ? "Online" : mounted && heartbeat ? formatTimeSince(heartbeat) : "Offline"}
                           >
                             {online ? (
                               <>
@@ -990,7 +996,7 @@ export function MasterDeviceList({
                                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-300"></span>
                                 </span>
                                 <span className="text-xs text-muted-foreground">
-                                  {heartbeat ? formatTimeSince(heartbeat) : "Offline"}
+                                  {mounted && heartbeat ? formatTimeSince(heartbeat) : "Offline"}
                                 </span>
                               </>
                             )}
