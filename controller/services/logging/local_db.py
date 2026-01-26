@@ -354,18 +354,22 @@ class LocalDatabase:
             cursor = conn.cursor()
             resolved_time = resolved_at or datetime.now(timezone.utc).isoformat()
 
+            # Only resolve alarms created BEFORE the resolution timestamp
+            # This prevents incorrectly resolving NEW alarms when syncing old resolutions
             if device_name:
                 cursor.execute("""
                     UPDATE alarms
                     SET resolved = 1, resolved_at = ?
                     WHERE site_id = ? AND alarm_type = ? AND device_name = ? AND resolved = 0
-                """, (resolved_time, site_id, alarm_type, device_name))
+                      AND created_at <= ?
+                """, (resolved_time, site_id, alarm_type, device_name, resolved_time))
             else:
                 cursor.execute("""
                     UPDATE alarms
                     SET resolved = 1, resolved_at = ?
                     WHERE site_id = ? AND alarm_type = ? AND resolved = 0
-                """, (resolved_time, site_id, alarm_type))
+                      AND created_at <= ?
+                """, (resolved_time, site_id, alarm_type, resolved_time))
 
             conn.commit()
             return cursor.rowcount

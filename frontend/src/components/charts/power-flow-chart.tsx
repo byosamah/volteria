@@ -171,24 +171,26 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Helper: Format time for X-axis labels based on selected range
+  // Use fixed "en-US" locale to prevent hydration mismatch (server vs client locale)
   const formatTime = useCallback((timestamp: string) => {
     const date = new Date(timestamp);
     if (selectedRange <= 6) {
       // For 1h and 6h: show just time (same day)
-      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
     } else if (selectedRange <= 24) {
       // For 24h: show shorter format
-      return date.toLocaleDateString([], { weekday: "short", hour: "2-digit" });
+      return date.toLocaleDateString("en-US", { weekday: "short", hour: "2-digit" });
     } else {
       // For 7d: show date with time
-      return date.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit" });
+      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit" });
     }
   }, [selectedRange]);
 
   // Helper: Format time for tooltips (always show full date and time)
+  // Use fixed "en-US" locale to prevent hydration mismatch
   const formatTooltipTime = useCallback((timestamp: string) => {
     const date = new Date(timestamp);
-    return date.toLocaleString([], {
+    return date.toLocaleString("en-US", {
       month: "short",
       day: "numeric",
       hour: "2-digit",
