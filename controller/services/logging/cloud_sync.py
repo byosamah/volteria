@@ -564,7 +564,8 @@ class CloudSync:
             Number of local alarms updated
         """
         try:
-            # Query cloud for resolved alarms for this site (last hour to limit scope)
+            # Query cloud for resolved alarms for this site (last 24 hours)
+            # Extended from 1 hour to catch resolutions that happened while controller was offline
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{self.supabase_url}/rest/v1/alarms",
@@ -572,8 +573,8 @@ class CloudSync:
                         "select": "alarm_type,device_name,resolved_at",
                         "site_id": f"eq.{self.site_id}",
                         "resolved": "eq.true",
-                        # Only get recently resolved to limit query size
-                        "resolved_at": f"gte.{(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}",
+                        # Get resolved in last 24 hours to handle offline recovery
+                        "resolved_at": f"gte.{(datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()}",
                     },
                     headers={
                         "apikey": self.supabase_key,
