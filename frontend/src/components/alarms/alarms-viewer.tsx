@@ -40,6 +40,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { FormattedDate } from "@/components/ui/formatted-date";
 
 // Alarm type
 interface Alarm {
@@ -186,11 +187,7 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
     setResolving(null);
   };
 
-  // Format timestamp for display
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString();
-  };
+  // Format timestamp for display (note: uses FormattedDate component to avoid hydration mismatch)
 
   // Get severity badge variant
   const getSeverityBadge = (severity: string) => {
@@ -348,7 +345,7 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                       )}
                     </div>
                     <span className="text-xs font-mono text-muted-foreground">
-                      {formatTime(alarm.created_at)}
+                      <FormattedDate date={alarm.created_at} />
                     </span>
                   </div>
 
@@ -423,7 +420,7 @@ export function AlarmsViewer({ projectId, siteId }: AlarmsViewerProps) {
                       className={!alarm.acknowledged ? "bg-red-50 dark:bg-red-950/20" : ""}
                     >
                       <TableCell className="font-mono text-sm whitespace-nowrap">
-                        {formatTime(alarm.created_at)}
+                        <FormattedDate date={alarm.created_at} />
                       </TableCell>
                       <TableCell>{getSeverityBadge(alarm.severity)}</TableCell>
                       <TableCell className="whitespace-nowrap">

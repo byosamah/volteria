@@ -54,8 +54,8 @@ interface SiteStatusHeaderProps {
   controlMethod?: string; // "onsite_controller" | "gateway_api" | null
 }
 
-// Format time since timestamp
-const formatTimeSince = (timestamp: string | null): string => {
+// Format time since timestamp (for client-side use only)
+function formatTimeSinceValue(timestamp: string | null): string {
   if (!timestamp) return "Never";
   const diff = Date.now() - new Date(timestamp).getTime();
   const seconds = Math.floor(diff / 1000);
@@ -66,7 +66,19 @@ const formatTimeSince = (timestamp: string | null): string => {
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-};
+}
+
+// Client-only component to avoid hydration mismatch
+// Date.now() differs between server and client, causing React error #418
+function FormattedTimeSince({ timestamp }: { timestamp: string | null }) {
+  const [formatted, setFormatted] = useState<string>("--");
+
+  useEffect(() => {
+    setFormatted(formatTimeSinceValue(timestamp));
+  }, [timestamp]);
+
+  return <>{formatted}</>;
+}
 
 // Format date for display (e.g., "Jan 11, 2:45 PM")
 const formatDate = (timestamp: string | null): string => {
@@ -121,7 +133,7 @@ function ConnectionStatus({
           <div className="text-xs">
             <p className="font-medium">{typeLabel} Connection</p>
             <p className="text-muted-foreground">
-              Last seen: {formatTimeSince(lastSeen)}
+              Last seen: <FormattedTimeSince timestamp={lastSeen} />
             </p>
           </div>
         </TooltipContent>

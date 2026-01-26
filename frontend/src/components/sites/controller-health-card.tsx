@@ -53,8 +53,8 @@ const formatUptime = (seconds: number): string => {
   return `${hours}h ${minutes}m`;
 };
 
-// Format time since timestamp
-const formatTimeSince = (timestamp: string): string => {
+// Format time since timestamp (for client-side use only)
+function formatTimeSinceValue(timestamp: string): string {
   const diff = Date.now() - new Date(timestamp).getTime();
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -62,7 +62,19 @@ const formatTimeSince = (timestamp: string): string => {
   if (seconds < 60) return "Just now";
   if (minutes < 60) return `${minutes}m ago`;
   return `${Math.floor(minutes / 60)}h ago`;
-};
+}
+
+// Client-only component to avoid hydration mismatch
+// Date.now() differs between server and client, causing React error #418
+function FormattedTimeSince({ timestamp }: { timestamp: string }) {
+  const [formatted, setFormatted] = useState<string>("--");
+
+  useEffect(() => {
+    setFormatted(formatTimeSinceValue(timestamp));
+  }, [timestamp]);
+
+  return <>{formatted}</>;
+}
 
 // Get color for temperature
 const getTempColor = (temp: number | null): string => {
@@ -335,7 +347,7 @@ export function ControllerHealthCard({ siteId }: ControllerHealthCardProps) {
 
           {/* Last Updated */}
           <div className="pt-2 border-t text-xs text-muted-foreground text-right">
-            Updated: {formatTimeSince(health.timestamp)}
+            Updated: <FormattedTimeSince timestamp={health.timestamp} />
           </div>
         </div>
       </CardContent>
