@@ -256,14 +256,15 @@ Example: `"Temperature High - Ambient Temperature > 50 (Sensor Device)"`
 | Alarms not syncing | `curl :8085/stats` for unsynced count | Check cloud connectivity |
 | Duplicate alarms while active | Check logs for "Skipping duplicate" | Deduplication working correctly |
 | Alarms not deduplicating | Check resolved status in SQLite | Ensure previous alarm is unresolved |
+| Duplicates after cooldown (5 min) | Resolution sync resolved NEW alarm | Fixed: sync only resolves alarms created BEFORE resolution timestamp |
 
 ### Resolution Sync (Bidirectional)
 Cloud resolutions now sync back to controller:
 - `sync_resolved_alarms()` runs every 180s (cloud sync interval)
-- Queries cloud for alarms resolved in last hour
-- Updates local SQLite resolved status
+- Queries cloud for alarms resolved in last 24 hours (extended for offline recovery)
+- Updates local SQLite resolved status for alarms created BEFORE resolution timestamp
+- Prevents incorrectly resolving NEW alarms when syncing old resolutions
 - Enables proper deduplication after UI resolution
-- **Skip `reg_*` alarms**: Device threshold alarms use cooldown deduplication, not resolution sync
 
 Log indicator: `[CLOUD] Synced N alarm resolutions from cloud to local`
 
@@ -280,4 +281,4 @@ When alarm register is removed from config, existing unresolved alarms are auto-
 - `condition`: Threshold condition text (e.g., "Ambient Temperature < 50")
 - `alarm_type`: For `reg_*` alarms: `reg_{device_id}_{register_name}`
 
-<!-- Updated: 2026-01-26 - Added orphan alarm auto-resolution, condition column storage -->
+<!-- Updated: 2026-01-26 - Fixed resolution sync to only resolve alarms created BEFORE resolution timestamp, 24h lookback -->
