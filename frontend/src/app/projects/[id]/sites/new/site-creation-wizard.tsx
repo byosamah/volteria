@@ -9,7 +9,6 @@
 
 import { useReducer, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -194,59 +193,19 @@ export function SiteCreationWizard({ projectId }: SiteCreationWizardProps) {
     dispatch({ type: "SET_SUBMIT_ERROR", error: null });
 
     try {
-      const supabase = createClient();
+      // Call API route which uses backend service_role to bypass RLS
+      const response = await fetch("/api/sites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, ...formData }),
+      });
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("You must be logged in to create a site");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to create site");
       }
 
-      // Build insert data from formData
-      const insertData = {
-        project_id: projectId,
-        name: formData.name.trim(),
-        location: formData.location.trim() || null,
-        description: formData.description.trim() || null,
-
-        // Control method (new fields)
-        control_method: formData.controlMethod,
-        control_method_backup: formData.controlMethodBackup,
-        grid_connection: formData.gridConnection,
-
-        // Control settings
-        operation_mode: formData.operationMode,
-        dg_reserve_kw: formData.dgReserveKw,
-        control_interval_ms: formData.controlIntervalMs,
-
-        // Logging settings
-        logging_local_interval_ms: formData.loggingLocalIntervalMs,
-        logging_local_retention_days: formData.loggingLocalRetentionDays,
-        logging_cloud_interval_ms: 5000, // Default cloud sync interval
-        logging_cloud_enabled: formData.loggingCloudEnabled,
-        logging_gateway_enabled: formData.loggingGatewayEnabled,
-
-        // Safe mode settings
-        safe_mode_enabled: formData.safeModeEnabled,
-        safe_mode_type: formData.safeModeType,
-        safe_mode_timeout_s: formData.safeModeTimeoutS,
-        safe_mode_rolling_window_min: formData.safeModeRollingWindowMin,
-        safe_mode_threshold_pct: formData.safeModeThresholdPct,
-        safe_mode_power_limit_kw: formData.safeModePowerLimitKw || null,
-
-        // System fields
-        controller_status: "offline",
-        is_active: true,
-        created_by: user.id,
-      };
-
-      const { data, error } = await supabase
-        .from("sites")
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (error) throw error;
+      const data = await response.json();
 
       // Success - show toast and redirect
       toast.success("Site created successfully!");

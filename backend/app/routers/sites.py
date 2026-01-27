@@ -46,6 +46,8 @@ class LoggingSettings(BaseModel):
     local_interval_ms: int = Field(default=1000, ge=100)
     cloud_interval_ms: int = Field(default=5000, ge=1000)
     local_retention_days: int = Field(default=7, ge=1, le=90)
+    cloud_enabled: bool = True
+    gateway_enabled: bool = False
 
 
 class SafeModeSettings(BaseModel):
@@ -73,6 +75,9 @@ class SiteCreate(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     controller_serial_number: Optional[str] = None
+    control_method: str = "onsite_controller"
+    control_method_backup: Optional[str] = None
+    grid_connection: str = "off_grid"
     control: ControlSettings = ControlSettings()
     logging: LoggingSettings = LoggingSettings()
     safe_mode: SafeModeSettings = SafeModeSettings()
@@ -264,12 +269,17 @@ async def create_site(
             "location": site.location,
             "description": site.description,
             "controller_serial_number": site.controller_serial_number,
+            "control_method": site.control_method,
+            "control_method_backup": site.control_method_backup,
+            "grid_connection": site.grid_connection,
             "control_interval_ms": site.control.interval_ms,
             "dg_reserve_kw": site.control.dg_reserve_kw,
             "operation_mode": site.control.operation_mode,
             "logging_local_interval_ms": site.logging.local_interval_ms,
             "logging_cloud_interval_ms": site.logging.cloud_interval_ms,
             "logging_local_retention_days": site.logging.local_retention_days,
+            "logging_cloud_enabled": site.logging.cloud_enabled,
+            "logging_gateway_enabled": site.logging.gateway_enabled,
             "safe_mode_enabled": site.safe_mode.enabled,
             "safe_mode_type": site.safe_mode.type,
             "safe_mode_timeout_s": site.safe_mode.timeout_s,
