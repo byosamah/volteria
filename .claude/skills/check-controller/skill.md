@@ -546,6 +546,12 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
     journalctl -b -u volteria-system --no-pager | head -50
     ```
 
+15. **Compare service ReadWritePaths** (for permission errors like "Read-only file system"):
+    ```bash
+    grep -h ReadWritePaths /etc/systemd/system/volteria-*.service
+    # All services should have /run/volteria - if one is missing, that's the bug
+    ```
+
 ### Common Issues
 
 | Symptom | Check | Fix |
@@ -867,4 +873,4 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 - **`check-logging`**: Deep dive into logging service (RAM buffer, SQLite, cloud sync, downsampling, alarm evaluation, drift tracking)
 - **`check-setup`**: Controller provisioning flow (wizard, setup script, registration, SSH tunnel setup, testing, SOL532-E16 hardware-specific setup)
 
-<!-- Updated: 2026-01-28 - Added supervisor restart loop fix (ReadWritePaths must include /run/volteria) -->
+<!-- Updated: 2026-01-28 - Added supervisor restart loop fix, ReadWritePaths diagnostic step -->
