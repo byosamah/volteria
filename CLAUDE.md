@@ -169,6 +169,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 7. **Controller deploy order**: `POST /api/controllers/{id}/update` pulls from git — commit and push BEFORE deploying
 8. **Setup script auto-updates**: Controller setup clones from main — code fixes are automatically available to new controllers after push
 9. **Config readers use SharedState**: All code reading device settings (services, CLI scripts) must use `get_config()` from `common.state` — never hardcode paths
+10. **Debug HTTP errors by tracing full path**: Browser → Nginx → Frontend API → Backend → Database. Don't assume error source — check each hop.
 
 ## Key Architecture Decisions
 
@@ -227,6 +228,17 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER ask user for controller SSH passwords — read from controllers table
 
 ## Recent Updates (2026-01-28)
+
+### Site Creation Fix (Frontend + Backend + Nginx)
+- **Issue**: Creating a new site failed with 403 Forbidden, then ERR_TOO_MANY_REDIRECTS
+- **Root cause 1**: RLS on `sites` table only allows SELECT for authenticated users — no INSERT policy
+- **Root cause 2**: Nginx `location /api/sites/` required trailing slash, but browser sends `/api/sites`
+- **Fix**:
+  1. Created frontend API route `/api/sites/route.ts` that calls backend (bypasses RLS with service_role)
+  2. Updated backend `SiteCreate` model to include `control_method`, `grid_connection`, `logging_cloud_enabled`, etc.
+  3. Changed nginx from `location /api/sites/` to `location ~ ^/api/sites(/.*)?$` (regex handles both)
+  4. Added `/api/sites` to middleware public paths (API route handles own auth)
+- **Pattern**: Same as site deletion — route through backend for write operations
 
 ### Supervisor Restart Loop Fix (Controller)
 - **Issue**: Controller CPU at 90%+, all services in restart loop

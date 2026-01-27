@@ -171,11 +171,24 @@ docker logs sdc-frontend --tail=100
 ```bash
 # Check nginx access logs for redirect pattern (301 → 308 loop)
 docker logs sdc-nginx --tail=50
-
-# Common cause: trailing slash mismatch between nginx and Next.js
-# Fix: Use regex location matching for API routes
-# Example: location ~ ^/api/historical(/|$) instead of location /api/historical/
 ```
+
+**Root cause**: Nginx `location /api/path/` (with trailing slash) redirects requests to `/api/path` (no slash), causing infinite loop.
+
+**Fix**: Use regex pattern instead of exact path:
+```nginx
+# BAD - causes redirect loop
+location /api/sites/ {
+    proxy_pass http://frontend;
+}
+
+# GOOD - handles both /api/sites and /api/sites/
+location ~ ^/api/sites(/.*)?$ {
+    proxy_pass http://frontend;
+}
+```
+
+**Debug tip**: Check nginx location blocks FIRST when debugging redirect loops.
 
 ### SSL Certificate Renewal
 ```bash

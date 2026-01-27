@@ -813,3 +813,5 @@ npx shadcn@latest add dialog
    - Uses `/api/devices/templates/{id}/usage` endpoint
 
 10. **Alarm States**: Alarms have 3 states: Active → Acknowledged → Resolved. Both `/alarms` page and site-level `AlarmsViewer` must show all states consistently with matching UI (badge colors, action buttons, filters).
+
+11. **RLS Bypass for Write Operations**: When RLS blocks INSERT/UPDATE/DELETE, create a frontend API route (`/api/resource/route.ts`) that calls the backend with the user's session token. Backend uses service_role to bypass RLS. Pattern: site deletion (`/api/sites/[siteId]`), site creation (`/api/sites`).
