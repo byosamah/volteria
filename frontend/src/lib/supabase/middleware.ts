@@ -42,12 +42,13 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Redirect unauthenticated users to login (except for public pages)
-  // Note: Controller APIs use service key internally, so bypass middleware auth
+  // Note: API routes handle their own auth internally via createClient()
   const publicPaths = [
     "/login",
     "/auth/callback",
     "/api/test-login",
-    "/api/controllers", // Allow all controller API endpoints (heartbeats, config, etc.)
+    "/api/controllers", // Controller API endpoints (heartbeats, config, etc.)
+    "/api/sites", // Site API endpoints handle auth internally
   ];
   const isPublicPath = publicPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
