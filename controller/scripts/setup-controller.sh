@@ -126,11 +126,11 @@ install_dependencies() {
         jq \
         network-manager
 
-    # Install modem-manager for SOL532-E16 (4G modem support)
+    # Install modemmanager for SOL532-E16 (4G modem support)
     HARDWARE_CHECK=$(detect_hardware)
     if [[ "$HARDWARE_CHECK" == "SOL532-E16" ]]; then
-        apt-get install -y modem-manager
-        log_info "ModemManager installed for 4G modem support"
+        apt-get install -y modemmanager || log_warn "ModemManager not available (4G modem optional)"
+        log_info "ModemManager setup complete"
     fi
 
     log_info "System dependencies installed"
