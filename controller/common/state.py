@@ -13,12 +13,19 @@ from typing import Any
 from datetime import datetime, timezone
 import threading
 
-# State directory - will be created if it doesn't exist
-STATE_DIR = Path(os.environ.get("VOLTERIA_STATE_DIR", "/opt/volteria/data/state"))
-
-# Fallback for Windows development
-if os.name == "nt":
+# State directory - prefer tmpfs (/run/volteria/state) for speed, fallback to disk
+# This allows register_cli.py (run via SSH outside systemd) to find the latest config
+_state_dir_env = os.environ.get("VOLTERIA_STATE_DIR")
+if _state_dir_env:
+    STATE_DIR = Path(_state_dir_env)
+elif os.name == "nt":
+    # Windows development
     STATE_DIR = Path(__file__).parent.parent / "data" / "state"
+else:
+    # Production: prefer tmpfs, fallback to disk
+    _tmpfs_path = Path("/run/volteria/state")
+    _disk_path = Path("/opt/volteria/data/state")
+    STATE_DIR = _tmpfs_path if _tmpfs_path.exists() else _disk_path
 
 
 class SharedState:

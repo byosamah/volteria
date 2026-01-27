@@ -30,29 +30,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from pymodbus.client import AsyncModbusTcpClient
 
+# Use SharedState for config (same as all services) - reads from tmpfs or disk
+from common.state import get_config
+
 
 def get_device_config(device_id: str) -> dict | None:
-    """Get device configuration from SharedState config file."""
-    config_path = Path("/opt/volteria/data/state/config.json")
+    """
+    Get device configuration from SharedState (same pattern as logging service).
 
-    # Fallback for Windows development
-    if not config_path.exists():
-        config_path = Path(__file__).parent / "data" / "state" / "config.json"
-
-    if not config_path.exists():
-        return None
-
-    try:
-        with open(config_path) as f:
-            config = json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return None
+    Config is the source of truth - always reads latest synced config.
+    User changes network settings in UI → config syncs to controller →
+    this function returns the updated connection settings.
+    """
+    config = get_config()
 
     if not config:
         return None
 
-    # Config stores devices as a flat list
-    # Each device has: id, device_type, modbus, registers, etc.
     devices = config.get("devices", [])
 
     # Handle both list (new format) and dict (legacy format)
@@ -63,6 +57,7 @@ def get_device_config(device_id: str) -> dict | None:
             devices.get("inverters", []),
             devices.get("generators", []),
             devices.get("sensors", []),
+            devices.get("other", []),
         ]
         for device_list in device_lists:
             for device in device_list:
