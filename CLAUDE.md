@@ -228,6 +228,16 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-01-27)
 
+### R2000 (SOL532-E16) Setup Testing Fixes
+Bugs discovered and fixed during first real R2000 hardware setup:
+- **modemmanager package name**: Changed `modem-manager` → `modemmanager` (no hyphen) in setup script
+- **UPS monitor test**: Made optional (returns "skipped" instead of "failed") since GPIO16 not configured on stock Seeed image
+- **4G modem install**: Made non-fatal with `|| log_warn` - 4G is optional feature
+- **GitHub raw caching**: Raw content caches for ~5 minutes. Use cache-busting: `curl -sSL "URL?$(date +%s)" | sudo bash`
+- **Service restart after registration**: If heartbeat fails with "Illegal header value b'Bearer '", restart volteria-system service
+- **Wizard registration mismatch**: Known issue - wizard creates controller record with NULL serial, setup script creates separate record with detected serial. Manual DB merge required until fixed.
+- **Docker code changes**: `docker-compose restart` doesn't pick up code changes. Must use `docker-compose up -d --build backend`
+
 ### Live Registers Config Fix (Controller)
 - **Issue**: "Request Data" button showed "Device not reporting back" despite device being online
 - **Root cause**: `register_cli.py` (executed via SSH) was reading stale disk config (`/opt/volteria/data/state/config.json`) instead of tmpfs (`/run/volteria/state/config.json`)
