@@ -190,6 +190,13 @@ SUPABASE_SERVICE_KEY=your-service-key
 - Devices dict structure: `{load_meters: [], inverters: [], generators: [], sensors: [], other: []}`
 - Config uses merged template + manual registers
 
+### Nginx Routing (Frontend vs Backend API)
+- Frontend Next.js API routes: `/api/controllers/[id]/test`, `/api/dashboards/*`, `/api/sites/*`, `/api/projects/*`
+- Backend FastAPI routes: `/api/ssh-test/*`, `/api/controllers/[id]/(update|reboot|ssh|config|logs)`
+- **If frontend API returns 404**: Check nginx regex patterns aren't routing to backend first
+- Config file: `/opt/solar-diesel-controller/deploy/nginx.conf`
+- After nginx config changes: `docker-compose restart nginx` (container has volume mount)
+
 ## Controller SSH Access
 
 **Always read credentials from the `controllers` table** — never ask the user for passwords.

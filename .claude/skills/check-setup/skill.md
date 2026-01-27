@@ -559,3 +559,84 @@ ping -c 3 google.com
 
 - **`check-controller`**: After wizard completes — ongoing diagnostics, service architecture, SharedState, safe mode
 - **`check-logging`**: Logging service deep dive — RAM buffer, SQLite, cloud sync, downsampling, drift
+
+---
+
+## 13. Known Issues & Future Improvements
+
+<!-- Updated: 2026-01-27 - R2000 wizard testing session -->
+
+### Wizard/Setup Script Registration Mismatch (BUG)
+
+**Problem**: When user starts wizard without entering serial number:
+1. Wizard creates controller record (ID: A, serial: NULL)
+2. Setup script runs → creates NEW controller record (ID: B, serial: detected)
+3. Wizard still tracks ID A, doesn't know about ID B
+4. Result: "Registration Pending" forever in wizard
+
+**Current Workaround** (manual database fix):
+```sql
+-- 1. Move heartbeats from script's controller to wizard's controller
+UPDATE controller_heartbeats SET controller_id = 'WIZARD_ID' WHERE controller_id = 'SCRIPT_ID';
+
+-- 2. Delete duplicate controller created by script
+DELETE FROM controllers WHERE id = 'SCRIPT_ID';
+
+-- 3. Update wizard's controller with registration data
+UPDATE controllers SET
+  serial_number = 'DETECTED_SERIAL',
+  ssh_port = ASSIGNED_PORT,
+  ssh_username = 'voltadmin',
+  ssh_password = 'Solar@1996'
+WHERE id = 'WIZARD_ID';
+
+-- 4. SSH to controller and update config with new ID
+sudo sed -i "s/SCRIPT_ID/WIZARD_ID/g" /etc/volteria/config.yaml /etc/volteria/env
+sudo systemctl restart volteria-system
+```
+
+**Future Fix Options**:
+- Option A: Wizard passes pre-generated ID to setup script URL parameter
+- Option B: Setup script checks for existing draft controller with same hardware type and updates it
+- Option C: Wizard searches for recently registered controllers and auto-links by hardware type
+
+### GitHub Raw Content Caching
+
+Setup script fetched via curl may be cached for up to 5 minutes.
+
+**Symptoms**: Code changes not taking effect after push
+
+**Fix**: Use cache-busting query parameter:
+```bash
+curl -sSL "https://raw.githubusercontent.com/byosamah/volteria/main/controller/scripts/setup-controller.sh?$(date +%s)" | sudo bash
+```
+
+Or with headers:
+```bash
+curl -H "Cache-Control: no-cache" -sSL "https://raw.githubusercontent.com/.../setup-controller.sh" | sudo bash
+```
+
+### Service Restart After Registration
+
+If heartbeat fails with `"Illegal header value b'Bearer '"`, the service started before env file was fully written.
+
+**Fix**:
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart volteria-system
+```
+
+### R2000 GPIO16 Not Accessible
+
+On some Seeed reComputer images, GPIO16 (UPS power loss detection) is not accessible by default.
+
+**Symptoms**: `volteria-ups-monitor` stays in "activating" state, UPS test fails/skips
+
+**Impact**: Non-critical for basic operation. UPS monitor is optional.
+
+**Note**: Full UPS support may require additional GPIO configuration on Seeed images.
+
+### Package Name: modemmanager
+
+The 4G modem manager package is `modemmanager` (no hyphen), not `modem-manager`.
+
+**Fixed in**: commit 86261d3 (setup-controller.sh)
