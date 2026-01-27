@@ -180,12 +180,27 @@ File-based IPC with atomic writes (`common/state.py`).
 | File | Writer | Readers | Content |
 |------|--------|---------|---------|
 | `readings.json` | device | control, logging | Per-register values |
-| `config.json` | config | device, control, logging | Site configuration |
+| `config.json` | config | device, control, logging, register_cli | Site configuration |
 | `control_state.json` | control | logging, system | Algorithm output |
 | `service_health.json` | all | system | Health status |
 | `safe_mode_override.json` | supervisor | control | Safe mode trigger |
 | `controller_config.json` | main_v2 | all | Boot config from YAML |
 | `config_status.json` | config | device, control, logging | Change notification |
+
+### Path Resolution (tmpfs vs disk)
+
+**CRITICAL**: Scripts executed via SSH (outside systemd) don't have `VOLTERIA_STATE_DIR` env var.
+
+`common/state.py` resolves STATE_DIR as follows:
+1. If `VOLTERIA_STATE_DIR` env var set → use it (systemd services)
+2. Else if Windows → `controller/data/state/` (development)
+3. Else if `/run/volteria/state` exists → use tmpfs (production, preferred)
+4. Else → `/opt/volteria/data/state/` (fallback disk)
+
+**All config readers must use `get_config()` from `common.state`** — never hardcode paths. This ensures:
+- Services (systemd) read from tmpfs via env var
+- SSH scripts (register_cli.py) read from tmpfs via existence check
+- User changes IP in UI → config syncs → all readers see new settings automatically
 
 ### Config Change Notification
 1. Config service writes new config + `config_status.json` with new version
@@ -434,6 +449,8 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | RTU Direct: asyncio.Lock per serial port | Prevent bus contention on RS-485 |
 | SOL532-E16: watchdog feed every 30s | System reboots if service hangs >60s |
 | SOL532-E16: UPS monitor on GPIO16 | Graceful shutdown on power loss |
+| Config readers use `get_config()` | Never hardcode paths — tmpfs/disk resolution varies by context |
+| SSH scripts prefer tmpfs over disk | `common/state.py` checks tmpfs existence when env var not set |
 
 ---
 
@@ -539,6 +556,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Device offline | Modbus connectivity | Check gateway IP, slave ID, cable |
 | Readings not syncing | SQLite pending count | Check cloud_sync errors in logging logs |
 | High drift alarms | `curl :8085/stats` | Check SD card I/O, CPU load |
+| Live Registers "not reporting" | Compare tmpfs vs disk config IPs | Ensure `register_cli.py` uses `get_config()` from SharedState |
 
 ### SOL532-E16 Specific Issues
 
@@ -771,6 +789,25 @@ Device (Modbus) → RegisterReader → SharedState (readings.json) [1s poll]
 | `/api/historical` | GET | Aggregated time-series (uses RPC) |
 | `/api/controllers/[id]/registers` | POST | On-demand register read via SSH (not polling) |
 
+### Live Registers API (On-Demand Reads)
+
+**Flow**: Frontend → Backend → SSH → `register_cli.py` → Modbus device
+
+```
+POST /api/controllers/{id}/registers
+    → Backend validates controller_secret
+    → SSH to Pi: python register_cli.py read --device-id X --addresses Y
+    → register_cli.py reads device config from SharedState (get_config())
+    → Connects to device using config IP/port/slave_id
+    → Returns JSON with readings or error
+```
+
+**CRITICAL**: `register_cli.py` must use `get_config()` from `common.state` (not hardcoded paths) to read device connection settings. This ensures it reads from tmpfs (latest synced config) even when executed via SSH (outside systemd).
+
+**Common Issue**: "Device not reporting back" despite device being online
+- **Cause**: Script reading stale disk config with old IP instead of tmpfs with new IP
+- **Fix**: `register_cli.py` now uses SharedState pattern (same as logging service)
+
 ### Live Data Response Shape
 
 ```json
@@ -827,3 +864,5 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 
 - **`check-logging`**: Deep dive into logging service (RAM buffer, SQLite, cloud sync, downsampling, alarm evaluation, drift tracking)
 - **`check-setup`**: Controller provisioning flow (wizard, setup script, registration, SSH tunnel setup, testing, SOL532-E16 hardware-specific setup)
+
+<!-- Updated: 2026-01-27 - Added SharedState path resolution (tmpfs vs disk), Live Registers API flow, config source of truth pattern -->

@@ -168,6 +168,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 6. **Template linkage**: Template registers are live references, not copies
 7. **Controller deploy order**: `POST /api/controllers/{id}/update` pulls from git — commit and push BEFORE deploying
 8. **Setup script auto-updates**: Controller setup clones from main — code fixes are automatically available to new controllers after push
+9. **Config readers use SharedState**: All code reading device settings (services, CLI scripts) must use `get_config()` from `common.state` — never hardcode paths
 
 ## Key Architecture Decisions
 
@@ -217,6 +218,17 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER create tables without enabling RLS
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
+
+## Recent Updates (2026-01-27)
+
+### Live Registers Config Fix (Controller)
+- **Issue**: "Request Data" button showed "Device not reporting back" despite device being online
+- **Root cause**: `register_cli.py` (executed via SSH) was reading stale disk config (`/opt/volteria/data/state/config.json`) instead of tmpfs (`/run/volteria/state/config.json`)
+- **Why**: SSH runs outside systemd, so `VOLTERIA_STATE_DIR` env var not available. Script hardcoded disk path.
+- **Fix**:
+  - `common/state.py` now prefers tmpfs over disk when env var not set (checks if `/run/volteria/state` exists)
+  - `register_cli.py` now uses `get_config()` from SharedState (same pattern as logging service)
+- **Principle**: Config is single source of truth. All code reading device settings must use SharedState — user changes IP in UI → config syncs → all readers (services + SSH scripts) see new settings automatically.
 
 ## Recent Updates (2026-01-26)
 
