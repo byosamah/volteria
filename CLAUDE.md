@@ -226,6 +226,17 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
 
+## Recent Updates (2026-01-28)
+
+### Supervisor Restart Loop Fix (Controller)
+- **Issue**: Controller CPU at 90%+, all services in restart loop
+- **Root cause**: `volteria-supervisor.service` missing `/run/volteria` in `ReadWritePaths`
+- **Error**: `OSError: [Errno 30] Read-only file system: '/run/volteria/state/service_health.tmp'`
+- **Why**: `ProtectSystem=strict` blocks writes to paths not in `ReadWritePaths`. Other services had `/run/volteria` but supervisor didn't.
+- **Fix**: Added `/run/volteria` to `ReadWritePaths` + `VOLTERIA_STATE_DIR` env var in `controller/systemd/volteria-supervisor.service`
+- **Deploy to existing controllers**: `sudo cp /opt/volteria/controller/systemd/volteria-supervisor.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart volteria-supervisor`
+- **Future controllers**: Auto-fixed (setup script copies from repo)
+
 ## Recent Updates (2026-01-27)
 
 ### R2000 (SOL532-E16) Setup Testing Fixes

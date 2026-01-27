@@ -451,6 +451,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | SOL532-E16: UPS monitor on GPIO16 | Graceful shutdown on power loss |
 | Config readers use `get_config()` | Never hardcode paths — tmpfs/disk resolution varies by context |
 | SSH scripts prefer tmpfs over disk | `common/state.py` checks tmpfs existence when env var not set |
+| All services need `/run/volteria` in `ReadWritePaths` | `ProtectSystem=strict` blocks tmpfs writes without it |
 
 ---
 
@@ -557,6 +558,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Readings not syncing | SQLite pending count | Check cloud_sync errors in logging logs |
 | High drift alarms | `curl :8085/stats` | Check SD card I/O, CPU load |
 | Live Registers "not reporting" | Compare tmpfs vs disk config IPs | Ensure `register_cli.py` uses `get_config()` from SharedState |
+| High CPU + restart loop | `journalctl -u volteria-supervisor` for "Read-only file system" | Update service file: add `/run/volteria` to `ReadWritePaths` |
 
 ### SOL532-E16 Specific Issues
 
@@ -865,4 +867,4 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 - **`check-logging`**: Deep dive into logging service (RAM buffer, SQLite, cloud sync, downsampling, alarm evaluation, drift tracking)
 - **`check-setup`**: Controller provisioning flow (wizard, setup script, registration, SSH tunnel setup, testing, SOL532-E16 hardware-specific setup)
 
-<!-- Updated: 2026-01-27 - Added SharedState path resolution (tmpfs vs disk), Live Registers API flow, config source of truth pattern -->
+<!-- Updated: 2026-01-28 - Added supervisor restart loop fix (ReadWritePaths must include /run/volteria) -->
