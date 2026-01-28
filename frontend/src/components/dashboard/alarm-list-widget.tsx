@@ -67,7 +67,10 @@ export const AlarmListWidget = memo(function AlarmListWidget({ widget, liveData,
   };
 
   const maxItems = config.max_items || 5;
-  const severities = config.severities || ["critical", "major", "warning"];
+  // Ensure severities is always a valid array of strings
+  const severities = Array.isArray(config.severities) && config.severities.length > 0
+    ? config.severities.filter(s => typeof s === "string" && ["critical", "major", "minor", "warning", "info"].includes(s))
+    : ["critical", "major", "warning"];
   const showResolved = config.show_resolved || false;
 
   // Memoize fetchAlarms to use in visibility handler

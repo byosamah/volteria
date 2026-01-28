@@ -62,6 +62,7 @@ interface ChartParameter {
   unit?: string;
   color: string;
   y_axis: "left" | "right";
+  chart_type: "line" | "area" | "bar";
 }
 
 interface Widget {
@@ -856,6 +857,7 @@ export function WidgetConfigDialog({
         unit: register.unit || "",
         color: getNextColor(usedColors),
         y_axis: "left",
+        chart_type: "line",
       };
 
       updateConfig("parameters", [...parameters, newParam]);
@@ -888,27 +890,9 @@ export function WidgetConfigDialog({
           />
         </div>
 
-        {/* Chart type & Time range row */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label>Chart Type</Label>
-            <Select
-              value={(config.chart_type as string) || "line"}
-              onValueChange={(v) => updateConfig("chart_type", v)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="line">Line</SelectItem>
-                <SelectItem value="area">Area</SelectItem>
-                <SelectItem value="bar">Bar</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Time Range</Label>
+        {/* Time range */}
+        <div className="space-y-2">
+          <Label>Time Range</Label>
             <Select
               value={(config.time_range as string) || "1h"}
               onValueChange={(v) => updateConfig("time_range", v)}
@@ -923,7 +907,6 @@ export function WidgetConfigDialog({
                 <SelectItem value="7d">7 Days</SelectItem>
               </SelectContent>
             </Select>
-          </div>
         </div>
 
         {/* Aggregation */}
@@ -953,124 +936,155 @@ export function WidgetConfigDialog({
             {parameters.map((param) => (
               <div
                 key={param.id}
-                className="flex items-center gap-2 p-2 bg-muted/50 rounded-md"
+                className="p-3 bg-muted/50 rounded-md space-y-2"
               >
-                {/* Color picker */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      className="w-5 h-5 rounded-full border border-border flex-shrink-0"
-                      style={{ backgroundColor: param.color }}
-                      title="Click to change color"
-                    />
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-2" align="start">
-                    <div className="grid grid-cols-5 gap-1">
-                      {COLOR_PALETTE.map((color) => (
-                        <button
-                          key={color}
-                          className={cn(
-                            "w-6 h-6 rounded-full",
-                            param.color === color && "ring-2 ring-offset-2 ring-primary"
-                          )}
-                          style={{ backgroundColor: color }}
-                          onClick={() => updateParameter(param.id, { color })}
-                        />
-                      ))}
-                    </div>
-                    <div className="mt-2 pt-2 border-t">
-                      <input
-                        type="color"
-                        value={param.color}
-                        onChange={(e) => updateParameter(param.id, { color: e.target.value })}
-                        className="w-full h-7 rounded cursor-pointer"
+                {/* Row 1: Color + Device/Register + Remove */}
+                <div className="flex items-center gap-3">
+                  {/* Color picker */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="w-6 h-6 rounded-full border-2 border-border flex-shrink-0 hover:scale-110 transition-transform"
+                        style={{ backgroundColor: param.color }}
+                        title="Click to change color"
                       />
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-2" align="start">
+                      <div className="grid grid-cols-5 gap-1">
+                        {COLOR_PALETTE.map((color) => (
+                          <button
+                            key={color}
+                            className={cn(
+                              "w-6 h-6 rounded-full",
+                              param.color === color && "ring-2 ring-offset-2 ring-primary"
+                            )}
+                            style={{ backgroundColor: color }}
+                            onClick={() => updateParameter(param.id, { color })}
+                          />
+                        ))}
+                      </div>
+                      <div className="mt-2 pt-2 border-t">
+                        <input
+                          type="color"
+                          value={param.color}
+                          onChange={(e) => updateParameter(param.id, { color: e.target.value })}
+                          className="w-full h-7 rounded cursor-pointer"
+                        />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
 
-                {/* Device • Register */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {param.device_name} • {param.register_name}
-                  </p>
-                  {param.unit && (
-                    <p className="text-xs text-muted-foreground">{param.unit}</p>
-                  )}
+                  {/* Device • Register */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      {param.device_name}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {param.register_name}{param.unit && ` (${param.unit})`}
+                    </p>
+                  </div>
+
+                  {/* Remove button */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive flex-shrink-0"
+                    onClick={() => removeParameter(param.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
 
-                {/* Y-Axis selector */}
-                <Select
-                  value={param.y_axis}
-                  onValueChange={(v) => updateParameter(param.id, { y_axis: v as "left" | "right" })}
-                >
-                  <SelectTrigger className="w-20 h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="left">Left</SelectItem>
-                    <SelectItem value="right">Right</SelectItem>
-                  </SelectContent>
-                </Select>
+                {/* Row 2: Chart Type + Y-Axis */}
+                <div className="flex items-center gap-4 pl-9">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Type:</span>
+                    <Select
+                      value={param.chart_type || "line"}
+                      onValueChange={(v) => updateParameter(param.id, { chart_type: v as "line" | "area" | "bar" })}
+                    >
+                      <SelectTrigger className="w-[90px] h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="line">Line</SelectItem>
+                        <SelectItem value="area">Area</SelectItem>
+                        <SelectItem value="bar">Bar</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                {/* Remove button */}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeParameter(param.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Y-Axis:</span>
+                    <Select
+                      value={param.y_axis}
+                      onValueChange={(v) => updateParameter(param.id, { y_axis: v as "left" | "right" })}
+                    >
+                      <SelectTrigger className="w-[90px] h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="left">Left</SelectItem>
+                        <SelectItem value="right">Right</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
             ))}
 
             {/* Add parameter section */}
             {parameters.length < 5 && (
               chartAddingParam ? (
-                <div className="space-y-2 p-2 border border-dashed rounded-md">
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-3 p-3 border border-dashed rounded-md bg-muted/30">
+                  <div className="grid grid-cols-2 gap-3">
                     {/* Device selector */}
-                    <Select
-                      value={chartSelectedDeviceId}
-                      onValueChange={(v) => {
-                        setChartSelectedDeviceId(v);
-                        setChartSelectedRegisterName("");
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select device" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {devicesWithRegisters.map((device) => (
-                          <SelectItem key={device.id} value={device.id}>
-                            {device.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Device</span>
+                      <Select
+                        value={chartSelectedDeviceId}
+                        onValueChange={(v) => {
+                          setChartSelectedDeviceId(v);
+                          setChartSelectedRegisterName("");
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select device..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {devicesWithRegisters.map((device) => (
+                            <SelectItem key={device.id} value={device.id}>
+                              {device.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
                     {/* Register selector */}
-                    <Select
-                      value={chartSelectedRegisterName}
-                      onValueChange={setChartSelectedRegisterName}
-                      disabled={!chartSelectedDeviceId}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select register" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableRegisters.map((reg) => (
-                          <SelectItem key={reg.name} value={reg.name}>
-                            {reg.name} {reg.unit ? `(${reg.unit})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Register</span>
+                      <Select
+                        value={chartSelectedRegisterName}
+                        onValueChange={setChartSelectedRegisterName}
+                        disabled={!chartSelectedDeviceId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select register..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableRegisters.map((reg) => (
+                            <SelectItem key={reg.name} value={reg.name}>
+                              {reg.name} {reg.unit ? `(${reg.unit})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 justify-end">
                     <Button
                       type="button"
                       size="sm"
@@ -1243,7 +1257,7 @@ export function WidgetConfigDialog({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className={cn("sm:max-w-lg", widget.widget_type === "chart" && "sm:max-w-3xl")}>
         <DialogHeader>
           <DialogTitle>{titles[widget.widget_type] || "Configure Widget"}</DialogTitle>
           <DialogDescription>Configure the widget settings below.</DialogDescription>

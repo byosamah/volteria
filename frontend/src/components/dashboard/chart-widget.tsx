@@ -51,6 +51,7 @@ interface ChartParameter {
   unit?: string;
   color: string;
   y_axis: "left" | "right";
+  chart_type?: "line" | "area" | "bar";
 }
 
 interface ChartWidgetConfig {
@@ -139,14 +140,18 @@ export const ChartWidget = memo(function ChartWidget({
   }, []);
 
   const config = widget.config as ChartWidgetConfig;
-  const chartType = config.chart_type || "line";
   const timeRange = config.time_range || "1h";
   const aggregation = config.aggregation || "raw";
   const parameters = config.parameters || [];
 
-  // Split parameters by axis
-  const leftParams = useMemo(() => parameters.filter(p => p.y_axis === "left"), [parameters]);
-  const rightParams = useMemo(() => parameters.filter(p => p.y_axis === "right"), [parameters]);
+  // Split parameters by axis (case-insensitive, default to "left")
+  const leftParams = useMemo(() => parameters.filter(p =>
+    !p.y_axis || p.y_axis.toLowerCase() !== "right"
+  ), [parameters]);
+  const rightParams = useMemo(() => parameters.filter(p =>
+    p.y_axis && p.y_axis.toLowerCase() === "right"
+  ), [parameters]);
+
 
   // Fetch historical data
   useEffect(() => {
@@ -301,8 +306,9 @@ export const ChartWidget = memo(function ChartWidget({
     const renderElements = (params: ChartParameter[], yAxisId: string) => {
       return params.map((param) => {
         const key = param.label || param.register_name;
+        const paramChartType = param.chart_type || "line";
 
-        if (chartType === "area") {
+        if (paramChartType === "area") {
           return (
             <Area
               key={key}
@@ -318,7 +324,7 @@ export const ChartWidget = memo(function ChartWidget({
           );
         }
 
-        if (chartType === "bar") {
+        if (paramChartType === "bar") {
           return (
             <Bar
               key={key}
@@ -347,7 +353,7 @@ export const ChartWidget = memo(function ChartWidget({
     return (
       <ComposedChart
         data={chartData}
-        margin={{ top: 5, right: hasRightAxis ? 5 : 10, left: -15, bottom: 5 }}
+        margin={{ top: 5, right: hasRightAxis ? 35 : 10, left: -15, bottom: 5 }}
       >
         <XAxis dataKey="time" {...commonAxisProps} />
 
@@ -355,7 +361,7 @@ export const ChartWidget = memo(function ChartWidget({
           <YAxis
             yAxisId="left"
             orientation="left"
-            domain={yAxisDomains.left}
+            domain={yAxisDomains.left || ["auto", "auto"]}
             {...commonAxisProps}
             label={leftUnit ? { value: leftUnit, angle: -90, position: "insideLeft", fontSize: 9, fill: "#888" } : undefined}
           />
@@ -365,7 +371,7 @@ export const ChartWidget = memo(function ChartWidget({
           <YAxis
             yAxisId="right"
             orientation="right"
-            domain={yAxisDomains.right}
+            domain={yAxisDomains.right || ["auto", "auto"]}
             {...commonAxisProps}
             label={rightUnit ? { value: rightUnit, angle: 90, position: "insideRight", fontSize: 9, fill: "#888" } : undefined}
           />
@@ -392,14 +398,10 @@ export const ChartWidget = memo(function ChartWidget({
         )}
 
         {renderElements(leftParams, "left")}
-        {renderElements(rightParams, hasLeftAxis ? "right" : "left")}
+        {renderElements(rightParams, "right")}
       </ComposedChart>
     );
   };
-
-  // For charts with only right axis params, use left axis id
-  const effectiveLeftParams = leftParams.length > 0 ? leftParams : [];
-  const effectiveRightParams = leftParams.length > 0 ? rightParams : [];
 
   return (
     <div
@@ -411,7 +413,7 @@ export const ChartWidget = memo(function ChartWidget({
     >
       {/* Title */}
       {config.title && (
-        <p className="text-xs font-medium mb-1 truncate">{config.title}</p>
+        <p className="text-base font-medium mb-3 pl-1 truncate">{config.title}</p>
       )}
 
       {/* Chart */}
