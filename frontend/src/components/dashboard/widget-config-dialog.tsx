@@ -347,7 +347,13 @@ export function WidgetConfigDialog({
             <div className="flex items-center gap-2">
               <Switch
                 checked={conditionalEnabled}
-                onCheckedChange={(checked) => updateConfig("conditional_enabled", checked)}
+                onCheckedChange={(checked) => {
+                  updateConfig("conditional_enabled", checked);
+                  // Set default operator when enabling
+                  if (checked && !config.condition_operator) {
+                    updateConfig("condition_operator", ">");
+                  }
+                }}
               />
               <Label className="font-normal">Enable conditional image</Label>
             </div>
@@ -485,7 +491,13 @@ export function WidgetConfigDialog({
               {Boolean(conditionDeviceId) && (
                 <Select
                   value={(config.condition_register_name as string) || ""}
-                  onValueChange={(v) => updateConfig("condition_register_name", v)}
+                  onValueChange={(v) => {
+                    updateConfig("condition_register_name", v);
+                    // Ensure default operator is set
+                    if (!config.condition_operator) {
+                      updateConfig("condition_operator", ">");
+                    }
+                  }}
                 >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Select register" />

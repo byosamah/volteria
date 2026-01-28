@@ -112,10 +112,10 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
     conditionValue = conditionRegData?.value ?? null;
   }
 
-  // Evaluate condition
+  // Evaluate condition (default operator to ">" if not set)
   const showSecondary = config.conditional_enabled && evaluateCondition(
     conditionValue,
-    config.condition_operator,
+    config.condition_operator || ">",
     config.condition_value
   );
 
@@ -215,11 +215,11 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
           className="absolute inset-0"
           style={{
             top: 8,
-            bottom: hasBottomContent ? 36 : 8,
+            bottom: hasBottomContent ? 48 : 8,
             left: 0,
             right: 0,
             backgroundImage: `url(${imageUrl})`,
-            backgroundSize: '85% auto',
+            backgroundSize: 'contain',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat'
           }}
