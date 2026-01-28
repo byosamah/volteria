@@ -121,6 +121,7 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
 
   // Determine which image to show
   let imageUrl: string | null = null;
+  let isCustomImage = false;
   let LegacyIcon: React.ComponentType<{ className?: string }> | null = null;
 
   if (imageType === "legacy") {
@@ -133,6 +134,7 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
       // Show conditional/secondary image
       if (config.conditional_image_type === "custom" && config.conditional_custom_image_url) {
         imageUrl = config.conditional_custom_image_url;
+        isCustomImage = true;
       } else if (config.conditional_preset_image_id) {
         const preset = getPresetImageById(config.conditional_preset_image_id);
         imageUrl = preset?.url || null;
@@ -141,6 +143,7 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
       // Show primary image
       if (config.image_type === "custom" && config.custom_image_url) {
         imageUrl = config.custom_image_url;
+        isCustomImage = true;
       } else if (config.preset_image_id) {
         const preset = getPresetImageById(config.preset_image_id);
         imageUrl = preset?.url || null;
@@ -214,12 +217,12 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
         <div
           className="absolute"
           style={{
-            top: 10,
-            bottom: hasBottomContent ? 36 : 4,
-            left: 2,
-            right: 2,
+            top: isCustomImage ? 4 : 10,
+            bottom: hasBottomContent ? (isCustomImage ? 30 : 36) : 4,
+            left: isCustomImage ? 4 : 2,
+            right: isCustomImage ? 4 : 2,
             backgroundImage: `url(${imageUrl})`,
-            backgroundSize: '96% auto',
+            backgroundSize: isCustomImage ? 'contain' : '96% auto',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat'
           }}
@@ -240,9 +243,12 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
 
       {/* Bottom content: Label and Values - solid background, no overlap */}
       {hasBottomContent && (
-        <div className="absolute bottom-0 left-0 right-0 text-center px-1 py-1 bg-background">
+        <div
+          className="absolute left-0 right-0 text-center px-1 bg-background"
+          style={{ bottom: (showValue && registerValues.length > 0) ? 4 : 12 }}
+        >
           {config.label && (
-            <p className="text-sm font-medium truncate">
+            <p className="text-base font-medium truncate">
               {config.label}
             </p>
           )}
@@ -251,12 +257,12 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
               {registerValues.slice(0, 2).map((reg, idx) => (
                 <p
                   key={idx}
-                  className="text-base font-semibold leading-tight"
+                  className="text-lg font-semibold leading-tight"
                   style={{ color: reg.value !== null ? accentColor : undefined }}
                 >
                   {reg.value !== null ? (
                     <>
-                      {reg.value} <span className="text-xs font-normal text-muted-foreground">{reg.unit}</span>
+                      {reg.value} <span className="text-sm font-normal text-muted-foreground">{reg.unit}</span>
                     </>
                   ) : (
                     <span className="text-muted-foreground">--</span>
