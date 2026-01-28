@@ -10,7 +10,7 @@
  * - Widget picker sidebar in edit mode
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, MouseEvent as ReactMouseEvent } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,11 +57,19 @@ interface Device {
     id: string;
     name: string;
     device_type: string;
-    registers: Array<{
+    logging_registers?: Array<{
       name: string;
       address: number;
       unit?: string;
       access: string;
+      group?: string;
+    }>;
+    visualization_registers?: Array<{
+      name: string;
+      address: number;
+      unit?: string;
+      access: string;
+      group?: string;
     }>;
   } | null;
 }
@@ -103,6 +111,11 @@ export function DashboardCanvas({
   const [showWidgetPicker, setShowWidgetPicker] = useState(false);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Resize state
+  const [resizingWidget, setResizingWidget] = useState<string | null>(null);
+  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   // Dashboard config with defaults
   const gridColumns = dashboard?.grid_columns || 12;
@@ -337,6 +350,69 @@ export function DashboardCanvas({
     e.preventDefault();
   };
 
+  // Resize handlers
+  const CELL_HEIGHT = 80;
+  const GAP = 8;
+
+  const handleResizeStart = (e: ReactMouseEvent, widget: Widget) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingWidget(widget.id);
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: widget.grid_width,
+      height: widget.grid_height,
+    });
+  };
+
+  const handleResizeMove = useCallback((e: globalThis.MouseEvent) => {
+    if (!resizingWidget || !resizeStart) return;
+
+    const deltaX = e.clientX - resizeStart.x;
+    const deltaY = e.clientY - resizeStart.y;
+
+    // Calculate cell width from grid (account for padding)
+    const gridWidth = gridRef.current?.clientWidth || 800;
+    const cellWidth = (gridWidth - 16 - (gridColumns - 1) * GAP) / gridColumns;
+
+    // Convert pixel delta to grid units
+    const widthDelta = Math.round(deltaX / (cellWidth + GAP));
+    const heightDelta = Math.round(deltaY / (CELL_HEIGHT + GAP));
+
+    const newWidth = Math.max(1, Math.min(resizeStart.width + widthDelta, gridColumns));
+    const newHeight = Math.max(1, Math.min(resizeStart.height + heightDelta, gridRows));
+
+    setWidgets((prev) =>
+      prev.map((w) =>
+        w.id === resizingWidget
+          ? {
+              ...w,
+              grid_width: Math.min(newWidth, gridColumns - w.grid_col + 1),
+              grid_height: Math.min(newHeight, gridRows - w.grid_row + 1),
+            }
+          : w
+      )
+    );
+  }, [resizingWidget, resizeStart, gridColumns, gridRows]);
+
+  const handleResizeEnd = useCallback(() => {
+    setResizingWidget(null);
+    setResizeStart(null);
+  }, []);
+
+  // Global mouse listeners for resize
+  useEffect(() => {
+    if (resizingWidget) {
+      window.addEventListener("mousemove", handleResizeMove);
+      window.addEventListener("mouseup", handleResizeEnd);
+      return () => {
+        window.removeEventListener("mousemove", handleResizeMove);
+        window.removeEventListener("mouseup", handleResizeEnd);
+      };
+    }
+  }, [resizingWidget, handleResizeMove, handleResizeEnd]);
+
   // Render widget based on type
   const renderWidget = (widget: Widget) => {
     const commonProps = {
@@ -452,6 +528,7 @@ export function DashboardCanvas({
           ) : (
             // Grid canvas
             <div
+              ref={gridRef}
               className={cn(
                 "relative border rounded-lg bg-muted/30 p-2",
                 isEditMode && "border-dashed border-primary/50"
@@ -497,30 +574,49 @@ export function DashboardCanvas({
                     gridColumn: `${widget.grid_col} / span ${widget.grid_width}`,
                     zIndex: widget.z_index,
                   }}
-                  draggable={isEditMode}
+                  draggable={isEditMode && !resizingWidget}
                   onDragStart={(e) => handleDragStart(e, widget)}
                 >
                   {renderWidget(widget)}
 
                   {/* Edit overlay */}
                   {isEditMode && (
-                    <div className="absolute top-1 right-1 flex gap-1">
-                      <button
-                        onClick={() => {
-                          setSelectedWidget(widget);
-                          setShowConfigDialog(true);
-                        }}
-                        className="p-1.5 bg-background/80 rounded hover:bg-background"
+                    <>
+                      <div className="absolute top-1 right-1 flex gap-1">
+                        <button
+                          onClick={() => {
+                            setSelectedWidget(widget);
+                            setShowConfigDialog(true);
+                          }}
+                          className="p-1.5 bg-background/80 rounded hover:bg-background"
+                        >
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => deleteWidget(widget.id)}
+                          className="p-1.5 bg-background/80 rounded hover:bg-destructive hover:text-destructive-foreground"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {/* Resize handle */}
+                      <div
+                        className={cn(
+                          "absolute bottom-0 right-0 w-4 h-4 cursor-se-resize",
+                          "hover:bg-primary/20 transition-colors",
+                          resizingWidget === widget.id && "bg-primary/30"
+                        )}
+                        onMouseDown={(e) => handleResizeStart(e, widget)}
                       >
-                        <Settings2 className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => deleteWidget(widget.id)}
-                        className="p-1.5 bg-background/80 rounded hover:bg-destructive hover:text-destructive-foreground"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                        <svg
+                          className="w-4 h-4 text-muted-foreground"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                        >
+                          <path d="M14 10v4h-4l4-4zm-4 0v4H6l4-4zm-4 0v4H2l4-4z" opacity="0.5" />
+                        </svg>
+                      </div>
+                    </>
                   )}
                 </div>
               ))}

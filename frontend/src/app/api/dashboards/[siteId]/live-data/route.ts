@@ -63,6 +63,8 @@ export async function GET(
       const config = w.config as Record<string, unknown>;
       if (config.device_id) deviceIds.add(config.device_id as string);
       if (config.linked_device_id) deviceIds.add(config.linked_device_id as string);
+      if (config.value_device_id) deviceIds.add(config.value_device_id as string);
+      if (config.condition_device_id) deviceIds.add(config.condition_device_id as string);
     });
 
     // Get device status

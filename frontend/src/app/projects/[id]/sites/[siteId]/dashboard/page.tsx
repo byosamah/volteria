@@ -115,7 +115,8 @@ export default async function SiteDashboardPage({
         id,
         name,
         device_type,
-        registers
+        logging_registers,
+        visualization_registers
       )
     `)
     .eq("site_id", siteId)
