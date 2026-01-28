@@ -11,6 +11,7 @@ import { useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -1004,6 +1005,7 @@ export function WidgetConfigDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{titles[widget.widget_type] || "Configure Widget"}</DialogTitle>
+          <DialogDescription>Configure the widget settings below.</DialogDescription>
         </DialogHeader>
 
         <div className="py-4 max-h-[60vh] overflow-y-auto overflow-x-hidden">{renderForm()}</div>
