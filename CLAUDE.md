@@ -229,6 +229,16 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-01-28)
 
+### Dashboard Icon Widget Improvements (Frontend)
+- **Custom image upload**: Created Supabase storage bucket `dashboard-images` with upload/read/delete policies
+- **Image sizing**: Custom images use `contain` (prevents overflow), preset images use `96% auto` (original sizing)
+- **Adaptive text positioning**: Label+value positioned lower (4px), label-only centered higher (12px)
+- **Text size increase**: Label `text-sm`→`text-base`, value `text-base`→`text-lg`, unit `text-xs`→`text-sm`
+- **Dialog accessibility**: Added `DialogDescription` to widget config dialog (fixes console warning)
+- **Conditional switching fix**: Default operator set to `>` when enabling conditional mode
+- **Preset images library**: Added SVG status indicators (generator running/off, solar active/inactive, colored circles)
+- **Files**: `icon-widget.tsx`, `widget-config-dialog.tsx`, `dashboard-preset-images.ts`, `upload-image/route.ts`
+
 ### Site Creation Fix (Frontend + Backend + Nginx)
 - **Issue**: Creating a new site failed with 403 Forbidden, then ERR_TOO_MANY_REDIRECTS
 - **Root cause 1**: RLS on `sites` table only allows SELECT for authenticated users — no INSERT policy
