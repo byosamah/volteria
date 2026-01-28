@@ -89,6 +89,52 @@ export const PRESET_IMAGES: PresetImage[] = [
     category: "indicator",
     description: "Gray circle indicator for offline/unknown status",
   },
+
+  // Equipment
+  {
+    id: "crusher",
+    name: "Crusher",
+    url: "/images/dashboard/crusher.png",
+    category: "equipment",
+    description: "Mobile crushing and screening plant",
+  },
+  {
+    id: "ev_charger",
+    name: "EV Charger",
+    url: "/images/dashboard/ev-charger.png",
+    category: "equipment",
+    description: "Electric vehicle charging station with solar canopy",
+  },
+  {
+    id: "power_meter",
+    name: "Power Meter",
+    url: "/images/dashboard/power-meter.png",
+    category: "equipment",
+    description: "Digital power meter for voltage/current monitoring",
+  },
+
+  // Additional Solar
+  {
+    id: "solar_small",
+    name: "Solar Panels (Small)",
+    url: "/images/dashboard/solar-small.png",
+    category: "power",
+    description: "Small 2-panel solar array with inverter",
+  },
+  {
+    id: "solar_large",
+    name: "Solar Panels (Large)",
+    url: "/images/dashboard/solar-large.png",
+    category: "power",
+    description: "Large 6-panel solar array with inverter",
+  },
+  {
+    id: "solar_house",
+    name: "Solar House",
+    url: "/images/dashboard/solar-house.png",
+    category: "power",
+    description: "House with rooftop solar panels",
+  },
 ];
 
 /**
