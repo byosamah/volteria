@@ -467,6 +467,11 @@ export function DashboardCanvas({
           </div>
           <p className="text-muted-foreground text-sm md:text-base">
             {siteName} &middot; {projectName}
+            {liveData && !isEditMode && (
+              <span className="ml-4 text-xs">
+                Last updated: {new Date(liveData.timestamp).toLocaleTimeString()}
+              </span>
+            )}
           </p>
         </div>
 
@@ -536,9 +541,10 @@ export function DashboardCanvas({
               style={{
                 display: "grid",
                 gridTemplateColumns: `repeat(${gridColumns}, 1fr)`,
-                gridTemplateRows: `repeat(${gridRows}, 80px)`,
+                // Taller rows in view mode (no sidebar = wider grid, so scale height too)
+                gridTemplateRows: `repeat(${gridRows}, ${isEditMode ? 80 : 100}px)`,
                 gap: "8px",
-                minHeight: `${gridRows * 80 + (gridRows - 1) * 8 + 16}px`,
+                minHeight: `${gridRows * (isEditMode ? 80 : 100) + (gridRows - 1) * 8 + 16}px`,
               }}
             >
               {/* Grid cells (visible in edit mode) */}
@@ -647,12 +653,6 @@ export function DashboardCanvas({
         )}
       </div>
 
-      {/* Last updated indicator */}
-      {liveData && !isEditMode && (
-        <p className="text-xs text-muted-foreground text-right">
-          Last updated: {new Date(liveData.timestamp).toLocaleTimeString()}
-        </p>
-      )}
 
       {/* Widget configuration dialog */}
       {showConfigDialog && selectedWidget && (

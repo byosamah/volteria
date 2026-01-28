@@ -209,17 +209,17 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
         />
       )}
 
-      {/* Image as background - fills container fully */}
+      {/* Image as background */}
       {imageUrl && (
         <div
-          className="absolute inset-0"
+          className="absolute"
           style={{
-            top: 8,
-            bottom: hasBottomContent ? 48 : 8,
-            left: 0,
-            right: 0,
+            top: 10,
+            bottom: hasBottomContent ? 36 : 4,
+            left: 2,
+            right: 2,
             backgroundImage: `url(${imageUrl})`,
-            backgroundSize: 'contain',
+            backgroundSize: '96% auto',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat'
           }}
