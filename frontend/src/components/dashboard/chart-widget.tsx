@@ -3,12 +3,12 @@
 /**
  * Chart Widget
  *
- * Displays a customizable chart for selected registers.
- * Supports line, area, and bar chart types.
- * Time range: 1h, 6h, 24h, 7d
+ * Displays a customizable chart for selected device registers.
+ * Supports line, area, and bar chart types with dual Y-axis.
+ * Uses the same data source as Historical Data page.
  */
 
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef, memo, useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -21,9 +21,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ComposedChart,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 
 interface LiveData {
   timestamp: string;
@@ -42,6 +42,25 @@ interface Widget {
   z_index: number;
 }
 
+interface ChartParameter {
+  id: string;
+  device_id: string;
+  device_name: string;
+  register_name: string;
+  label?: string;
+  unit?: string;
+  color: string;
+  y_axis: "left" | "right";
+}
+
+interface ChartWidgetConfig {
+  title?: string;
+  chart_type?: "line" | "area" | "bar";
+  time_range?: "1h" | "6h" | "24h" | "7d";
+  aggregation?: "raw" | "hourly" | "daily";
+  parameters?: ChartParameter[];
+}
+
 interface ChartWidgetProps {
   widget: Widget;
   liveData: LiveData | null;
@@ -56,27 +75,48 @@ interface ChartDataPoint {
   [key: string]: string | number | null;
 }
 
-const TIME_RANGES = {
+const TIME_RANGES: Record<string, number> = {
   "1h": 60 * 60 * 1000,
   "6h": 6 * 60 * 60 * 1000,
   "24h": 24 * 60 * 60 * 1000,
   "7d": 7 * 24 * 60 * 60 * 1000,
 };
 
-const COLORS = [
-  "#22c55e", // green
-  "#3b82f6", // blue
-  "#f59e0b", // amber
-  "#ef4444", // red
-  "#8b5cf6", // purple
-  "#06b6d4", // cyan
-];
+// Map time range to appropriate aggregation
+const getApiAggregation = (timeRange: string, aggregation: string): string => {
+  if (aggregation === "raw") return "raw";
+  if (aggregation === "hourly") return "hourly_avg";
+  if (aggregation === "daily") return "daily_avg";
 
-export const ChartWidget = memo(function ChartWidget({ widget, liveData, isEditMode, onSelect, siteId }: ChartWidgetProps) {
+  // Auto-select based on time range
+  if (timeRange === "1h" || timeRange === "6h") return "raw";
+  if (timeRange === "24h") return "hourly_avg";
+  return "daily_avg";
+};
+
+// Format time based on range
+const formatTime = (timestamp: string, timeRange: string): string => {
+  const date = new Date(timestamp);
+  if (timeRange === "7d") {
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  if (timeRange === "24h") {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
+
+export const ChartWidget = memo(function ChartWidget({
+  widget,
+  isEditMode,
+  onSelect,
+  siteId
+}: ChartWidgetProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Track container dimensions to prevent ResponsiveContainer -1 errors
+  // Track container dimensions
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
 
@@ -98,115 +138,151 @@ export const ChartWidget = memo(function ChartWidget({ widget, liveData, isEditM
     return () => observer.disconnect();
   }, []);
 
-  const config = widget.config as {
-    chart_type?: "line" | "area" | "bar";
-    title?: string;
-    time_range?: "1h" | "6h" | "24h" | "7d";
-    series?: Array<{
-      device_id?: string;
-      register_name: string;
-      label: string;
-      color?: string;
-    }>;
-  };
-
+  const config = widget.config as ChartWidgetConfig;
   const chartType = config.chart_type || "line";
   const timeRange = config.time_range || "1h";
-  const series = config.series || [];
+  const aggregation = config.aggregation || "raw";
+  const parameters = config.parameters || [];
+
+  // Split parameters by axis
+  const leftParams = useMemo(() => parameters.filter(p => p.y_axis === "left"), [parameters]);
+  const rightParams = useMemo(() => parameters.filter(p => p.y_axis === "right"), [parameters]);
 
   // Fetch historical data
   useEffect(() => {
-    if (isEditMode || series.length === 0) return;
+    if (isEditMode || parameters.length === 0) return;
 
     const fetchData = async () => {
       setIsLoading(true);
+      setError(null);
+
       try {
-        const supabase = createClient();
         const now = new Date();
         const startTime = new Date(now.getTime() - TIME_RANGES[timeRange]);
 
-        // For now, fetch from control_logs for aggregate data
-        const { data, error } = await supabase
-          .from("control_logs")
-          .select("timestamp, total_load_kw, solar_output_kw, dg_power_kw, solar_limit_pct")
-          .eq("site_id", siteId)
-          .gte("timestamp", startTime.toISOString())
-          .order("timestamp", { ascending: true })
-          .limit(500);
+        // Collect unique device IDs and register names
+        const deviceIds = [...new Set(parameters.map(p => p.device_id))];
+        const registerNames = [...new Set(parameters.map(p => p.register_name))];
 
-        if (error) {
-          return;
+        const apiAggregation = getApiAggregation(timeRange, aggregation);
+
+        const params = new URLSearchParams({
+          siteIds: siteId,
+          deviceIds: deviceIds.join(","),
+          registers: registerNames.join(","),
+          start: startTime.toISOString(),
+          end: now.toISOString(),
+          aggregation: apiAggregation,
+        });
+
+        const response = await fetch(`/api/historical?${params}`);
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch data");
         }
 
-        if (!data || data.length === 0) {
+        const result = await response.json();
+
+        if (!result.deviceReadings || result.deviceReadings.length === 0) {
           setChartData([]);
           return;
         }
 
-        // Downsample if needed (max 100 points for performance)
-        const maxPoints = 100;
-        const step = data.length > maxPoints ? Math.ceil(data.length / maxPoints) : 1;
-        const downsampled = data.filter((_, i) => i % step === 0);
+        // Transform API response to chart format
+        // API returns: { deviceReadings: [{ device_id, register_name, data: [{timestamp, value}] }] }
+        const timestampSet = new Set<string>();
+        const dataLookup: Record<string, Record<string, number | null>> = {};
 
-        // Map to chart format
-        const mapped: ChartDataPoint[] = downsampled.map((row) => {
+        result.deviceReadings.forEach((reading: { device_id: string; register_name: string; data: Array<{ timestamp: string; value: number | null }> }) => {
+          const key = `${reading.device_id}:${reading.register_name}`;
+          dataLookup[key] = {};
+          reading.data.forEach((point: { timestamp: string; value: number | null }) => {
+            timestampSet.add(point.timestamp);
+            dataLookup[key][point.timestamp] = point.value;
+          });
+        });
+
+        // Sort timestamps
+        const timestamps = Array.from(timestampSet).sort();
+
+        // Downsample if needed (max 100 points for widget performance)
+        const maxPoints = 100;
+        const step = timestamps.length > maxPoints ? Math.ceil(timestamps.length / maxPoints) : 1;
+        const sampledTimestamps = timestamps.filter((_, i) => i % step === 0);
+
+        // Build chart data points
+        const chartPoints: ChartDataPoint[] = sampledTimestamps.map(timestamp => {
           const point: ChartDataPoint = {
-            timestamp: row.timestamp,
-            time: new Date(row.timestamp).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
+            timestamp,
+            time: formatTime(timestamp, timeRange),
           };
 
-          // Map series to data points
-          series.forEach((s) => {
-            const key = s.label || s.register_name;
-            // Map register names to control_logs columns
-            const columnMap: Record<string, keyof typeof row> = {
-              total_load_kw: "total_load_kw",
-              solar_output_kw: "solar_output_kw",
-              dg_power_kw: "dg_power_kw",
-              solar_limit_pct: "solar_limit_pct",
-              // Add aliases
-              load: "total_load_kw",
-              solar: "solar_output_kw",
-              dg: "dg_power_kw",
-            };
-
-            const column = columnMap[s.register_name];
-            if (column && row[column] !== undefined) {
-              point[key] = row[column] as number;
-            }
+          parameters.forEach(param => {
+            const key = `${param.device_id}:${param.register_name}`;
+            const paramKey = param.label || param.register_name;
+            point[paramKey] = dataLookup[key]?.[timestamp] ?? null;
           });
 
           return point;
         });
 
-        setChartData(mapped);
-      } catch {
-        // Silently handle fetch errors - UI shows "No data available"
+        setChartData(chartPoints);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load data");
+        setChartData([]);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchData();
-  }, [siteId, series, timeRange, isEditMode]);
 
-  // Render appropriate chart type
+    // Refresh every 30 seconds if not in edit mode
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [siteId, parameters, timeRange, aggregation, isEditMode]);
+
+  // Calculate Y-axis domains
+  const yAxisDomains = useMemo(() => {
+    const calculateDomain = (params: ChartParameter[]): [number, number] | undefined => {
+      if (params.length === 0 || chartData.length === 0) return undefined;
+
+      let min = Infinity;
+      let max = -Infinity;
+
+      for (const param of params) {
+        const key = param.label || param.register_name;
+        for (const point of chartData) {
+          const value = point[key];
+          if (typeof value === "number" && !isNaN(value)) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+          }
+        }
+      }
+
+      if (min === Infinity || max === -Infinity) return undefined;
+
+      // Add 10% padding
+      const padding = (max - min) * 0.1 || 1;
+      return [Math.floor((min - padding) * 10) / 10, Math.ceil((max + padding) * 10) / 10];
+    };
+
+    return {
+      left: calculateDomain(leftParams),
+      right: calculateDomain(rightParams),
+    };
+  }, [chartData, leftParams, rightParams]);
+
+  // Render chart using ComposedChart for dual axis support
   const renderChart = () => {
     if (chartData.length === 0) {
       return (
         <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-          No data available
+          {error || "No data available"}
         </div>
       );
     }
-
-    const chartProps = {
-      data: chartData,
-      margin: { top: 5, right: 10, left: -20, bottom: 5 },
-    };
 
     const commonAxisProps = {
       stroke: "#888888",
@@ -215,114 +291,144 @@ export const ChartWidget = memo(function ChartWidget({ widget, liveData, isEditM
       axisLine: false,
     };
 
-    if (chartType === "area") {
-      return (
-        <AreaChart {...chartProps}>
-          <XAxis dataKey="time" {...commonAxisProps} />
-          <YAxis {...commonAxisProps} />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: "hsl(var(--popover))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: "6px",
-              fontSize: "12px",
-            }}
-          />
-          {series.map((s, idx) => (
+    const hasLeftAxis = leftParams.length > 0;
+    const hasRightAxis = rightParams.length > 0;
+
+    // Get unit labels for axes
+    const leftUnit = leftParams[0]?.unit || "";
+    const rightUnit = rightParams[0]?.unit || "";
+
+    const renderElements = (params: ChartParameter[], yAxisId: string) => {
+      return params.map((param) => {
+        const key = param.label || param.register_name;
+
+        if (chartType === "area") {
+          return (
             <Area
-              key={s.label || s.register_name}
+              key={key}
               type="monotone"
-              dataKey={s.label || s.register_name}
-              stroke={s.color || COLORS[idx % COLORS.length]}
-              fill={s.color || COLORS[idx % COLORS.length]}
+              dataKey={key}
+              yAxisId={yAxisId}
+              stroke={param.color}
+              fill={param.color}
               fillOpacity={0.2}
               strokeWidth={2}
+              connectNulls
             />
-          ))}
-        </AreaChart>
-      );
-    }
+          );
+        }
 
-    if (chartType === "bar") {
-      return (
-        <BarChart {...chartProps}>
-          <XAxis dataKey="time" {...commonAxisProps} />
-          <YAxis {...commonAxisProps} />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: "hsl(var(--popover))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: "6px",
-              fontSize: "12px",
-            }}
-          />
-          {series.map((s, idx) => (
+        if (chartType === "bar") {
+          return (
             <Bar
-              key={s.label || s.register_name}
-              dataKey={s.label || s.register_name}
-              fill={s.color || COLORS[idx % COLORS.length]}
+              key={key}
+              dataKey={key}
+              yAxisId={yAxisId}
+              fill={param.color}
             />
-          ))}
-        </BarChart>
-      );
-    }
+          );
+        }
 
-    // Default: line chart
+        return (
+          <Line
+            key={key}
+            type="monotone"
+            dataKey={key}
+            yAxisId={yAxisId}
+            stroke={param.color}
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+          />
+        );
+      });
+    };
+
     return (
-      <LineChart {...chartProps}>
+      <ComposedChart
+        data={chartData}
+        margin={{ top: 5, right: hasRightAxis ? 5 : 10, left: -15, bottom: 5 }}
+      >
         <XAxis dataKey="time" {...commonAxisProps} />
-        <YAxis {...commonAxisProps} />
+
+        {hasLeftAxis && (
+          <YAxis
+            yAxisId="left"
+            orientation="left"
+            domain={yAxisDomains.left}
+            {...commonAxisProps}
+            label={leftUnit ? { value: leftUnit, angle: -90, position: "insideLeft", fontSize: 9, fill: "#888" } : undefined}
+          />
+        )}
+
+        {hasRightAxis && (
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            domain={yAxisDomains.right}
+            {...commonAxisProps}
+            label={rightUnit ? { value: rightUnit, angle: 90, position: "insideRight", fontSize: 9, fill: "#888" } : undefined}
+          />
+        )}
+
         <Tooltip
           contentStyle={{
             backgroundColor: "hsl(var(--popover))",
             border: "1px solid hsl(var(--border))",
             borderRadius: "6px",
-            fontSize: "12px",
+            fontSize: "11px",
+          }}
+          formatter={(value: number, name: string) => {
+            const param = parameters.find(p => (p.label || p.register_name) === name);
+            return [`${value?.toFixed(2) ?? "--"} ${param?.unit || ""}`, name];
           }}
         />
-        {series.length > 1 && <Legend wrapperStyle={{ fontSize: "10px" }} />}
-        {series.map((s, idx) => (
-          <Line
-            key={s.label || s.register_name}
-            type="monotone"
-            dataKey={s.label || s.register_name}
-            stroke={s.color || COLORS[idx % COLORS.length]}
-            strokeWidth={2}
-            dot={false}
+
+        {parameters.length > 1 && (
+          <Legend
+            wrapperStyle={{ fontSize: "10px", paddingTop: "4px" }}
+            iconSize={8}
           />
-        ))}
-      </LineChart>
+        )}
+
+        {renderElements(leftParams, "left")}
+        {renderElements(rightParams, hasLeftAxis ? "right" : "left")}
+      </ComposedChart>
     );
   };
+
+  // For charts with only right axis params, use left axis id
+  const effectiveLeftParams = leftParams.length > 0 ? leftParams : [];
+  const effectiveRightParams = leftParams.length > 0 ? rightParams : [];
 
   return (
     <div
       className={cn(
-        "h-full flex flex-col p-3",
+        "h-full flex flex-col p-2",
         isEditMode && "cursor-pointer"
       )}
       onClick={isEditMode ? onSelect : undefined}
     >
       {/* Title */}
       {config.title && (
-        <p className="text-xs font-medium mb-2 truncate">{config.title}</p>
+        <p className="text-xs font-medium mb-1 truncate">{config.title}</p>
       )}
 
       {/* Chart */}
       <div ref={containerRef} className="flex-1 min-h-0">
-        {isLoading || !dimensions ? (
+        {isLoading && chartData.length === 0 ? (
           <div className="h-full flex items-center justify-center">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
           </div>
-        ) : series.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-            {isEditMode ? "Click to configure" : "No series configured"}
+        ) : parameters.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-muted-foreground text-sm text-center px-2">
+            {isEditMode ? "Click to configure chart" : "No parameters selected"}
           </div>
-        ) : (
-          <ResponsiveContainer width={dimensions.width} height={Math.max(100, dimensions.height)}>
+        ) : dimensions ? (
+          <ResponsiveContainer width={dimensions.width} height={Math.max(80, dimensions.height)}>
             {renderChart()}
           </ResponsiveContainer>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -380,19 +380,25 @@ export function DashboardCanvas({
     const widthDelta = Math.round(deltaX / (cellWidth + GAP));
     const heightDelta = Math.round(deltaY / (CELL_HEIGHT + GAP));
 
-    const newWidth = Math.max(1, Math.min(resizeStart.width + widthDelta, gridColumns));
-    const newHeight = Math.max(1, Math.min(resizeStart.height + heightDelta, gridRows));
+    // Minimum sizes by widget type (chart needs minimum 3x2 for proper display)
+    const minSizes: Record<string, { width: number; height: number }> = {
+      chart: { width: 3, height: 2 },
+    };
 
     setWidgets((prev) =>
-      prev.map((w) =>
-        w.id === resizingWidget
-          ? {
-              ...w,
-              grid_width: Math.min(newWidth, gridColumns - w.grid_col + 1),
-              grid_height: Math.min(newHeight, gridRows - w.grid_row + 1),
-            }
-          : w
-      )
+      prev.map((w) => {
+        if (w.id !== resizingWidget) return w;
+
+        const minSize = minSizes[w.widget_type] || { width: 1, height: 1 };
+        const newWidth = Math.max(minSize.width, Math.min(resizeStart.width + widthDelta, gridColumns));
+        const newHeight = Math.max(minSize.height, Math.min(resizeStart.height + heightDelta, gridRows));
+
+        return {
+          ...w,
+          grid_width: Math.min(newWidth, gridColumns - w.grid_col + 1),
+          grid_height: Math.min(newHeight, gridRows - w.grid_row + 1),
+        };
+      })
     );
   }, [resizingWidget, resizeStart, gridColumns, gridRows]);
 
