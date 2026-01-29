@@ -227,6 +227,20 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
 
+## Recent Updates (2026-01-29)
+
+### Dashboard Preset Images Expansion (Frontend)
+- **6 new preset images**: Crusher, EV Charger, Power Meter, Solar Panels (Small), Solar Panels (Large), Solar House
+- **Per-image sizing control**: Added `useContainSize` flag to `PresetImage` interface - new presets use `contain` sizing like custom uploads
+- **Adaptive padding**: Images with `useContainSize: true` get optimized padding (top: 4px, bottom: 36px with content) to avoid text overlap
+- **Old presets unchanged**: Original presets (generator, solar panel, circles) keep `96% auto` sizing
+- **Files**: `dashboard-preset-images.ts`, `icon-widget.tsx`, `/public/images/dashboard/*.png`
+
+### Dashboard Chart Widget Redesign (Frontend)
+- **Dual Y-axis support**: Left and right Y-axis with independent unit grouping
+- **Per-parameter chart types**: Each parameter can be line, area, or bar independently
+- **Device/register selection**: Improved parameter picker with device grouping
+
 ## Recent Updates (2026-01-28)
 
 ### Dashboard Icon Widget Improvements (Frontend)
