@@ -7,7 +7,7 @@
  * Configurable: max items, severity filter, show resolved.
  */
 
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { AlertTriangle, AlertCircle, Info, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -34,7 +34,7 @@ interface Alarm {
   alarm_type: string;
   severity: "info" | "warning" | "major" | "critical";
   message: string;
-  status: string;
+  resolved: boolean;
   created_at: string;
   resolved_at: string | null;
 }
@@ -67,11 +67,18 @@ export const AlarmListWidget = memo(function AlarmListWidget({ widget, liveData,
   };
 
   const maxItems = config.max_items || 5;
-  // Ensure severities is always a valid array of strings
-  const severities = Array.isArray(config.severities) && config.severities.length > 0
-    ? config.severities.filter(s => typeof s === "string" && ["critical", "major", "minor", "warning", "info"].includes(s))
-    : ["critical", "major", "warning"];
   const showResolved = config.show_resolved || false;
+
+  // Memoize severities to prevent infinite re-render loop
+  // (new array on every render would change useCallback dependency)
+  const severitiesJson = JSON.stringify(config.severities || []);
+  const severities = useMemo(() => {
+    const parsed = JSON.parse(severitiesJson) as string[];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.filter(s => typeof s === "string" && ["critical", "major", "minor", "warning", "info"].includes(s));
+    }
+    return ["critical", "major", "warning"];
+  }, [severitiesJson]);
 
   // Memoize fetchAlarms to use in visibility handler
   const fetchAlarms = useCallback(async () => {
@@ -79,25 +86,16 @@ export const AlarmListWidget = memo(function AlarmListWidget({ widget, liveData,
     try {
       const supabase = createClient();
 
-      // Get site's project_id first
-      const { data: site } = await supabase
-        .from("sites")
-        .select("project_id")
-        .eq("id", siteId)
-        .single();
-
-      if (!site) return;
-
       let query = supabase
         .from("alarms")
-        .select("id, alarm_type, severity, message, status, created_at, resolved_at")
-        .eq("project_id", site.project_id)
+        .select("id, alarm_type, severity, message, resolved, created_at, resolved_at")
+        .eq("site_id", siteId)
         .in("severity", severities)
         .order("created_at", { ascending: false })
         .limit(maxItems);
 
       if (!showResolved) {
-        query = query.eq("status", "active");
+        query = query.eq("resolved", false);
       }
 
       const { data } = await query;
@@ -195,7 +193,7 @@ export const AlarmListWidget = memo(function AlarmListWidget({ widget, liveData,
                   <p className="font-medium truncate">{alarm.message || alarm.alarm_type}</p>
                   <p className="text-muted-foreground">
                     {formatTime(alarm.created_at)}
-                    {alarm.status === "resolved" && (
+                    {alarm.resolved && (
                       <span className="ml-1 text-green-600">(Resolved)</span>
                     )}
                   </p>
