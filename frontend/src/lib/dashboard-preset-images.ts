@@ -11,6 +11,7 @@ export interface PresetImage {
   url: string;
   category: "power" | "status" | "equipment" | "indicator";
   description: string;
+  useContainSize?: boolean;
 }
 
 export const PRESET_IMAGES: PresetImage[] = [
@@ -97,6 +98,7 @@ export const PRESET_IMAGES: PresetImage[] = [
     url: "/images/dashboard/crusher.png",
     category: "equipment",
     description: "Mobile crushing and screening plant",
+    useContainSize: true,
   },
   {
     id: "ev_charger",
@@ -104,6 +106,7 @@ export const PRESET_IMAGES: PresetImage[] = [
     url: "/images/dashboard/ev-charger.png",
     category: "equipment",
     description: "Electric vehicle charging station with solar canopy",
+    useContainSize: true,
   },
   {
     id: "power_meter",
@@ -111,6 +114,7 @@ export const PRESET_IMAGES: PresetImage[] = [
     url: "/images/dashboard/power-meter.png",
     category: "equipment",
     description: "Digital power meter for voltage/current monitoring",
+    useContainSize: true,
   },
 
   // Additional Solar
@@ -120,6 +124,7 @@ export const PRESET_IMAGES: PresetImage[] = [
     url: "/images/dashboard/solar-small.png",
     category: "power",
     description: "Small 2-panel solar array with inverter",
+    useContainSize: true,
   },
   {
     id: "solar_large",
@@ -127,6 +132,7 @@ export const PRESET_IMAGES: PresetImage[] = [
     url: "/images/dashboard/solar-large.png",
     category: "power",
     description: "Large 6-panel solar array with inverter",
+    useContainSize: true,
   },
   {
     id: "solar_house",
@@ -134,6 +140,7 @@ export const PRESET_IMAGES: PresetImage[] = [
     url: "/images/dashboard/solar-house.png",
     category: "power",
     description: "House with rooftop solar panels",
+    useContainSize: true,
   },
 ];
 

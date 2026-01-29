@@ -122,6 +122,7 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
   // Determine which image to show
   let imageUrl: string | null = null;
   let isCustomImage = false;
+  let useContainSize = false;
   let LegacyIcon: React.ComponentType<{ className?: string }> | null = null;
 
   if (imageType === "legacy") {
@@ -138,6 +139,7 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
       } else if (config.conditional_preset_image_id) {
         const preset = getPresetImageById(config.conditional_preset_image_id);
         imageUrl = preset?.url || null;
+        useContainSize = preset?.useContainSize || false;
       }
     } else {
       // Show primary image
@@ -147,6 +149,7 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
       } else if (config.preset_image_id) {
         const preset = getPresetImageById(config.preset_image_id);
         imageUrl = preset?.url || null;
+        useContainSize = preset?.useContainSize || false;
       }
     }
   }
@@ -222,7 +225,7 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
             left: isCustomImage ? 4 : 2,
             right: isCustomImage ? 4 : 2,
             backgroundImage: `url(${imageUrl})`,
-            backgroundSize: isCustomImage ? 'contain' : '96% auto',
+            backgroundSize: (isCustomImage || useContainSize) ? 'contain' : '96% auto',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat'
           }}
