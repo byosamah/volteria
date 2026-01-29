@@ -155,6 +155,8 @@ export function WidgetConfigDialog({
         return renderAlarmListForm();
       case "status_indicator":
         return renderStatusIndicatorForm();
+      case "text":
+        return renderTextForm();
       default:
         return <p className="text-muted-foreground">Unknown widget type</p>;
     }
@@ -1246,6 +1248,93 @@ export function WidgetConfigDialog({
     );
   };
 
+  const renderTextForm = () => {
+    return (
+      <div className="space-y-4">
+        {/* Text content */}
+        <div className="space-y-2">
+          <Label>Text</Label>
+          <textarea
+            value={(config.text as string) || ""}
+            onChange={(e) => updateConfig("text", e.target.value)}
+            placeholder="Enter your text here..."
+            className="w-full min-h-[100px] p-3 border rounded-md bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+
+        {/* Text size */}
+        <div className="space-y-2">
+          <Label>Text Size</Label>
+          <Select
+            value={(config.text_size as string) || "base"}
+            onValueChange={(v) => updateConfig("text_size", v)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="xs">Extra Small</SelectItem>
+              <SelectItem value="sm">Small</SelectItem>
+              <SelectItem value="base">Normal</SelectItem>
+              <SelectItem value="lg">Large</SelectItem>
+              <SelectItem value="xl">Extra Large</SelectItem>
+              <SelectItem value="2xl">2X Large</SelectItem>
+              <SelectItem value="3xl">3X Large</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Text color */}
+        <div className="space-y-2">
+          <Label>Text Color</Label>
+          <div className="flex gap-2 items-center">
+            <Input
+              type="color"
+              value={(config.text_color as string) || "#000000"}
+              onChange={(e) => updateConfig("text_color", e.target.value)}
+              className="h-10 w-16 cursor-pointer p-1"
+            />
+            <Input
+              type="text"
+              value={(config.text_color as string) || ""}
+              onChange={(e) => updateConfig("text_color", e.target.value)}
+              placeholder="Default"
+              className="flex-1"
+            />
+            {Boolean(config.text_color) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => updateConfig("text_color", undefined)}
+              >
+                Reset
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Text alignment */}
+        <div className="space-y-2">
+          <Label>Alignment</Label>
+          <Select
+            value={(config.text_align as string) || "left"}
+            onValueChange={(v) => updateConfig("text_align", v)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="left">Left</SelectItem>
+              <SelectItem value="center">Center</SelectItem>
+              <SelectItem value="right">Right</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    );
+  };
+
   // Widget type titles
   const titles: Record<string, string> = {
     icon: "Configure Image Widget",
@@ -1253,6 +1342,7 @@ export function WidgetConfigDialog({
     chart: "Configure Chart",
     alarm_list: "Configure Alarm List",
     status_indicator: "Configure Status Indicator",
+    text: "Configure Text Widget",
   };
 
   return (

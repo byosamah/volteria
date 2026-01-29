@@ -23,6 +23,7 @@ import { ValueDisplayWidget } from "@/components/dashboard/value-display-widget"
 import { ChartWidget } from "@/components/dashboard/chart-widget";
 import { AlarmListWidget } from "@/components/dashboard/alarm-list-widget";
 import { StatusIndicatorWidget } from "@/components/dashboard/status-indicator-widget";
+import { TextWidget } from "@/components/dashboard/text-widget";
 import { WidgetPicker } from "@/components/dashboard/widget-picker";
 import { WidgetConfigDialog } from "@/components/dashboard/widget-config-dialog";
 
@@ -245,6 +246,7 @@ export function DashboardCanvas({
         chart: { width: 6, height: 3 },
         alarm_list: { width: 4, height: 3 },
         status_indicator: { width: 2, height: 1 },
+        text: { width: 3, height: 1 },
       };
 
       const size = defaultSizes[widgetType] || { width: 2, height: 2 };
@@ -442,6 +444,8 @@ export function DashboardCanvas({
         return <AlarmListWidget {...commonProps} siteId={siteId} />;
       case "status_indicator":
         return <StatusIndicatorWidget {...commonProps} />;
+      case "text":
+        return <TextWidget {...commonProps} />;
       default:
         return (
           <div className="p-4 text-center text-muted-foreground">

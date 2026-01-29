@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Activity,
   Zap,
+  Type,
 } from "lucide-react";
 
 interface WidgetPickerProps {
@@ -51,6 +52,12 @@ const WIDGET_TYPES = [
     name: "Status",
     description: "Device online status",
     icon: Activity,
+  },
+  {
+    id: "text",
+    name: "Text",
+    description: "Custom text label",
+    icon: Type,
   },
 ];
 
