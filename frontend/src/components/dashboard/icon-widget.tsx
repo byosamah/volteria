@@ -220,10 +220,10 @@ export const IconWidget = memo(function IconWidget({ widget, liveData, isEditMod
         <div
           className="absolute"
           style={{
-            top: isCustomImage ? 4 : 10,
-            bottom: hasBottomContent ? (isCustomImage ? 30 : 36) : 4,
-            left: isCustomImage ? 4 : 2,
-            right: isCustomImage ? 4 : 2,
+            top: (isCustomImage || useContainSize) ? 2 : 10,
+            bottom: hasBottomContent ? ((isCustomImage || useContainSize) ? 28 : 36) : 4,
+            left: (isCustomImage || useContainSize) ? 2 : 2,
+            right: (isCustomImage || useContainSize) ? 2 : 2,
             backgroundImage: `url(${imageUrl})`,
             backgroundSize: (isCustomImage || useContainSize) ? 'contain' : '96% auto',
             backgroundPosition: 'center',
