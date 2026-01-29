@@ -8,7 +8,7 @@
  * Uses the same data source as Historical Data page.
  */
 
-import { useState, useEffect, useRef, memo, useMemo } from "react";
+import { useState, useEffect, memo, useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -117,41 +117,44 @@ export const ChartWidget = memo(function ChartWidget({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Track container dimensions
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
-
-  // ResizeObserver to track container size
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0) {
-          setDimensions({ width, height });
-        }
-      }
-    });
-
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
-
   const config = widget.config as ChartWidgetConfig;
   const timeRange = config.time_range || "1h";
   const aggregation = config.aggregation || "raw";
-  const parameters = config.parameters || [];
 
-  // Split parameters by axis (case-insensitive, default to "left")
-  const leftParams = useMemo(() => parameters.filter(p =>
-    !p.y_axis || p.y_axis.toLowerCase() !== "right"
-  ), [parameters]);
-  const rightParams = useMemo(() => parameters.filter(p =>
-    p.y_axis && p.y_axis.toLowerCase() === "right"
-  ), [parameters]);
+  // Calculate fixed chart height to avoid ResponsiveContainer timing issues
+  // Grid uses 100px per row in view mode, 8px gap between rows
+  const ROW_HEIGHT = 100;
+  const GAP = 8;
+  const TITLE_HEIGHT = config.title ? 44 : 0; // title (24px) + margin (16px) + padding
+  const CONTAINER_PADDING = 16; // p-2 = 8px * 2
+  const chartHeight = Math.max(
+    100,
+    (widget.grid_height * ROW_HEIGHT) + ((widget.grid_height - 1) * GAP) - TITLE_HEIGHT - CONTAINER_PADDING
+  );
 
+  // Stable memoization using JSON string as dependency
+  // This prevents recalculation unless actual config content changes
+  const configParamsJson = JSON.stringify(config.parameters || []);
+
+  const { parameters, leftParams, rightParams } = useMemo(() => {
+    // Parse from JSON to ensure we use the exact data that triggered the memo
+    const params: ChartParameter[] = configParamsJson ? JSON.parse(configParamsJson) : [];
+
+    // Normalize y_axis values and split into left/right
+    const left: ChartParameter[] = [];
+    const right: ChartParameter[] = [];
+
+    for (const p of params) {
+      const yAxis = String(p.y_axis || "left").toLowerCase();
+      if (yAxis === "right") {
+        right.push(p);
+      } else {
+        left.push(p);
+      }
+    }
+
+    return { parameters: params, leftParams: left, rightParams: right };
+  }, [configParamsJson]);
 
   // Fetch historical data
   useEffect(() => {
@@ -210,10 +213,40 @@ export const ChartWidget = memo(function ChartWidget({
         // Sort timestamps
         const timestamps = Array.from(timestampSet).sort();
 
-        // Downsample if needed (max 100 points for widget performance)
-        const maxPoints = 100;
-        const step = timestamps.length > maxPoints ? Math.ceil(timestamps.length / maxPoints) : 1;
-        const sampledTimestamps = timestamps.filter((_, i) => i % step === 0);
+        // Smart downsampling: preserve timestamps where sparse parameters have data
+        const maxPoints = 150;
+        let sampledTimestamps: string[];
+
+        if (timestamps.length <= maxPoints) {
+          sampledTimestamps = timestamps;
+        } else {
+          // Find timestamps where each parameter has non-null data
+          const paramKeys = parameters.map(p => `${p.device_id}:${p.register_name}`);
+
+          // Prioritize timestamps that have data for ALL parameters
+          const timestampsWithAllData = timestamps.filter(ts =>
+            paramKeys.every(key => dataLookup[key]?.[ts] != null)
+          );
+
+          // Also get timestamps with data for ANY sparse parameter (non-primary)
+          const timestampsWithSparseData = timestamps.filter(ts =>
+            paramKeys.slice(1).some(key => dataLookup[key]?.[ts] != null)
+          );
+
+          // Combine: all sparse data timestamps + evenly sampled primary timestamps
+          const sparseSet = new Set([...timestampsWithAllData, ...timestampsWithSparseData]);
+          const remainingSlots = maxPoints - sparseSet.size;
+
+          if (remainingSlots > 0) {
+            // Fill remaining slots with evenly distributed timestamps
+            const step = Math.ceil(timestamps.length / remainingSlots);
+            const evenSamples = timestamps.filter((ts, i) => i % step === 0 && !sparseSet.has(ts));
+            sampledTimestamps = [...sparseSet, ...evenSamples.slice(0, remainingSlots)].sort();
+          } else {
+            // Too many sparse points, just take them all up to maxPoints
+            sampledTimestamps = [...sparseSet].sort().slice(0, maxPoints);
+          }
+        }
 
         // Build chart data points
         const chartPoints: ChartDataPoint[] = sampledTimestamps.map(timestamp => {
@@ -224,7 +257,8 @@ export const ChartWidget = memo(function ChartWidget({
 
           parameters.forEach(param => {
             const key = `${param.device_id}:${param.register_name}`;
-            const paramKey = param.label || param.register_name;
+            // Use register_name as consistent key for data lookup and chart dataKey
+            const paramKey = param.register_name;
             point[paramKey] = dataLookup[key]?.[timestamp] ?? null;
           });
 
@@ -249,14 +283,15 @@ export const ChartWidget = memo(function ChartWidget({
 
   // Calculate Y-axis domains
   const yAxisDomains = useMemo(() => {
-    const calculateDomain = (params: ChartParameter[]): [number, number] | undefined => {
+    type DomainValue = [number, number] | [string, string] | undefined;
+    const calculateDomain = (params: ChartParameter[]): DomainValue => {
       if (params.length === 0 || chartData.length === 0) return undefined;
 
       let min = Infinity;
       let max = -Infinity;
 
       for (const param of params) {
-        const key = param.label || param.register_name;
+        const key = param.register_name;
         for (const point of chartData) {
           const value = point[key];
           if (typeof value === "number" && !isNaN(value)) {
@@ -266,7 +301,8 @@ export const ChartWidget = memo(function ChartWidget({
         }
       }
 
-      if (min === Infinity || max === -Infinity) return undefined;
+      // If no valid data, let Recharts auto-calculate from available data
+      if (min === Infinity || max === -Infinity) return ["dataMin", "dataMax"] as [string, string];
 
       // Add 10% padding
       const padding = (max - min) * 0.1 || 1;
@@ -280,15 +316,9 @@ export const ChartWidget = memo(function ChartWidget({
   }, [chartData, leftParams, rightParams]);
 
   // Render chart using ComposedChart for dual axis support
+  // NOTE: This function is ONLY called when chartData.length > 0
+  // Empty state is handled outside ResponsiveContainer to avoid Recharts warnings
   const renderChart = () => {
-    if (chartData.length === 0) {
-      return (
-        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-          {error || "No data available"}
-        </div>
-      );
-    }
-
     const commonAxisProps = {
       stroke: "#888888",
       fontSize: 10,
@@ -305,7 +335,7 @@ export const ChartWidget = memo(function ChartWidget({
 
     const renderElements = (params: ChartParameter[], yAxisId: string) => {
       return params.map((param) => {
-        const key = param.label || param.register_name;
+        const key = param.register_name;
         const paramChartType = param.chart_type || "line";
 
         if (paramChartType === "area") {
@@ -342,7 +372,7 @@ export const ChartWidget = memo(function ChartWidget({
             dataKey={key}
             yAxisId={yAxisId}
             stroke={param.color}
-            strokeWidth={2}
+            strokeWidth={3}
             dot={false}
             connectNulls
           />
@@ -350,32 +380,32 @@ export const ChartWidget = memo(function ChartWidget({
       });
     };
 
+    // Always render both Y-axes to avoid Recharts conditional rendering issues
+    // Hide unused axis by not showing ticks/labels
     return (
       <ComposedChart
         data={chartData}
-        margin={{ top: 5, right: hasRightAxis ? 35 : 10, left: -15, bottom: 5 }}
+        margin={{ top: 5, right: hasRightAxis ? 50 : 5, left: -15, bottom: 5 }}
       >
         <XAxis dataKey="time" {...commonAxisProps} />
 
-        {hasLeftAxis && (
-          <YAxis
-            yAxisId="left"
-            orientation="left"
-            domain={yAxisDomains.left || ["auto", "auto"]}
-            {...commonAxisProps}
-            label={leftUnit ? { value: leftUnit, angle: -90, position: "insideLeft", fontSize: 9, fill: "#888" } : undefined}
-          />
-        )}
+        <YAxis
+          yAxisId="left"
+          orientation="left"
+          domain={yAxisDomains.left || ["auto", "auto"]}
+          {...commonAxisProps}
+          hide={!hasLeftAxis}
+          label={hasLeftAxis && leftUnit ? { value: leftUnit, angle: -90, position: "insideLeft", fontSize: 9, fill: "#888" } : undefined}
+        />
 
-        {hasRightAxis && (
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            domain={yAxisDomains.right || ["auto", "auto"]}
-            {...commonAxisProps}
-            label={rightUnit ? { value: rightUnit, angle: 90, position: "insideRight", fontSize: 9, fill: "#888" } : undefined}
-          />
-        )}
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          domain={yAxisDomains.right || ["auto", "auto"]}
+          {...commonAxisProps}
+          hide={!hasRightAxis}
+          label={hasRightAxis && rightUnit ? { value: rightUnit, angle: 90, position: "insideRight", fontSize: 9, fill: "#888" } : undefined}
+        />
 
         <Tooltip
           contentStyle={{
@@ -385,8 +415,10 @@ export const ChartWidget = memo(function ChartWidget({
             fontSize: "11px",
           }}
           formatter={(value: number, name: string) => {
-            const param = parameters.find(p => (p.label || p.register_name) === name);
-            return [`${value?.toFixed(2) ?? "--"} ${param?.unit || ""}`, name];
+            const param = parameters.find(p => p.register_name === name);
+            // Display label if available, otherwise register_name
+            const displayName = param?.label || name;
+            return [`${value?.toFixed(2) ?? "--"} ${param?.unit || ""}`, displayName];
           }}
         />
 
@@ -416,8 +448,8 @@ export const ChartWidget = memo(function ChartWidget({
         <p className="text-base font-medium mb-3 pl-1 truncate">{config.title}</p>
       )}
 
-      {/* Chart */}
-      <div ref={containerRef} className="flex-1 min-h-0">
+      {/* Chart - fixed height calculated from grid_height to avoid ResponsiveContainer timing issues */}
+      <div className="w-full" style={{ height: chartHeight }}>
         {isLoading && chartData.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
@@ -426,11 +458,15 @@ export const ChartWidget = memo(function ChartWidget({
           <div className="h-full flex items-center justify-center text-muted-foreground text-sm text-center px-2">
             {isEditMode ? "Click to configure chart" : "No parameters selected"}
           </div>
-        ) : dimensions ? (
-          <ResponsiveContainer width={dimensions.width} height={Math.max(80, dimensions.height)}>
+        ) : chartData.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+            {error || "No data available"}
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={chartHeight}>
             {renderChart()}
           </ResponsiveContainer>
-        ) : null}
+        )}
       </div>
     </div>
   );
