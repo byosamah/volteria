@@ -815,3 +815,9 @@ npx shadcn@latest add dialog
 10. **Alarm States**: Alarms have 3 states: Active → Acknowledged → Resolved. Both `/alarms` page and site-level `AlarmsViewer` must show all states consistently with matching UI (badge colors, action buttons, filters).
 
 11. **RLS Bypass for Write Operations**: When RLS blocks INSERT/UPDATE/DELETE, create a frontend API route (`/api/resource/route.ts`) that calls the backend with the user's session token. Backend uses service_role to bypass RLS. Pattern: site deletion (`/api/sites/[siteId]`), site creation (`/api/sites`).
+
+12. **Recharts ResponsiveContainer**: Never use `height="100%"` in flex containers - causes "width(-1) height(-1)" warning because flex layout isn't computed on first render. Use calculated pixel height based on parent grid dimensions instead.
+
+13. **Recharts Y-axis Domain Fallback**: If Y-axis domain shows `['dataMin', 'dataMax']`, it means domain calculation found no valid numeric values - check if data is null/sparse.
+
+14. **Chart Downsampling with Sparse Data**: When downsampling multi-parameter chart data, preserve timestamps where sparse parameters have values - uniform step sampling can completely miss infrequently-logged registers.
