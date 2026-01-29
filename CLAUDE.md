@@ -229,6 +229,13 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-01-29)
 
+### Dashboard Chart Widget Fixes (Frontend)
+- **ResponsiveContainer warning fix**: Changed from `height="100%"` to calculated pixel height based on widget's `grid_height` - fixes "width(-1) and height(-1)" console warning caused by flex layout timing
+- **Smart downsampling for sparse data**: New algorithm preserves timestamps where sparse parameters have data - fixes missing lines when registers have different logging frequencies
+- **Height calculation**: `chartHeight = (grid_height * 100) + ((grid_height - 1) * 8) - titleHeight - padding`
+- **Increased line visibility**: strokeWidth increased to 3, right margin to 50px for better Y-axis labels
+- **File**: `chart-widget.tsx`
+
 ### Dashboard Preset Images Expansion (Frontend)
 - **6 new preset images**: Crusher, EV Charger, Power Meter, Solar Panels (Small), Solar Panels (Large), Solar House
 - **Per-image sizing control**: Added `useContainSize` flag to `PresetImage` interface - new presets use `contain` sizing like custom uploads
