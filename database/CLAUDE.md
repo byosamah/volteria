@@ -93,7 +93,8 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 082-083 | Connection alarms | not_reporting alarm infrastructure |
 | 084-088 | Historical fixes | distinct register names RPC, source column, controllers RLS |
 | 089-091 | Alarm severity | connection_alarm_severity, 'minor' level, device-specific severity |
-| 092+ | Alarm improvements | condition column for threshold display |
+| 092 | Alarm improvements | condition column for threshold display |
+| 093 | Security fixes | SECURITY DEFINER functions search_path |
 
 ## RPC Functions
 
@@ -211,16 +212,44 @@ CREATE POLICY "Users can view own project data" ON public.new_table
 ```
 
 ### Pre-commit Checklist
-1. Run `get_advisors(type: 'security')` after migrations
-2. Zero `function_search_path_mutable` warnings
-3. Avoid `rls_policy_always_true` for write operations
+1. Run Security Advisor after migrations
+2. Zero `function_search_path_mutable` warnings ✅ (fixed in migration 093)
+3. `rls_policy_always_true` warnings documented below as accepted exceptions
 4. Use `public.table_name` in all function bodies
 
 ### Known Exceptions (documented)
+
+**RLS Disabled:**
+| Table | Reason |
+|-------|--------|
+| `users` | Prevents infinite recursion in RLS policies |
+
+**Permissive System INSERT Policies** (intentional - system/controller writes):
+| Table | Policy | Reason |
+|-------|--------|--------|
+| `controller_heartbeats` | INSERT `WITH CHECK (true)` | Controller auth via service key |
+| `device_readings` | INSERT `TO service_role` | Controller cloud sync |
+| `control_logs` | INSERT `WITH CHECK (true)` | Controller auth |
+| `alarms` | INSERT/UPDATE `WITH CHECK (true)` | Controller creates, users resolve |
+| `audit_logs` | INSERT `WITH CHECK (true)` | System writes, immutable |
+| `api_request_logs` | INSERT `WITH CHECK (true)` | System writes only |
+| `enterprise_usage_snapshots` | INSERT `WITH CHECK (true)` | System writes only |
+| `notifications` | INSERT `WITH CHECK (true)` | System creates notifications |
+
+**Permissive User Policies** (accepted for single-tenant, revisit for multi-tenant):
+| Table | Policy | Risk | Reason |
+|-------|--------|------|--------|
+| `projects` | ALL `USING (true)` | Medium | Single enterprise, trusted users |
+| `site_devices` | ALL/INSERT/UPDATE/DELETE | Medium | Same |
+| `site_master_devices` | INSERT/UPDATE/DELETE | Medium | Same |
+| `user_projects` | ALL `USING (true)` | Medium | Same |
+| `site_test_results` | INSERT/UPDATE | Low | Test data only |
+| `user_project_notifications` | ALL `USING (true)` | Low | User preferences |
+
+**Other:**
 | Item | Reason |
 |------|--------|
-| `users` RLS disabled | Prevents infinite recursion |
-| Permissive INSERT on `controller_heartbeats`, `device_readings` | Controller auth via secret, not JWT |
+| Service key to controllers | Controllers are trusted physical devices on customer sites |
 
 ---
 

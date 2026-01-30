@@ -210,8 +210,7 @@ async function authorizeSSHKey(publicKey: string, comment: string): Promise<void
   // In production, this would SSH to the central server and add the key
   // OR use a webhook/API on the central server
 
-  // Log for manual sync if needed
-  console.log(`SSH key to authorize for ${comment}:`, keyWithComment);
+  // Key stored in database - authorized_keys sync handled separately
 
   // TODO: Implement automatic key authorization
   // Options:
