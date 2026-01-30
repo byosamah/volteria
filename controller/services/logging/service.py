@@ -1134,6 +1134,10 @@ class LoggingService:
                             logger.info(
                                 f"[CONFIG] Auto-resolved {count} orphan alarm(s): {alarm_id}"
                             )
+                        # Always sync orphan resolution to cloud (even if local count=0,
+                        # cloud may have unresolved alarm from before)
+                        if self.cloud_sync:
+                            await self.cloud_sync.resolve_alarm_in_cloud(alarm_id)
 
                     # Re-evaluate all definitions to handle threshold changes
                     # (same definition ID, but threshold operator/value changed)
