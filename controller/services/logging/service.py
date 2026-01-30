@@ -1323,6 +1323,8 @@ class LoggingService:
 
     async def _process_alarm(self, alarm: TriggeredAlarm) -> None:
         """Process a triggered alarm"""
+        logger.debug(f"[ALARM] Processing alarm: {alarm.alarm_id} severity={alarm.severity}")
+
         # Check for existing unresolved alarm to prevent duplicates (local check)
         has_existing = await self._run_db(
             self.local_db.has_unresolved_alarm,
@@ -1339,6 +1341,7 @@ class LoggingService:
         # For high-severity alarms, also check cloud as fallback
         # This catches duplicates when local DB was cleared or resolution sync occurred
         if alarm.severity in ["critical", "major"] and self.cloud_sync:
+            logger.debug(f"[ALARM] Checking cloud for existing: {alarm.alarm_id}")
             has_cloud = await self.cloud_sync.check_unresolved_alarm(
                 alarm.alarm_id,
                 alarm.device_name,
@@ -1348,12 +1351,14 @@ class LoggingService:
                     f"Skipping duplicate alarm: {alarm.alarm_id} (unresolved exists in cloud)"
                 )
                 return
+            logger.debug(f"[ALARM] No cloud duplicate found for: {alarm.alarm_id}")
 
         # Get message and condition separately
         message = alarm.get_formatted_message()
         condition = alarm.get_condition_text()
 
         # Insert to local database (in thread to avoid blocking event loop)
+        logger.debug(f"[ALARM] Inserting to local DB: {alarm.alarm_id}")
         local_alarm_id = await self._run_db(
             self.local_db.insert_alarm,
             str(uuid.uuid4()),              # alarm_id
@@ -1366,6 +1371,7 @@ class LoggingService:
             alarm.device_name,              # device_name
             condition,                      # condition (e.g., "Temp > 25")
         )
+        logger.info(f"[ALARM] Inserted local alarm: {alarm.alarm_id} (id={local_alarm_id})")
 
         # Sync critical/major alarms immediately
         if self._instant_sync_alarms and alarm.severity in ["critical", "major"]:
@@ -1412,12 +1418,13 @@ class LoggingService:
             return
 
         # Build device_registers map: {device_id: {register_name: value}}
+        # Structure: devices.{device_id}.readings.{register_name}.value
         device_registers = {}
-        for device_id, registers in readings_state.get("devices", {}).items():
+        for device_id, device_data in readings_state.get("devices", {}).items():
             device_registers[device_id] = {
                 reg_name: reg_data.get("value")
-                for reg_name, reg_data in registers.items()
-                if isinstance(reg_data, dict) and "value" in reg_data
+                for reg_name, reg_data in device_data.get("readings", {}).items()
+                if reg_data.get("value") is not None
             }
 
         # Prepare readings for evaluator
