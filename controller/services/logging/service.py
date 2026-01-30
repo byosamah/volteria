@@ -1438,9 +1438,12 @@ class LoggingService:
 
         # Evaluate all definitions against current readings
         # Use active_conditions (not triggered) to check if condition is currently met
+        # Pass check_only=True so we don't update cooldown state - that's only for
+        # the regular sample callback. Config re-eval just checks current state.
         triggered, active_conditions = self.alarm_evaluator.evaluate(
             readings=readings,
             alarm_definitions=self._alarm_definitions,
+            check_only=True,
         )
 
         # Auto-resolve alarms for definitions whose conditions are NOT met

@@ -85,6 +85,7 @@ class AlarmEvaluator:
         alarm_definitions: list[AlarmDefinition],
         device_name: str | None = None,
         device_id: str | None = None,
+        check_only: bool = False,
     ) -> tuple[list[TriggeredAlarm], set[str]]:
         """
         Evaluate alarm conditions against readings.
@@ -94,6 +95,8 @@ class AlarmEvaluator:
             alarm_definitions: List of alarm definitions to check
             device_name: Optional device name for device alarms
             device_id: Optional device ID
+            check_only: If True, only check conditions without updating cooldown
+                       state or logging. Used for config change re-evaluation.
 
         Returns:
             Tuple of (triggered_alarms, active_condition_ids):
@@ -123,6 +126,10 @@ class AlarmEvaluator:
                 if self._check_condition(value, condition):
                     # Condition is met - track this for auto-resolution logic
                     active_conditions.add(alarm_def.id)
+
+                    # In check_only mode, just track active conditions without side effects
+                    if check_only:
+                        break  # Only one condition match per definition
 
                     # Check cooldown (only affects whether to CREATE new alarm)
                     state_key = f"{alarm_device_id or 'global'}:{alarm_def.id}"
