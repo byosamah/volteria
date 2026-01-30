@@ -347,11 +347,23 @@ class LoggingService:
         for device in config.get("devices", []):
             device_id = device.get("id")
             device_name = device.get("name")
+
+            # Build address-to-name lookup from registers (what device service actually reads)
+            # This ensures alarm source_key matches the name used in SharedState
+            registers = device.get("registers", [])
+            address_to_name = {
+                (r.get("address"), r.get("type")): r.get("name")
+                for r in registers if r.get("address") is not None
+            }
+
             for alarm_reg in device.get("alarm_registers", []):
                 thresholds = alarm_reg.get("thresholds") or []
                 if not thresholds:
                     continue
-                reg_name = alarm_reg.get("name", "")
+                # Look up actual register name by address+type, fall back to alarm_reg name
+                alarm_addr = alarm_reg.get("address")
+                alarm_type = alarm_reg.get("type")
+                reg_name = address_to_name.get((alarm_addr, alarm_type)) or alarm_reg.get("name", "")
                 alarm_def = {
                     "id": f"reg_{device_id}_{reg_name}",
                     "name": f"{reg_name} Alarm",
