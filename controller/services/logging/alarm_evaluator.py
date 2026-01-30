@@ -85,7 +85,7 @@ class AlarmEvaluator:
         alarm_definitions: list[AlarmDefinition],
         device_name: str | None = None,
         device_id: str | None = None,
-    ) -> list[TriggeredAlarm]:
+    ) -> tuple[list[TriggeredAlarm], set[str]]:
         """
         Evaluate alarm conditions against readings.
 
@@ -96,9 +96,13 @@ class AlarmEvaluator:
             device_id: Optional device ID
 
         Returns:
-            List of triggered alarms
+            Tuple of (triggered_alarms, active_condition_ids):
+            - triggered_alarms: List of alarms to create (condition met AND cooldown expired)
+            - active_condition_ids: Set of alarm IDs where condition is currently met
+              (used for auto-resolution - don't resolve while condition is still met)
         """
         triggered = []
+        active_conditions: set[str] = set()
         now = datetime.now(timezone.utc)
 
         for alarm_def in alarm_definitions:
@@ -117,14 +121,18 @@ class AlarmEvaluator:
             # Check each condition
             for condition in alarm_def.conditions:
                 if self._check_condition(value, condition):
-                    # Check cooldown
+                    # Condition is met - track this for auto-resolution logic
+                    active_conditions.add(alarm_def.id)
+
+                    # Check cooldown (only affects whether to CREATE new alarm)
                     state_key = f"{alarm_device_id or 'global'}:{alarm_def.id}"
                     state = self._alarm_states.get(state_key)
 
                     if state and state.last_triggered:
                         elapsed = (now - state.last_triggered).total_seconds()
                         if elapsed < alarm_def.cooldown_seconds:
-                            continue  # Still in cooldown
+                            # Cooldown active - don't create new alarm, but condition IS met
+                            break  # Still break - only one condition match per definition
 
                     # Create triggered alarm
                     alarm = TriggeredAlarm(
@@ -163,7 +171,7 @@ class AlarmEvaluator:
                     # Only trigger once per alarm definition
                     break
 
-        return triggered
+        return triggered, active_conditions
 
     def _get_value(
         self,

@@ -1289,22 +1289,22 @@ class LoggingService:
         if device_readings:
             readings["device_registers"] = device_readings
 
-        # Evaluate
-        triggered = self.alarm_evaluator.evaluate(
+        # Evaluate - returns both triggered alarms and active conditions
+        # triggered: alarms to create (condition met AND cooldown expired)
+        # active_conditions: alarm IDs where condition is met (regardless of cooldown)
+        triggered, active_conditions = self.alarm_evaluator.evaluate(
             readings=readings,
             alarm_definitions=self._alarm_definitions,
         )
 
-        # Track currently triggered alarm IDs for auto-resolution
-        currently_triggered_ids = {alarm.alarm_id for alarm in triggered}
-
-        # Auto-resolve alarms whose conditions have cleared
+        # Auto-resolve alarms whose conditions have ACTUALLY cleared
+        # Use active_conditions (not triggered) to avoid false auto-resolve during cooldown
         # This handles both:
         # A) Value changes (e.g., temp rises above threshold)
         # B) Threshold config changes (user changed < to >)
         for alarm_id in self._previously_triggered_ids:
-            if alarm_id not in currently_triggered_ids:
-                # Condition cleared! Auto-resolve this alarm type
+            if alarm_id not in active_conditions:
+                # Condition actually cleared! Auto-resolve this alarm type
                 count = await self._run_db(
                     self.local_db.resolve_alarms_by_type,
                     alarm_id,
@@ -1315,7 +1315,8 @@ class LoggingService:
                     )
 
         # Update tracking for next evaluation cycle
-        self._previously_triggered_ids = currently_triggered_ids
+        # Track active_conditions (not triggered) so we don't auto-resolve during cooldown
+        self._previously_triggered_ids = active_conditions
 
         # Process triggered alarms
         for alarm in triggered:
@@ -1439,16 +1440,16 @@ class LoggingService:
         }
 
         # Evaluate all definitions against current readings
-        triggered = self.alarm_evaluator.evaluate(
+        # Use active_conditions (not triggered) to check if condition is currently met
+        triggered, active_conditions = self.alarm_evaluator.evaluate(
             readings=readings,
             alarm_definitions=self._alarm_definitions,
         )
-        triggered_ids = {alarm.alarm_id for alarm in triggered}
 
-        # Auto-resolve alarms for definitions that are NOT triggered
+        # Auto-resolve alarms for definitions whose conditions are NOT met
         resolved_count = 0
         for definition in self._alarm_definitions:
-            if definition.id not in triggered_ids:
+            if definition.id not in active_conditions:
                 # Definition exists but condition not met - auto-resolve
                 count = await self._run_db(
                     self.local_db.resolve_alarms_by_type,
@@ -1462,7 +1463,7 @@ class LoggingService:
                     )
 
         # Update tracking for subsequent evaluations
-        self._previously_triggered_ids = triggered_ids
+        self._previously_triggered_ids = active_conditions
 
         if resolved_count > 0:
             logger.info(f"[CONFIG] Total auto-resolved after config change: {resolved_count}")
