@@ -553,6 +553,52 @@ class CloudSync:
             logger.error(f"Failed to immediately sync alarm: {e}")
             return False
 
+    async def resolve_alarm_in_cloud(self, alarm_type: str) -> bool:
+        """
+        Resolve an alarm in cloud (Supabase) when controller auto-resolves it.
+
+        Called when alarm condition clears (value changes or threshold config changes).
+        Uses PATCH to update existing alarm's resolved status.
+
+        Args:
+            alarm_type: The alarm type (e.g., reg_{device_id}_{register_name})
+
+        Returns:
+            True if alarm was resolved in cloud
+        """
+        try:
+            resolved_at = datetime.now(timezone.utc).isoformat()
+
+            async with httpx.AsyncClient() as client:
+                # PATCH updates existing records matching the filter
+                response = await client.patch(
+                    f"{self.supabase_url}/rest/v1/alarms",
+                    params={
+                        "site_id": f"eq.{self.site_id}",
+                        "alarm_type": f"eq.{alarm_type}",
+                        "resolved": "eq.false",
+                    },
+                    json={
+                        "resolved": True,
+                        "resolved_at": resolved_at,
+                    },
+                    headers={
+                        "apikey": self.supabase_key,
+                        "Authorization": f"Bearer {self.supabase_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+
+                logger.info(f"[CLOUD] Resolved alarm in cloud: {alarm_type}")
+                return True
+
+        except Exception as e:
+            logger.warning(f"[CLOUD] Failed to resolve alarm in cloud: {alarm_type} - {e}")
+            return False
+
     async def check_unresolved_alarm(
         self,
         alarm_type: str,
