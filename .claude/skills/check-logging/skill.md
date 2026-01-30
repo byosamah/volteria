@@ -265,14 +265,33 @@ Cloud resolutions now sync back to controller:
 - Updates local SQLite resolved status for alarms created BEFORE resolution timestamp
 - Prevents incorrectly resolving NEW alarms when syncing old resolutions
 - Enables proper deduplication after UI resolution
+- **Skips `reg_*` alarms** — controller handles these via condition monitoring
 
 Log indicator: `[CLOUD] Synced N alarm resolutions from cloud to local`
+
+### Cloud Alarm Resolution (Controller → Cloud)
+When controller auto-resolves an alarm, it syncs to cloud via `resolve_alarm_in_cloud()`:
+- Uses **PATCH** request (not POST) to update existing alarm
+- Targets: `site_id`, `alarm_type`, `resolved=false`
+- Sets: `resolved=true`, `resolved_at=now`
+- Called from: condition clear, threshold change, orphan resolution, drift recovery
+
+```python
+# cloud_sync.py
+async def resolve_alarm_in_cloud(self, alarm_type: str) -> bool:
+    response = await client.patch(
+        f"{supabase_url}/rest/v1/alarms",
+        params={"site_id": f"eq.{site_id}", "alarm_type": f"eq.{alarm_type}", "resolved": "eq.false"},
+        json={"resolved": True, "resolved_at": now_iso},
+    )
+```
 
 ### Orphan Alarm Auto-Resolution
 When alarm register is removed from config, existing unresolved alarms are auto-resolved:
 - On config change, old definition IDs compared to new definition IDs
 - Missing definitions = orphaned alarm types
-- `resolve_alarms_by_type()` called for each orphaned type
+- `resolve_alarms_by_type()` called for each orphaned type (local)
+- `resolve_alarm_in_cloud()` called for each orphaned type (cloud sync)
 - Log indicator: `[CONFIG] Auto-resolved X orphan alarm(s): alarm_id`
 
 ### Alarm Data Storage
@@ -281,4 +300,4 @@ When alarm register is removed from config, existing unresolved alarms are auto-
 - `condition`: Threshold condition text (e.g., "Ambient Temperature < 50")
 - `alarm_type`: For `reg_*` alarms: `reg_{device_id}_{register_name}`
 
-<!-- Updated: 2026-01-26 - Fixed resolution sync to only resolve alarms created BEFORE resolution timestamp, 24h lookback -->
+<!-- Updated: 2026-01-30 - Added resolve_alarm_in_cloud() for controller→cloud sync, orphan resolution cloud sync -->

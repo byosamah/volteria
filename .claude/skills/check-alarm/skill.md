@@ -61,15 +61,19 @@ WHERE sd.site_id = 'SITE_UUID';
 ## 2. Alarm Flow (Device Threshold)
 
 ```
-Device Readings (SharedState)
+Device Readings (SharedState.read("readings").devices.{id}.readings)
        ↓
-AlarmEvaluator.evaluate() - checks readings vs definitions
+AlarmEvaluator.evaluate(check_only=False)
        ↓
-Returns triggered[] with cooldown tracking (300s default)
+Returns (triggered[], active_conditions set)
+  - triggered: alarms to CREATE (condition met AND cooldown expired)
+  - active_conditions: alarm IDs where condition is currently met
        ↓
-_evaluate_alarms() - tracks _previously_triggered_ids
+_evaluate_alarms() compares active_conditions to _previously_triggered_ids
        ↓
-For cleared conditions → auto-resolve via resolve_alarms_by_type()
+For IDs in previous but NOT in active → condition cleared → auto-resolve
+  - resolve_alarms_by_type() (local)
+  - resolve_alarm_in_cloud() (cloud PATCH)
        ↓
 For triggered alarms → _process_alarm()
        ↓
@@ -80,6 +84,25 @@ check_unresolved_alarm() - CLOUD Supabase check
 insert_alarm() → SQLite → Cloud sync
 ```
 
+### Config Change Flow (Different Path)
+
+```
+Config change detected (hash mismatch)
+       ↓
+_reevaluate_alarms_after_config_change()
+       ↓
+AlarmEvaluator.evaluate(check_only=True)  ← NO side effects!
+  - Does NOT update cooldown state
+  - Does NOT log alarms
+  - Only returns active_conditions
+       ↓
+For definitions NOT in active_conditions → auto-resolve
+  - resolve_alarms_by_type() (local)
+  - resolve_alarm_in_cloud() (cloud PATCH)
+```
+
+**CRITICAL**: `check_only=True` prevents config re-evaluation from interfering with normal alarm creation in `_sample_callback()`.
+
 ---
 
 ## 3. Deduplication Mechanisms
@@ -88,12 +111,19 @@ insert_alarm() → SQLite → Cloud sync
 - Prevents rapid re-triggers of same condition
 - Tracked in `AlarmEvaluator._alarm_states`
 - Per alarm_id + device_id
+- **Only updated when `check_only=False`** (normal evaluation)
 
-### B) Local SQLite Check
+### B) `active_conditions` vs `triggered` (CRITICAL)
+- `active_conditions`: Set of alarm IDs where condition is **currently met**
+- `triggered`: List of alarms to **create** (condition met AND cooldown expired)
+- **Use `active_conditions` for auto-resolve logic** (not `triggered`)
+- Cooldown can prevent `triggered` but condition is still in `active_conditions`
+
+### C) Local SQLite Check
 - `has_unresolved_alarm(site_id, alarm_type, device_name)`
 - Blocks new alarm if unresolved exists locally
 
-### C) Cloud Check (critical/major only)
+### D) Cloud Check (critical/major only)
 - `check_unresolved_alarm()` queries Supabase
 - Fallback when local DB state unreliable
 
@@ -101,13 +131,15 @@ insert_alarm() → SQLite → Cloud sync
 
 ## 4. Auto-Resolution Triggers
 
-| Trigger | When | Method |
-|---------|------|--------|
-| **Condition clears** | Value no longer triggers threshold | `_evaluate_alarms()` tracks `_previously_triggered_ids` |
-| **Threshold changed** | User modifies config | `_reevaluate_alarms_after_config_change()` |
-| **Definition deleted** | Register removed from config | Orphan resolution in `_config_watch_loop()` |
-| **Device reconnects** | `not_reporting` alarm | DB cron `resolve_not_reporting_alarm()` |
-| **Drift recovers** | 3 consecutive healthy checks | `_check_logging_health()` |
+| Trigger | When | Method | Cloud Sync |
+|---------|------|--------|------------|
+| **Condition clears** | Value no longer triggers threshold | `_evaluate_alarms()` uses `active_conditions` | `resolve_alarm_in_cloud()` |
+| **Threshold changed** | User modifies config | `_reevaluate_alarms_after_config_change(check_only=True)` | `resolve_alarm_in_cloud()` |
+| **Definition deleted** | Register removed from config | Orphan resolution in `_config_watch_loop()` | `resolve_alarm_in_cloud()` |
+| **Device reconnects** | `not_reporting` alarm | DB cron `resolve_not_reporting_alarm()` | Direct DB update |
+| **Drift recovers** | 3 consecutive healthy checks | `_check_logging_health()` | `resolve_alarm_in_cloud()` |
+
+**All auto-resolutions sync to cloud** via `resolve_alarm_in_cloud()` (PATCH request).
 
 ---
 
@@ -182,7 +214,7 @@ journalctl -u volteria-logging --since "10 min ago" | grep -iE "alarm|auto-resol
 
 ---
 
-## 7. Common Issues
+## 7. Common Issues (All Fixed)
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
@@ -190,20 +222,23 @@ journalctl -u volteria-logging --since "10 min ago" | grep -iE "alarm|auto-resol
 | **Alarm not resolving** | No condition-clear detection | Fixed: Track `active_conditions`, auto-resolve |
 | **Alarm triggers after resolve** | User resolved in UI, cooldown expired | Fixed: Cloud dedup check for critical/major |
 | **Threshold change not reflected** | No re-evaluation after config | Fixed: `_reevaluate_alarms_after_config_change()` |
-| **Orphan alarm stays active** | Definition deleted but alarm not resolved | Already implemented: orphan resolution on config change |
+| **Orphan alarm stays active** | Definition deleted but alarm not resolved | Fixed: Orphan resolution + cloud sync |
 | **Immediate auto-resolve** | Cooldown prevented re-trigger, looked like "cleared" | Fixed: Separate `active_conditions` from `triggered` |
 | **Wrong SharedState key** | Used `SharedState.get("device_readings")` | Fixed: Use `SharedState.read("readings").devices.{id}.readings` |
+| **New alarm not created after config change** | Config re-eval updated cooldown state | Fixed: `check_only=True` for config re-evaluation |
+| **Orphan not synced to cloud** | Local resolve but no cloud call | Fixed: `resolve_alarm_in_cloud()` for orphans |
 
 ---
 
-## 8. Validation Checklist
+## 8. Validation Checklist (All Verified 2026-01-30)
 
-- [ ] Threshold triggers alarm when condition met
-- [ ] NO duplicate alarm after cooldown (5 min)
-- [ ] Alarm auto-resolves when condition clears
-- [ ] Alarm auto-resolves when threshold changed
-- [ ] Alarm auto-resolves when definition deleted
-- [ ] `not_reporting` resolves when device reconnects
+- [x] Threshold triggers alarm when condition met
+- [x] NO duplicate alarm after cooldown (5 min)
+- [x] Alarm auto-resolves when condition clears
+- [x] Alarm auto-resolves when threshold changed (cloud synced)
+- [x] Alarm auto-resolves when definition deleted (cloud synced)
+- [x] New alarm created after previous resolved + threshold changed back
+- [ ] `not_reporting` resolves when device reconnects (DB cron)
 - [ ] `LOGGING_HIGH_DRIFT` resolves after 3 healthy checks
 
 ---
@@ -212,15 +247,17 @@ journalctl -u volteria-logging --since "10 min ago" | grep -iE "alarm|auto-resol
 
 | Feature | File | Function/Line |
 |---------|------|---------------|
-| Alarm evaluation | `alarm_evaluator.py` | `evaluate()` returns `(triggered, active_conditions)` |
+| Alarm evaluation | `alarm_evaluator.py` | `evaluate(check_only=False)` returns `(triggered, active_conditions)` |
+| check_only mode | `alarm_evaluator.py` | `evaluate(check_only=True)` - no side effects |
 | Condition-clear auto-resolve | `service.py` | `_evaluate_alarms()` uses `active_conditions` |
-| Config-change re-evaluation | `service.py` | `_reevaluate_alarms_after_config_change()` |
+| Config-change re-evaluation | `service.py` | `_reevaluate_alarms_after_config_change()` with `check_only=True` |
 | Cloud dedup check | `service.py` | `_process_alarm()` for critical/major |
 | Skip resolution sync for reg_* | `cloud_sync.py` | `sync_resolved_alarms()` |
 | Cloud unresolved check | `cloud_sync.py` | `check_unresolved_alarm()` |
+| **Cloud alarm resolution** | `cloud_sync.py` | `resolve_alarm_in_cloud()` - PATCH request |
 | Local dedup check | `local_db.py` | `has_unresolved_alarm()` |
 | Bulk resolve by type | `local_db.py` | `resolve_alarms_by_type()` (no synced_at reset) |
-| Orphan resolution | `service.py` | `_config_watch_loop()` |
+| Orphan resolution | `service.py` | `_config_watch_loop()` + `resolve_alarm_in_cloud()` |
 | Device readings sampling | `service.py` | `_sample_callback()` only place alarms evaluated |
 
 ---
@@ -230,4 +267,4 @@ journalctl -u volteria-logging --since "10 min ago" | grep -iE "alarm|auto-resol
 - **`check-controller`**: Service health, SharedState, config sync
 - **`check-logging`**: Data flow, SQLite, cloud sync, downsampling
 
-<!-- Created: 2026-01-30 -->
+<!-- Updated: 2026-01-30 - Added check_only mode, active_conditions vs triggered, cloud sync for all resolutions -->
