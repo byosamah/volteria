@@ -466,8 +466,10 @@ class LoggingService:
                     self._load_buffer.append(load)
                     self._solar_buffer.append(solar)
 
-                    # Evaluate alarms
-                    await self._evaluate_alarms(state)
+                    # Note: Device register alarms are evaluated in _sample_callback()
+                    # which has access to device_readings. Evaluating here without
+                    # device_readings would clear _previously_triggered_ids and
+                    # cause instant auto-resolution of device alarms.
 
             except Exception as e:
                 logger.error(f"Buffer loop error: {e}")
