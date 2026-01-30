@@ -1403,11 +1403,20 @@ class LoggingService:
         if not self._alarm_definitions:
             return
 
-        # Get current device readings from SharedState
-        device_readings = SharedState.get("device_readings") or {}
-        if not device_readings:
+        # Get current device readings from SharedState (same pattern as _sample_readings_to_buffer)
+        readings_state = SharedState.read("readings")
+        if not readings_state or not readings_state.get("devices"):
             logger.debug("[CONFIG] No device readings available for alarm re-evaluation")
             return
+
+        # Build device_registers map: {device_id: {register_name: value}}
+        device_registers = {}
+        for device_id, registers in readings_state.get("devices", {}).items():
+            device_registers[device_id] = {
+                reg_name: reg_data.get("value")
+                for reg_name, reg_data in registers.items()
+                if isinstance(reg_data, dict) and "value" in reg_data
+            }
 
         # Prepare readings for evaluator
         state = get_control_state() or {}
@@ -1417,7 +1426,7 @@ class LoggingService:
             "dg_power_kw": state.get("dg_power_kw", 0),
             "solar_limit_pct": state.get("solar_limit_pct", 100),
             "safe_mode_active": 1 if state.get("safe_mode_active") else 0,
-            "device_registers": device_readings,
+            "device_registers": device_registers,
         }
 
         # Evaluate all definitions against current readings

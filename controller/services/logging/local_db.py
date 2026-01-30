@@ -291,13 +291,17 @@ class LocalDatabase:
 
     def resolve_alarms_by_type(self, alarm_type: str) -> int:
         """Mark all unresolved alarms of a given type as resolved.
-        Resets synced_at so the resolved status gets synced to cloud."""
+
+        Note: Does NOT reset synced_at. For reg_* threshold alarms, cloud sync
+        skips resolution sync anyway. Setting synced_at=NULL would cause
+        sync_alarms() to POST a new record (duplicate) instead of updating.
+        """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             now = datetime.now(timezone.utc).isoformat()
             cursor.execute("""
                 UPDATE alarms
-                SET resolved = 1, resolved_at = ?, synced_at = NULL
+                SET resolved = 1, resolved_at = ?
                 WHERE alarm_type = ? AND resolved = 0
             """, (now, alarm_type))
             conn.commit()
