@@ -1458,9 +1458,10 @@ class LoggingService:
                         f"[CONFIG] Auto-resolved {count} alarm(s): {definition.id} "
                         f"(threshold changed, condition no longer met)"
                     )
-                    # Also resolve in cloud so UI shows correct status
-                    if self.cloud_sync:
-                        await self.cloud_sync.resolve_alarm_in_cloud(definition.id)
+                # Always try to resolve in cloud (handles case where local was
+                # already resolved but cloud wasn't, e.g., after code update)
+                if self.cloud_sync:
+                    await self.cloud_sync.resolve_alarm_in_cloud(definition.id)
 
         # Update tracking for subsequent evaluations
         self._previously_triggered_ids = active_conditions
