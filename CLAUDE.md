@@ -227,7 +227,54 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
 
+## Recent Updates (2026-01-30)
+
+### Alarm System Overhaul (Controller)
+Complete fix for device threshold alarm lifecycle:
+
+**Core Fixes:**
+- **`active_conditions` vs `triggered`**: Evaluator now returns both - `triggered` is for creating alarms (cooldown applied), `active_conditions` is for auto-resolve logic (condition currently met regardless of cooldown)
+- **`check_only` mode**: Added parameter to `evaluate()` for config re-evaluation without side effects (no cooldown updates)
+- **Cloud sync for all resolutions**: All auto-resolutions now call `resolve_alarm_in_cloud()` (PATCH request)
+- **Address-based register matching**: Alarm definitions now match `alarm_registers` to `registers` by address to find actual register name
+
+**Auto-Resolution Triggers (all sync to cloud):**
+| Trigger | Method |
+|---------|--------|
+| Condition clears | `_evaluate_alarms()` compares `active_conditions` to `_previously_triggered_ids` |
+| Threshold changed | `_reevaluate_alarms_after_config_change(check_only=True)` |
+| Definition deleted | Orphan resolution in `_config_watch_loop()` |
+| Drift recovers | `_check_logging_health()` after 3 healthy checks |
+
+**Key Code Locations:**
+- `alarm_evaluator.py`: `evaluate(check_only=False)` returns `(triggered, active_conditions)`
+- `cloud_sync.py`: `resolve_alarm_in_cloud()` - PATCH to update existing alarm
+- `service.py`: `_reevaluate_alarms_after_config_change()` uses `check_only=True`
+
+**Bug Fixes:**
+- Duplicate alarms during cooldown: Fixed by separating `active_conditions` from `triggered`
+- Orphan alarms not syncing to cloud: Added `resolve_alarm_in_cloud()` call
+- Config re-eval preventing new alarms: Added `check_only` parameter
+- Register name mismatch: Now matches by address to find actual register name from `registers` array
+
+**Alarm Speed**: ~5 seconds from config sync to alarm appearing in cloud (critical severity = immediate sync)
+
+**Diagnostic Skill**: `/check-alarm` updated with full alarm lifecycle documentation
+
 ## Recent Updates (2026-01-29)
+
+### Dashboard Text Widget (Frontend)
+- **New widget type**: Text widget for custom labels, titles, and annotations
+- **Configurable options**: Text content (multiline), size (xs to 3xl), color (hex picker), alignment (left/center/right)
+- **Files**: `text-widget.tsx`, `widget-picker.tsx`, `widget-config-dialog.tsx`, `dashboard-canvas.tsx`
+- **Default size**: 3 columns × 1 row
+
+### Dashboard Alarm List Widget Fix (Frontend)
+- **Issue**: Widget showed infinite loading spinner with repeated 400 Bad Request errors
+- **Root cause 1**: Query used `project_id` but alarms table uses `site_id`
+- **Root cause 2**: `severities` array recreated every render, causing useCallback dependency change → infinite re-fetch loop
+- **Fix**: Changed `.eq("project_id", ...)` to `.eq("site_id", siteId)`, memoized severities array with `useMemo` using JSON.stringify pattern
+- **File**: `alarm-list-widget.tsx`
 
 ### Dashboard Chart Widget Fixes (Frontend)
 - **ResponsiveContainer warning fix**: Changed from `height="100%"` to calculated pixel height based on widget's `grid_height` - fixes "width(-1) and height(-1)" console warning caused by flex layout timing
