@@ -553,6 +553,54 @@ class CloudSync:
             logger.error(f"Failed to immediately sync alarm: {e}")
             return False
 
+    async def check_unresolved_alarm(
+        self,
+        alarm_type: str,
+        device_name: str | None = None,
+    ) -> bool:
+        """
+        Check if an unresolved alarm exists in cloud (Supabase).
+
+        Used as fallback deduplication for critical/major alarms when local
+        check passes but cloud might have duplicates.
+
+        Args:
+            alarm_type: The alarm type (e.g., reg_{device_id}_{register_name})
+            device_name: Optional device name for additional filtering
+
+        Returns:
+            True if unresolved alarm exists in cloud
+        """
+        try:
+            params = {
+                "select": "id",
+                "site_id": f"eq.{self.site_id}",
+                "alarm_type": f"eq.{alarm_type}",
+                "resolved": "eq.false",
+                "limit": "1",
+            }
+            if device_name:
+                params["device_name"] = f"eq.{device_name}"
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.supabase_url}/rest/v1/alarms",
+                    params=params,
+                    headers={
+                        "apikey": self.supabase_key,
+                        "Authorization": f"Bearer {self.supabase_key}",
+                    },
+                    timeout=5.0,
+                )
+                response.raise_for_status()
+                alarms = response.json()
+                return len(alarms) > 0
+
+        except Exception as e:
+            # On error, allow alarm creation (better to have duplicate than miss)
+            logger.debug(f"Cloud alarm check failed: {e}")
+            return False
+
     async def sync_resolved_alarms(self) -> int:
         """
         Sync alarm resolution status FROM cloud TO local SQLite.
@@ -598,9 +646,16 @@ class CloudSync:
                 if not alarm_type:
                     continue
 
-                # Note: We DO sync resolutions for reg_* (device threshold) alarms.
-                # This allows new alarms to trigger after user manually resolves.
-                # Cooldown (5 min) only prevents rapid re-triggering of same condition.
+                # Skip resolution sync for reg_* (device threshold) alarms.
+                # Controller handles these via condition monitoring - when condition
+                # clears, controller auto-resolves. This prevents the bug where:
+                # 1. User resolves alarm in UI
+                # 2. Resolution syncs to local → local alarm marked resolved
+                # 3. Cooldown expires, condition still true
+                # 4. has_unresolved_alarm() returns False (local is resolved!)
+                # 5. Duplicate alarm created
+                if alarm_type.startswith("reg_"):
+                    continue
 
                 # Update local alarm to resolved
                 count = self.local_db.sync_alarm_resolution(

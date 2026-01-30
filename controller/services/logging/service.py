@@ -148,6 +148,11 @@ class LoggingService:
         # Drift auto-resolve: track consecutive low-drift checks
         self._consecutive_low_drift_checks: int = 0
 
+        # Alarm condition tracking: track which alarms are currently triggered
+        # Used for auto-resolution when condition clears (value returns to normal
+        # or threshold config changes)
+        self._previously_triggered_ids: set[str] = set()
+
         # Health server
         self._health_app: web.Application | None = None
         self._health_runner: web.AppRunner | None = None
@@ -1128,6 +1133,11 @@ class LoggingService:
                                 f"[CONFIG] Auto-resolved {count} orphan alarm(s): {alarm_id}"
                             )
 
+                    # Re-evaluate all definitions to handle threshold changes
+                    # (same definition ID, but threshold operator/value changed)
+                    # Example: user changes "< 45" to "> 45" - condition may no longer be met
+                    await self._reevaluate_alarms_after_config_change()
+
                     current_hash = new_hash
 
                     # Count registers fresh from config
@@ -1283,13 +1293,35 @@ class LoggingService:
             alarm_definitions=self._alarm_definitions,
         )
 
+        # Track currently triggered alarm IDs for auto-resolution
+        currently_triggered_ids = {alarm.alarm_id for alarm in triggered}
+
+        # Auto-resolve alarms whose conditions have cleared
+        # This handles both:
+        # A) Value changes (e.g., temp rises above threshold)
+        # B) Threshold config changes (user changed < to >)
+        for alarm_id in self._previously_triggered_ids:
+            if alarm_id not in currently_triggered_ids:
+                # Condition cleared! Auto-resolve this alarm type
+                count = await self._run_db(
+                    self.local_db.resolve_alarms_by_type,
+                    alarm_id,
+                )
+                if count > 0:
+                    logger.info(
+                        f"[ALARM] Auto-resolved {count} alarm(s): {alarm_id} (condition cleared)"
+                    )
+
+        # Update tracking for next evaluation cycle
+        self._previously_triggered_ids = currently_triggered_ids
+
         # Process triggered alarms
         for alarm in triggered:
             await self._process_alarm(alarm)
 
     async def _process_alarm(self, alarm: TriggeredAlarm) -> None:
         """Process a triggered alarm"""
-        # Check for existing unresolved alarm to prevent duplicates
+        # Check for existing unresolved alarm to prevent duplicates (local check)
         has_existing = await self._run_db(
             self.local_db.has_unresolved_alarm,
             self._site_id,
@@ -1298,9 +1330,22 @@ class LoggingService:
         )
         if has_existing:
             logger.debug(
-                f"Skipping duplicate alarm: {alarm.alarm_id} (unresolved exists)"
+                f"Skipping duplicate alarm: {alarm.alarm_id} (unresolved exists in local)"
             )
             return
+
+        # For high-severity alarms, also check cloud as fallback
+        # This catches duplicates when local DB was cleared or resolution sync occurred
+        if alarm.severity in ["critical", "major"] and self.cloud_sync:
+            has_cloud = await self.cloud_sync.check_unresolved_alarm(
+                alarm.alarm_id,
+                alarm.device_name,
+            )
+            if has_cloud:
+                logger.debug(
+                    f"Skipping duplicate alarm: {alarm.alarm_id} (unresolved exists in cloud)"
+                )
+                return
 
         # Get message and condition separately
         message = alarm.get_formatted_message()
@@ -1337,6 +1382,72 @@ class LoggingService:
                         self.local_db.mark_alarms_synced,
                         [local_alarm_id],
                     )
+
+    async def _reevaluate_alarms_after_config_change(self) -> None:
+        """
+        Re-evaluate all alarm definitions after config change.
+
+        This handles the case where a threshold was MODIFIED (same definition ID,
+        different threshold values). Example: user changes "< 45" to "> 45".
+
+        After config reload:
+        1. Get current device readings from SharedState
+        2. Evaluate all definitions against current readings
+        3. For any definition NOT triggered, auto-resolve existing alarms
+
+        This ensures alarms are resolved when:
+        - User changes threshold operator (< to >)
+        - User changes threshold value (45 to 20)
+        - Current value no longer triggers the new threshold
+        """
+        if not self._alarm_definitions:
+            return
+
+        # Get current device readings from SharedState
+        device_readings = SharedState.get("device_readings") or {}
+        if not device_readings:
+            logger.debug("[CONFIG] No device readings available for alarm re-evaluation")
+            return
+
+        # Prepare readings for evaluator
+        state = get_control_state() or {}
+        readings = {
+            "total_load_kw": state.get("total_load_kw", 0),
+            "solar_output_kw": state.get("solar_output_kw", 0),
+            "dg_power_kw": state.get("dg_power_kw", 0),
+            "solar_limit_pct": state.get("solar_limit_pct", 100),
+            "safe_mode_active": 1 if state.get("safe_mode_active") else 0,
+            "device_registers": device_readings,
+        }
+
+        # Evaluate all definitions against current readings
+        triggered = self.alarm_evaluator.evaluate(
+            readings=readings,
+            alarm_definitions=self._alarm_definitions,
+        )
+        triggered_ids = {alarm.alarm_id for alarm in triggered}
+
+        # Auto-resolve alarms for definitions that are NOT triggered
+        resolved_count = 0
+        for definition in self._alarm_definitions:
+            if definition.id not in triggered_ids:
+                # Definition exists but condition not met - auto-resolve
+                count = await self._run_db(
+                    self.local_db.resolve_alarms_by_type,
+                    definition.id,
+                )
+                if count > 0:
+                    resolved_count += count
+                    logger.info(
+                        f"[CONFIG] Auto-resolved {count} alarm(s): {definition.id} "
+                        f"(threshold changed, condition no longer met)"
+                    )
+
+        # Update tracking for subsequent evaluations
+        self._previously_triggered_ids = triggered_ids
+
+        if resolved_count > 0:
+            logger.info(f"[CONFIG] Total auto-resolved after config change: {resolved_count}")
 
     async def _check_logging_health(self, buffer_count: int) -> None:
         """
