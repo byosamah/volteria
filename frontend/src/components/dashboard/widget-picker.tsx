@@ -15,6 +15,7 @@ import {
   Activity,
   Zap,
   Type,
+  Fuel,
 } from "lucide-react";
 
 interface WidgetPickerProps {
@@ -58,6 +59,12 @@ const WIDGET_TYPES = [
     name: "Text",
     description: "Custom text label",
     icon: Type,
+  },
+  {
+    id: "gauge",
+    name: "Gauge",
+    description: "Tank, dial, or bar gauge",
+    icon: Fuel,
   },
 ];
 

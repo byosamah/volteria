@@ -157,6 +157,8 @@ export function WidgetConfigDialog({
         return renderStatusIndicatorForm();
       case "text":
         return renderTextForm();
+      case "gauge":
+        return renderGaugeForm();
       default:
         return <p className="text-muted-foreground">Unknown widget type</p>;
     }
@@ -1335,6 +1337,322 @@ export function WidgetConfigDialog({
     );
   };
 
+  // Gauge style options for visual selector
+  const GAUGE_STYLES = [
+    { id: "dial", name: "Dial", description: "Circular speedometer with needle" },
+    { id: "tank_vertical", name: "V-Tank", description: "Vertical cylinder tank" },
+    { id: "tank_horizontal", name: "H-Tank", description: "Horizontal cylinder tank" },
+    { id: "tank_rectangular", name: "Rect", description: "Rectangular container" },
+    { id: "thermometer", name: "Thermo", description: "Thermometer style" },
+    { id: "bar_horizontal", name: "H-Bar", description: "Horizontal progress bar" },
+    { id: "bar_vertical", name: "V-Bar", description: "Vertical progress bar" },
+  ];
+
+  const renderGaugeForm = () => {
+    const gaugeStyle = (config.gauge_style as string) || "dial";
+    const zonesEnabled = (config.zones_enabled as boolean) || false;
+
+    // Get registers for selected device
+    const gaugeDeviceId = config.device_id as string;
+    const gaugeDevice = devices.find((d) => d.id === gaugeDeviceId);
+    const gaugeRegisters = getDeviceRegisters(gaugeDevice);
+
+    // Mini preview component for style selector
+    const GaugePreview = ({ style }: { style: string }) => {
+      const previewColor = (config.fill_color as string) || "#22c55e";
+      const previewPct = 60; // 60% fill for demo
+
+      switch (style) {
+        case "dial":
+          return (
+            <svg viewBox="0 0 40 40" className="w-8 h-8">
+              <path d="M 6 30 A 14 14 0 1 1 34 30" fill="none" stroke="#e5e7eb" strokeWidth="4" strokeLinecap="round" />
+              <path d="M 6 30 A 14 14 0 0 1 28 10" fill="none" stroke={previewColor} strokeWidth="4" strokeLinecap="round" />
+              <circle cx="20" cy="20" r="2" fill="#374151" />
+            </svg>
+          );
+        case "tank_vertical":
+          return (
+            <svg viewBox="0 0 24 40" className="w-6 h-10">
+              <rect x="4" y="4" width="16" height="32" rx="4" fill="#e5e7eb" />
+              <rect x="4" y={4 + 32 * (1 - previewPct / 100)} width="16" height={32 * previewPct / 100} rx="2" fill={previewColor} />
+            </svg>
+          );
+        case "tank_horizontal":
+          return (
+            <svg viewBox="0 0 40 24" className="w-10 h-6">
+              <rect x="4" y="4" width="32" height="16" rx="4" fill="#e5e7eb" />
+              <rect x="4" y="4" width={32 * previewPct / 100} height="16" rx="2" fill={previewColor} />
+            </svg>
+          );
+        case "tank_rectangular":
+          return (
+            <svg viewBox="0 0 24 32" className="w-6 h-8">
+              <rect x="2" y="2" width="20" height="28" rx="2" fill="#e5e7eb" />
+              <rect x="2" y={2 + 28 * (1 - previewPct / 100)} width="20" height={28 * previewPct / 100} fill={previewColor} />
+            </svg>
+          );
+        case "thermometer":
+          return (
+            <svg viewBox="0 0 20 40" className="w-5 h-10">
+              <rect x="7" y="4" width="6" height="26" rx="3" fill="#e5e7eb" />
+              <circle cx="10" cy="34" r="5" fill="#e5e7eb" />
+              <rect x="8" y={4 + 26 * (1 - previewPct / 100)} width="4" height={26 * previewPct / 100 + 4} rx="2" fill={previewColor} />
+              <circle cx="10" cy="34" r="4" fill={previewColor} />
+            </svg>
+          );
+        case "bar_horizontal":
+          return (
+            <svg viewBox="0 0 40 12" className="w-10 h-3">
+              <rect x="2" y="2" width="36" height="8" rx="4" fill="#e5e7eb" />
+              <rect x="2" y="2" width={36 * previewPct / 100} height="8" rx="4" fill={previewColor} />
+            </svg>
+          );
+        case "bar_vertical":
+          return (
+            <svg viewBox="0 0 12 40" className="w-3 h-10">
+              <rect x="2" y="2" width="8" height="36" rx="4" fill="#e5e7eb" />
+              <rect x="2" y={2 + 36 * (1 - previewPct / 100)} width="8" height={36 * previewPct / 100} rx="4" fill={previewColor} />
+            </svg>
+          );
+        default:
+          return null;
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        {/* Gauge Style Selector */}
+        <div className="space-y-2">
+          <Label>Gauge Style</Label>
+          <div className="grid grid-cols-4 gap-2 p-2 border rounded-md bg-muted/30">
+            {GAUGE_STYLES.map((style) => (
+              <button
+                key={style.id}
+                type="button"
+                onClick={() => updateConfig("gauge_style", style.id)}
+                className={cn(
+                  "flex flex-col items-center p-2 rounded-md transition-all",
+                  "hover:bg-accent hover:text-accent-foreground",
+                  gaugeStyle === style.id
+                    ? "bg-primary/10 ring-2 ring-primary"
+                    : "bg-background"
+                )}
+                title={style.description}
+              >
+                <GaugePreview style={style.id} />
+                <span className="text-[10px] mt-1 text-center">{style.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Device Selection */}
+        <div className="space-y-2">
+          <Label>Device</Label>
+          <Select
+            value={gaugeDeviceId || ""}
+            onValueChange={(v) => {
+              updateConfig("device_id", v);
+              updateConfig("register_name", undefined);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select device" />
+            </SelectTrigger>
+            <SelectContent>
+              {devices.map((device) => (
+                <SelectItem key={device.id} value={device.id}>
+                  {device.name} ({device.device_type})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Register Selection */}
+        {Boolean(gaugeDeviceId) && (
+          <div className="space-y-2">
+            <Label>Register</Label>
+            <Select
+              value={(config.register_name as string) || ""}
+              onValueChange={(v) => updateConfig("register_name", v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select register" />
+              </SelectTrigger>
+              <SelectContent>
+                {gaugeRegisters.map((reg) => (
+                  <SelectItem key={reg.name} value={reg.name}>
+                    {reg.name} {reg.unit && `(${reg.unit})`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Range Section */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Min Value</Label>
+            <Input
+              type="number"
+              value={(config.min_value as number) ?? 0}
+              onChange={(e) => updateConfig("min_value", parseFloat(e.target.value) || 0)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Max Value</Label>
+            <Input
+              type="number"
+              value={(config.max_value as number) ?? 100}
+              onChange={(e) => updateConfig("max_value", parseFloat(e.target.value) || 100)}
+            />
+          </div>
+        </div>
+
+        {/* Display Options */}
+        <div className="space-y-2 pt-3 border-t">
+          <Label>Label</Label>
+          <Input
+            value={(config.label as string) || ""}
+            onChange={(e) => updateConfig("label", e.target.value)}
+            placeholder="e.g., Fuel Level"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Unit (optional)</Label>
+            <Input
+              value={(config.unit as string) || ""}
+              onChange={(e) => updateConfig("unit", e.target.value)}
+              placeholder="e.g., %"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Decimals</Label>
+            <Input
+              type="number"
+              min={0}
+              max={4}
+              value={(config.decimals as number) ?? 0}
+              onChange={(e) => updateConfig("decimals", parseInt(e.target.value) || 0)}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={(config.show_value as boolean) !== false}
+              onCheckedChange={(checked) => updateConfig("show_value", checked)}
+            />
+            <Label className="font-normal">Show Value</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={(config.show_min_max as boolean) !== false}
+              onCheckedChange={(checked) => updateConfig("show_min_max", checked)}
+            />
+            <Label className="font-normal">Show Min/Max</Label>
+          </div>
+        </div>
+
+        {/* Color Section */}
+        <div className="space-y-3 pt-3 border-t">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={zonesEnabled}
+              onCheckedChange={(checked) => updateConfig("zones_enabled", checked)}
+            />
+            <Label className="font-normal">Enable color zones (Low/Normal/High)</Label>
+          </div>
+
+          {!zonesEnabled && (
+            <div className="space-y-2">
+              <Label>Fill Color</Label>
+              <div className="flex gap-2 items-center">
+                <Input
+                  type="color"
+                  value={(config.fill_color as string) || "#22c55e"}
+                  onChange={(e) => updateConfig("fill_color", e.target.value)}
+                  className="h-10 w-16 cursor-pointer p-1"
+                />
+                <Input
+                  type="text"
+                  value={(config.fill_color as string) || "#22c55e"}
+                  onChange={(e) => updateConfig("fill_color", e.target.value)}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+          )}
+
+          {zonesEnabled && (
+            <div className="space-y-4 p-3 border rounded-md bg-muted/30">
+              <p className="text-sm text-muted-foreground">
+                Define thresholds for color zones. Value is compared against the actual register value (not percentage).
+              </p>
+
+              {/* Zone thresholds */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs">Low threshold (below = Low)</Label>
+                  <Input
+                    type="number"
+                    value={(config.zone_low_threshold as number) ?? 25}
+                    onChange={(e) => updateConfig("zone_low_threshold", parseFloat(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">High threshold (above = High)</Label>
+                  <Input
+                    type="number"
+                    value={(config.zone_high_threshold as number) ?? 75}
+                    onChange={(e) => updateConfig("zone_high_threshold", parseFloat(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              {/* Zone colors */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Low Color</Label>
+                  <Input
+                    type="color"
+                    value={(config.zone_low_color as string) || "#22c55e"}
+                    onChange={(e) => updateConfig("zone_low_color", e.target.value)}
+                    className="h-8 w-full cursor-pointer p-0.5"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Normal Color</Label>
+                  <Input
+                    type="color"
+                    value={(config.zone_normal_color as string) || "#eab308"}
+                    onChange={(e) => updateConfig("zone_normal_color", e.target.value)}
+                    className="h-8 w-full cursor-pointer p-0.5"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">High Color</Label>
+                  <Input
+                    type="color"
+                    value={(config.zone_high_color as string) || "#ef4444"}
+                    onChange={(e) => updateConfig("zone_high_color", e.target.value)}
+                    className="h-8 w-full cursor-pointer p-0.5"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // Widget type titles
   const titles: Record<string, string> = {
     icon: "Configure Image Widget",
@@ -1343,6 +1661,7 @@ export function WidgetConfigDialog({
     alarm_list: "Configure Alarm List",
     status_indicator: "Configure Status Indicator",
     text: "Configure Text Widget",
+    gauge: "Configure Gauge Widget",
   };
 
   return (

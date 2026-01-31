@@ -24,6 +24,7 @@ import { ChartWidget } from "@/components/dashboard/chart-widget";
 import { AlarmListWidget } from "@/components/dashboard/alarm-list-widget";
 import { StatusIndicatorWidget } from "@/components/dashboard/status-indicator-widget";
 import { TextWidget } from "@/components/dashboard/text-widget";
+import { GaugeWidget } from "@/components/dashboard/gauge-widget";
 import { WidgetPicker } from "@/components/dashboard/widget-picker";
 import { WidgetConfigDialog } from "@/components/dashboard/widget-config-dialog";
 
@@ -247,6 +248,7 @@ export function DashboardCanvas({
         alarm_list: { width: 4, height: 3 },
         status_indicator: { width: 2, height: 1 },
         text: { width: 3, height: 1 },
+        gauge: { width: 2, height: 3 },
       };
 
       const size = defaultSizes[widgetType] || { width: 2, height: 2 };
@@ -446,6 +448,8 @@ export function DashboardCanvas({
         return <StatusIndicatorWidget {...commonProps} />;
       case "text":
         return <TextWidget {...commonProps} />;
+      case "gauge":
+        return <GaugeWidget {...commonProps} />;
       default:
         return (
           <div className="p-4 text-center text-muted-foreground">
