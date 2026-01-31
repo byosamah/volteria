@@ -44,6 +44,7 @@ interface CableWidgetProps {
   onClick?: () => void;
   onStartDrag?: (e: React.MouseEvent) => void;
   onEndDrag?: (e: React.MouseEvent) => void;
+  onCableDrag?: (e: React.MouseEvent) => void;
 }
 
 // Convert grid coordinates to pixel coordinates with clamping
@@ -127,6 +128,7 @@ export function CableWidget({
   onClick,
   onStartDrag,
   onEndDrag,
+  onCableDrag,
 }: CableWidgetProps) {
   // Convert grid coordinates to pixels
   const start = useMemo(
@@ -205,7 +207,7 @@ export function CableWidget({
         className={cn(
           config.animated && "cable-animated",
           config.animated && isReverse && "cable-reverse",
-          isEditMode && "cursor-pointer"
+          isEditMode && "cursor-move"
         )}
         style={
           config.animated
@@ -217,6 +219,11 @@ export function CableWidget({
             : undefined
         }
         onClick={isEditMode ? onClick : undefined}
+        onMouseDown={isEditMode ? (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onCableDrag?.(e);
+        } : undefined}
       />
 
       {/* Edit mode: draggable endpoints */}

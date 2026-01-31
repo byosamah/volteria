@@ -169,6 +169,14 @@ export function DashboardCanvas({
     endpoint: "start" | "end";
   } | null>(null);
 
+  // Cable dragging state for moving entire cable
+  const [draggingFullCable, setDraggingFullCable] = useState<{
+    widgetId: string;
+    initialMouseX: number;
+    initialMouseY: number;
+    initialConfig: CableConfig;
+  } | null>(null);
+
   // Track grid mount for proper cable dimension calculation
   const [gridMounted, setGridMounted] = useState(false);
 
@@ -350,7 +358,7 @@ export function DashboardCanvas({
       }
 
       const newWidget = await response.json();
-      setWidgets([...widgets, newWidget]);
+      setWidgets(prev => [...prev, newWidget]);
       setShowWidgetPicker(false);
 
       // Open config dialog for new widget
@@ -364,16 +372,28 @@ export function DashboardCanvas({
     }
   };
 
-  // Create cable widget at center with default endpoints
+  // Create cable widget at top in an empty area
   const createCableWidget = async () => {
     setIsLoading(true);
     try {
-      // Default cable: horizontal line at center
+      // Find first row with no widgets to place cable
+      const occupiedRows = new Set(
+        widgets.filter(w => w.widget_type !== "cable")
+          .flatMap(w => Array.from({ length: w.grid_height }, (_, i) => w.grid_row + i))
+      );
+      let emptyRow = 1;
+      for (let r = 1; r <= gridRows; r++) {
+        if (!occupiedRows.has(r)) { emptyRow = r; break; }
+      }
+      // Convert grid row to cable Y coordinate (0 to gridRows scale)
+      const cableY = (emptyRow - 0.5);
+
+      // Default cable: horizontal line at top empty row
       const defaultConfig: CableConfig = {
-        startX: gridColumns * 0.3,
-        startY: gridRows * 0.5,
-        endX: gridColumns * 0.7,
-        endY: gridRows * 0.5,
+        startX: 1,
+        startY: cableY,
+        endX: gridColumns - 1,
+        endY: cableY,
         pathStyle: "straight",
         color: "#6b7280",
         thickness: 3,
@@ -400,7 +420,7 @@ export function DashboardCanvas({
       }
 
       const newWidget = await response.json();
-      setWidgets([...widgets, newWidget]);
+      setWidgets(prev => [...prev, newWidget]);
 
       // Open config dialog for new cable
       setSelectedWidget(newWidget);
@@ -426,7 +446,7 @@ export function DashboardCanvas({
         throw new Error("Failed to delete");
       }
 
-      setWidgets(widgets.filter((w) => w.id !== widgetId));
+      setWidgets(prev => prev.filter((w) => w.id !== widgetId));
       setSelectedWidget(null);
     } catch (error) {
       console.error("Failed to delete widget:", error);
@@ -448,7 +468,7 @@ export function DashboardCanvas({
       }
 
       const updated = await response.json();
-      setWidgets(widgets.map((w) => (w.id === widgetId ? updated : w)));
+      setWidgets(prev => prev.map((w) => (w.id === widgetId ? updated : w)));
       setShowConfigDialog(false);
       setSelectedWidget(null);
     } catch (error) {
@@ -457,10 +477,19 @@ export function DashboardCanvas({
     }
   };
 
+  // Drag state for visual feedback
+  const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
+
   // Drag handlers for repositioning
   const handleDragStart = (e: React.DragEvent, widget: Widget) => {
     e.dataTransfer.setData("widgetId", widget.id);
+    e.dataTransfer.effectAllowed = "move";
     setSelectedWidget(widget);
+    setDraggingWidgetId(widget.id);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingWidgetId(null);
   };
 
   const handleDrop = (e: React.DragEvent, targetRow: number, targetCol: number) => {
@@ -468,17 +497,19 @@ export function DashboardCanvas({
     const widgetId = e.dataTransfer.getData("widgetId");
     if (!widgetId) return;
 
-    setWidgets(
-      widgets.map((w) =>
+    setWidgets(prev =>
+      prev.map((w) =>
         w.id === widgetId
           ? { ...w, grid_row: targetRow, grid_col: targetCol }
           : w
       )
     );
+    setDraggingWidgetId(null);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
   };
 
   // Resize handlers - use density-based cell height
@@ -540,53 +571,76 @@ export function DashboardCanvas({
 
   // Cable endpoint drag handler - moves endpoint in real-time
   const handleCableDragMove = useCallback((e: globalThis.MouseEvent) => {
-    if (!draggingCableEndpoint || !gridRef.current) return;
+    if (!gridRef.current) return;
 
-    // Get mouse position relative to grid
     const rect = gridRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left - 8; // Account for p-2 padding
-    const y = e.clientY - rect.top - 8;
-
-    // Convert to grid coordinates with clamping
     const containerWidth = gridRef.current.clientWidth - 16;
     const containerHeight = gridRef.current.clientHeight - 16;
-    const gridX = Math.max(0, Math.min(gridColumns, (x / containerWidth) * gridColumns));
-    const gridY = Math.max(0, Math.min(gridRows, (y / containerHeight) * gridRows));
 
-    // Update widget config locally
-    setWidgets(prev => prev.map(w => {
-      if (w.id !== draggingCableEndpoint.widgetId) return w;
-      const config = w.config as unknown as CableConfig;
-      const newConfig = draggingCableEndpoint.endpoint === "start"
-        ? { ...config, startX: gridX, startY: gridY }
-        : { ...config, endX: gridX, endY: gridY };
-      return { ...w, config: newConfig as Record<string, unknown> };
-    }));
-  }, [draggingCableEndpoint, gridColumns, gridRows]);
-
-  // Cable endpoint drag end - save to server
-  const handleCableDragEnd = useCallback(async () => {
+    // Handle endpoint dragging
     if (draggingCableEndpoint) {
-      // Find the widget and save to server
-      const widget = widgets.find(w => w.id === draggingCableEndpoint.widgetId);
-      if (widget) {
-        try {
-          await fetch(`/api/dashboards/${siteId}/widgets/${widget.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ config: widget.config }),
-          });
-        } catch (err) {
-          console.error("Failed to save cable position:", err);
-        }
-      }
+      const x = e.clientX - rect.left - 8;
+      const y = e.clientY - rect.top - 8;
+      const gridX = Math.max(0, Math.min(gridColumns, (x / containerWidth) * gridColumns));
+      const gridY = Math.max(0, Math.min(gridRows, (y / containerHeight) * gridRows));
+
+      setWidgets(prev => prev.map(w => {
+        if (w.id !== draggingCableEndpoint.widgetId) return w;
+        const config = w.config as unknown as CableConfig;
+        const newConfig = draggingCableEndpoint.endpoint === "start"
+          ? { ...config, startX: gridX, startY: gridY }
+          : { ...config, endX: gridX, endY: gridY };
+        return { ...w, config: newConfig as Record<string, unknown> };
+      }));
     }
-    setDraggingCableEndpoint(null);
-  }, [draggingCableEndpoint, widgets, siteId]);
 
-  // Global mouse listeners for cable endpoint dragging
+    // Handle full cable dragging (move both endpoints together)
+    if (draggingFullCable) {
+      const deltaX = e.clientX - draggingFullCable.initialMouseX;
+      const deltaY = e.clientY - draggingFullCable.initialMouseY;
+      const deltaGridX = (deltaX / containerWidth) * gridColumns;
+      const deltaGridY = (deltaY / containerHeight) * gridRows;
+
+      const { initialConfig } = draggingFullCable;
+      const newStartX = Math.max(0, Math.min(gridColumns, initialConfig.startX + deltaGridX));
+      const newStartY = Math.max(0, Math.min(gridRows, initialConfig.startY + deltaGridY));
+      const newEndX = Math.max(0, Math.min(gridColumns, initialConfig.endX + deltaGridX));
+      const newEndY = Math.max(0, Math.min(gridRows, initialConfig.endY + deltaGridY));
+
+      setWidgets(prev => prev.map(w => {
+        if (w.id !== draggingFullCable.widgetId) return w;
+        const config = w.config as unknown as CableConfig;
+        return {
+          ...w,
+          config: { ...config, startX: newStartX, startY: newStartY, endX: newEndX, endY: newEndY } as Record<string, unknown>
+        };
+      }));
+    }
+  }, [draggingCableEndpoint, draggingFullCable, gridColumns, gridRows]);
+
+  // Cable drag end - save to server (fire and forget for instant response)
+  const handleCableDragEnd = useCallback(() => {
+    const widgetId = draggingCableEndpoint?.widgetId || draggingFullCable?.widgetId;
+    if (!widgetId) return;
+
+    // Clear state immediately for instant UI response
+    setDraggingCableEndpoint(null);
+    setDraggingFullCable(null);
+
+    // Find the widget and save to server (fire and forget)
+    const widget = widgets.find(w => w.id === widgetId);
+    if (widget) {
+      fetch(`/api/dashboards/${siteId}/widgets/${widget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: widget.config }),
+      }).catch(err => console.error("Failed to save cable position:", err));
+    }
+  }, [draggingCableEndpoint, draggingFullCable, widgets, siteId]);
+
+  // Global mouse listeners for cable dragging
   useEffect(() => {
-    if (draggingCableEndpoint) {
+    if (draggingCableEndpoint || draggingFullCable) {
       window.addEventListener("mousemove", handleCableDragMove);
       window.addEventListener("mouseup", handleCableDragEnd);
       return () => {
@@ -594,7 +648,7 @@ export function DashboardCanvas({
         window.removeEventListener("mouseup", handleCableDragEnd);
       };
     }
-  }, [draggingCableEndpoint, handleCableDragMove, handleCableDragEnd]);
+  }, [draggingCableEndpoint, draggingFullCable, handleCableDragMove, handleCableDragEnd]);
 
   // Track when grid is mounted for cable dimensions
   useEffect(() => {
@@ -862,6 +916,15 @@ export function DashboardCanvas({
                           setSelectedWidget(widget);
                           setDraggingCableEndpoint({ widgetId: widget.id, endpoint: "end" });
                         }}
+                        onCableDrag={(e) => {
+                          setSelectedWidget(widget);
+                          setDraggingFullCable({
+                            widgetId: widget.id,
+                            initialMouseX: e.clientX,
+                            initialMouseY: e.clientY,
+                            initialConfig: config,
+                          });
+                        }}
                       />
                     );
                   })}
@@ -911,16 +974,19 @@ export function DashboardCanvas({
                   key={widget.id}
                   className={cn(
                     "relative bg-card rounded-lg border shadow-sm overflow-hidden",
-                    isEditMode && "cursor-move",
+                    isEditMode && "cursor-grab active:cursor-grabbing",
                     isEditMode && selectedWidget?.id === widget.id && "ring-2 ring-primary"
                   )}
                   style={{
                     gridRow: `${widget.grid_row} / span ${widget.grid_height}`,
                     gridColumn: `${widget.grid_col} / span ${widget.grid_width}`,
                     zIndex: widget.z_index,
+                    opacity: draggingWidgetId === widget.id ? 0.5 : 1,
+                    transition: "opacity 0.15s ease",
                   }}
                   draggable={isEditMode && !resizingWidget}
                   onDragStart={(e) => handleDragStart(e, widget)}
+                  onDragEnd={handleDragEnd}
                 >
                   {renderWidget(widget)}
 
