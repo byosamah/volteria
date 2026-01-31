@@ -702,6 +702,15 @@ Custom dashboards with drag-drop widget placement:
 | `status_indicator` | `status-indicator-widget.tsx` | Online/offline device status |
 | `alarm_list` | `alarm-list-widget.tsx` | Recent alarms with severity filter |
 | `text` | `text-widget.tsx` | Custom text/markdown display |
+| `gauge` | `gauge-widget.tsx` | Gauge with dial/bar/thermometer/tank styles |
+| `cable` | `cable-widget.tsx` | SVG cable connector with animated flow |
+
+### Cable Widget Details
+- **Path styles**: Straight, curved, orthogonal (right-angle)
+- **Thickness options**: Thin (2px), Medium (5px), Thick (10px)
+- **Animation**: Configurable flow speed (slow/medium/fast) with direction based on data sign
+- **Edit mode**: Draggable endpoints, click-away deselection, midpoint indicator
+- **Coordinate system**: SVG viewBox (100 units per grid cell) for stable positioning
 
 ### Historical Data V2 (`/historical-data`)
 Multi-site historical data viewer with server-side aggregation:

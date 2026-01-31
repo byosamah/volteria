@@ -229,6 +229,27 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-01-31)
 
+### Dashboard Cable Widget Improvements (Frontend)
+Complete fix for cable widget interactions and usability:
+
+**Core Fixes:**
+- **Widget dragging blocked**: SVG overlay had `pointerEvents: 'auto'` blocking all widget interactions. Fixed by setting SVG to `'none'` and cable elements to `'auto'`
+- **Click-away deselection**: Clicking anywhere on canvas now deselects cables (expanded grid cell click handler)
+- **Position stability**: Cable positions no longer shift when widget picker panel toggles. Uses SVG `viewBox` with fixed coordinate system (100 units per grid cell) instead of pixel-based positioning
+
+**Thickness Options:**
+- **3 sizes**: Thin (2px), Medium (5px), Thick (10px) - accessible via cable toolbar
+- **Visual buttons**: Each button shows line of proportional height
+- **Config merging**: Fixed thickness change by spreading existing config: `{ ...config, thickness: size }`
+- **Stale state fix**: Reads config from `widgets.find()` instead of stale `selectedWidget`
+
+**Animation Scaling:**
+- **Proportional dash pattern**: `strokeDasharray: ${thickness * 4} ${thickness * 2}` scales with cable size
+- **Per-thickness keyframes**: Generated CSS keyframes for each thickness level (2, 3, 4, 5, 6, 8, 10)
+- **Visible flow**: Animation now clearly visible on thick cables
+
+**Files**: `dashboard-canvas.tsx`, `cable-widget.tsx`
+
 ### Controller Stability Improvements
 - **SQLite timeout**: 10s connection timeout prevents infinite waits on lock contention
 - **Incremental vacuum**: Replaces blocking VACUUM (<1s vs 30-60s on large DBs)
