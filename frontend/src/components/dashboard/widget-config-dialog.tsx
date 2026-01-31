@@ -1363,14 +1363,18 @@ export function WidgetConfigDialog({
 
       switch (style) {
         case "dial":
+          // 270° arc from bottom-left to bottom-right, open at bottom
+          // Center (20, 20), radius 14
+          // Start at (10, 30) bottom-left, end at (30, 30) bottom-right
+          // 60% fill ends at approximately (26, 8) upper-right
           return (
             <svg viewBox="0 0 40 36" className="w-10 h-9">
-              {/* Background arc - semicircle-ish from left to right */}
-              <path d="M 6 28 A 14 14 0 0 1 34 28" fill="none" stroke="#e5e7eb" strokeWidth="4" strokeLinecap="round" />
-              {/* Filled arc - 60% */}
-              <path d="M 6 28 A 14 14 0 0 1 23 8" fill="none" stroke={previewColor} strokeWidth="4" strokeLinecap="round" />
+              {/* Background arc - 270° sweep through top */}
+              <path d="M 10 30 A 14 14 0 1 1 30 30" fill="none" stroke="#e5e7eb" strokeWidth="4" strokeLinecap="round" />
+              {/* Filled arc - 60% (162°) */}
+              <path d="M 10 30 A 14 14 0 0 1 26 8" fill="none" stroke={previewColor} strokeWidth="4" strokeLinecap="round" />
               {/* Center dot */}
-              <circle cx="20" cy="24" r="2" fill="#374151" />
+              <circle cx="20" cy="22" r="2" fill="#374151" />
             </svg>
           );
         case "tank_vertical":

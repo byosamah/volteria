@@ -32,9 +32,9 @@ export function DialGauge({
   showValue,
   showMinMax,
 }: DialGaugeProps) {
-  // Arc configuration
-  const startAngle = 135; // degrees from top (0 = 12 o'clock)
-  const endAngle = 405; // 270 degree sweep
+  // Arc configuration - speedometer open at bottom
+  const startAngle = 225; // degrees from top (0 = 12 o'clock) - bottom-left (7:30)
+  const endAngle = 495; // 270 degree sweep ending at bottom-right (4:30)
   const sweepAngle = endAngle - startAngle; // 270 degrees
 
   // Calculate arc paths
@@ -140,12 +140,12 @@ export function DialGauge({
           </g>
         )}
 
-        {/* Min/Max labels - positioned at arc ends (left=min, right=max) */}
+        {/* Min/Max labels - positioned at arc ends (bottom-left=min, bottom-right=max) */}
         {showMinMax && (
           <g>
             <text
-              x="12"
-              y="72"
+              x="18"
+              y="78"
               textAnchor="start"
               className="fill-muted-foreground"
               style={{ fontSize: "8px" }}
@@ -153,8 +153,8 @@ export function DialGauge({
               {minValue}
             </text>
             <text
-              x="88"
-              y="72"
+              x="82"
+              y="78"
               textAnchor="end"
               className="fill-muted-foreground"
               style={{ fontSize: "8px" }}
