@@ -171,7 +171,7 @@ configure_network() {
     log_info "Ethernet not configured (set up manually per site requirements)"
 }
 
-# Install DNS watchdog (cron every 5min + daily 1am safety net)
+# Install DNS watchdog (cron every 1min + daily 1am safety net)
 install_dns_watchdog() {
     log_step "Installing DNS watchdog..."
 
@@ -180,10 +180,10 @@ install_dns_watchdog() {
     cp "${CONTROLLER_DIR}/scripts/dns-watchdog.sh" "${VOLTERIA_DIR}/scripts/"
     chmod +x "${VOLTERIA_DIR}/scripts/dns-watchdog.sh"
 
-    # Install cron job (runs every 5 minutes)
-    echo "*/5 * * * * root /opt/volteria/scripts/dns-watchdog.sh" > /etc/cron.d/volteria-dns
+    # Install cron job (runs every 1 minute for faster DNS recovery)
+    echo "*/1 * * * * root /opt/volteria/scripts/dns-watchdog.sh" > /etc/cron.d/volteria-dns
     chmod 644 /etc/cron.d/volteria-dns
-    log_info "DNS watchdog cron installed (every 5 min)"
+    log_info "DNS watchdog cron installed (every 1 min)"
 
     # Install 1am daily conditional network restart (systemd timer)
     cat > "${SYSTEMD_DIR}/volteria-network-restart.service" << 'EOF'

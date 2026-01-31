@@ -762,6 +762,7 @@ class LoggingService:
 
         - Control logs and alarms: sync ALL unsynced records
         - Device readings: sync based on each register's logging_frequency
+        - Cloud health monitoring: raise CLOUD_SYNC_OFFLINE alarm after 1 hour offline
         """
         while self._running:
             # Check if cloud sync is disabled FIRST
@@ -779,6 +780,7 @@ class LoggingService:
                 logger.debug("FLOW[cloud]: No cloud_sync instance")
                 continue
 
+            sync_success = False
             try:
                 # Sync control_logs and alarms (all unsynced)
                 logs_synced = await self.cloud_sync.sync_logs()
@@ -804,9 +806,18 @@ class LoggingService:
                     )
                 elif total == 0:
                     logger.debug("FLOW[cloud]: No data to sync this cycle")
+
+                # Mark sync as successful (at least one operation completed without error)
+                sync_success = True
+                self.cloud_sync.record_sync_success()
+
             except Exception as e:
                 self._cloud_error_count += 1
+                self.cloud_sync.record_sync_failure()
                 logger.error(f"[ERROR] Cloud sync failed: {e}")
+
+            # Check cloud health and raise/resolve alarms
+            await self._check_cloud_offline_alarm()
 
     async def _sync_device_readings_filtered(self) -> int:
         """
@@ -1058,9 +1069,21 @@ class LoggingService:
         return selected
 
     async def _retention_loop(self) -> None:
-        """Periodic data retention cleanup"""
+        """
+        Periodic data retention cleanup.
+
+        Only runs between 2-4 AM local time to avoid impacting
+        performance during peak hours. Checks every hour.
+        """
         while self._running:
             await asyncio.sleep(RETENTION_CHECK_INTERVAL_S)
+
+            # Only run cleanup between 2-4 AM local time (off-peak)
+            # This avoids VACUUM/cleanup impacting daytime performance
+            now = datetime.now()
+            if not (2 <= now.hour < 4):
+                logger.debug(f"Skipping retention cleanup (hour={now.hour}, off-peak=2-4)")
+                continue
 
             try:
                 deleted = await self._run_db(self.local_db.cleanup_old_data, self._retention_days)
@@ -1487,6 +1510,42 @@ class LoggingService:
 
         if resolved_count > 0:
             logger.info(f"[CONFIG] Total auto-resolved after config change: {resolved_count}")
+
+    async def _check_cloud_offline_alarm(self) -> None:
+        """
+        Check cloud connectivity and raise/resolve CLOUD_SYNC_OFFLINE alarm.
+
+        Called after each cloud sync attempt. Raises alarm if cloud has been
+        unreachable for > 1 hour, auto-resolves when connection is restored.
+        """
+        if not self.cloud_sync:
+            return
+
+        alarm_info = self.cloud_sync.check_cloud_health()
+        if not alarm_info:
+            return
+
+        if alarm_info["action"] == "raise":
+            # Raise cloud offline alarm
+            await self._run_db(
+                self.local_db.insert_alarm,
+                str(uuid.uuid4()),
+                self._site_id,
+                alarm_info["alarm_type"],
+                alarm_info["message"],
+                alarm_info["severity"],
+                datetime.now(timezone.utc).isoformat(),
+            )
+            logger.warning(f"[CLOUD] Raised alarm: {alarm_info['message']}")
+
+        elif alarm_info["action"] == "resolve":
+            # Auto-resolve cloud offline alarm
+            count = await self._run_db(
+                self.local_db.resolve_alarms_by_type,
+                alarm_info["alarm_type"],
+            )
+            if count > 0:
+                logger.info(f"[CLOUD] Auto-resolved {count} CLOUD_SYNC_OFFLINE alarm(s)")
 
     async def _check_logging_health(self, buffer_count: int) -> None:
         """

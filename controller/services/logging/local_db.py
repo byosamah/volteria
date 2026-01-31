@@ -45,6 +45,11 @@ class LocalDatabase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
+            # Enable incremental auto_vacuum mode for non-blocking cleanup
+            # This must be set before any tables are created (or requires VACUUM to take effect)
+            # INCREMENTAL mode allows vacuuming in small chunks via PRAGMA incremental_vacuum(N)
+            cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
+
             # Control logs table with aggregated values
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS control_logs (
@@ -176,7 +181,9 @@ class LocalDatabase:
     @contextmanager
     def _get_connection(self):
         """Get database connection with context manager and disk-wear optimizations"""
-        conn = sqlite3.connect(str(self.db_path))
+        # timeout=10.0: Fail fast on lock contention instead of blocking forever
+        # Prevents infinite waits when VACUUM or other operations hold the lock
+        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         conn.row_factory = sqlite3.Row
 
         # Disk wear optimizations for SD card/SSD longevity:
@@ -481,8 +488,10 @@ class LocalDatabase:
 
             conn.commit()
 
-            # Vacuum to reclaim space
-            cursor.execute("VACUUM")
+            # Incremental vacuum to reclaim space (non-blocking)
+            # Vacuums up to 1000 pages (~4MB) at a time, runs in <1 second
+            # Full VACUUM on large DBs (500MB+) can take 30-60s and block all access
+            cursor.execute("PRAGMA incremental_vacuum(1000)")
 
             total_deleted = logs_deleted + alarms_deleted + readings_deleted
             if total_deleted > 0:
@@ -551,12 +560,18 @@ class LocalDatabase:
     # Retry backoff for write operations (0.5s, 1s, 2s)
     WRITE_RETRY_BACKOFF = [0.5, 1.0, 2.0]
 
+    # Chunk size for batch inserts (reduces lock duration)
+    BATCH_CHUNK_SIZE = 1000
+
     def insert_device_readings_batch(
         self,
         readings: list[dict],
     ) -> int:
         """
-        Insert multiple device readings in a batch with retry logic.
+        Insert multiple device readings in chunked batches with retry logic.
+
+        Splits large batches into BATCH_CHUNK_SIZE (1000) chunks to reduce
+        lock duration. Each chunk is a separate transaction.
 
         Retries on failure with exponential backoff (0.5s, 1s, 2s) to handle
         transient disk errors. If all retries fail, raises the exception.
@@ -573,6 +588,18 @@ class LocalDatabase:
         if not readings:
             return 0
 
+        total_inserted = 0
+
+        # Process in chunks to reduce lock duration
+        for chunk_start in range(0, len(readings), self.BATCH_CHUNK_SIZE):
+            chunk = readings[chunk_start:chunk_start + self.BATCH_CHUNK_SIZE]
+            inserted = self._insert_readings_chunk(chunk)
+            total_inserted += inserted
+
+        return total_inserted
+
+    def _insert_readings_chunk(self, readings: list[dict]) -> int:
+        """Insert a single chunk of readings with retry logic."""
         last_error: Exception | None = None
 
         for attempt, delay in enumerate([0] + self.WRITE_RETRY_BACKOFF):

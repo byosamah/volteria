@@ -68,6 +68,7 @@ class CloudSync:
     - Retry with exponential backoff
     - Marks records as synced ONLY after successful upload
     - Empty uploads don't mark anything as synced
+    - Cloud offline alarm after 1 hour of failures
 
     Robustness:
     - If upload fails, readings remain unsynced for retry next cycle
@@ -80,6 +81,9 @@ class CloudSync:
 
     # Backfill threshold: if more than this many pending, log progress
     BACKFILL_THRESHOLD = 1000
+
+    # Cloud offline alarm threshold: raise alarm if cloud unreachable for this long
+    CLOUD_OFFLINE_THRESHOLD_S = 3600  # 1 hour
 
     def __init__(
         self,
@@ -98,6 +102,11 @@ class CloudSync:
         self._error_count = 0
         self._empty_batch_count = 0  # Track empty batches (downsampling filtered all)
         self._duplicate_count = 0  # Track 409 responses (duplicates ignored)
+
+        # Cloud offline tracking for alerts
+        self._last_successful_sync = datetime.now(timezone.utc)
+        self._cloud_alarm_raised = False
+        self._consecutive_failures = 0
 
         # Backfill tracking (two-phase: recent-first, then fill gaps)
         self.backfill = BackfillTracker()
@@ -721,8 +730,52 @@ class CloudSync:
             logger.warning(f"[CLOUD] Failed to sync alarm resolutions: {e}")
             return 0
 
+    def record_sync_success(self) -> None:
+        """Record a successful cloud sync (resets failure tracking)."""
+        self._last_successful_sync = datetime.now(timezone.utc)
+        self._consecutive_failures = 0
+
+    def record_sync_failure(self) -> None:
+        """Record a failed cloud sync attempt."""
+        self._consecutive_failures += 1
+
+    def check_cloud_health(self) -> dict | None:
+        """
+        Check cloud connectivity health and return alarm info if needed.
+
+        Returns:
+            dict with alarm info if alarm should be raised/resolved, None otherwise
+            Keys: 'action' ('raise' or 'resolve'), 'alarm_type', 'message', 'severity'
+        """
+        now = datetime.now(timezone.utc)
+        offline_duration = (now - self._last_successful_sync).total_seconds()
+
+        # Check if we should raise an alarm
+        if offline_duration > self.CLOUD_OFFLINE_THRESHOLD_S and not self._cloud_alarm_raised:
+            self._cloud_alarm_raised = True
+            minutes_offline = int(offline_duration / 60)
+            return {
+                "action": "raise",
+                "alarm_type": "CLOUD_SYNC_OFFLINE",
+                "message": f"Cloud sync offline for {minutes_offline} minutes",
+                "severity": "major",
+            }
+
+        # Check if we should resolve an existing alarm
+        if self._cloud_alarm_raised and self._consecutive_failures == 0:
+            self._cloud_alarm_raised = False
+            return {
+                "action": "resolve",
+                "alarm_type": "CLOUD_SYNC_OFFLINE",
+            }
+
+        return None
+
     def get_stats(self) -> dict:
         """Get sync statistics with robustness metrics"""
+        now = datetime.now(timezone.utc)
+        offline_duration = (now - self._last_successful_sync).total_seconds()
+
         return {
             "last_sync": self._last_sync.isoformat(),
             "total_synced": self._sync_count,
@@ -733,4 +786,9 @@ class CloudSync:
             "backfill_total": self.backfill.total_pending,
             "backfill_synced": self.backfill.synced_count,
             "backfill_started_at": self.backfill.started_at.isoformat() if self.backfill.started_at else None,
+            # Cloud health tracking
+            "last_successful_sync": self._last_successful_sync.isoformat(),
+            "consecutive_failures": self._consecutive_failures,
+            "offline_seconds": int(offline_duration),
+            "cloud_alarm_raised": self._cloud_alarm_raised,
         }
