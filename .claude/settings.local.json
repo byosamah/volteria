@@ -137,7 +137,19 @@
       "Bash(wmic process where \"name=''node.exe''\" call terminate)",
       "Bash(ln:*)",
       "Bash(git checkout:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(copy \"C:\\\\Users\\\\Hp\\\\Downloads\\\\icons moh-07.png\" \"C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\public\\\\images\\\\dashboard\\\\generator.png\")",
+      "Bash(identify:*)",
+      "Bash(copy \"C:\\\\Users\\\\Hp\\\\Desktop\\\\mobile-cone-crusher-min-3.png\" \"C:\\\\Users\\\\Hp\\\\volteria\\\\frontend\\\\public\\\\images\\\\dashboard\\\\crusher.png\")",
+      "Bash(for i in 1 2 3 4 5 6)",
+      "Bash(do sleep 5)",
+      "Bash(C:/Users/Hp/scoop/shims/supabase.exe db:*)",
+      "WebFetch(domain:wiki.seeedstudio.com)",
+      "WebFetch(domain:files.seeedstudio.com)",
+      "Bash(C:/Users/Hp/scoop/shims/supabase.exe --help)",
+      "Bash(C:/Users/Hp/scoop/shims/supabase.exe sql --help)",
+      "Bash(del \"C:\\\\Users\\\\Hp\\\\volteria\\\\temp_beltway_template.json\")",
+      "Bash(del \"C:\\\\Users\\\\Hp\\\\volteria\\\\temp_beltway_update.json\")"
     ]
   }
 }

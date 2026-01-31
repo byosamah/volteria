@@ -227,6 +227,32 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
 
+## Recent Updates (2026-01-31)
+
+### Controller Stability Improvements
+- **SQLite timeout**: 10s connection timeout prevents infinite waits on lock contention
+- **Incremental vacuum**: Replaces blocking VACUUM (<1s vs 30-60s on large DBs)
+- **Batch chunking**: Inserts chunked to 1000 records max (shorter lock duration)
+- **Off-peak cleanup**: Retention cleanup scheduled for 2-4 AM local time
+- **DNS watchdog**: Reduced from 5-min to 1-min interval for faster recovery
+- **Cloud offline alert**: CLOUD_SYNC_OFFLINE alarm when unreachable >1 hour, auto-resolves on reconnect
+- **Files**: `local_db.py`, `service.py`, `cloud_sync.py`, `setup-controller.sh`
+
+### Dashboard Gauge Widget (Frontend)
+- **New widget type**: Gauge widget with 4 visual styles (dial, bar, thermometer, tank)
+- **Configurable**: Min/max values, threshold zones, colors, units
+- **Real-time**: Displays live register values with smooth animations
+- **Files**: `gauge-widget.tsx`, `gauge-styles/*.tsx`, `widget-config-dialog.tsx`
+
+### Belt Scale Device Type
+- **New device type**: `belt_scale` for conveyor weighing systems
+- **Migration 094**: Added to `device_type` enum
+- **Frontend**: Added to device constants and template grouping
+
+### Security Fix (Database)
+- **Migration 093**: All DB functions now use `SET search_path = ''` to prevent search path injection
+- **Scope**: 50+ functions updated
+
 ## Recent Updates (2026-01-30)
 
 ### Alarm System Overhaul (Controller)

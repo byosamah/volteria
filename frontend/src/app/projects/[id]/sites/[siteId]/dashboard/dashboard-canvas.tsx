@@ -169,6 +169,9 @@ export function DashboardCanvas({
     endpoint: "start" | "end";
   } | null>(null);
 
+  // Track grid mount for proper cable dimension calculation
+  const [gridMounted, setGridMounted] = useState(false);
+
   // Grid density state - derive initial from saved dashboard dimensions
   const initialDensity = getDensityFromDimensions(
     dashboard?.grid_columns || 12,
@@ -535,6 +538,17 @@ export function DashboardCanvas({
     setResizeStart(null);
   }, []);
 
+  // Track when grid is mounted for cable dimensions
+  useEffect(() => {
+    // Use requestAnimationFrame to ensure grid has been painted
+    const frame = requestAnimationFrame(() => {
+      if (gridRef.current && gridRef.current.clientWidth > 0) {
+        setGridMounted(true);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [widgets]); // Re-check when widgets change (e.g., cable added)
+
   // Global mouse listeners for resize
   useEffect(() => {
     if (resizingWidget) {
@@ -741,37 +755,45 @@ export function DashboardCanvas({
                 })}
 
               {/* SVG overlay for cables - positioned absolute over the grid */}
-              <svg
-                className="absolute inset-2 pointer-events-none"
-                style={{ zIndex: 0 }}
-              >
-                {/* Render existing cables */}
-                {cableWidgets.map((widget) => {
-                  const config = widget.config as unknown as CableConfig;
-                  const containerWidth = gridRef.current?.clientWidth || 800;
-                  const containerHeight = gridRef.current?.clientHeight || 600;
-                  return (
-                    <CableWidget
-                      key={widget.id}
-                      config={config}
-                      gridColumns={gridColumns}
-                      gridRows={gridRows}
-                      containerWidth={containerWidth - 16}
-                      containerHeight={containerHeight - 16}
-                      liveValue={getCableLiveValue(config)}
-                      isEditMode={isEditMode}
-                      onStartDrag={() => {
-                        setSelectedWidget(widget);
-                        setDraggingCableEndpoint({ widgetId: widget.id, endpoint: "start" });
-                      }}
-                      onEndDrag={() => {
-                        setSelectedWidget(widget);
-                        setDraggingCableEndpoint({ widgetId: widget.id, endpoint: "end" });
-                      }}
-                    />
-                  );
-                })}
-              </svg>
+              {cableWidgets.length > 0 && gridMounted && gridRef.current && (
+                <svg
+                  className="absolute inset-2"
+                  style={{
+                    zIndex: 0,
+                    width: gridRef.current.clientWidth - 16,
+                    height: gridRef.current.clientHeight - 16,
+                    pointerEvents: isEditMode ? 'auto' : 'none',
+                  }}
+                >
+                  {/* Render existing cables */}
+                  {cableWidgets.map((widget) => {
+                    const config = widget.config as unknown as CableConfig;
+                    // Use actual grid container dimensions (minus padding)
+                    const containerWidth = gridRef.current!.clientWidth - 16;
+                    const containerHeight = gridRef.current!.clientHeight - 16;
+                    return (
+                      <CableWidget
+                        key={widget.id}
+                        config={config}
+                        gridColumns={gridColumns}
+                        gridRows={gridRows}
+                        containerWidth={containerWidth}
+                        containerHeight={containerHeight}
+                        liveValue={getCableLiveValue(config)}
+                        isEditMode={isEditMode}
+                        onStartDrag={() => {
+                          setSelectedWidget(widget);
+                          setDraggingCableEndpoint({ widgetId: widget.id, endpoint: "start" });
+                        }}
+                        onEndDrag={() => {
+                          setSelectedWidget(widget);
+                          setDraggingCableEndpoint({ widgetId: widget.id, endpoint: "end" });
+                        }}
+                      />
+                    );
+                  })}
+                </svg>
+              )}
 
               {/* Regular widgets */}
               {regularWidgets.map((widget) => (
