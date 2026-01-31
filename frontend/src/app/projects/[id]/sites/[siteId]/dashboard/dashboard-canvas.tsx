@@ -734,6 +734,12 @@ export function DashboardCanvas({
                 gap: `${GAP}px`,
                 minHeight: `${gridRows * CELL_HEIGHT + (gridRows - 1) * GAP + 16}px`,
               }}
+              onClick={(e) => {
+                // Deselect cable when clicking on empty grid space
+                if (isEditMode && e.target === e.currentTarget) {
+                  setSelectedWidget(null);
+                }
+              }}
             >
               {/* Grid cells (visible in edit mode) */}
               {isEditMode &&
@@ -747,6 +753,12 @@ export function DashboardCanvas({
                       style={{
                         gridRow: row,
                         gridColumn: col,
+                      }}
+                      onClick={() => {
+                        // Deselect cable when clicking on empty cell
+                        if (selectedWidget?.widget_type === "cable") {
+                          setSelectedWidget(null);
+                        }
                       }}
                       onDrop={(e) => handleDrop(e, row, col)}
                       onDragOver={handleDragOver}
@@ -781,6 +793,8 @@ export function DashboardCanvas({
                         containerHeight={containerHeight}
                         liveValue={getCableLiveValue(config)}
                         isEditMode={isEditMode}
+                        isSelected={selectedWidget?.id === widget.id}
+                        onClick={() => setSelectedWidget(widget)}
                         onStartDrag={() => {
                           setSelectedWidget(widget);
                           setDraggingCableEndpoint({ widgetId: widget.id, endpoint: "start" });
@@ -793,6 +807,43 @@ export function DashboardCanvas({
                     );
                   })}
                 </svg>
+              )}
+
+              {/* Cable toolbar - positioned near selected cable */}
+              {isEditMode && selectedWidget?.widget_type === "cable" && gridRef.current && (
+                <div
+                  className="absolute z-50 flex gap-1 bg-background/95 rounded-lg shadow-lg border p-1"
+                  style={{
+                    // Position at center of selected cable
+                    left: (() => {
+                      const config = selectedWidget.config as unknown as CableConfig;
+                      const containerWidth = gridRef.current!.clientWidth - 16;
+                      const midX = ((config.startX + config.endX) / 2) * (containerWidth / gridColumns);
+                      return Math.max(8, Math.min(midX - 40, containerWidth - 88)) + 8;
+                    })(),
+                    top: (() => {
+                      const config = selectedWidget.config as unknown as CableConfig;
+                      const containerHeight = gridRef.current!.clientHeight - 16;
+                      const midY = ((config.startY + config.endY) / 2) * (containerHeight / gridRows);
+                      return Math.max(8, midY - 40) + 8;
+                    })(),
+                  }}
+                >
+                  <button
+                    onClick={() => setShowConfigDialog(true)}
+                    className="p-2 rounded hover:bg-accent"
+                    title="Edit cable"
+                  >
+                    <Settings2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => deleteWidget(selectedWidget.id)}
+                    className="p-2 rounded hover:bg-destructive hover:text-destructive-foreground"
+                    title="Delete cable"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               )}
 
               {/* Regular widgets */}

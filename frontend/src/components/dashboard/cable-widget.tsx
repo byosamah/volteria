@@ -40,6 +40,8 @@ interface CableWidgetProps {
   containerHeight: number;
   liveValue?: number | null;
   isEditMode?: boolean;
+  isSelected?: boolean;
+  onClick?: () => void;
   onStartDrag?: (e: React.MouseEvent) => void;
   onEndDrag?: (e: React.MouseEvent) => void;
 }
@@ -80,6 +82,7 @@ function generatePath(
       const dx = endX - startX;
       const dy = endY - startY;
       const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance === 0) return `M ${startX} ${startY} L ${endX} ${endY}`;
       // Control point offset perpendicular to line (30% of distance)
       const offset = distance * 0.3;
       // Perpendicular vector (normalized)
@@ -116,6 +119,8 @@ export function CableWidget({
   containerHeight,
   liveValue,
   isEditMode,
+  isSelected,
+  onClick,
   onStartDrag,
   onEndDrag,
 }: CableWidgetProps) {
@@ -140,8 +145,41 @@ export function CableWidget({
   const isReverse = liveValue !== null && liveValue !== undefined && liveValue < 0;
   const animationDuration = ANIMATION_DURATIONS[config.animationSpeed] || "1s";
 
+  // Calculate midpoint for toolbar positioning
+  const midPoint = useMemo(() => ({
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  }), [start.x, start.y, end.x, end.y]);
+
   return (
     <g className="cable-widget">
+      {/* Invisible wider click area for easier selection in edit mode */}
+      {isEditMode && (
+        <path
+          d={pathD}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={20}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="cursor-pointer"
+          onClick={onClick}
+        />
+      )}
+
+      {/* Selection highlight */}
+      {isSelected && (
+        <path
+          d={pathD}
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth={config.thickness + 6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.5}
+        />
+      )}
+
       {/* Main cable path */}
       <path
         d={pathD}
@@ -152,7 +190,8 @@ export function CableWidget({
         strokeLinejoin="round"
         className={cn(
           config.animated && "cable-animated",
-          config.animated && isReverse && "cable-reverse"
+          config.animated && isReverse && "cable-reverse",
+          isEditMode && "cursor-pointer"
         )}
         style={
           config.animated
@@ -163,6 +202,7 @@ export function CableWidget({
               }
             : undefined
         }
+        onClick={isEditMode ? onClick : undefined}
       />
 
       {/* Edit mode: draggable endpoints */}
@@ -172,24 +212,44 @@ export function CableWidget({
           <circle
             cx={start.x}
             cy={start.y}
-            r={8}
-            fill={config.color}
+            r={isSelected ? 10 : 8}
+            fill={isSelected ? "#22c55e" : config.color}
             stroke="white"
             strokeWidth={2}
             className="cursor-move hover:scale-125 transition-transform"
-            onMouseDown={onStartDrag}
+            style={{ pointerEvents: "auto" }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onStartDrag?.(e);
+            }}
           />
           {/* End point handle */}
           <circle
             cx={end.x}
             cy={end.y}
-            r={8}
-            fill={config.color}
+            r={isSelected ? 10 : 8}
+            fill={isSelected ? "#22c55e" : config.color}
             stroke="white"
             strokeWidth={2}
             className="cursor-move hover:scale-125 transition-transform"
-            onMouseDown={onEndDrag}
+            style={{ pointerEvents: "auto" }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onEndDrag?.(e);
+            }}
           />
+
+          {/* Selection indicator at midpoint */}
+          {isSelected && (
+            <circle
+              cx={midPoint.x}
+              cy={midPoint.y}
+              r={6}
+              fill="#22c55e"
+              stroke="white"
+              strokeWidth={2}
+            />
+          )}
         </>
       )}
     </g>
