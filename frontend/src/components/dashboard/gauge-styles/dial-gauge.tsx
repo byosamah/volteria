@@ -167,7 +167,7 @@ export function DialGauge({
 
       {/* Label below */}
       {label && (
-        <p className="text-xs text-muted-foreground text-center truncate w-full px-1">
+        <p className="text-sm text-muted-foreground text-center truncate w-full px-1">
           {label}
         </p>
       )}

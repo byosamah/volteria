@@ -94,7 +94,7 @@ export const ValueDisplayWidget = memo(function ValueDisplayWidget({ widget, liv
     >
       {/* Label */}
       {config.label && (
-        <p className="text-xs text-muted-foreground truncate mb-1">
+        <p className="text-sm text-muted-foreground truncate mb-1">
           {config.label}
         </p>
       )}

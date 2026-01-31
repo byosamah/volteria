@@ -118,7 +118,7 @@ export function ThermometerGauge({
           </p>
         )}
         {label && (
-          <p className="text-xs text-muted-foreground truncate px-1">{label}</p>
+          <p className="text-sm text-muted-foreground truncate px-1">{label}</p>
         )}
       </div>
     </div>
