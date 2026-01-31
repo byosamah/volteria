@@ -208,6 +208,15 @@ const deviceTypeIcons: Record<string, React.ReactNode> = {
       <path d="M8 12h8" />
     </svg>
   ),
+  belt_scale: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-emerald-600">
+      <path d="M16 16h6" />
+      <path d="M19 13v6" />
+      <path d="M12 15V3" />
+      <path d="m8 11 4 4 4-4" />
+      <path d="M2 21h20" />
+    </svg>
+  ),
   // Legacy
   load_meter: (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-blue-600">
@@ -244,6 +253,7 @@ const sectionBgColors: Record<string, string> = {
   solar_radiation_sensor: "bg-yellow-100",
   wind_sensor: "bg-cyan-100",
   other_hardware: "bg-gray-100",
+  belt_scale: "bg-emerald-100",
   // Legacy
   load_meter: "bg-blue-100",
   dg: "bg-slate-100",
@@ -265,6 +275,7 @@ const sectionTitles: Record<string, string> = {
   solar_radiation_sensor: "Solar Radiation Sensors",
   wind_sensor: "Wind Sensors",
   other_hardware: "Other Hardware",
+  belt_scale: "Belt Scales",
   // Legacy
   load_meter: "Energy Meters (Legacy)",
   dg: "Generator Controllers (Legacy)",
