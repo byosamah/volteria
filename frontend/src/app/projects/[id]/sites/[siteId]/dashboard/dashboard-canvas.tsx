@@ -956,10 +956,12 @@ export function DashboardCanvas({
                   {/* Thickness buttons */}
                   {[
                     { size: 2, label: "Thin" },
-                    { size: 4, label: "Medium" },
-                    { size: 6, label: "Thick" },
+                    { size: 5, label: "Medium" },
+                    { size: 10, label: "Thick" },
                   ].map(({ size, label }) => {
-                    const config = selectedWidget.config as unknown as CableConfig;
+                    // Get current config from widgets array (not stale selectedWidget)
+                    const currentWidget = widgets.find(w => w.id === selectedWidget.id);
+                    const config = (currentWidget?.config || selectedWidget.config) as unknown as CableConfig;
                     const isActive = config.thickness === size;
                     return (
                       <button
