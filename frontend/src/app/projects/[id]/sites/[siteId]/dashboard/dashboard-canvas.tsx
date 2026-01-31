@@ -964,7 +964,7 @@ export function DashboardCanvas({
                     return (
                       <button
                         key={size}
-                        onClick={() => updateWidgetConfig(selectedWidget.id, { thickness: size })}
+                        onClick={() => updateWidgetConfig(selectedWidget.id, { ...config, thickness: size })}
                         className={cn(
                           "p-2 rounded",
                           isActive ? "bg-primary text-primary-foreground" : "hover:bg-accent"
