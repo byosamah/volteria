@@ -953,6 +953,35 @@ export function DashboardCanvas({
                     })(),
                   }}
                 >
+                  {/* Thickness buttons */}
+                  {[
+                    { size: 2, label: "Thin" },
+                    { size: 4, label: "Medium" },
+                    { size: 6, label: "Thick" },
+                  ].map(({ size, label }) => {
+                    const config = selectedWidget.config as unknown as CableConfig;
+                    const isActive = config.thickness === size;
+                    return (
+                      <button
+                        key={size}
+                        onClick={() => updateWidgetConfig(selectedWidget.id, { thickness: size })}
+                        className={cn(
+                          "p-2 rounded",
+                          isActive ? "bg-primary text-primary-foreground" : "hover:bg-accent"
+                        )}
+                        title={label}
+                      >
+                        <div
+                          className="w-4 rounded-full bg-current"
+                          style={{ height: size }}
+                        />
+                      </button>
+                    );
+                  })}
+
+                  {/* Separator */}
+                  <div className="w-px bg-border mx-1" />
+
                   <button
                     onClick={() => setShowConfigDialog(true)}
                     className="p-2 rounded hover:bg-accent"
