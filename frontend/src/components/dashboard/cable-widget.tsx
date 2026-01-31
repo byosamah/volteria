@@ -8,7 +8,7 @@
  * Optional animated current flow with direction based on data values.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export interface CableConfig {
@@ -46,7 +46,7 @@ interface CableWidgetProps {
   onEndDrag?: (e: React.MouseEvent) => void;
 }
 
-// Convert grid coordinates to pixel coordinates
+// Convert grid coordinates to pixel coordinates with clamping
 function gridToPixel(
   gridX: number,
   gridY: number,
@@ -55,11 +55,15 @@ function gridToPixel(
   containerWidth: number,
   containerHeight: number
 ): { x: number; y: number } {
+  // Clamp to valid grid bounds to prevent overflow
+  const clampedX = Math.max(0, Math.min(gridX, gridColumns));
+  const clampedY = Math.max(0, Math.min(gridY, gridRows));
+
   const cellWidth = containerWidth / gridColumns;
   const cellHeight = containerHeight / gridRows;
   return {
-    x: gridX * cellWidth,
-    y: gridY * cellHeight,
+    x: clampedX * cellWidth,
+    y: clampedY * cellHeight,
   };
 }
 
@@ -145,11 +149,21 @@ export function CableWidget({
   const isReverse = liveValue !== null && liveValue !== undefined && liveValue < 0;
   const animationDuration = ANIMATION_DURATIONS[config.animationSpeed] || "1s";
 
+  // Hover state for endpoint circles
+  const [startHovered, setStartHovered] = useState(false);
+  const [endHovered, setEndHovered] = useState(false);
+
   // Calculate midpoint for toolbar positioning
   const midPoint = useMemo(() => ({
     x: (start.x + end.x) / 2,
     y: (start.y + end.y) / 2,
   }), [start.x, start.y, end.x, end.y]);
+
+  // Endpoint circle radius based on state
+  const getRadius = (isHovered: boolean) => {
+    if (isSelected) return isHovered ? 12 : 10;
+    return isHovered ? 10 : 8;
+  };
 
   return (
     <g className="cable-widget">
@@ -212,14 +226,20 @@ export function CableWidget({
           <circle
             cx={start.x}
             cy={start.y}
-            r={isSelected ? 10 : 8}
+            r={getRadius(startHovered)}
             fill={isSelected ? "#22c55e" : config.color}
             stroke="white"
             strokeWidth={2}
-            className="cursor-move hover:scale-125 transition-transform"
-            style={{ pointerEvents: "auto" }}
+            className="cursor-move"
+            style={{
+              pointerEvents: "auto",
+              transition: "r 0.15s ease, fill 0.15s ease",
+            }}
+            onMouseEnter={() => setStartHovered(true)}
+            onMouseLeave={() => setStartHovered(false)}
             onMouseDown={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onStartDrag?.(e);
             }}
           />
@@ -227,14 +247,20 @@ export function CableWidget({
           <circle
             cx={end.x}
             cy={end.y}
-            r={isSelected ? 10 : 8}
+            r={getRadius(endHovered)}
             fill={isSelected ? "#22c55e" : config.color}
             stroke="white"
             strokeWidth={2}
-            className="cursor-move hover:scale-125 transition-transform"
-            style={{ pointerEvents: "auto" }}
+            className="cursor-move"
+            style={{
+              pointerEvents: "auto",
+              transition: "r 0.15s ease, fill 0.15s ease",
+            }}
+            onMouseEnter={() => setEndHovered(true)}
+            onMouseLeave={() => setEndHovered(false)}
             onMouseDown={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onEndDrag?.(e);
             }}
           />

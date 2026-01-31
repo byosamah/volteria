@@ -538,6 +538,64 @@ export function DashboardCanvas({
     setResizeStart(null);
   }, []);
 
+  // Cable endpoint drag handler - moves endpoint in real-time
+  const handleCableDragMove = useCallback((e: globalThis.MouseEvent) => {
+    if (!draggingCableEndpoint || !gridRef.current) return;
+
+    // Get mouse position relative to grid
+    const rect = gridRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left - 8; // Account for p-2 padding
+    const y = e.clientY - rect.top - 8;
+
+    // Convert to grid coordinates with clamping
+    const containerWidth = gridRef.current.clientWidth - 16;
+    const containerHeight = gridRef.current.clientHeight - 16;
+    const gridX = Math.max(0, Math.min(gridColumns, (x / containerWidth) * gridColumns));
+    const gridY = Math.max(0, Math.min(gridRows, (y / containerHeight) * gridRows));
+
+    // Update widget config locally
+    setWidgets(prev => prev.map(w => {
+      if (w.id !== draggingCableEndpoint.widgetId) return w;
+      const config = w.config as unknown as CableConfig;
+      const newConfig = draggingCableEndpoint.endpoint === "start"
+        ? { ...config, startX: gridX, startY: gridY }
+        : { ...config, endX: gridX, endY: gridY };
+      return { ...w, config: newConfig as Record<string, unknown> };
+    }));
+  }, [draggingCableEndpoint, gridColumns, gridRows]);
+
+  // Cable endpoint drag end - save to server
+  const handleCableDragEnd = useCallback(async () => {
+    if (draggingCableEndpoint) {
+      // Find the widget and save to server
+      const widget = widgets.find(w => w.id === draggingCableEndpoint.widgetId);
+      if (widget) {
+        try {
+          await fetch(`/api/dashboards/${siteId}/widgets/${widget.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ config: widget.config }),
+          });
+        } catch (err) {
+          console.error("Failed to save cable position:", err);
+        }
+      }
+    }
+    setDraggingCableEndpoint(null);
+  }, [draggingCableEndpoint, widgets, siteId]);
+
+  // Global mouse listeners for cable endpoint dragging
+  useEffect(() => {
+    if (draggingCableEndpoint) {
+      window.addEventListener("mousemove", handleCableDragMove);
+      window.addEventListener("mouseup", handleCableDragEnd);
+      return () => {
+        window.removeEventListener("mousemove", handleCableDragMove);
+        window.removeEventListener("mouseup", handleCableDragEnd);
+      };
+    }
+  }, [draggingCableEndpoint, handleCableDragMove, handleCableDragEnd]);
+
   // Track when grid is mounted for cable dimensions
   useEffect(() => {
     // Use requestAnimationFrame to ensure grid has been painted
@@ -775,6 +833,7 @@ export function DashboardCanvas({
                     width: gridRef.current.clientWidth - 16,
                     height: gridRef.current.clientHeight - 16,
                     pointerEvents: isEditMode ? 'auto' : 'none',
+                    overflow: 'hidden',
                   }}
                 >
                   {/* Render existing cables */}
