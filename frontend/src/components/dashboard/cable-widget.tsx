@@ -212,8 +212,10 @@ export function CableWidget({
         style={
           config.animated
             ? {
-                strokeDasharray: "10 5",
-                animation: `cable-flow ${animationDuration} linear infinite`,
+                // Scale dash pattern with thickness for visible animation
+                strokeDasharray: `${config.thickness * 4} ${config.thickness * 2}`,
+                strokeDashoffset: 0,
+                animation: `cable-flow-${config.thickness} ${animationDuration} linear infinite`,
                 animationDirection: isReverse ? "reverse" : "normal",
               }
             : undefined
@@ -290,18 +292,22 @@ export function CableWidget({
 }
 
 // CSS keyframes for cable animation (inject once)
+// Generate keyframes for each thickness level (dash + gap = thickness * 6)
 if (typeof document !== "undefined") {
   const styleId = "cable-widget-styles";
   if (!document.getElementById(styleId)) {
     const style = document.createElement("style");
     style.id = styleId;
-    style.textContent = `
-      @keyframes cable-flow {
+    // Create keyframes for common thickness values
+    const thicknesses = [2, 3, 4, 5, 6, 8, 10];
+    const keyframes = thicknesses.map(t => `
+      @keyframes cable-flow-${t} {
         to {
-          stroke-dashoffset: -15;
+          stroke-dashoffset: -${t * 6};
         }
       }
-    `;
+    `).join("\n");
+    style.textContent = keyframes;
     document.head.appendChild(style);
   }
 }
