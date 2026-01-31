@@ -1364,13 +1364,13 @@ export function WidgetConfigDialog({
       switch (style) {
         case "dial":
           return (
-            <svg viewBox="0 0 40 40" className="w-8 h-8">
-              {/* Background arc - 270 degree sweep from bottom-left to bottom-right */}
-              <path d="M 8 32 A 14 14 0 1 1 32 32" fill="none" stroke="#e5e7eb" strokeWidth="4" strokeLinecap="round" />
-              {/* Filled arc - 60% of 270 degrees */}
-              <path d="M 8 32 A 14 14 0 0 1 20 6" fill="none" stroke={previewColor} strokeWidth="4" strokeLinecap="round" />
+            <svg viewBox="0 0 40 36" className="w-10 h-9">
+              {/* Background arc - semicircle-ish from left to right */}
+              <path d="M 6 28 A 14 14 0 0 1 34 28" fill="none" stroke="#e5e7eb" strokeWidth="4" strokeLinecap="round" />
+              {/* Filled arc - 60% */}
+              <path d="M 6 28 A 14 14 0 0 1 23 8" fill="none" stroke={previewColor} strokeWidth="4" strokeLinecap="round" />
               {/* Center dot */}
-              <circle cx="20" cy="22" r="2" fill="#374151" />
+              <circle cx="20" cy="24" r="2" fill="#374151" />
             </svg>
           );
         case "tank_vertical":

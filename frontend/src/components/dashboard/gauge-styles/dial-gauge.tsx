@@ -140,24 +140,24 @@ export function DialGauge({
           </g>
         )}
 
-        {/* Min/Max labels - positioned at arc ends */}
+        {/* Min/Max labels - positioned at arc ends (left=min, right=max) */}
         {showMinMax && (
           <g>
             <text
-              x="18"
-              y="78"
-              textAnchor="middle"
+              x="12"
+              y="72"
+              textAnchor="start"
               className="fill-muted-foreground"
-              style={{ fontSize: "7px" }}
+              style={{ fontSize: "8px" }}
             >
               {minValue}
             </text>
             <text
-              x="82"
-              y="78"
-              textAnchor="middle"
+              x="88"
+              y="72"
+              textAnchor="end"
               className="fill-muted-foreground"
-              style={{ fontSize: "7px" }}
+              style={{ fontSize: "8px" }}
             >
               {maxValue}
             </text>
