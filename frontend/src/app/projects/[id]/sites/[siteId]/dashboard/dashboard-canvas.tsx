@@ -867,8 +867,8 @@ export function DashboardCanvas({
                         gridColumn: col,
                       }}
                       onClick={() => {
-                        // Deselect cable when clicking on empty cell
-                        if (selectedWidget?.widget_type === "cable") {
+                        // Deselect any widget when clicking on empty cell
+                        if (selectedWidget) {
                           setSelectedWidget(null);
                         }
                       }}
@@ -886,7 +886,7 @@ export function DashboardCanvas({
                     zIndex: 0,
                     width: gridRef.current.clientWidth - 16,
                     height: gridRef.current.clientHeight - 16,
-                    pointerEvents: isEditMode ? 'auto' : 'none',
+                    pointerEvents: 'none',
                     overflow: 'hidden',
                   }}
                 >

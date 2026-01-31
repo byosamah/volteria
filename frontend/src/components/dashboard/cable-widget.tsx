@@ -168,7 +168,7 @@ export function CableWidget({
   };
 
   return (
-    <g className="cable-widget">
+    <g className="cable-widget" style={{ pointerEvents: isEditMode ? 'auto' : 'none' }}>
       {/* Invisible wider click area for easier selection in edit mode */}
       {isEditMode && (
         <path
