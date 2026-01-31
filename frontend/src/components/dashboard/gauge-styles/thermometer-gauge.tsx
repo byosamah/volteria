@@ -30,13 +30,18 @@ export function ThermometerGauge({
   showValue,
   showMinMax,
 }: ThermometerGaugeProps) {
+  // Tube dimensions
+  const tubeTop = 8;
+  const tubeBottom = 72;
+  const tubeHeight = tubeBottom - tubeTop;
+
   // Calculate fill height (from bulb up)
-  const tubeHeight = 70;
   const fillHeight = (percentage / 100) * tubeHeight;
+  const fillTop = tubeBottom - fillHeight;
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center gap-1">
-      <svg viewBox="0 0 40 100" className="w-full h-full max-w-[50px] max-h-[160px]">
+    <div className="w-full h-full flex flex-col items-center justify-center min-h-0">
+      <svg viewBox="0 0 50 100" className="w-full h-full flex-1" preserveAspectRatio="xMidYMid meet">
         <defs>
           {/* Gradient for glass effect */}
           <linearGradient id="thermGradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -48,8 +53,8 @@ export function ThermometerGauge({
 
         {/* Thermometer tube background */}
         <rect
-          x="15"
-          y="8"
+          x="20"
+          y={tubeTop}
           width="10"
           height={tubeHeight}
           rx="5"
@@ -57,17 +62,17 @@ export function ThermometerGauge({
         />
 
         {/* Bulb background */}
-        <circle cx="20" cy="85" r="12" fill="#e5e7eb" />
+        <circle cx="25" cy="82" r="10" fill="#e5e7eb" />
 
         {/* Fill in bulb (always full) */}
-        <circle cx="20" cy="85" r="10" fill={fillColor} />
+        <circle cx="25" cy="82" r="8" fill={fillColor} />
 
         {/* Fill in tube */}
         <rect
-          x="16"
-          y={78 - fillHeight}
+          x="21"
+          y={fillTop}
           width="8"
-          height={fillHeight + 2}
+          height={fillHeight + 12}
           rx="4"
           fill={fillColor}
           style={{ transition: "y 0.5s ease-out, height 0.5s ease-out" }}
@@ -75,8 +80,8 @@ export function ThermometerGauge({
 
         {/* Glass overlay */}
         <rect
-          x="15"
-          y="8"
+          x="20"
+          y={tubeTop}
           width="10"
           height={tubeHeight}
           rx="5"
@@ -85,20 +90,20 @@ export function ThermometerGauge({
 
         {/* Scale marks */}
         <g stroke="#9ca3af" strokeWidth="1">
-          <line x1="26" y1="12" x2="30" y2="12" />
-          <line x1="26" y1="28" x2="28" y2="28" />
-          <line x1="26" y1="44" x2="30" y2="44" />
-          <line x1="26" y1="60" x2="28" y2="60" />
-          <line x1="26" y1="76" x2="30" y2="76" />
+          <line x1="31" y1={tubeTop + 2} x2="35" y2={tubeTop + 2} />
+          <line x1="31" y1={tubeTop + tubeHeight * 0.25} x2="33" y2={tubeTop + tubeHeight * 0.25} />
+          <line x1="31" y1={tubeTop + tubeHeight * 0.5} x2="35" y2={tubeTop + tubeHeight * 0.5} />
+          <line x1="31" y1={tubeTop + tubeHeight * 0.75} x2="33" y2={tubeTop + tubeHeight * 0.75} />
+          <line x1="31" y1={tubeBottom - 2} x2="35" y2={tubeBottom - 2} />
         </g>
 
         {/* Min/Max labels */}
         {showMinMax && (
           <g>
-            <text x="32" y="80" className="fill-muted-foreground" style={{ fontSize: "6px" }}>
+            <text x="38" y={tubeBottom} className="fill-muted-foreground" style={{ fontSize: "7px" }}>
               {minValue}
             </text>
-            <text x="32" y="14" className="fill-muted-foreground" style={{ fontSize: "6px" }}>
+            <text x="38" y={tubeTop + 5} className="fill-muted-foreground" style={{ fontSize: "7px" }}>
               {maxValue}
             </text>
           </g>
@@ -106,14 +111,14 @@ export function ThermometerGauge({
       </svg>
 
       {/* Value and label below */}
-      <div className="text-center">
+      <div className="text-center w-full">
         {showValue && (
           <p className="text-sm font-semibold">
             {value} <span className="text-xs text-muted-foreground">{unit}</span>
           </p>
         )}
         {label && (
-          <p className="text-xs text-muted-foreground truncate max-w-full">{label}</p>
+          <p className="text-xs text-muted-foreground truncate px-1">{label}</p>
         )}
       </div>
     </div>

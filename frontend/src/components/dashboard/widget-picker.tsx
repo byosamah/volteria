@@ -15,7 +15,7 @@ import {
   Activity,
   Zap,
   Type,
-  Fuel,
+  Hash,
 } from "lucide-react";
 
 interface WidgetPickerProps {
@@ -34,7 +34,7 @@ const WIDGET_TYPES = [
     id: "value_display",
     name: "Value",
     description: "Single metric display",
-    icon: Gauge,
+    icon: Hash,
   },
   {
     id: "chart",
@@ -64,7 +64,7 @@ const WIDGET_TYPES = [
     id: "gauge",
     name: "Gauge",
     description: "Tank, dial, or bar gauge",
-    icon: Fuel,
+    icon: Gauge,
   },
 ];
 

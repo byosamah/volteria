@@ -7,8 +7,6 @@
  * Supports horizontal and vertical orientations.
  */
 
-import { cn } from "@/lib/utils";
-
 interface BarGaugeProps {
   percentage: number;
   value: string;
@@ -89,14 +87,14 @@ function HorizontalBar({
   showMinMax,
 }: BarProps) {
   return (
-    <div className="w-full h-full flex flex-col justify-center gap-2 px-2">
+    <div className="w-full h-full flex flex-col justify-center gap-1 px-2">
       {/* Label and value */}
       <div className="flex items-center justify-between">
         {label && (
           <p className="text-xs text-muted-foreground truncate">{label}</p>
         )}
         {showValue && (
-          <p className="text-sm font-semibold ml-auto">
+          <p className="text-sm font-semibold ml-auto whitespace-nowrap">
             {value} <span className="text-xs text-muted-foreground">{unit}</span>
           </p>
         )}
@@ -104,7 +102,7 @@ function HorizontalBar({
 
       {/* Bar container */}
       <div className="w-full">
-        <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
+        <div className="relative h-5 bg-gray-200 rounded-full overflow-hidden">
           {/* Fill */}
           <div
             className="absolute inset-y-0 left-0 rounded-full"
@@ -118,7 +116,7 @@ function HorizontalBar({
 
         {/* Min/Max labels */}
         {showMinMax && (
-          <div className="flex justify-between mt-1">
+          <div className="flex justify-between mt-0.5">
             <span className="text-[10px] text-muted-foreground">{minValue}</span>
             <span className="text-[10px] text-muted-foreground">{maxValue}</span>
           </div>
@@ -140,18 +138,18 @@ function VerticalBar({
   showMinMax,
 }: BarProps) {
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center gap-2">
-      <div className="flex items-end gap-2 h-full max-h-[150px]">
+    <div className="w-full h-full flex flex-col items-center justify-center min-h-0 gap-1">
+      <div className="flex items-end gap-2 flex-1 min-h-0 w-full justify-center">
         {/* Min/Max column */}
         {showMinMax && (
-          <div className="flex flex-col justify-between h-full py-1">
+          <div className="flex flex-col justify-between h-full py-1 text-right">
             <span className="text-[10px] text-muted-foreground">{maxValue}</span>
             <span className="text-[10px] text-muted-foreground">{minValue}</span>
           </div>
         )}
 
         {/* Bar container */}
-        <div className="relative w-6 h-full bg-gray-200 rounded-full overflow-hidden">
+        <div className="relative w-8 h-full bg-gray-200 rounded-full overflow-hidden">
           {/* Fill */}
           <div
             className="absolute inset-x-0 bottom-0 rounded-full"
@@ -165,14 +163,14 @@ function VerticalBar({
       </div>
 
       {/* Value and label below */}
-      <div className="text-center">
+      <div className="text-center w-full">
         {showValue && (
           <p className="text-sm font-semibold">
             {value} <span className="text-xs text-muted-foreground">{unit}</span>
           </p>
         )}
         {label && (
-          <p className="text-xs text-muted-foreground truncate max-w-full">{label}</p>
+          <p className="text-xs text-muted-foreground truncate px-1">{label}</p>
         )}
       </div>
     </div>

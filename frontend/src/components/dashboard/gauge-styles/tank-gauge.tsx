@@ -4,7 +4,7 @@
  * Tank Gauge
  *
  * Displays value as liquid level in a tank container.
- * Supports vertical/horizontal orientation and cylinder/rectangular shapes.
+ * Supports vertical cylinder and rectangular shapes.
  * Modern flat design with subtle 3D depth.
  */
 
@@ -32,26 +32,9 @@ export function TankGauge({
   fillColor,
   showValue,
   showMinMax,
-  orientation,
   shape,
 }: TankGaugeProps) {
-  if (orientation === "horizontal") {
-    return (
-      <HorizontalTank
-        percentage={percentage}
-        value={value}
-        unit={unit}
-        minValue={minValue}
-        maxValue={maxValue}
-        label={label}
-        fillColor={fillColor}
-        showValue={showValue}
-        showMinMax={showMinMax}
-        shape={shape}
-      />
-    );
-  }
-
+  // Only vertical orientation is supported now
   return (
     <VerticalTank
       percentage={percentage}
@@ -95,26 +78,38 @@ function VerticalTank({
 }: TankProps) {
   const isCylinder = shape === "cylinder";
 
+  // Tank dimensions in viewBox coordinates
+  const tankLeft = 10;
+  const tankRight = 50;
+  const tankTop = 8;
+  const tankBottom = 88;
+  const tankWidth = tankRight - tankLeft;
+  const tankHeight = tankBottom - tankTop;
+
+  // Fill height calculation
+  const fillHeight = (percentage / 100) * tankHeight;
+  const fillTop = tankBottom - fillHeight;
+
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center gap-1">
-      <svg viewBox="0 0 60 100" className="w-full h-full max-w-[80px] max-h-[160px]">
+    <div className="w-full h-full flex flex-col items-center justify-center min-h-0">
+      <svg viewBox="0 0 70 100" className="w-full h-full flex-1" preserveAspectRatio="xMidYMid meet">
         <defs>
           {/* Gradient for 3D effect */}
-          <linearGradient id={`tankGradient-${isCylinder ? 'cyl' : 'rect'}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient id="tankGradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="rgba(0,0,0,0.1)" />
             <stop offset="50%" stopColor="rgba(255,255,255,0.1)" />
             <stop offset="100%" stopColor="rgba(0,0,0,0.1)" />
           </linearGradient>
           {/* Clip path for fill */}
-          <clipPath id="verticalTankClip">
+          <clipPath id="tankClip">
             {isCylinder ? (
               <>
-                <ellipse cx="30" cy="90" rx="25" ry="6" />
-                <rect x="5" y="10" width="50" height="80" />
-                <ellipse cx="30" cy="10" rx="25" ry="6" />
+                <ellipse cx="30" cy={tankBottom} rx={tankWidth / 2} ry="5" />
+                <rect x={tankLeft} y={tankTop} width={tankWidth} height={tankHeight} />
+                <ellipse cx="30" cy={tankTop} rx={tankWidth / 2} ry="5" />
               </>
             ) : (
-              <rect x="5" y="5" width="50" height="90" rx="4" />
+              <rect x={tankLeft} y={tankTop} width={tankWidth} height={tankHeight} rx="3" />
             )}
           </clipPath>
         </defs>
@@ -123,53 +118,53 @@ function VerticalTank({
         {isCylinder ? (
           <g>
             {/* Cylinder body */}
-            <rect x="5" y="10" width="50" height="80" fill="#e5e7eb" />
+            <rect x={tankLeft} y={tankTop} width={tankWidth} height={tankHeight} fill="#e5e7eb" />
             {/* Top ellipse */}
-            <ellipse cx="30" cy="10" rx="25" ry="6" fill="#d1d5db" />
+            <ellipse cx="30" cy={tankTop} rx={tankWidth / 2} ry="5" fill="#d1d5db" />
             {/* Bottom ellipse */}
-            <ellipse cx="30" cy="90" rx="25" ry="6" fill="#e5e7eb" />
+            <ellipse cx="30" cy={tankBottom} rx={tankWidth / 2} ry="5" fill="#e5e7eb" />
           </g>
         ) : (
-          <rect x="5" y="5" width="50" height="90" rx="4" fill="#e5e7eb" />
+          <rect x={tankLeft} y={tankTop} width={tankWidth} height={tankHeight} rx="3" fill="#e5e7eb" />
         )}
 
         {/* Fill level */}
-        <g clipPath="url(#verticalTankClip)">
+        <g clipPath="url(#tankClip)">
           <rect
-            x="5"
-            y={95 - (percentage * 0.85)}
-            width="50"
-            height={percentage * 0.85}
+            x={tankLeft}
+            y={fillTop}
+            width={tankWidth}
+            height={fillHeight + 5}
             fill={fillColor}
             style={{ transition: "y 0.5s ease-out, height 0.5s ease-out" }}
           />
         </g>
 
         {/* Liquid surface line (for cylinder) */}
-        {isCylinder && percentage > 0 && (
+        {isCylinder && percentage > 0 && percentage < 100 && (
           <ellipse
             cx="30"
-            cy={95 - (percentage * 0.85)}
-            rx="25"
+            cy={fillTop}
+            rx={tankWidth / 2 - 1}
             ry="4"
             fill={fillColor}
             style={{
               transition: "cy 0.5s ease-out",
-              filter: "brightness(1.1)"
+              filter: "brightness(1.15)"
             }}
           />
         )}
 
         {/* 3D overlay */}
-        <rect x="5" y="10" width="50" height="80" fill={`url(#tankGradient-${isCylinder ? 'cyl' : 'rect'})`} />
+        <rect x={tankLeft} y={tankTop} width={tankWidth} height={tankHeight} fill="url(#tankGradient)" />
 
-        {/* Min/Max labels */}
+        {/* Min/Max labels on the right side */}
         {showMinMax && (
           <g>
-            <text x="58" y="92" className="fill-muted-foreground" style={{ fontSize: "6px" }}>
+            <text x="58" y={tankBottom + 3} className="fill-muted-foreground" style={{ fontSize: "7px" }}>
               {minValue}
             </text>
-            <text x="58" y="14" className="fill-muted-foreground" style={{ fontSize: "6px" }}>
+            <text x="58" y={tankTop + 5} className="fill-muted-foreground" style={{ fontSize: "7px" }}>
               {maxValue}
             </text>
           </g>
@@ -177,124 +172,14 @@ function VerticalTank({
       </svg>
 
       {/* Value and label below */}
-      <div className="text-center">
+      <div className="text-center w-full">
         {showValue && (
           <p className="text-sm font-semibold">
             {value} <span className="text-xs text-muted-foreground">{unit}</span>
           </p>
         )}
         {label && (
-          <p className="text-xs text-muted-foreground truncate max-w-full">{label}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function HorizontalTank({
-  percentage,
-  value,
-  unit,
-  minValue,
-  maxValue,
-  label,
-  fillColor,
-  showValue,
-  showMinMax,
-  shape,
-}: TankProps) {
-  const isCylinder = shape === "cylinder";
-
-  return (
-    <div className="w-full h-full flex flex-col items-center justify-center gap-1">
-      <svg viewBox="0 0 100 50" className="w-full h-full max-w-[180px] max-h-[90px]">
-        <defs>
-          {/* Gradient for 3D effect */}
-          <linearGradient id="hTankGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.15)" />
-            <stop offset="50%" stopColor="rgba(0,0,0,0)" />
-            <stop offset="100%" stopColor="rgba(0,0,0,0.1)" />
-          </linearGradient>
-          {/* Clip path for fill */}
-          <clipPath id="horizontalTankClip">
-            {isCylinder ? (
-              <>
-                <ellipse cx="10" cy="25" rx="6" ry="20" />
-                <rect x="10" y="5" width="80" height="40" />
-                <ellipse cx="90" cy="25" rx="6" ry="20" />
-              </>
-            ) : (
-              <rect x="5" y="5" width="90" height="40" rx="4" />
-            )}
-          </clipPath>
-        </defs>
-
-        {/* Tank body background */}
-        {isCylinder ? (
-          <g>
-            {/* Cylinder body */}
-            <rect x="10" y="5" width="80" height="40" fill="#e5e7eb" />
-            {/* Left ellipse */}
-            <ellipse cx="10" cy="25" rx="6" ry="20" fill="#d1d5db" />
-            {/* Right ellipse */}
-            <ellipse cx="90" cy="25" rx="6" ry="20" fill="#e5e7eb" />
-          </g>
-        ) : (
-          <rect x="5" y="5" width="90" height="40" rx="4" fill="#e5e7eb" />
-        )}
-
-        {/* Fill level */}
-        <g clipPath="url(#horizontalTankClip)">
-          <rect
-            x="5"
-            y="5"
-            width={(percentage * 0.9)}
-            height="40"
-            fill={fillColor}
-            style={{ transition: "width 0.5s ease-out" }}
-          />
-        </g>
-
-        {/* Liquid edge (for cylinder) */}
-        {isCylinder && percentage > 0 && (
-          <ellipse
-            cx={5 + (percentage * 0.9)}
-            cy="25"
-            rx="4"
-            ry="18"
-            fill={fillColor}
-            style={{
-              transition: "cx 0.5s ease-out",
-              filter: "brightness(1.1)"
-            }}
-          />
-        )}
-
-        {/* 3D overlay */}
-        <rect x="10" y="5" width="80" height="40" fill="url(#hTankGradient)" />
-
-        {/* Min/Max labels */}
-        {showMinMax && (
-          <g>
-            <text x="5" y="48" className="fill-muted-foreground" style={{ fontSize: "6px" }}>
-              {minValue}
-            </text>
-            <text x="88" y="48" textAnchor="end" className="fill-muted-foreground" style={{ fontSize: "6px" }}>
-              {maxValue}
-            </text>
-          </g>
-        )}
-      </svg>
-
-      {/* Value and label below */}
-      <div className="text-center">
-        {showValue && (
-          <p className="text-sm font-semibold">
-            {value} <span className="text-xs text-muted-foreground">{unit}</span>
-          </p>
-        )}
-        {label && (
-          <p className="text-xs text-muted-foreground truncate max-w-full">{label}</p>
+          <p className="text-xs text-muted-foreground truncate px-1">{label}</p>
         )}
       </div>
     </div>

@@ -1341,7 +1341,6 @@ export function WidgetConfigDialog({
   const GAUGE_STYLES = [
     { id: "dial", name: "Dial", description: "Circular speedometer with needle" },
     { id: "tank_vertical", name: "V-Tank", description: "Vertical cylinder tank" },
-    { id: "tank_horizontal", name: "H-Tank", description: "Horizontal cylinder tank" },
     { id: "tank_rectangular", name: "Rect", description: "Rectangular container" },
     { id: "thermometer", name: "Thermo", description: "Thermometer style" },
     { id: "bar_horizontal", name: "H-Bar", description: "Horizontal progress bar" },
@@ -1366,9 +1365,12 @@ export function WidgetConfigDialog({
         case "dial":
           return (
             <svg viewBox="0 0 40 40" className="w-8 h-8">
-              <path d="M 6 30 A 14 14 0 1 1 34 30" fill="none" stroke="#e5e7eb" strokeWidth="4" strokeLinecap="round" />
-              <path d="M 6 30 A 14 14 0 0 1 28 10" fill="none" stroke={previewColor} strokeWidth="4" strokeLinecap="round" />
-              <circle cx="20" cy="20" r="2" fill="#374151" />
+              {/* Background arc - 270 degree sweep from bottom-left to bottom-right */}
+              <path d="M 8 32 A 14 14 0 1 1 32 32" fill="none" stroke="#e5e7eb" strokeWidth="4" strokeLinecap="round" />
+              {/* Filled arc - 60% of 270 degrees */}
+              <path d="M 8 32 A 14 14 0 0 1 20 6" fill="none" stroke={previewColor} strokeWidth="4" strokeLinecap="round" />
+              {/* Center dot */}
+              <circle cx="20" cy="22" r="2" fill="#374151" />
             </svg>
           );
         case "tank_vertical":
@@ -1376,13 +1378,6 @@ export function WidgetConfigDialog({
             <svg viewBox="0 0 24 40" className="w-6 h-10">
               <rect x="4" y="4" width="16" height="32" rx="4" fill="#e5e7eb" />
               <rect x="4" y={4 + 32 * (1 - previewPct / 100)} width="16" height={32 * previewPct / 100} rx="2" fill={previewColor} />
-            </svg>
-          );
-        case "tank_horizontal":
-          return (
-            <svg viewBox="0 0 40 24" className="w-10 h-6">
-              <rect x="4" y="4" width="32" height="16" rx="4" fill="#e5e7eb" />
-              <rect x="4" y="4" width={32 * previewPct / 100} height="16" rx="2" fill={previewColor} />
             </svg>
           );
         case "tank_rectangular":

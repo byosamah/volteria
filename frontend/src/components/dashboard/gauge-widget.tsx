@@ -6,7 +6,6 @@
  * Displays register values as visual gauges with multiple styles:
  * - dial: Circular speedometer with needle
  * - tank_vertical: Vertical cylinder (fuel tank)
- * - tank_horizontal: Horizontal cylinder
  * - tank_rectangular: Square/rectangular container
  * - thermometer: Classic thermometer bar
  * - bar_horizontal: Simple horizontal progress bar
@@ -38,7 +37,7 @@ interface Widget {
 }
 
 export interface GaugeWidgetConfig {
-  gauge_style?: "dial" | "tank_vertical" | "tank_horizontal" | "tank_rectangular" | "thermometer" | "bar_horizontal" | "bar_vertical";
+  gauge_style?: "dial" | "tank_vertical" | "tank_rectangular" | "thermometer" | "bar_horizontal" | "bar_vertical";
   device_id?: string;
   register_name?: string;
   min_value?: number;
@@ -138,8 +137,6 @@ export const GaugeWidget = memo(function GaugeWidget({ widget, liveData, isEditM
         return <DialGauge {...gaugeProps} />;
       case "tank_vertical":
         return <TankGauge {...gaugeProps} orientation="vertical" shape="cylinder" />;
-      case "tank_horizontal":
-        return <TankGauge {...gaugeProps} orientation="horizontal" shape="cylinder" />;
       case "tank_rectangular":
         return <TankGauge {...gaugeProps} orientation="vertical" shape="rectangular" />;
       case "thermometer":

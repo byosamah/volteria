@@ -40,8 +40,8 @@ export function DialGauge({
   // Calculate arc paths
   const { backgroundPath, fillPath, needleRotation } = useMemo(() => {
     const cx = 50;
-    const cy = 50;
-    const radius = 40;
+    const cy = 45; // Moved up slightly to make room for labels
+    const radius = 35;
 
     // Convert angles to radians (SVG uses clockwise from 3 o'clock)
     const toRadians = (deg: number) => ((deg - 90) * Math.PI) / 180;
@@ -79,8 +79,8 @@ export function DialGauge({
   }, [percentage, startAngle, sweepAngle]);
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center">
-      <svg viewBox="0 0 100 100" className="w-full h-full max-w-[200px] max-h-[200px]">
+    <div className="w-full h-full flex flex-col items-center justify-center min-h-0">
+      <svg viewBox="0 0 100 95" className="w-full h-full flex-1" preserveAspectRatio="xMidYMid meet">
         {/* Background arc */}
         <path
           d={backgroundPath}
@@ -101,17 +101,17 @@ export function DialGauge({
         />
 
         {/* Needle */}
-        <g transform={`rotate(${needleRotation} 50 50)`} style={{ transition: "transform 0.5s ease-out" }}>
+        <g transform={`rotate(${needleRotation} 50 45)`} style={{ transition: "transform 0.5s ease-out" }}>
           <line
             x1="50"
-            y1="50"
+            y1="45"
             x2="50"
-            y2="18"
+            y2="15"
             stroke="#374151"
             strokeWidth="2"
             strokeLinecap="round"
           />
-          <circle cx="50" cy="50" r="4" fill="#374151" />
+          <circle cx="50" cy="45" r="4" fill="#374151" />
         </g>
 
         {/* Center value */}
@@ -119,20 +119,20 @@ export function DialGauge({
           <g>
             <text
               x="50"
-              y="65"
+              y="58"
               textAnchor="middle"
-              className="text-lg font-bold fill-foreground"
-              style={{ fontSize: "12px" }}
+              className="font-bold fill-foreground"
+              style={{ fontSize: "10px" }}
             >
               {value}
             </text>
             {unit && (
               <text
                 x="50"
-                y="75"
+                y="68"
                 textAnchor="middle"
                 className="fill-muted-foreground"
-                style={{ fontSize: "8px" }}
+                style={{ fontSize: "7px" }}
               >
                 {unit}
               </text>
@@ -140,24 +140,24 @@ export function DialGauge({
           </g>
         )}
 
-        {/* Min/Max labels */}
+        {/* Min/Max labels - positioned at arc ends */}
         {showMinMax && (
           <g>
             <text
-              x="15"
-              y="82"
+              x="18"
+              y="78"
               textAnchor="middle"
               className="fill-muted-foreground"
-              style={{ fontSize: "6px" }}
+              style={{ fontSize: "7px" }}
             >
               {minValue}
             </text>
             <text
-              x="85"
-              y="82"
+              x="82"
+              y="78"
               textAnchor="middle"
               className="fill-muted-foreground"
-              style={{ fontSize: "6px" }}
+              style={{ fontSize: "7px" }}
             >
               {maxValue}
             </text>
@@ -167,7 +167,7 @@ export function DialGauge({
 
       {/* Label below */}
       {label && (
-        <p className="text-xs text-muted-foreground mt-1 text-center truncate max-w-full">
+        <p className="text-xs text-muted-foreground text-center truncate w-full px-1">
           {label}
         </p>
       )}
