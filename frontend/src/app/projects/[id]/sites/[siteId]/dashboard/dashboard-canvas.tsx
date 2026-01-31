@@ -15,7 +15,13 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Save, X, Plus, ChevronLeft, Settings2, Trash2 } from "lucide-react";
+import { Pencil, Save, X, Plus, ChevronLeft, Settings2, Trash2, Grid3X3 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import { IconWidget } from "@/components/dashboard/icon-widget";
@@ -25,8 +31,46 @@ import { AlarmListWidget } from "@/components/dashboard/alarm-list-widget";
 import { StatusIndicatorWidget } from "@/components/dashboard/status-indicator-widget";
 import { TextWidget } from "@/components/dashboard/text-widget";
 import { GaugeWidget } from "@/components/dashboard/gauge-widget";
+import { CableWidget, CableConfig } from "@/components/dashboard/cable-widget";
 import { WidgetPicker } from "@/components/dashboard/widget-picker";
 import { WidgetConfigDialog } from "@/components/dashboard/widget-config-dialog";
+
+// Grid density configuration
+type GridDensity = "coarse" | "medium" | "fine";
+
+const GRID_DENSITY_CONFIG: Record<GridDensity, { columns: number; rows: number; cellHeight: number; label: string }> = {
+  coarse: { columns: 6, rows: 4, cellHeight: 150, label: "Coarse (6×4)" },
+  medium: { columns: 12, rows: 8, cellHeight: 100, label: "Medium (12×8)" },
+  fine: { columns: 24, rows: 16, cellHeight: 50, label: "Fine (24×16)" },
+};
+
+// Get density from grid dimensions
+function getDensityFromDimensions(cols: number, rows: number): GridDensity {
+  if (cols <= 6 && rows <= 4) return "coarse";
+  if (cols <= 12 && rows <= 8) return "medium";
+  return "fine";
+}
+
+// Scale widgets when changing density
+function scaleWidgetsForDensity(
+  widgets: Widget[],
+  fromDensity: GridDensity,
+  toDensity: GridDensity
+): Widget[] {
+  const fromConfig = GRID_DENSITY_CONFIG[fromDensity];
+  const toConfig = GRID_DENSITY_CONFIG[toDensity];
+
+  const colScale = toConfig.columns / fromConfig.columns;
+  const rowScale = toConfig.rows / fromConfig.rows;
+
+  return widgets.map(w => ({
+    ...w,
+    grid_col: Math.max(1, Math.min(Math.round((w.grid_col - 1) * colScale) + 1, toConfig.columns)),
+    grid_row: Math.max(1, Math.min(Math.round((w.grid_row - 1) * rowScale) + 1, toConfig.rows)),
+    grid_width: Math.max(1, Math.min(Math.round(w.grid_width * colScale), toConfig.columns)),
+    grid_height: Math.max(1, Math.min(Math.round(w.grid_height * rowScale), toConfig.rows)),
+  }));
+}
 
 // Types
 interface Dashboard {
@@ -119,10 +163,34 @@ export function DashboardCanvas({
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // Dashboard config with defaults
-  const gridColumns = dashboard?.grid_columns || 12;
-  const gridRows = dashboard?.grid_rows || 8;
+  // Cable placement state
+  const [cablePlacementMode, setCablePlacementMode] = useState(false);
+  const [cablePendingStart, setCablePendingStart] = useState<{ x: number; y: number } | null>(null);
+  const [draggingCableEndpoint, setDraggingCableEndpoint] = useState<{
+    widgetId: string;
+    endpoint: "start" | "end";
+  } | null>(null);
+
+  // Grid density state - derive initial from saved dashboard dimensions
+  const initialDensity = getDensityFromDimensions(
+    dashboard?.grid_columns || 12,
+    dashboard?.grid_rows || 8
+  );
+  const [gridDensity, setGridDensity] = useState<GridDensity>(initialDensity);
+
+  // Dashboard config - computed from density
+  const densityConfig = GRID_DENSITY_CONFIG[gridDensity];
+  const gridColumns = densityConfig.columns;
+  const gridRows = densityConfig.rows;
   const refreshInterval = (dashboard?.refresh_interval_seconds || 30) * 1000;
+
+  // Handle density change with widget scaling
+  const handleDensityChange = useCallback((newDensity: GridDensity) => {
+    if (newDensity === gridDensity) return;
+    const scaledWidgets = scaleWidgetsForDensity(widgets, gridDensity, newDensity);
+    setWidgets(scaledWidgets);
+    setGridDensity(newDensity);
+  }, [gridDensity, widgets]);
 
   // Fetch live data
   const fetchLiveData = useCallback(async () => {
@@ -176,11 +244,13 @@ export function DashboardCanvas({
   const saveWidgets = async () => {
     setIsSaving(true);
     try {
-      // Batch update all widget positions
+      // Batch update all widget positions and dashboard grid config
       const response = await fetch(`/api/dashboards/${siteId}/widgets/batch`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          grid_columns: gridColumns,
+          grid_rows: gridRows,
           widgets: widgets.map((w) => ({
             id: w.id,
             grid_row: w.grid_row,
@@ -207,17 +277,27 @@ export function DashboardCanvas({
   // Cancel edit mode
   const cancelEdit = () => {
     setWidgets(initialWidgets); // Reset to original
+    setGridDensity(initialDensity); // Reset grid density
+    setCablePlacementMode(false); // Reset cable placement
+    setCablePendingStart(null);
     setIsEditMode(false);
     setSelectedWidget(null);
   };
 
   // Add new widget
   const addWidget = async (widgetType: string) => {
+    // Special handling for cable widget - enter placement mode
+    if (widgetType === "cable") {
+      setCablePlacementMode(true);
+      setCablePendingStart(null);
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Find first empty position
       const occupiedCells = new Set(
-        widgets.flatMap((w) => {
+        widgets.filter(w => w.widget_type !== "cable").flatMap((w) => {
           const cells = [];
           for (let r = w.grid_row; r < w.grid_row + w.grid_height; r++) {
             for (let c = w.grid_col; c < w.grid_col + w.grid_width; c++) {
@@ -285,6 +365,79 @@ export function DashboardCanvas({
       setIsLoading(false);
     }
   };
+
+  // Create cable widget from two points
+  const createCableWidget = async (startX: number, startY: number, endX: number, endY: number) => {
+    setIsLoading(true);
+    try {
+      const defaultConfig: CableConfig = {
+        startX,
+        startY,
+        endX,
+        endY,
+        pathStyle: "straight",
+        color: "#6b7280",
+        thickness: 3,
+        animated: false,
+        animationSpeed: "medium",
+      };
+
+      const response = await fetch(`/api/dashboards/${siteId}/widgets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          widget_type: "cable",
+          grid_row: 1,
+          grid_col: 1,
+          grid_width: 1,
+          grid_height: 1,
+          config: defaultConfig,
+          z_index: -1, // Cables render behind other widgets
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to add cable");
+      }
+
+      const newWidget = await response.json();
+      setWidgets([...widgets, newWidget]);
+
+      // Reset cable placement mode
+      setCablePlacementMode(false);
+      setCablePendingStart(null);
+
+      // Open config dialog for new cable
+      setSelectedWidget(newWidget);
+      setShowConfigDialog(true);
+    } catch (error) {
+      console.error("Failed to add cable:", error);
+      alert("Failed to add cable. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle click on grid for cable placement
+  const handleGridClick = useCallback((e: ReactMouseEvent) => {
+    if (!cablePlacementMode || !gridRef.current) return;
+
+    const rect = gridRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Convert to grid coordinates
+    const gridX = (x / rect.width) * gridColumns;
+    const gridY = (y / rect.height) * gridRows;
+
+    if (!cablePendingStart) {
+      // First click - set start point
+      setCablePendingStart({ x: gridX, y: gridY });
+    } else {
+      // Second click - create cable
+      createCableWidget(cablePendingStart.x, cablePendingStart.y, gridX, gridY);
+    }
+  }, [cablePlacementMode, cablePendingStart, gridColumns, gridRows]);
 
   // Delete widget
   const deleteWidget = async (widgetId: string) => {
@@ -354,8 +507,8 @@ export function DashboardCanvas({
     e.preventDefault();
   };
 
-  // Resize handlers
-  const CELL_HEIGHT = 80;
+  // Resize handlers - use density-based cell height
+  const CELL_HEIGHT = isEditMode ? Math.round(densityConfig.cellHeight * 0.8) : densityConfig.cellHeight;
   const GAP = 8;
 
   const handleResizeStart = (e: ReactMouseEvent, widget: Widget) => {
@@ -450,6 +603,8 @@ export function DashboardCanvas({
         return <TextWidget {...commonProps} />;
       case "gauge":
         return <GaugeWidget {...commonProps} />;
+      case "cable":
+        return null; // Cables render in SVG overlay
       default:
         return (
           <div className="p-4 text-center text-muted-foreground">
@@ -458,6 +613,18 @@ export function DashboardCanvas({
         );
     }
   };
+
+  // Get cable widgets and their live values
+  const cableWidgets = widgets.filter(w => w.widget_type === "cable");
+  const regularWidgets = widgets.filter(w => w.widget_type !== "cable");
+
+  // Get live value for a cable's animation source
+  const getCableLiveValue = useCallback((config: CableConfig): number | null => {
+    if (!config.animationSource || !liveData) return null;
+    const { deviceId, registerName } = config.animationSource;
+    const registerData = liveData.registers[deviceId]?.[registerName];
+    return registerData?.value ?? null;
+  }, [liveData]);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -493,6 +660,29 @@ export function DashboardCanvas({
         <div className="flex gap-2">
           {isEditMode ? (
             <>
+              {/* Grid Density Selector */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="min-h-[44px]">
+                    <Grid3X3 className="h-4 w-4 mr-2" />
+                    {densityConfig.label}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(Object.keys(GRID_DENSITY_CONFIG) as GridDensity[]).map((density) => (
+                    <DropdownMenuItem
+                      key={density}
+                      onClick={() => handleDensityChange(density)}
+                      className={cn(
+                        "cursor-pointer",
+                        density === gridDensity && "bg-accent"
+                      )}
+                    >
+                      {GRID_DENSITY_CONFIG[density].label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 variant="outline"
                 onClick={cancelEdit}
@@ -525,6 +715,31 @@ export function DashboardCanvas({
         </div>
       </div>
 
+      {/* Cable placement mode banner */}
+      {cablePlacementMode && (
+        <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse" />
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              {cablePendingStart
+                ? "Click to place cable end point"
+                : "Click to place cable start point"}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setCablePlacementMode(false);
+              setCablePendingStart(null);
+            }}
+          >
+            <X className="h-4 w-4 mr-1" />
+            Cancel
+          </Button>
+        </div>
+      )}
+
       {/* Main content area */}
       <div className="flex gap-4">
         {/* Dashboard grid */}
@@ -555,10 +770,9 @@ export function DashboardCanvas({
               style={{
                 display: "grid",
                 gridTemplateColumns: `repeat(${gridColumns}, 1fr)`,
-                // Taller rows in view mode (no sidebar = wider grid, so scale height too)
-                gridTemplateRows: `repeat(${gridRows}, ${isEditMode ? 80 : 100}px)`,
-                gap: "8px",
-                minHeight: `${gridRows * (isEditMode ? 80 : 100) + (gridRows - 1) * 8 + 16}px`,
+                gridTemplateRows: `repeat(${gridRows}, ${CELL_HEIGHT}px)`,
+                gap: `${GAP}px`,
+                minHeight: `${gridRows * CELL_HEIGHT + (gridRows - 1) * GAP + 16}px`,
               }}
             >
               {/* Grid cells (visible in edit mode) */}
@@ -580,8 +794,63 @@ export function DashboardCanvas({
                   );
                 })}
 
-              {/* Widgets */}
-              {widgets.map((widget) => (
+              {/* SVG overlay for cables - positioned absolute over the grid */}
+              <svg
+                className="absolute inset-2 pointer-events-none"
+                style={{ zIndex: 0 }}
+                onClick={cablePlacementMode ? handleGridClick : undefined}
+              >
+                {/* Render existing cables */}
+                {cableWidgets.map((widget) => {
+                  const config = widget.config as unknown as CableConfig;
+                  const containerWidth = gridRef.current?.clientWidth || 800;
+                  const containerHeight = gridRef.current?.clientHeight || 600;
+                  return (
+                    <CableWidget
+                      key={widget.id}
+                      config={config}
+                      gridColumns={gridColumns}
+                      gridRows={gridRows}
+                      containerWidth={containerWidth - 16}
+                      containerHeight={containerHeight - 16}
+                      liveValue={getCableLiveValue(config)}
+                      isEditMode={isEditMode}
+                      onStartDrag={() => {
+                        setSelectedWidget(widget);
+                        setDraggingCableEndpoint({ widgetId: widget.id, endpoint: "start" });
+                      }}
+                      onEndDrag={() => {
+                        setSelectedWidget(widget);
+                        setDraggingCableEndpoint({ widgetId: widget.id, endpoint: "end" });
+                      }}
+                    />
+                  );
+                })}
+
+                {/* Cable placement preview - show pending start point */}
+                {cablePlacementMode && cablePendingStart && (
+                  <circle
+                    cx={(cablePendingStart.x / gridColumns) * ((gridRef.current?.clientWidth || 800) - 16)}
+                    cy={(cablePendingStart.y / gridRows) * ((gridRef.current?.clientHeight || 600) - 16)}
+                    r={8}
+                    fill="#6b7280"
+                    stroke="white"
+                    strokeWidth={2}
+                    className="animate-pulse"
+                  />
+                )}
+              </svg>
+
+              {/* Click overlay for cable placement */}
+              {cablePlacementMode && (
+                <div
+                  className="absolute inset-2 z-50 cursor-crosshair"
+                  onClick={handleGridClick}
+                />
+              )}
+
+              {/* Regular widgets */}
+              {regularWidgets.map((widget) => (
                 <div
                   key={widget.id}
                   className={cn(
@@ -594,13 +863,13 @@ export function DashboardCanvas({
                     gridColumn: `${widget.grid_col} / span ${widget.grid_width}`,
                     zIndex: widget.z_index,
                   }}
-                  draggable={isEditMode && !resizingWidget}
+                  draggable={isEditMode && !resizingWidget && !cablePlacementMode}
                   onDragStart={(e) => handleDragStart(e, widget)}
                 >
                   {renderWidget(widget)}
 
                   {/* Edit overlay */}
-                  {isEditMode && (
+                  {isEditMode && !cablePlacementMode && (
                     <>
                       <div className="absolute top-1 right-1 flex gap-1">
                         <button

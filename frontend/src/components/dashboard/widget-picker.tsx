@@ -16,6 +16,7 @@ import {
   Zap,
   Type,
   Hash,
+  Cable,
 } from "lucide-react";
 
 interface WidgetPickerProps {
@@ -65,6 +66,12 @@ const WIDGET_TYPES = [
     name: "Gauge",
     description: "Tank, dial, or bar gauge",
     icon: Gauge,
+  },
+  {
+    id: "cable",
+    name: "Cable",
+    description: "Connect widgets visually",
+    icon: Cable,
   },
 ];
 

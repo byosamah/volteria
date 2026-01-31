@@ -159,6 +159,8 @@ export function WidgetConfigDialog({
         return renderTextForm();
       case "gauge":
         return renderGaugeForm();
+      case "cable":
+        return renderCableForm();
       default:
         return <p className="text-muted-foreground">Unknown widget type</p>;
     }
@@ -1652,6 +1654,185 @@ export function WidgetConfigDialog({
     );
   };
 
+  // Cable form
+  const renderCableForm = () => {
+    const pathStyle = (config.pathStyle as string) || "straight";
+    const color = (config.color as string) || "#6b7280";
+    const thickness = (config.thickness as number) || 3;
+    const animated = (config.animated as boolean) || false;
+    const animationSpeed = (config.animationSpeed as string) || "medium";
+    const animationDeviceId = (config.animationSource as { deviceId?: string; registerName?: string })?.deviceId || "";
+    const animationRegisterName = (config.animationSource as { deviceId?: string; registerName?: string })?.registerName || "";
+
+    // Get registers for animation device
+    const animationDevice = devices.find((d) => d.id === animationDeviceId);
+    const animationRegisters = getDeviceRegisters(animationDevice);
+
+    return (
+      <div className="space-y-4">
+        {/* Path Style */}
+        <div className="space-y-2">
+          <Label>Cable Style</Label>
+          <Select
+            value={pathStyle}
+            onValueChange={(v) => updateConfig("pathStyle", v)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="straight">Straight Line</SelectItem>
+              <SelectItem value="curved">Curved</SelectItem>
+              <SelectItem value="orthogonal">Right Angles</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Color */}
+        <div className="space-y-2">
+          <Label>Color</Label>
+          <div className="flex gap-2">
+            <Input
+              type="color"
+              value={color}
+              onChange={(e) => updateConfig("color", e.target.value)}
+              className="w-12 h-10 p-1 cursor-pointer"
+            />
+            <Input
+              type="text"
+              value={color}
+              onChange={(e) => updateConfig("color", e.target.value)}
+              placeholder="#6b7280"
+              className="flex-1"
+            />
+          </div>
+        </div>
+
+        {/* Thickness */}
+        <div className="space-y-2">
+          <Label>Thickness ({thickness}px)</Label>
+          <input
+            type="range"
+            min={1}
+            max={8}
+            value={thickness}
+            onChange={(e) => updateConfig("thickness", parseInt(e.target.value))}
+            className="w-full"
+          />
+        </div>
+
+        {/* Animation Toggle */}
+        <div className="flex items-center justify-between">
+          <Label htmlFor="cable-animated">Animated Flow</Label>
+          <Switch
+            id="cable-animated"
+            checked={animated}
+            onCheckedChange={(v) => updateConfig("animated", v)}
+          />
+        </div>
+
+        {/* Animation Options (when enabled) */}
+        {animated && (
+          <div className="space-y-4 pl-4 border-l-2 border-muted">
+            {/* Animation Speed */}
+            <div className="space-y-2">
+              <Label>Animation Speed</Label>
+              <Select
+                value={animationSpeed}
+                onValueChange={(v) => updateConfig("animationSpeed", v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="slow">Slow</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="fast">Fast</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Animation Direction Source (optional) */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>Direction Source</Label>
+                <Popover>
+                  <PopoverTrigger>
+                    <Info className="h-4 w-4 text-muted-foreground" />
+                  </PopoverTrigger>
+                  <PopoverContent className="text-sm">
+                    <p>Optionally link to a register value.</p>
+                    <p className="mt-1 text-muted-foreground">
+                      Positive values = forward flow, negative = reverse.
+                    </p>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <Select
+                value={animationDeviceId || "none"}
+                onValueChange={(v) => {
+                  if (v === "none") {
+                    updateConfig("animationSource", undefined);
+                  } else {
+                    updateConfig("animationSource", { deviceId: v, registerName: "" });
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="No direction source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No direction source</SelectItem>
+                  {devices.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Register selection (when device selected) */}
+            {animationDeviceId && (
+              <div className="space-y-2">
+                <Label>Register</Label>
+                <Select
+                  value={animationRegisterName || ""}
+                  onValueChange={(v) => {
+                    updateConfig("animationSource", {
+                      deviceId: animationDeviceId,
+                      registerName: v,
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select register" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {animationRegisters.map((r) => (
+                      <SelectItem key={r.name} value={r.name}>
+                        {r.name} {r.unit && `(${r.unit})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Position info (read-only) */}
+        <div className="text-xs text-muted-foreground mt-4 pt-4 border-t">
+          <p>To reposition endpoints, drag the circles in edit mode.</p>
+          <p className="mt-1">
+            Start: ({(config.startX as number)?.toFixed(1) || "0"}, {(config.startY as number)?.toFixed(1) || "0"}) →
+            End: ({(config.endX as number)?.toFixed(1) || "0"}, {(config.endY as number)?.toFixed(1) || "0"})
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   // Widget type titles
   const titles: Record<string, string> = {
     icon: "Configure Image Widget",
@@ -1661,6 +1842,7 @@ export function WidgetConfigDialog({
     status_indicator: "Configure Status Indicator",
     text: "Configure Text Widget",
     gauge: "Configure Gauge Widget",
+    cable: "Configure Cable",
   };
 
   return (

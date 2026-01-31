@@ -35,6 +35,8 @@ export async function PUT(
 
     const body = await request.json();
     const updates: WidgetPositionUpdate[] = body.widgets || [];
+    const gridColumns: number | undefined = body.grid_columns;
+    const gridRows: number | undefined = body.grid_rows;
 
     if (!Array.isArray(updates) || updates.length === 0) {
       return NextResponse.json({ error: "No widget updates provided" }, { status: 400 });
@@ -49,6 +51,14 @@ export async function PUT(
 
     if (!dashboard) {
       return NextResponse.json({ error: "Dashboard not found" }, { status: 404 });
+    }
+
+    // Update dashboard grid dimensions if provided
+    if (gridColumns !== undefined && gridRows !== undefined) {
+      await supabase
+        .from("site_dashboards")
+        .update({ grid_columns: gridColumns, grid_rows: gridRows })
+        .eq("id", dashboard.id);
     }
 
     // Process each widget update
