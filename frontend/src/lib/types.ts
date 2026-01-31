@@ -95,6 +95,8 @@ export type DeviceType =
   | "temperature_humidity_sensor"   // Temperature & Humidity Sensor
   | "solar_radiation_sensor"        // Solar Radiation Sensor
   | "wind_sensor"                   // Wind Sensor
+  // Industrial equipment
+  | "belt_scale"                    // Belt Scale (conveyor scale integrators)
   // Generic
   | "other_hardware"                // Other Hardware
   // Legacy (backward compatibility)

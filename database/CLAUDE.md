@@ -95,6 +95,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 089-091 | Alarm severity | connection_alarm_severity, 'minor' level, device-specific severity |
 | 092 | Alarm improvements | condition column for threshold display |
 | 093 | Security fixes | SECURITY DEFINER functions search_path |
+| 094 | Belt scale support | belt_scale device type for conveyor integrators |
 
 ## RPC Functions
 
@@ -152,6 +153,7 @@ CHECK (device_type IN (
     'energy_meter', 'capacitor_bank',
     'fuel_level_sensor', 'fuel_flow_meter',
     'temperature_humidity_sensor', 'solar_radiation_sensor', 'wind_sensor',
+    'belt_scale',  -- Conveyor belt scale integrators
     'other_hardware',
     -- Legacy types (still valid for backwards compatibility)
     'load_meter', 'dg', 'sensor'

@@ -15,6 +15,8 @@ export const DEVICE_TYPE_OPTIONS: { value: DeviceType; label: string }[] = [
   { value: "temperature_humidity_sensor", label: "Temperature & Humidity Sensor" },
   { value: "solar_radiation_sensor", label: "Solar Radiation Sensor" },
   { value: "wind_sensor", label: "Wind Sensor" },
+  // Industrial equipment
+  { value: "belt_scale", label: "Belt Scale" },
   { value: "other_hardware", label: "Other Hardware" },
 ];
 
