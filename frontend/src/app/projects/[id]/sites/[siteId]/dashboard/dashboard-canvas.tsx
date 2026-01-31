@@ -163,9 +163,7 @@ export function DashboardCanvas({
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // Cable placement state
-  const [cablePlacementMode, setCablePlacementMode] = useState(false);
-  const [cablePendingStart, setCablePendingStart] = useState<{ x: number; y: number } | null>(null);
+  // Cable dragging state for endpoint repositioning
   const [draggingCableEndpoint, setDraggingCableEndpoint] = useState<{
     widgetId: string;
     endpoint: "start" | "end";
@@ -278,18 +276,15 @@ export function DashboardCanvas({
   const cancelEdit = () => {
     setWidgets(initialWidgets); // Reset to original
     setGridDensity(initialDensity); // Reset grid density
-    setCablePlacementMode(false); // Reset cable placement
-    setCablePendingStart(null);
     setIsEditMode(false);
     setSelectedWidget(null);
   };
 
   // Add new widget
   const addWidget = async (widgetType: string) => {
-    // Special handling for cable widget - enter placement mode
+    // Cable widget - create immediately at center with default endpoints
     if (widgetType === "cable") {
-      setCablePlacementMode(true);
-      setCablePendingStart(null);
+      createCableWidget();
       return;
     }
 
@@ -366,15 +361,16 @@ export function DashboardCanvas({
     }
   };
 
-  // Create cable widget from two points
-  const createCableWidget = async (startX: number, startY: number, endX: number, endY: number) => {
+  // Create cable widget at center with default endpoints
+  const createCableWidget = async () => {
     setIsLoading(true);
     try {
+      // Default cable: horizontal line at center
       const defaultConfig: CableConfig = {
-        startX,
-        startY,
-        endX,
-        endY,
+        startX: gridColumns * 0.3,
+        startY: gridRows * 0.5,
+        endX: gridColumns * 0.7,
+        endY: gridRows * 0.5,
         pathStyle: "straight",
         color: "#6b7280",
         thickness: 3,
@@ -403,10 +399,6 @@ export function DashboardCanvas({
       const newWidget = await response.json();
       setWidgets([...widgets, newWidget]);
 
-      // Reset cable placement mode
-      setCablePlacementMode(false);
-      setCablePendingStart(null);
-
       // Open config dialog for new cable
       setSelectedWidget(newWidget);
       setShowConfigDialog(true);
@@ -417,27 +409,6 @@ export function DashboardCanvas({
       setIsLoading(false);
     }
   };
-
-  // Handle click on grid for cable placement
-  const handleGridClick = useCallback((e: ReactMouseEvent) => {
-    if (!cablePlacementMode || !gridRef.current) return;
-
-    const rect = gridRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // Convert to grid coordinates
-    const gridX = (x / rect.width) * gridColumns;
-    const gridY = (y / rect.height) * gridRows;
-
-    if (!cablePendingStart) {
-      // First click - set start point
-      setCablePendingStart({ x: gridX, y: gridY });
-    } else {
-      // Second click - create cable
-      createCableWidget(cablePendingStart.x, cablePendingStart.y, gridX, gridY);
-    }
-  }, [cablePlacementMode, cablePendingStart, gridColumns, gridRows]);
 
   // Delete widget
   const deleteWidget = async (widgetId: string) => {
@@ -594,7 +565,7 @@ export function DashboardCanvas({
       case "value_display":
         return <ValueDisplayWidget {...commonProps} />;
       case "chart":
-        return <ChartWidget {...commonProps} siteId={siteId} />;
+        return <ChartWidget {...commonProps} siteId={siteId} cellHeight={CELL_HEIGHT} />;
       case "alarm_list":
         return <AlarmListWidget {...commonProps} siteId={siteId} />;
       case "status_indicator":
@@ -715,31 +686,6 @@ export function DashboardCanvas({
         </div>
       </div>
 
-      {/* Cable placement mode banner */}
-      {cablePlacementMode && (
-        <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-              {cablePendingStart
-                ? "Click to place cable end point"
-                : "Click to place cable start point"}
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setCablePlacementMode(false);
-              setCablePendingStart(null);
-            }}
-          >
-            <X className="h-4 w-4 mr-1" />
-            Cancel
-          </Button>
-        </div>
-      )}
-
       {/* Main content area */}
       <div className="flex gap-4">
         {/* Dashboard grid */}
@@ -798,7 +744,6 @@ export function DashboardCanvas({
               <svg
                 className="absolute inset-2 pointer-events-none"
                 style={{ zIndex: 0 }}
-                onClick={cablePlacementMode ? handleGridClick : undefined}
               >
                 {/* Render existing cables */}
                 {cableWidgets.map((widget) => {
@@ -826,28 +771,7 @@ export function DashboardCanvas({
                     />
                   );
                 })}
-
-                {/* Cable placement preview - show pending start point */}
-                {cablePlacementMode && cablePendingStart && (
-                  <circle
-                    cx={(cablePendingStart.x / gridColumns) * ((gridRef.current?.clientWidth || 800) - 16)}
-                    cy={(cablePendingStart.y / gridRows) * ((gridRef.current?.clientHeight || 600) - 16)}
-                    r={8}
-                    fill="#6b7280"
-                    stroke="white"
-                    strokeWidth={2}
-                    className="animate-pulse"
-                  />
-                )}
               </svg>
-
-              {/* Click overlay for cable placement */}
-              {cablePlacementMode && (
-                <div
-                  className="absolute inset-2 z-50 cursor-crosshair"
-                  onClick={handleGridClick}
-                />
-              )}
 
               {/* Regular widgets */}
               {regularWidgets.map((widget) => (
@@ -863,13 +787,13 @@ export function DashboardCanvas({
                     gridColumn: `${widget.grid_col} / span ${widget.grid_width}`,
                     zIndex: widget.z_index,
                   }}
-                  draggable={isEditMode && !resizingWidget && !cablePlacementMode}
+                  draggable={isEditMode && !resizingWidget}
                   onDragStart={(e) => handleDragStart(e, widget)}
                 >
                   {renderWidget(widget)}
 
                   {/* Edit overlay */}
-                  {isEditMode && !cablePlacementMode && (
+                  {isEditMode && (
                     <>
                       <div className="absolute top-1 right-1 flex gap-1">
                         <button

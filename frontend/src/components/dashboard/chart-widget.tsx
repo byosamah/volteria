@@ -68,6 +68,7 @@ interface ChartWidgetProps {
   isEditMode: boolean;
   onSelect: () => void;
   siteId: string;
+  cellHeight?: number; // Cell height from grid density
 }
 
 interface ChartDataPoint {
@@ -111,7 +112,8 @@ export const ChartWidget = memo(function ChartWidget({
   widget,
   isEditMode,
   onSelect,
-  siteId
+  siteId,
+  cellHeight = 100, // Default to medium density
 }: ChartWidgetProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,15 +123,13 @@ export const ChartWidget = memo(function ChartWidget({
   const timeRange = config.time_range || "1h";
   const aggregation = config.aggregation || "raw";
 
-  // Calculate fixed chart height to avoid ResponsiveContainer timing issues
-  // Grid uses 100px per row in view mode, 8px gap between rows
-  const ROW_HEIGHT = 100;
+  // Calculate fixed chart height based on grid cell height (passed from dashboard-canvas)
   const GAP = 8;
   const TITLE_HEIGHT = config.title ? 44 : 0; // title (24px) + margin (16px) + padding
   const CONTAINER_PADDING = 16; // p-2 = 8px * 2
   const chartHeight = Math.max(
-    100,
-    (widget.grid_height * ROW_HEIGHT) + ((widget.grid_height - 1) * GAP) - TITLE_HEIGHT - CONTAINER_PADDING
+    80,
+    (widget.grid_height * cellHeight) + ((widget.grid_height - 1) * GAP) - TITLE_HEIGHT - CONTAINER_PADDING
   );
 
   // Stable memoization using JSON string as dependency
