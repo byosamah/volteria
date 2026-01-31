@@ -47,24 +47,24 @@ interface CableWidgetProps {
   onCableDrag?: (e: React.MouseEvent) => void;
 }
 
-// Convert grid coordinates to pixel coordinates with clamping
+// Convert grid coordinates to viewBox coordinates
+// Each grid cell = 100 units in viewBox space
 function gridToPixel(
   gridX: number,
   gridY: number,
   gridColumns: number,
   gridRows: number,
-  containerWidth: number,
-  containerHeight: number
+  _containerWidth: number,  // Now viewBox width (gridColumns * 100)
+  _containerHeight: number  // Now viewBox height (gridRows * 100)
 ): { x: number; y: number } {
   // Clamp to valid grid bounds to prevent overflow
   const clampedX = Math.max(0, Math.min(gridX, gridColumns));
   const clampedY = Math.max(0, Math.min(gridY, gridRows));
 
-  const cellWidth = containerWidth / gridColumns;
-  const cellHeight = containerHeight / gridRows;
+  // Map directly to viewBox coordinates (100 units per grid cell)
   return {
-    x: clampedX * cellWidth,
-    y: clampedY * cellHeight,
+    x: clampedX * 100,
+    y: clampedY * 100,
   };
 }
 

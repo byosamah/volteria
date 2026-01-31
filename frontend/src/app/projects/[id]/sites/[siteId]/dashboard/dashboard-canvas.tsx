@@ -879,13 +879,15 @@ export function DashboardCanvas({
                 })}
 
               {/* SVG overlay for cables - positioned absolute over the grid */}
-              {cableWidgets.length > 0 && gridMounted && gridRef.current && (
+              {cableWidgets.length > 0 && gridMounted && (
                 <svg
                   className="absolute inset-2"
+                  viewBox={`0 0 ${gridColumns * 100} ${gridRows * 100}`}
+                  preserveAspectRatio="none"
                   style={{
                     zIndex: 0,
-                    width: gridRef.current.clientWidth - 16,
-                    height: gridRef.current.clientHeight - 16,
+                    width: "calc(100% - 16px)",
+                    height: "calc(100% - 16px)",
                     pointerEvents: 'none',
                     overflow: 'hidden',
                   }}
@@ -893,9 +895,9 @@ export function DashboardCanvas({
                   {/* Render existing cables */}
                   {cableWidgets.map((widget) => {
                     const config = widget.config as unknown as CableConfig;
-                    // Use actual grid container dimensions (minus padding)
-                    const containerWidth = gridRef.current!.clientWidth - 16;
-                    const containerHeight = gridRef.current!.clientHeight - 16;
+                    // Use viewBox dimensions (gridColumns * 100 by gridRows * 100)
+                    const containerWidth = gridColumns * 100;
+                    const containerHeight = gridRows * 100;
                     return (
                       <CableWidget
                         key={widget.id}
