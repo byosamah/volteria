@@ -45,6 +45,7 @@ const TIME_RANGES = [
 // Chart data point types
 interface ConnectionStatusPoint {
   timestamp: string;
+  timestampMs: number; // Numeric timestamp for time-based X-axis scale
   time: string; // Formatted time for display
   status: 0 | 1; // 0 = offline, 1 = online
   isOnline: boolean;
@@ -157,15 +158,15 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
     offlineEvents: number;
   } | null>(null);
 
-  // Calculate offline periods for ReferenceArea rendering
+  // Calculate offline periods for ReferenceArea rendering (using numeric timestamps for time scale)
   const offlinePeriods = useMemo(() => {
-    const periods: { start: string; end: string }[] = [];
+    const periods: { startMs: number; endMs: number }[] = [];
     for (let i = 0; i < connectionData.length; i++) {
       if (connectionData[i].status === 0) {
         // Found offline point - period ends at next point (or now if last)
-        const start = connectionData[i].timestamp;
-        const end = connectionData[i + 1]?.timestamp || new Date().toISOString();
-        periods.push({ start, end });
+        const startMs = connectionData[i].timestampMs;
+        const endMs = connectionData[i + 1]?.timestampMs || Date.now();
+        periods.push({ startMs, endMs });
       }
     }
     return periods;
@@ -409,6 +410,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 // Controller was offline at start of window - add offline point at window start
                 statusData.push({
                   timestamp: startTime.toISOString(),
+                  timestampMs: windowStartTime,
                   time: formatTime(startTime.toISOString()),
                   status: 0,
                   isOnline: false,
@@ -421,6 +423,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
               // Add initial online point at first heartbeat
               statusData.push({
                 timestamp: sortedHeartbeats[0].timestamp,
+                timestampMs: firstHeartbeatTime,
                 time: formatTime(sortedHeartbeats[0].timestamp),
                 status: 1,
                 isOnline: true,
@@ -453,6 +456,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     // Add offline point
                     statusData.push({
                       timestamp: new Date(offlineStartTime).toISOString(),
+                      timestampMs: offlineStartTime,
                       time: formatTime(new Date(offlineStartTime).toISOString()),
                       status: 0,
                       isOnline: false,
@@ -475,6 +479,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   if (offlineDurationMs >= MIN_DISCONNECTION_SECONDS * 1000) {
                     statusData.push({
                       timestamp: new Date(offlineStartTime).toISOString(),
+                      timestampMs: offlineStartTime,
                       time: formatTime(new Date(offlineStartTime).toISOString()),
                       status: 0,
                       isOnline: false,
@@ -494,6 +499,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 // Add online point at heartbeat time
                 statusData.push({
                   timestamp: hb.timestamp,
+                  timestampMs: currentTime,
                   time: formatTime(hb.timestamp),
                   status: 1,
                   isOnline: true,
@@ -514,6 +520,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 if (offlineDurationMs >= MIN_DISCONNECTION_SECONDS * 1000) {
                   statusData.push({
                     timestamp: new Date(offlineStartTime).toISOString(),
+                    timestampMs: offlineStartTime,
                     time: formatTime(new Date(offlineStartTime).toISOString()),
                     status: 0,
                     isOnline: false,
@@ -785,8 +792,11 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis
-                          dataKey="timestamp"
-                          tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} tickFormatter={formatTime} />}
+                          dataKey="timestampMs"
+                          scale="time"
+                          type="number"
+                          domain={['dataMin', 'dataMax']}
+                          tick={(props) => <CustomXAxisTick {...props} angle={xAxisProps.angle} textAnchor={xAxisProps.textAnchor} fontSize={11} tickFormatter={(ms: number) => formatTime(new Date(ms).toISOString())} />}
                           tickLine={false}
                           axisLine={false}
                           className="text-muted-foreground"
@@ -830,12 +840,12 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                             );
                           }}
                         />
-                        {/* Offline period overlays - red rectangles */}
+                        {/* Offline period overlays - red rectangles (time-proportional) */}
                         {offlinePeriods.map((period, idx) => (
                           <ReferenceArea
                             key={`offline-${idx}`}
-                            x1={period.start}
-                            x2={period.end}
+                            x1={period.startMs}
+                            x2={period.endMs}
                             y1={0}
                             y2={1}
                             fill={CHART_COLORS.offline}
@@ -853,13 +863,17 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                           dot={false}
                           activeDot={{ r: 4, fill: CHART_COLORS.online }}
                         />
-                        {/* Zoom selection overlay */}
+                        {/* Zoom selection overlay (uses numeric timestamps) */}
                         {(() => {
-                          const bounds = getRefAreaBounds(connectionData);
-                          return bounds.left && bounds.right ? (
+                          if (refIndexLeft === null || refIndexRight === null || connectionData.length === 0) {
+                            return null;
+                          }
+                          const leftMs = connectionData[Math.min(refIndexLeft, connectionData.length - 1)]?.timestampMs;
+                          const rightMs = connectionData[Math.min(refIndexRight, connectionData.length - 1)]?.timestampMs;
+                          return leftMs && rightMs ? (
                             <ReferenceArea
-                              x1={bounds.left}
-                              x2={bounds.right}
+                              x1={leftMs}
+                              x2={rightMs}
                               strokeOpacity={0.3}
                               fill="#3b82f6"
                               fillOpacity={0.3}
