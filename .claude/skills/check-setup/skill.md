@@ -48,7 +48,7 @@ journalctl -u volteria-tunnel --since "10 min ago"
 
 **Check DNS** (on Pi):
 ```bash
-host google.com
+getent hosts google.com   # Always available (glibc)
 cat /etc/resolv.conf
 ```
 
@@ -185,9 +185,10 @@ fi
 - Ethernet: NOT configured (manual per site)
 
 ### DNS Resilience
-- **Cron watchdog** (`dns-watchdog.sh`): every 5 min, `host google.com` → restart NetworkManager if broken
+- **Cron watchdog** (`dns-watchdog.sh`): every 1 min, `getent hosts google.com` → restart NetworkManager if broken
 - **Daily timer**: 1am conditional NetworkManager restart (systemd timer)
 - **Zero-impact**: Only acts when DNS is actually broken
+- **Note**: Uses `getent hosts` (always available) instead of `host` (requires dnsutils package)
 
 ---
 
@@ -476,7 +477,7 @@ ping -c 3 google.com
 | Setup script must run as root | System-level changes (users, services, network) |
 | Serial from /proc/cpuinfo | Unique Pi identifier, survives reflash |
 | WiFi connection name detected dynamically :140 | Varies between OS images |
-| DNS watchdog zero-impact when healthy | Only acts if `host google.com` fails |
+| DNS watchdog zero-impact when healthy | Only acts if `getent hosts google.com` fails |
 | SSH tunnel port unique per controller | Prevents port conflicts on central server |
 | Heartbeat timeout 5 min in wizard | Allows slow first boot + registration |
 | Config auto-generated (not downloaded) | Setup script creates from registration response |
@@ -505,7 +506,7 @@ ping -c 3 google.com
 | 5 | SSH setup fails | Port allocated? | Check `ssh_port` in controllers table |
 | 6 | Tunnel test fails | Tunnel active? | `systemctl status volteria-tunnel` on Pi |
 | 6 | Services not active | Crash logs? | `journalctl -u volteria-device -n 50` |
-| 6 | Cloud comm fails | DNS on Pi? | `host google.com` / check resolv.conf |
+| 6 | Cloud comm fails | DNS on Pi? | `getent hosts google.com` / check resolv.conf |
 | 6 | Config not synced | Site assigned? | Config only syncs after site assignment |
 
 ### Post-Wizard Issues
@@ -640,3 +641,24 @@ On some Seeed reComputer images, GPIO16 (UPS power loss detection) is not access
 The 4G modem manager package is `modemmanager` (no hyphen), not `modem-manager`.
 
 **Fixed in**: commit 86261d3 (setup-controller.sh)
+
+### DNS Watchdog Used Missing Command (FIXED)
+
+The `dns-watchdog.sh` script used `host google.com`, but `host` requires `dnsutils` package which is NOT installed on minimal Pi images. This caused the watchdog to trigger every minute thinking DNS was broken.
+
+**Symptoms**: 600+ DNS failures/hour, NetworkManager restarting every minute, cloud sync errors
+
+**Fixed in**: commit 82a12b5 (dns-watchdog.sh, setup-controller.sh)
+- Changed `host` → `getent hosts` (always available, part of glibc)
+- New controllers get the fix automatically via setup script
+
+**Existing controllers**: Must manually update script + set persistent DNS:
+```bash
+# Update script
+sudo cp /opt/volteria/controller/scripts/dns-watchdog.sh /opt/volteria/scripts/dns-watchdog.sh
+
+# Set persistent DNS
+WIFI_CON=$(nmcli -t -f NAME,TYPE con show --active | grep wifi | cut -d: -f1)
+sudo nmcli con mod "$WIFI_CON" ipv4.dns "8.8.8.8 8.8.4.4"
+sudo nmcli con up "$WIFI_CON"
+```

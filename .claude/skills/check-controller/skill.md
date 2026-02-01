@@ -524,7 +524,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 
 11. **Check network/DNS**:
     ```bash
-    host google.com                     # DNS working?
+    getent hosts google.com             # DNS working? (always available)
     curl -s -o /dev/null -w "%{http_code}" https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/  # Cloud reachable?
     nmcli con show --active             # Active network connections
     ```
