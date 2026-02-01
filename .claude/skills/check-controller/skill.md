@@ -552,6 +552,12 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
     # All services should have /run/volteria - if one is missing, that's the bug
     ```
 
+16. **Clear old logs after fix** (for clean verification):
+    ```bash
+    sudo journalctl --rotate && sudo journalctl --vacuum-time=1s
+    # Then monitor for new issues with a clean slate
+    ```
+
 ### Common Issues
 
 | Symptom | Check | Fix |
