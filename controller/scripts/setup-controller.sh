@@ -192,7 +192,7 @@ Description=Conditional network restart if DNS is broken
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c 'if ! host google.com > /dev/null 2>&1; then systemctl restart NetworkManager; logger "1am network restart: DNS was broken, restarted NetworkManager"; fi'
+ExecStart=/bin/bash -c 'if ! getent hosts google.com > /dev/null 2>&1; then systemctl restart NetworkManager; logger "1am network restart: DNS was broken, restarted NetworkManager"; fi'
 EOF
 
     cat > "${SYSTEMD_DIR}/volteria-network-restart.timer" << 'EOF'
