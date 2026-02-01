@@ -729,7 +729,11 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   <div className="flex-1 min-h-[200px] w-full">
                     <ResponsiveContainer width={containerDimensions?.width || 300} height={Math.max(200, (containerDimensions?.height || 300) - 60)}>
                       <AreaChart
-                        data={getZoomedData(connectionData)}
+                        data={getZoomedData(connectionData).map(point => ({
+                          ...point,
+                          onlineStatus: point.status === 1 ? 1 : null,
+                          offlineStatus: point.status === 0 ? 1 : null,
+                        }))}
                         margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
@@ -737,9 +741,13 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         onMouseLeave={handleMouseUp}
                       >
                         <defs>
-                          <linearGradient id="connectionGradient" x1="0" y1="0" x2="0" y2="1">
+                          <linearGradient id="connectionGradientOnline" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor={CHART_COLORS.online} stopOpacity={0.8}/>
                             <stop offset="95%" stopColor={CHART_COLORS.online} stopOpacity={0.1}/>
+                          </linearGradient>
+                          <linearGradient id="connectionGradientOffline" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={CHART_COLORS.offline} stopOpacity={0.6}/>
+                            <stop offset="95%" stopColor={CHART_COLORS.offline} stopOpacity={0.1}/>
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -791,12 +799,23 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         />
                         <Area
                           type="stepAfter"
-                          dataKey="status"
+                          dataKey="onlineStatus"
                           stroke={CHART_COLORS.online}
-                          fill="url(#connectionGradient)"
+                          fill="url(#connectionGradientOnline)"
                           strokeWidth={2}
                           dot={false}
                           activeDot={{ r: 4, fill: CHART_COLORS.online }}
+                          connectNulls={false}
+                        />
+                        <Area
+                          type="stepAfter"
+                          dataKey="offlineStatus"
+                          stroke={CHART_COLORS.offline}
+                          fill="url(#connectionGradientOffline)"
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, fill: CHART_COLORS.offline }}
+                          connectNulls={false}
                         />
                         {/* Zoom selection overlay */}
                         {(() => {

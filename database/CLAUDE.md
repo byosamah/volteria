@@ -96,6 +96,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 092 | Alarm improvements | condition column for threshold display |
 | 093 | Security fixes | SECURITY DEFINER functions search_path |
 | 094 | Belt scale support | belt_scale device type for conveyor integrators |
+| 095 | Controller offline alarm | pg_cron job for controller_offline alarm detection |
 
 ## RPC Functions
 
@@ -120,6 +121,32 @@ SELECT is_site_controller_online(site_id);
 ```
 
 **Cron Job**: `check-device-alarms` runs every 5 minutes (`*/5 * * * *`)
+
+### Controller Offline Alarm Functions (Migration 095)
+Automated alarm system for controllers that stop sending heartbeats.
+
+```sql
+-- Check all controllers and create/resolve alarms (runs via cron every 5 min)
+SELECT * FROM check_controller_connection_status(120);  -- 120s = 2 min timeout (4 missed heartbeats)
+
+-- Create alarm for offline controller
+SELECT create_controller_offline_alarm(site_id, controller_name, severity);
+
+-- Resolve alarm when heartbeat resumes
+SELECT resolve_controller_offline_alarm(site_id);
+
+-- Get list of offline controllers
+SELECT * FROM get_offline_controllers(120);
+
+-- Get list of online controllers (for auto-resolve)
+SELECT * FROM get_online_controllers(120);
+```
+
+**Cron Job**: `check-controller-alarms` runs every 5 minutes (`*/5 * * * *`)
+
+**Settings**: Stored in `site_master_devices` table:
+- `controller_alarm_enabled` (boolean, default true)
+- `controller_alarm_severity` (text: warning/minor/major/critical, default 'critical')
 
 ### get_historical_readings (Migration 078)
 Server-side aggregation for historical data visualization. Bypasses max_rows limit by aggregating in database.

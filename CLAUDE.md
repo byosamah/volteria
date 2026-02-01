@@ -229,6 +229,28 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-02-01)
 
+### Controller Offline Alarm + Connection Chart Fix (Database + Frontend)
+Two issues discovered during offline durability testing:
+
+**Issue 1: Controller Offline Alarm Never Triggered**
+- **Root cause**: `controller_offline` alarm type existed in schema but no cron job to detect timeout
+- **Fix**: Migration 095 adds pg_cron job `check-controller-alarms` (every 5 min)
+- **New functions**: `get_offline_controllers()`, `create_controller_offline_alarm()`, `resolve_controller_offline_alarm()`, `check_controller_connection_status()`
+- **New columns**: `site_master_devices.controller_alarm_enabled`, `site_master_devices.controller_alarm_severity`
+- **Frontend**: UI toggle now saves to DB (previously only read from template)
+- **Timeout**: 120s (2 minutes = 4 missed heartbeats)
+
+**Issue 2: Cloud Connection Chart Didn't Show Offline Gap**
+- **Root cause**: Single `Area` component with green gradient spanned continuously across offline points
+- **Fix**: Split into two Area components (online=green, offline=red) with `connectNulls={false}`
+- **File**: `frontend/src/components/charts/power-flow-chart.tsx`
+
+**Files changed**:
+- `database/migrations/095_controller_offline_alarm.sql` (new)
+- `frontend/src/components/charts/power-flow-chart.tsx`
+- `frontend/src/components/devices/master-device-list.tsx`
+- `database/CLAUDE.md`
+
 ### DNS Watchdog Fix (Controller)
 - **Issue**: `dns-watchdog.sh` used `host google.com` but `host` command not installed on Pi (requires `dnsutils` package)
 - **Effect**: Script triggered every minute thinking DNS was broken → restarted NetworkManager → caused 600+ DNS failures/hour

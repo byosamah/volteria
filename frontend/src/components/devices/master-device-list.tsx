@@ -117,6 +117,9 @@ interface MasterDevice {
   modbus_write_function?: string | null;
   calculated_fields?: { field_id: string; enabled: boolean; storage_mode: string }[] | null;
   site_level_alarms?: SiteLevelAlarm[] | null;
+  // Controller offline alarm settings (stored in DB, not template)
+  controller_alarm_enabled?: boolean | null;
+  controller_alarm_severity?: "warning" | "minor" | "major" | "critical" | null;
   // Gateway fields
   gateway_type: "netbiter" | "other" | null;
   netbiter_account_id: string | null;
@@ -530,6 +533,21 @@ export function MasterDeviceList({
         });
       }
 
+      // Override status alarm with device-stored settings if they exist
+      // Device settings take priority over template defaults
+      if (device.controller_alarm_enabled !== null && device.controller_alarm_enabled !== undefined) {
+        setEditStatusAlarm(prev => ({
+          ...prev,
+          enabled: device.controller_alarm_enabled ?? true,
+        }));
+      }
+      if (device.controller_alarm_severity) {
+        setEditStatusAlarm(prev => ({
+          ...prev,
+          offline_severity: device.controller_alarm_severity as "warning" | "minor" | "major" | "critical",
+        }));
+      }
+
       // Load ALL controller-scope calculated fields from the database
       setLoadingCalculatedFields(true);
       try {
@@ -737,6 +755,10 @@ export function MasterDeviceList({
 
         // Add site-level alarms
         updateData.site_level_alarms = editSiteLevelAlarms;
+
+        // Add controller offline alarm settings
+        updateData.controller_alarm_enabled = editStatusAlarm.enabled;
+        updateData.controller_alarm_severity = editStatusAlarm.offline_severity;
       }
 
       // Add gateway-specific fields if this is a gateway device
