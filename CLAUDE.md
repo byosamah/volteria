@@ -230,7 +230,7 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 ## Recent Updates (2026-02-01)
 
 ### Controller Offline Alarm + Connection Chart Fix (Database + Frontend)
-Two issues discovered during offline durability testing:
+Two issues discovered during offline durability testing (~5 hours offline):
 
 **Issue 1: Controller Offline Alarm Never Triggered**
 - **Root cause**: `controller_offline` alarm type existed in schema but no cron job to detect timeout
@@ -240,16 +240,33 @@ Two issues discovered during offline durability testing:
 - **Frontend**: UI toggle now saves to DB (previously only read from template)
 - **Timeout**: 120s (2 minutes = 4 missed heartbeats)
 
-**Issue 2: Cloud Connection Chart Didn't Show Offline Gap**
-- **Root cause**: Single `Area` component with green gradient spanned continuously across offline points
-- **Fix**: Split into two Area components (online=green, offline=red) with `connectNulls={false}`
-- **File**: `frontend/src/components/charts/power-flow-chart.tsx`
+**Issue 2: Cloud Connection Chart - Three Sub-Issues**
+
+*Problem A: Offline periods invisible*
+- **Root cause**: ReferenceArea overlay depended on offline data points being detected
+- **Fix**: Use ReferenceArea for red offline overlays instead of dual Area components
+
+*Problem B: Offline at window start not detected*
+- **Root cause**: Detection only checked gaps BETWEEN heartbeats, not from window start to first heartbeat
+- **Fix**: Added initial gap detection - if first heartbeat is >90s after startTime, add offline point at window start
+
+*Problem C: Offline periods appeared as tiny slivers*
+- **Root cause**: Recharts X-axis was categorical (evenly spaced data points), not time-based. 4+ hours offline compressed to 1-2 data point widths.
+- **Fix**: Use `scale="time"` `type="number"` with numeric timestamps (ms) for proportional time display
+- **Also fixed**: Downsampling was removing offline points - added preserve parameter to keep `status === 0` points
+
+**Key changes in `power-flow-chart.tsx`**:
+- Added `timestampMs` to ConnectionStatusPoint interface
+- XAxis: `dataKey="timestampMs"` + `scale="time"` + `type="number"`
+- ReferenceArea: uses numeric `startMs`/`endMs` for proper width
+- Downsample function: preserves critical state-change points
 
 **Files changed**:
 - `database/migrations/095_controller_offline_alarm.sql` (new)
 - `frontend/src/components/charts/power-flow-chart.tsx`
 - `frontend/src/components/devices/master-device-list.tsx`
 - `database/CLAUDE.md`
+- `frontend/CLAUDE.md` (added Recharts time-scale learnings)
 
 ### DNS Watchdog Fix (Controller)
 - **Issue**: `dns-watchdog.sh` used `host google.com` but `host` command not installed on Pi (requires `dnsutils` package)

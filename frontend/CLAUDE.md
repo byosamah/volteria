@@ -830,3 +830,11 @@ npx shadcn@latest add dialog
 13. **Recharts Y-axis Domain Fallback**: If Y-axis domain shows `['dataMin', 'dataMax']`, it means domain calculation found no valid numeric values - check if data is null/sparse.
 
 14. **Chart Downsampling with Sparse Data**: When downsampling multi-parameter chart data, preserve timestamps where sparse parameters have values - uniform step sampling can completely miss infrequently-logged registers.
+
+15. **Recharts Time-Based X-Axis**: Recharts X-axis is categorical by default (evenly spaced data points). For time-proportional charts, use `scale="time"` `type="number"` with numeric timestamps (ms) - otherwise periods with few data points appear compressed regardless of actual duration.
+
+16. **Downsampling Must Preserve Critical Points**: When downsampling chart data, preserve critical state-change points (e.g., offline markers with `status === 0`) - uniform step sampling can remove important events that should always be visible.
+
+17. **Time-Series Window Start Detection**: Time-series charts must detect gaps at window START (startTime to first data point), not just between consecutive points - otherwise offline/gap periods at the beginning of the view are invisible.
+
+<!-- Updated: 2026-02-01 - Added Recharts time scale, downsampling preservation, window start detection -->
