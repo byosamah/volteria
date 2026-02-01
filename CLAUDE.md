@@ -227,6 +227,16 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
 
+## Recent Updates (2026-02-01)
+
+### DNS Watchdog Fix (Controller)
+- **Issue**: `dns-watchdog.sh` used `host google.com` but `host` command not installed on Pi (requires `dnsutils` package)
+- **Effect**: Script triggered every minute thinking DNS was broken → restarted NetworkManager → caused 600+ DNS failures/hour
+- **Fix**: Changed to `getent hosts google.com` (always available, part of glibc)
+- **Also fixed**: `setup-controller.sh` 1am daily DNS check timer (same `host` → `getent` change)
+- **Manual fix for existing controllers**: Set persistent DNS via `nmcli con mod "WIFI_NAME" ipv4.dns "8.8.8.8 8.8.4.4"` + update script
+- **Files**: `controller/scripts/dns-watchdog.sh`, `controller/scripts/setup-controller.sh`
+
 ## Recent Updates (2026-01-31)
 
 ### Dashboard Cable Widget Improvements (Frontend)
