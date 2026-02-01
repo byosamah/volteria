@@ -99,9 +99,16 @@ const UPTIME_TOLERANCE_SECONDS = 60;
 
 // Helper: Downsample data for chart performance (pure function, no deps)
 // Moved outside component to prevent recreation on every render
-function downsample<T>(data: T[], maxPoints = 100): T[] {
+// preserveKey: optional key to always keep (e.g., status === 0 for offline points)
+function downsample<T>(data: T[], maxPoints = 100, preserveKey?: keyof T, preserveValue?: T[keyof T]): T[] {
   const step = Math.max(1, Math.floor(data.length / maxPoints));
-  return data.filter((_, index) => index % step === 0);
+  return data.filter((item, index) => {
+    // Always keep points matching the preserve condition (e.g., offline points)
+    if (preserveKey !== undefined && preserveValue !== undefined && item[preserveKey] === preserveValue) {
+      return true;
+    }
+    return index % step === 0;
+  });
 }
 
 // Custom tick renderer for XAxis with angle support
@@ -392,6 +399,25 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                 (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
               );
 
+              // Check if controller was offline at START of time window
+              // If first heartbeat is much later than startTime, controller was offline initially
+              const firstHeartbeatTime = new Date(sortedHeartbeats[0].timestamp).getTime();
+              const windowStartTime = startTime.getTime();
+              const initialGapSeconds = (firstHeartbeatTime - windowStartTime) / 1000;
+
+              if (initialGapSeconds > OFFLINE_THRESHOLD_SECONDS) {
+                // Controller was offline at start of window - add offline point at window start
+                statusData.push({
+                  timestamp: startTime.toISOString(),
+                  time: formatTime(startTime.toISOString()),
+                  status: 0,
+                  isOnline: false,
+                  gapSeconds: Math.floor(initialGapSeconds),
+                });
+                totalOfflineMs += initialGapSeconds * 1000;
+                offlineEvents++;
+              }
+
               // Add initial online point at first heartbeat
               statusData.push({
                 timestamp: sortedHeartbeats[0].timestamp,
@@ -507,7 +533,8 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
               const totalMs = totalOnlineMs + totalOfflineMs;
               const uptimePct = totalMs > 0 ? (totalOnlineMs / totalMs) * 100 : 100;
 
-              setConnectionData(downsample(statusData, 200));
+              // Downsample but always preserve offline points (status === 0)
+              setConnectionData(downsample(statusData, 200, "status", 0 as 0 | 1));
               setConnectionStats({
                 uptimePct,
                 totalOnlineMinutes: Math.floor(totalOnlineMs / 60000),
