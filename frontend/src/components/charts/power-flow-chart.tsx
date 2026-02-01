@@ -11,7 +11,7 @@
  * Supports multiple time ranges: 1h, 6h, 24h, 7d.
  */
 
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -149,6 +149,20 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
     totalOfflineMinutes: number;
     offlineEvents: number;
   } | null>(null);
+
+  // Calculate offline periods for ReferenceArea rendering
+  const offlinePeriods = useMemo(() => {
+    const periods: { start: string; end: string }[] = [];
+    for (let i = 0; i < connectionData.length; i++) {
+      if (connectionData[i].status === 0) {
+        // Found offline point - period ends at next point (or now if last)
+        const start = connectionData[i].timestamp;
+        const end = connectionData[i + 1]?.timestamp || new Date().toISOString();
+        periods.push({ start, end });
+      }
+    }
+    return periods;
+  }, [connectionData]);
 
   const [loading, setLoading] = useState(true);
   const [selectedRange, setSelectedRange] = useState(1); // Default: 1 hour (reduces initial load)
@@ -729,11 +743,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                   <div className="flex-1 min-h-[200px] w-full">
                     <ResponsiveContainer width={containerDimensions?.width || 300} height={Math.max(200, (containerDimensions?.height || 300) - 60)}>
                       <AreaChart
-                        data={getZoomedData(connectionData).map(point => ({
-                          ...point,
-                          onlineStatus: point.status === 1 ? 1 : null,
-                          offlineStatus: point.status === 0 ? 1 : null,
-                        }))}
+                        data={getZoomedData(connectionData)}
                         margin={{ top: 5, right: 10, left: 0, bottom: xAxisProps.height - 20 }}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
@@ -741,13 +751,9 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                         onMouseLeave={handleMouseUp}
                       >
                         <defs>
-                          <linearGradient id="connectionGradientOnline" x1="0" y1="0" x2="0" y2="1">
+                          <linearGradient id="connectionGradient" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor={CHART_COLORS.online} stopOpacity={0.8}/>
                             <stop offset="95%" stopColor={CHART_COLORS.online} stopOpacity={0.1}/>
-                          </linearGradient>
-                          <linearGradient id="connectionGradientOffline" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={CHART_COLORS.offline} stopOpacity={0.6}/>
-                            <stop offset="95%" stopColor={CHART_COLORS.offline} stopOpacity={0.1}/>
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -797,25 +803,28 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                             );
                           }}
                         />
+                        {/* Offline period overlays - red rectangles */}
+                        {offlinePeriods.map((period, idx) => (
+                          <ReferenceArea
+                            key={`offline-${idx}`}
+                            x1={period.start}
+                            x2={period.end}
+                            y1={0}
+                            y2={1}
+                            fill={CHART_COLORS.offline}
+                            fillOpacity={0.3}
+                            stroke={CHART_COLORS.offline}
+                            strokeOpacity={0.6}
+                          />
+                        ))}
                         <Area
                           type="stepAfter"
-                          dataKey="onlineStatus"
+                          dataKey="status"
                           stroke={CHART_COLORS.online}
-                          fill="url(#connectionGradientOnline)"
+                          fill="url(#connectionGradient)"
                           strokeWidth={2}
                           dot={false}
                           activeDot={{ r: 4, fill: CHART_COLORS.online }}
-                          connectNulls={false}
-                        />
-                        <Area
-                          type="stepAfter"
-                          dataKey="offlineStatus"
-                          stroke={CHART_COLORS.offline}
-                          fill="url(#connectionGradientOffline)"
-                          strokeWidth={2}
-                          dot={false}
-                          activeDot={{ r: 4, fill: CHART_COLORS.offline }}
-                          connectNulls={false}
                         />
                         {/* Zoom selection overlay */}
                         {(() => {
