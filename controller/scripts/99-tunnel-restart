@@ -1,0 +1,19 @@
+#!/bin/bash
+# NetworkManager dispatcher: restart SSH tunnel on connectivity change
+# Placed in /etc/NetworkManager/dispatcher.d/
+#
+# This script reduces SSH tunnel recovery time from ~100s to ~10s by
+# proactively restarting the tunnel when network connectivity is restored,
+# rather than waiting for SSH keep-alive timeouts.
+
+IFACE=$1
+ACTION=$2
+
+# Only care about connectivity changes
+if [ "$ACTION" = "connectivity-change" ]; then
+    # CONNECTIVITY_STATE: none, portal, limited, full
+    if [ "$CONNECTIVITY_STATE" = "FULL" ]; then
+        logger -t "volteria-tunnel" "Network connectivity restored, restarting tunnel"
+        systemctl restart volteria-tunnel.service
+    fi
+fi

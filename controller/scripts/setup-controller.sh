@@ -620,6 +620,13 @@ register_controller() {
             if systemctl is-active --quiet volteria-tunnel.service; then
                 log_info "SSH tunnel started successfully"
                 log_info "Remote access: ssh -p ${SSH_PORT} voltadmin@${CENTRAL_SERVER}"
+
+                # Install network-aware tunnel restart (reduces recovery time from ~100s to ~10s)
+                if [ -f "${INSTALL_DIR}/controller/scripts/99-tunnel-restart" ]; then
+                    cp "${INSTALL_DIR}/controller/scripts/99-tunnel-restart" /etc/NetworkManager/dispatcher.d/
+                    chmod +x /etc/NetworkManager/dispatcher.d/99-tunnel-restart
+                    log_info "Installed network-aware tunnel restart dispatcher"
+                fi
             else
                 log_warn "SSH tunnel failed to start - check journalctl -u volteria-tunnel for details"
             fi
