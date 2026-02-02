@@ -227,6 +227,18 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
 
+## Recent Updates (2026-02-02)
+
+### Network-Aware SSH Tunnel Restart (Controller)
+- **Issue**: After WiFi reconnects, live registers page takes ~100s to work (while logging works immediately)
+- **Root cause**: SSH tunnel uses keep-alive timeout (30s interval × 3 failures = 90s) + 10s restart delay
+- **Why logging worked**: Logging uses direct HTTPS to Supabase (instant reconnect), live registers use SSH tunnel through DO server
+- **Fix**: Added NetworkManager dispatcher script (`99-tunnel-restart`) that restarts tunnel immediately on connectivity change
+- **Result**: Recovery time reduced from ~100s to ~10s
+- **Fallback**: Original 100s timeout still works if dispatcher fails
+- **Files**: `controller/scripts/99-tunnel-restart`, `controller/scripts/setup-controller.sh`
+- **Deploy to existing controller**: Script was manually installed via SSH
+
 ## Recent Updates (2026-02-01)
 
 ### Controller Offline Alarm + Connection Chart Fix (Database + Frontend)
