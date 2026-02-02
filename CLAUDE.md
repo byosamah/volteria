@@ -213,7 +213,12 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 - Identify controller by serial number (user may provide serial or controller ID)
 - Multiple controllers will exist in the future — always query the right one
+- **SSH username varies** — query `ssh_username` from controllers table (voltadmin vs volteria)
 - Pi WiFi connection name varies by OS image — never hardcode, detect with `nmcli`
+
+**DO Server Requirements** (for tunnel auto-recovery):
+- Sudoers entry: `volteria ALL=(root) NOPASSWD: /usr/bin/fuser` in `/etc/sudoers.d/volteria`
+- TCP keepalives: `ClientAliveInterval 30`, `ClientAliveCountMax 3` in `/etc/ssh/sshd_config`
 
 ## Never Do
 
@@ -229,15 +234,26 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-02-02)
 
-### Network-Aware SSH Tunnel Restart (Controller)
-- **Issue**: After WiFi reconnects, live registers page takes ~100s to work (while logging works immediately)
-- **Root cause**: SSH tunnel uses keep-alive timeout (30s interval × 3 failures = 90s) + 10s restart delay
-- **Why logging worked**: Logging uses direct HTTPS to Supabase (instant reconnect), live registers use SSH tunnel through DO server
-- **Fix**: Added NetworkManager dispatcher script (`99-tunnel-restart`) that restarts tunnel immediately on connectivity change
-- **Result**: Recovery time reduced from ~100s to ~10s
-- **Fallback**: Original 100s timeout still works if dispatcher fails
-- **Files**: `controller/scripts/99-tunnel-restart`, `controller/scripts/setup-controller.sh`
-- **Deploy to existing controller**: Script was manually installed via SSH
+### Tunnel Auto-Recovery with Server Cleanup (Controller)
+- **Issue**: After WiFi reconnects, tunnel stayed broken with "remote port forwarding failed" errors
+- **Root cause**: DO server held stale SSH connection in CLOSE_WAIT state, blocking the port for hours
+- **Previous fix (NetworkManager dispatcher)**: Failed because event-driven approach unreliable
+- **New fix**: Cron-based watchdog that detects port forwarding failures and cleans up server
+- **Watchdog logic** (`tunnel-watchdog.sh`):
+  1. Check if SSH process running (pgrep)
+  2. Check journalctl for "remote port forwarding failed" in last 2 minutes
+  3. If detected: SSH to DO server → `sudo fuser -k PORT/tcp` → restart tunnel
+- **Server setup**: Added `/etc/sudoers.d/volteria` with `volteria ALL=(root) NOPASSWD: /usr/bin/fuser`
+- **Result**: Tunnel recovers within 2 minutes of WiFi reconnect (vs never before)
+- **Files**: `controller/scripts/tunnel-watchdog.sh`
+
+### Faster Controller Offline Alarms (Database)
+- **Issue**: 7-8 minute delay between controller going offline and alarm notification
+- **Root cause**: Cron job ran every 5 minutes + 2 minute timeout = 7 min worst case
+- **Fix**: Migration 096 reduces cron interval from 5 min to 2 min
+- **Also added**: Mark all site devices offline when controller goes offline (immediate feedback)
+- **Result**: Alarm delay reduced to 3-4 minutes
+- **Files**: `database/migrations/096_faster_controller_alarm_check.sql`
 
 ## Recent Updates (2026-02-01)
 
