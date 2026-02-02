@@ -63,10 +63,11 @@ BEGIN
 
         IF v_alarm_id IS NOT NULL THEN
             -- NEW: Mark all devices offline when controller goes offline
-            UPDATE public.site_devices
+            -- Use table alias to avoid ambiguity with return column 'site_id'
+            UPDATE public.site_devices sd
             SET is_online = false
-            WHERE site_id = v_controller.site_id
-              AND is_online = true;
+            WHERE sd.site_id = v_controller.site_id
+              AND sd.is_online = true;
 
             GET DIAGNOSTICS v_device_count = ROW_COUNT;
 
