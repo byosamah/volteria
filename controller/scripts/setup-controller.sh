@@ -621,11 +621,15 @@ register_controller() {
                 log_info "SSH tunnel started successfully"
                 log_info "Remote access: ssh -p ${SSH_PORT} voltadmin@${CENTRAL_SERVER}"
 
-                # Install network-aware tunnel restart (reduces recovery time from ~100s to ~10s)
-                if [ -f "${INSTALL_DIR}/controller/scripts/99-tunnel-restart" ]; then
-                    cp "${INSTALL_DIR}/controller/scripts/99-tunnel-restart" /etc/NetworkManager/dispatcher.d/
-                    chmod +x /etc/NetworkManager/dispatcher.d/99-tunnel-restart
-                    log_info "Installed network-aware tunnel restart dispatcher"
+                # Install tunnel watchdog (cron-based, runs every minute)
+                if [ -f "${INSTALL_DIR}/controller/scripts/tunnel-watchdog.sh" ]; then
+                    cp "${INSTALL_DIR}/controller/scripts/tunnel-watchdog.sh" /usr/local/bin/
+                    chmod +x /usr/local/bin/tunnel-watchdog.sh
+                    # Replace placeholder port with actual port
+                    sed -i "s/TUNNEL_PORT=10000/TUNNEL_PORT=${SSH_PORT}/" /usr/local/bin/tunnel-watchdog.sh
+                    # Add to crontab (remove existing entry first to avoid duplicates)
+                    (crontab -l 2>/dev/null | grep -v tunnel-watchdog; echo "* * * * * /usr/local/bin/tunnel-watchdog.sh") | crontab -
+                    log_info "Installed tunnel watchdog (1-minute recovery)"
                 fi
             else
                 log_warn "SSH tunnel failed to start - check journalctl -u volteria-tunnel for details"
