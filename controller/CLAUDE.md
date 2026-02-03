@@ -379,6 +379,21 @@ python-dotenv>=1.0.0
 
 ## Key Architecture Decisions
 
+### Device Type Enum
+`controller/common/config.py` DeviceType enum must include ALL device types from database/frontend.
+- Controller **skips devices** with unrecognized device_type (won't poll, log, or sync)
+- When adding new types to frontend/database, also add to this enum
+- Types only affect control logic classification, not Modbus communication
+
+**Current types** (as of 2026-02-03):
+- Power: `inverter`, `wind_turbine`, `bess`
+- Generators: `diesel_generator_controller`, `diesel_generator`, `gas_generator_controller`
+- Metering: `energy_meter`, `capacitor_bank`
+- Sensors: `fuel_level_sensor`, `fuel_flow_meter`, `temperature_humidity_sensor`, `solar_radiation_sensor`, `wind_sensor`
+- Industrial: `belt_scale`
+- Generic: `other_hardware`
+- Legacy: `load_meter`, `dg`, `sensor`
+
 ### Config Hot-Reload
 - Services compare config content hash every 15 seconds
 - Atomic file writes prevent partial reads (write to .tmp, then rename)

@@ -170,6 +170,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 8. **Setup script auto-updates**: Controller setup clones from main — code fixes are automatically available to new controllers after push
 9. **Config readers use SharedState**: All code reading device settings (services, CLI scripts) must use `get_config()` from `common.state` — never hardcode paths
 10. **Debug HTTP errors by tracing full path**: Browser → Nginx → Frontend API → Backend → Database. Don't assume error source — check each hop.
+11. **Device types must be synced**: When adding new device types to frontend/database, also add to `controller/common/config.py` DeviceType enum — controller skips devices with unrecognized types
 
 ## Key Architecture Decisions
 
@@ -231,6 +232,16 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER create tables without enabling RLS
 - NEVER leave Supabase security advisor warnings unaddressed
 - NEVER ask user for controller SSH passwords — read from controllers table
+- NEVER add device types to frontend/database without also adding to `controller/common/config.py` DeviceType enum
+
+## Recent Updates (2026-02-03)
+
+### Device Type Sync (Controller)
+- **Issue**: Controller skipped devices with modern device_type values (e.g., `diesel_generator`)
+- **Root cause**: `DeviceType` enum in `controller/common/config.py` only had 5 legacy types
+- **Fix**: Added all modern device types to match database/frontend
+- **Types added**: `wind_turbine`, `bess`, `diesel_generator_controller`, `diesel_generator`, `gas_generator_controller`, `energy_meter`, `capacitor_bank`, `fuel_level_sensor`, `fuel_flow_meter`, `solar_radiation_sensor`, `wind_sensor`, `belt_scale`, `other_hardware`
+- **Rule**: When adding new device types, update ALL THREE places: database constraint, frontend constants, controller enum
 
 ## Recent Updates (2026-02-02)
 
