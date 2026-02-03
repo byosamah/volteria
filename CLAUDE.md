@@ -236,6 +236,25 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 
 ## Recent Updates (2026-02-03)
 
+### Exponential Backoff for Offline Devices (Controller)
+- **Issue**: CPU spiked 50-100% when device offline — controller hammered 107 registers × 3 retries × 3s timeout
+- **Root cause**: No backoff when device unreachable, polling continued at full speed
+- **Fix**: Added exponential backoff at device level in `device_manager.py`
+- **Backoff sequence**: 5s → 10s → 20s → 40s → 60s (max) between retry attempts
+- **Reset**: Backoff resets immediately when device comes back online (first successful read)
+- **Files**: `controller/services/device/device_manager.py`, `register_reader.py`, `service.py`
+
+### Supervisor Systemd Fix (Existing Controllers)
+- **Issue**: CPU spikes persisted because supervisor kept crashing and restarting all services
+- **Root cause**: `volteria-supervisor.service` missing `/run/volteria` in `ReadWritePaths` (already fixed in repo 2026-01-28)
+- **Why it happened**: Controller set up before fix was added; systemd files only copied during initial setup, not on `git pull`
+- **Manual fix for existing controllers**:
+  ```bash
+  sudo cp /opt/volteria/controller/systemd/volteria-supervisor.service /etc/systemd/system/
+  sudo systemctl daemon-reload && sudo systemctl restart volteria-supervisor
+  ```
+- **Future controllers**: Automatically get fix (setup script copies from repo)
+
 ### Device Type Sync (Controller)
 - **Issue**: Controller skipped devices with modern device_type values (e.g., `diesel_generator`)
 - **Root cause**: `DeviceType` enum in `controller/common/config.py` only had 5 legacy types
