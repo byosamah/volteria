@@ -32,12 +32,32 @@ class SafeModeType(str, Enum):
 
 
 class DeviceType(str, Enum):
-    """Device types"""
+    """Device types - must match database/frontend types"""
+    # Power generation
     INVERTER = "inverter"
+    WIND_TURBINE = "wind_turbine"
+    BESS = "bess"
+    # Generator controllers
+    DIESEL_GENERATOR_CONTROLLER = "diesel_generator_controller"
+    DIESEL_GENERATOR = "diesel_generator"
+    GAS_GENERATOR_CONTROLLER = "gas_generator_controller"
+    # Metering
+    ENERGY_METER = "energy_meter"
+    CAPACITOR_BANK = "capacitor_bank"
+    # Sensors
+    FUEL_LEVEL_SENSOR = "fuel_level_sensor"
+    FUEL_FLOW_METER = "fuel_flow_meter"
+    TEMPERATURE_HUMIDITY_SENSOR = "temperature_humidity_sensor"
+    SOLAR_RADIATION_SENSOR = "solar_radiation_sensor"
+    WIND_SENSOR = "wind_sensor"
+    # Industrial
+    BELT_SCALE = "belt_scale"
+    # Generic
+    OTHER_HARDWARE = "other_hardware"
+    # Legacy (backwards compatibility)
     LOAD_METER = "load_meter"
     DG = "dg"
     SENSOR = "sensor"
-    TEMPERATURE_HUMIDITY_SENSOR = "temperature_humidity_sensor"
 
 
 class Protocol(str, Enum):
