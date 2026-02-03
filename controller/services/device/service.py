@@ -281,6 +281,16 @@ class DeviceService:
                     if not self._running:
                         break
 
+                    # Skip if device is in backoff (exponential backoff for offline devices)
+                    remaining = self.device_manager.get_backoff_remaining(device.id)
+                    if remaining is not None and remaining > 0:
+                        # Only log occasionally to avoid spam (every ~10s)
+                        if int(remaining) % 10 == 0:
+                            logger.debug(
+                                f"Skipping {device.name}: backoff {remaining:.0f}s remaining"
+                            )
+                        continue
+
                     await self.register_reader.poll_device(device)
 
                 # Update shared state with readings

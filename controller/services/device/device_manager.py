@@ -5,7 +5,7 @@ Manages device discovery, status tracking, and reading aggregation.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +27,9 @@ class DeviceStatus:
     last_error: str | None = None
     consecutive_failures: int = 0
     readings: dict[str, Any] = field(default_factory=dict)
+    # Exponential backoff for offline devices
+    next_retry_at: datetime | None = None
+    backoff_seconds: int = 0
 
 
 @dataclass
@@ -53,6 +56,10 @@ class DeviceManager:
     # Number of failures before marking device offline
     OFFLINE_THRESHOLD = 3
 
+    # Exponential backoff for offline devices (reduces CPU when device unreachable)
+    INITIAL_BACKOFF_SECONDS = 5
+    MAX_BACKOFF_SECONDS = 60
+
     def __init__(self):
         self._devices: dict[str, DeviceStatus] = {}
         self._reading_buffers: dict[str, list[float]] = {}
@@ -71,6 +78,30 @@ class DeviceManager:
         """Register multiple devices"""
         for device in devices:
             self.register_device(device)
+
+    def should_poll(self, device_id: str) -> bool:
+        """
+        Check if device should be polled (respects backoff for offline devices).
+
+        Returns True if:
+        - Device not registered (let it fail naturally)
+        - Device has no backoff scheduled
+        - Backoff period has expired
+        """
+        status = self._devices.get(device_id)
+        if not status:
+            return True
+        if status.next_retry_at is None:
+            return True
+        return datetime.now(timezone.utc) >= status.next_retry_at
+
+    def get_backoff_remaining(self, device_id: str) -> float | None:
+        """Get seconds remaining in backoff period, or None if not in backoff"""
+        status = self._devices.get(device_id)
+        if not status or status.next_retry_at is None:
+            return None
+        remaining = (status.next_retry_at - datetime.now(timezone.utc)).total_seconds()
+        return max(0, remaining)
 
     async def update_reading(
         self,
@@ -110,11 +141,14 @@ class DeviceManager:
                     self._reading_buffers[buffer_key] = []
                 self._reading_buffers[buffer_key].append(value)
 
-                # Update status
+                # Update status - device is responsive
                 status.is_online = True
                 status.last_seen = now
                 status.consecutive_failures = 0
                 status.last_error = None
+                # Reset backoff on success
+                status.backoff_seconds = 0
+                status.next_retry_at = None
 
             else:
                 # Handle failure - remove stale reading for this register
@@ -128,6 +162,18 @@ class DeviceManager:
 
                 if status.consecutive_failures >= self.OFFLINE_THRESHOLD:
                     status.is_online = False
+                    # Apply exponential backoff to reduce CPU when device unreachable
+                    if status.backoff_seconds == 0:
+                        status.backoff_seconds = self.INITIAL_BACKOFF_SECONDS
+                    else:
+                        status.backoff_seconds = min(
+                            status.backoff_seconds * 2,
+                            self.MAX_BACKOFF_SECONDS
+                        )
+                    status.next_retry_at = now + timedelta(seconds=status.backoff_seconds)
+                    logger.info(
+                        f"Device {status.device_name} offline, backoff {status.backoff_seconds}s"
+                    )
 
     async def update_status(
         self,
@@ -141,18 +187,31 @@ class DeviceManager:
                 return
 
             status = self._devices[device_id]
+            now = datetime.now(timezone.utc)
 
             if success:
                 status.is_online = True
-                status.last_seen = datetime.now(timezone.utc)
+                status.last_seen = now
                 status.consecutive_failures = 0
                 status.last_error = None
+                # Reset backoff on success
+                status.backoff_seconds = 0
+                status.next_retry_at = None
             else:
                 status.consecutive_failures += 1
                 status.last_error = error
 
                 if status.consecutive_failures >= self.OFFLINE_THRESHOLD:
                     status.is_online = False
+                    # Apply exponential backoff
+                    if status.backoff_seconds == 0:
+                        status.backoff_seconds = self.INITIAL_BACKOFF_SECONDS
+                    else:
+                        status.backoff_seconds = min(
+                            status.backoff_seconds * 2,
+                            self.MAX_BACKOFF_SECONDS
+                        )
+                    status.next_retry_at = now + timedelta(seconds=status.backoff_seconds)
 
     def get_status(self, device_id: str) -> DeviceStatus | None:
         """Get device status"""

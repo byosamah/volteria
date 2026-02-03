@@ -85,6 +85,10 @@ class RegisterReader:
         Returns:
             Dict mapping register name to value
         """
+        # Skip if device is in backoff period (reduces CPU when device unreachable)
+        if not self._manager.should_poll(device.id):
+            return {}
+
         now = datetime.now(timezone.utc)
         results = {}
 
