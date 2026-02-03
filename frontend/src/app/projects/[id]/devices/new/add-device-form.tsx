@@ -270,7 +270,7 @@ export function AddDeviceForm({ projectId, templates }: AddDeviceFormProps) {
               <optgroup key={type} label={typeLabels[type] || type}>
                 {items.map((template) => (
                   <option key={template.id} value={template.id}>
-                    {template.brand} {template.model}
+                    {template.name}
                     {template.rated_power_kw && ` (${template.rated_power_kw} kW)`}
                   </option>
                 ))}
