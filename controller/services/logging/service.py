@@ -1545,6 +1545,8 @@ class LoggingService:
                 alarm_info["alarm_type"],
             )
             if count > 0:
+                if self.cloud_sync:
+                    await self.cloud_sync.resolve_alarm_in_cloud(alarm_info["alarm_type"])
                 logger.info(f"[CLOUD] Auto-resolved {count} CLOUD_SYNC_OFFLINE alarm(s)")
 
     async def _check_logging_health(self, buffer_count: int) -> None:
@@ -1602,6 +1604,8 @@ class LoggingService:
                 await self._run_db(
                     self.local_db.resolve_alarms_by_type, "LOGGING_HIGH_DRIFT",
                 )
+                if self.cloud_sync:
+                    await self.cloud_sync.resolve_alarm_in_cloud("LOGGING_HIGH_DRIFT")
                 if self._consecutive_low_drift_checks == 3:
                     logger.info("Drift recovered: auto-resolved LOGGING_HIGH_DRIFT alarms")
 
