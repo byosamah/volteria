@@ -408,11 +408,19 @@ sudo chown -R voltadmin:voltadmin /opt/volteria/.git
 cd /opt/volteria && git fetch origin main && git pull origin main
 ```
 
-If permission issues persist (e.g., `.claude` directory), update specific files only:
+If permission issues persist (e.g., `.claude` directory owned by root):
+```bash
+# Fix .claude ownership (common after manual edits or sudo operations)
+sudo chown -R voltadmin:voltadmin /opt/volteria/.claude
+
+# Then pull normally
+cd /opt/volteria && git pull origin main
+```
+
+As a last resort, update specific files only:
 ```bash
 cd /opt/volteria && git fetch origin main && git checkout origin/main -- controller/services/config/sync.py
 ```
-This bypasses problematic directories while updating the needed file.
 
 ### Reboot (Double Confirmation in UI)
 ```
@@ -884,4 +892,9 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 - **`check-logging`**: Deep dive into logging service (RAM buffer, SQLite, cloud sync, downsampling, alarm evaluation, drift tracking)
 - **`check-setup`**: Controller provisioning flow (wizard, setup script, registration, SSH tunnel setup, testing, SOL532-E16 hardware-specific setup)
 
-<!-- Updated: 2026-01-28 - Added supervisor restart loop fix, ReadWritePaths diagnostic step -->
+### Diagnostic Boundaries
+
+- **Never recommend changing per-register logging frequencies** — they are configured per-site for production use. Test registers with unusual frequencies (e.g., 5s on a static value) are intentional.
+- Focus diagnostics on service health, data flow, and errors — not config tuning.
+
+<!-- Updated: 2026-02-06 - Added .claude permission fix, logging frequency boundary, SQLite HTTP endpoint preference -->
