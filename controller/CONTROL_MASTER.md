@@ -3,64 +3,6 @@
 > This is the knowledge base for the Volteria controller architecture.
 > Reference this file when working on controller-related features.
 
-## Implementation Plan Status
-
-**Active Plan**: `.claude/plans/noble-dazzling-valley.md` (Phase 9 Walkthrough)
-**Previous Plans**: `.claude/plans/purrfect-jumping-meerkat.md`, `.claude/plans/compressed-jingling-cocke.md`
-
-### Current Phase: Phase 9 - Re-flash Controller & Follow Wizard
-- Phase 1 COMPLETE: All services validated, 17/17 tests passed
-- Phase 2 COMPLETE: Database migrations created (058, 059 existed; 068 new)
-- Phase 3 COMPLETE: `main_v2.py` entry point created and tested
-- Phase 4 COMPLETE: Reboot feature (backend + frontend + controller)
-- Phase 5 COMPLETE: Wizard already updated for 5-layer architecture
-- Phase 6 DEFERRED: OTA mechanism (lower priority)
-- Phase 6b COMPLETE: Sync widget enhancement (cloud/local dates)
-- Phase 7 COMPLETE: Deployed to Raspberry Pi, all 5 services running
-- **Phase 9 IN PROGRESS**: Re-flash controller and follow wizard
-  - Plan: `C:\Users\Hp\.claude\plans\noble-dazzling-valley.md`
-  - Hardware: Pi 5 + SD card + NVMe SSD
-  - Approach: Flash SD → Clone to NVMe → Boot from NVMe
-- Phase 8 PENDING: Retire old code (after Phase 9 validates wizard)
-
-### Wizard Fixes (2026-01-11)
-Critical gaps in wizard were discovered and fixed:
-
-1. **Real Tests API** (`/api/controllers/[controllerId]/test`)
-   - Tests now check actual heartbeat metadata instead of hardcoded `true`
-   - Verifies: service health, communication, config sync, SSH tunnel, device readings, control logic, OTA
-
-2. **Registration Verification** (Step 5: Cloud Connection)
-   - Queries database to verify controller was registered by setup script
-   - Shows green "Registration Verified" or amber "Registration Pending"
-
-3. **Config Verification** (Step 6: Verify Online)
-   - Checks `metadata.config_version` from heartbeat
-   - Shows green "Configuration Synced" or amber "Config Sync Pending"
-
-4. **SSH Setup Endpoint** - Already existed at `/api/controllers/[controllerId]/ssh-setup`
-
-**Files Modified**:
-- `frontend/src/app/api/controllers/[controllerId]/test/route.ts` (NEW)
-- `frontend/src/app/admin/controllers/wizard/steps/step-run-tests.tsx`
-- `frontend/src/app/admin/controllers/wizard/steps/step-cloud-connection.tsx`
-- `frontend/src/app/admin/controllers/wizard/steps/step-verify-online.tsx`
-
-**Next Step**: Format SD card and NVMe, run setup script, follow wizard at https://volteria.org/admin/controllers/wizard
-
-### Quick Command to Continue
-```
-Continue the controller architecture implementation plan
-```
-
-### New Entry Point
-Use `main_v2.py` for the new 5-layer architecture:
-```bash
-python main_v2.py --dry-run    # Validate config
-python main_v2.py              # Start all services
-python main_v2.py -v           # Verbose/debug mode
-```
-
 ## Quick Reference
 
 ### Service Layers (Bottom to Top)
@@ -175,20 +117,11 @@ cloud:
 ```
 
 ### Cloud Storage (3-Tier Architecture)
-| Tier | Retention | Storage | Size |
-|------|-----------|---------|------|
-| Hot | 48 hours | Supabase PostgreSQL | ~230 MB |
-| Warm | 7-90 days | Supabase PostgreSQL (partitioned) | ~2 GB |
-| Cold | 90+ days | Supabase Storage (Parquet) | ~4 GB/year |
-
-### Data Volume (80 sites, 160 registers each)
-- Per day: 115 MB (57,600 rows)
-- Per month: 3.4 GB (1.7M rows)
-- Per year: 41 GB → 4 GB with Parquet compression
-
-### Cost
-- **Supabase Pro**: $25/mo (stays flat with 3-tier architecture)
-- **No TimescaleDB needed** until 200+ sites
+| Tier | Retention | Storage |
+|------|-----------|---------|
+| Hot | 48 hours | Supabase PostgreSQL |
+| Warm | 7-90 days | Supabase PostgreSQL (partitioned) |
+| Cold | 90+ days | Supabase Storage (Parquet) |
 
 ---
 

@@ -596,7 +596,7 @@ interface CalculatedFieldDefinition {
 }
 ```
 
-## New Features (Phase 1-5)
+## Feature Pages
 
 ### Remote Control Panel (`/projects/[id]/sites/[siteId]/control`)
 - **Power Limit Slider**: 0-100% with preset buttons (0, 25, 50, 75, 100)
@@ -644,7 +644,7 @@ interface CalculatedFieldDefinition {
 - **Device Health Card**: Online/offline counts with progress bar
 - **Sync Status**: Shows "Synced Xm ago" with tooltip
 
-## New Features (Phase 6)
+## Alarm Configuration
 
 ### Site Alarm Configuration (`/projects/[id]/sites/[siteId]/alarms`)
 Site-level alarm customization page:
@@ -683,7 +683,7 @@ Reusable components for alarm management:
   - Unit display and last updated timestamp
   - Compact mode for sidebars
 
-## New Features (Phase 7)
+## Dashboard & Historical Data
 
 ### Site Dashboard System (`/projects/[id]/sites/[siteId]/dashboard`)
 Custom dashboards with drag-drop widget placement:
@@ -836,5 +836,3 @@ npx shadcn@latest add dialog
 16. **Downsampling Must Preserve Critical Points**: When downsampling chart data, preserve critical state-change points (e.g., offline markers with `status === 0`) - uniform step sampling can remove important events that should always be visible.
 
 17. **Time-Series Window Start Detection**: Time-series charts must detect gaps at window START (startTime to first data point), not just between consecutive points - otherwise offline/gap periods at the beginning of the view are invisible.
-
-<!-- Updated: 2026-02-01 - Added Recharts time scale, downsampling preservation, window start detection -->
