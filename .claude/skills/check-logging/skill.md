@@ -126,6 +126,8 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?select=alarm_ty
   -H "Authorization: Bearer SERVICE_ROLE_KEY"
 ```
 
+**Cross-check local vs cloud**: If cloud shows unresolved LOGGING_* alarms but controller SQLite has them resolved (`resolved=1`), the cloud resolve call was missed. Fix: manually PATCH the alarm in Supabase and verify `resolve_alarm_in_cloud()` is called after every `resolve_alarms_by_type()`.
+
 If issues found: list specific problems with remediations below the table.
 
 ## Remediation Guide
@@ -140,6 +142,13 @@ If issues found: list specific problems with remediations below the table.
 | Empty batches | All filtered | Lower `logging_frequency` values |
 | LOGGING_HIGH_DRIFT alarms | Blocking SQLite on event loop | Ensure all `local_db` calls use `_run_db()` wrapper (run_in_executor). Threshold is 5000ms. |
 | Drift alarms accumulating | No auto-resolve | After 3 healthy checks, alarms auto-resolve. If not resolving, check `_consecutive_low_drift_checks` logic |
+| Alarm resolved locally but stuck in cloud | Missing `resolve_alarm_in_cloud()` call | Every `resolve_alarms_by_type()` must be paired with `cloud_sync.resolve_alarm_in_cloud(alarm_type)`. Compare SQLite `resolved=1` vs Supabase `resolved=false` for same alarm. |
+| Repeated "Resolved alarm in cloud" spam | Auto-resolve guard uses `>= N` instead of `== N` | Use `== N` for consecutive-check guards so resolve fires exactly once on transition, not every cycle forever |
+
+### Known Behaviors
+
+- **`resolve_alarm_in_cloud()` logs success even when no alarm exists** — PATCH on 0 matching rows returns HTTP 200 OK. The log "Resolved alarm in cloud: X" does NOT confirm an alarm was actually updated. Always cross-check cloud alarms table.
+- **To verify cloud data gaps**: Query `device_readings` in Supabase around known offline events (from `alarms` table). Expected: gap duration matches offline duration, continuous data before/after.
 
 ## Restart Controller (if needed)
 
@@ -300,4 +309,4 @@ When alarm register is removed from config, existing unresolved alarms are auto-
 - `condition`: Threshold condition text (e.g., "Ambient Temperature < 50")
 - `alarm_type`: For `reg_*` alarms: `reg_{device_id}_{register_name}`
 
-<!-- Updated: 2026-01-30 - Added resolve_alarm_in_cloud() for controller→cloud sync, orphan resolution cloud sync -->
+<!-- Updated: 2026-02-06 - Added resolve spam fix pattern, resolve_alarm_in_cloud known behavior, cloud gap verification -->

@@ -433,6 +433,7 @@ Without `on_conflict`, entire batch fails if ANY record is duplicate.
 - LOGGING_HIGH_DRIFT, LOGGING_BUFFER_BUILDUP auto-resolve after 3 consecutive healthy checks
 - Uses `local_db.resolve_alarms_by_type()` to bulk-resolve + resync to cloud
 - Prevents alarm spam accumulation for conditions that self-heal
+- **CRITICAL**: Every `resolve_alarms_by_type()` call MUST be followed by `cloud_sync.resolve_alarm_in_cloud(alarm_type)` — local-only resolution leaves cloud alarms permanently stuck as Active
 
 ### ServiceLoggerAdapter Compatibility
 - `get_service_logger()` returns a `ServiceLoggerAdapter`, not a raw `logging.Logger`
@@ -449,9 +450,16 @@ logger._logger.info("message")  # AttributeError!
 ```
 
 ### Health Auto-Resolve Thresholds
+<!-- Updated: 2026-02-06 -->
 - `ALERT_DRIFT_MS = 5000` — drift above this triggers LOGGING_HIGH_DRIFT alarm
-- Auto-resolve after 3 consecutive healthy checks (drift < 1000ms)
+- Auto-resolve after exactly 3 consecutive healthy checks (drift < 5000ms)
+- Uses `== 3` guard (not `>= 3`) so resolve fires once on transition, not every cycle
 - Uses `resolve_alarms_by_type()` for bulk resolution + cloud resync
+
+### Modbus Transaction ID Mismatches
+- pymodbus `transaction_id` errors (e.g., "request ask for transaction_id=X but got id=1") are normal with TCP Modbus gateways
+- Typically <0.01% of reads — no fix needed unless frequency increases significantly
+- Caused by gateway counter resets or TCP connection reuse
 
 ### Orphan Alarm Auto-Resolution
 When alarm registers are removed from config:

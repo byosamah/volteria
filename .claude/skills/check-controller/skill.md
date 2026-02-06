@@ -503,8 +503,11 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
    journalctl -u volteria-tunnel --since "10 min ago"
    ```
 
-8. **Check SQLite backlog**:
+8. **Check SQLite backlog** (prefer HTTP endpoint — sqlite3 CLI often fails with exit code 8 "database locked" while logging service runs):
    ```bash
+   # PREFERRED: Use logging stats endpoint (always works, no lock contention)
+   curl -s http://127.0.0.1:8085/stats | python3 -c "import json,sys; d=json.load(sys.stdin)['database']; print(f'Unsynced readings: {d[\"unsynced_device_readings\"]}, Unsynced alarms: {d[\"unsynced_alarms\"]}, DB size: {d[\"db_size_bytes\"]/1024/1024:.0f} MB')"
+   # FALLBACK: Direct sqlite3 (may fail with exit code 8)
    sqlite3 /opt/volteria/data/controller.db "SELECT COUNT(*) FROM device_readings WHERE synced_at IS NULL"
    sqlite3 /opt/volteria/data/controller.db "SELECT COUNT(*) FROM alarms WHERE synced_at IS NULL"
    ```
@@ -569,6 +572,8 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Device offline | Modbus connectivity | Check gateway IP, slave ID, cable |
 | Readings not syncing | SQLite pending count | Check cloud_sync errors in logging logs |
 | High drift alarms | `curl :8085/stats` | Check SD card I/O, CPU load |
+| SQLite CLI locked (exit code 8) | Logging service holds DB | Use `curl :8085/stats` for unsynced counts, DB size instead |
+| Repeated "Resolved alarm" log spam | Auto-resolve guard `>= N` fires every cycle | Should use `== N` to fire once on transition (fixed 2026-02-06) |
 | Live Registers "not reporting" | Compare tmpfs vs disk config IPs | Ensure `register_cli.py` uses `get_config()` from SharedState |
 | High CPU + restart loop | `journalctl -u volteria-supervisor` for "Read-only file system" | Update service file: add `/run/volteria` to `ReadWritePaths` |
 
