@@ -234,6 +234,16 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER ask user for controller SSH passwords — read from controllers table
 - NEVER add device types to frontend/database without also adding to `controller/common/config.py` DeviceType enum
 
+## Recent Updates (2026-02-06)
+
+### Drift Alarm Resolution Spam Fix (Controller)
+- **Issue**: `resolve_alarm_in_cloud("LOGGING_HIGH_DRIFT")` called every 60s forever after drift recovered — 1,440 wasted PATCH requests/day to Supabase
+- **Root cause**: Guard used `>= 3` instead of `== 3` for consecutive healthy checks — resolve block ran every cycle, not just once on transition
+- **Also**: `resolve_alarm_in_cloud()` PATCH on 0 matching rows returns HTTP 200 OK, so it logged "Resolved alarm in cloud" even though nothing was updated
+- **Fix**: Changed `>= 3` to `== 3` in `_check_logging_health()` so resolve fires exactly once on the 3rd healthy check
+- **File**: `controller/services/logging/service.py` (line 1602)
+- **Rule**: For consecutive-check auto-resolve guards, always use `== N` (fire once on transition), never `>= N` (fires every cycle forever)
+
 ## Recent Updates (2026-02-03)
 
 ### Exponential Backoff for Offline Devices (Controller)
