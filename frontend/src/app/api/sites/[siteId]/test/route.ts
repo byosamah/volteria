@@ -4,19 +4,15 @@
  * POST /api/sites/[siteId]/test - Trigger a diagnostic test
  * GET /api/sites/[siteId]/test?testId=xxx - Get test results (poll)
  *
- * Tests device communication and control logic for a site.
- *
- * V1 Implementation: Status-based testing
- * - Checks current device online status from database
- * - Reports based on is_online and last_seen fields
- * - Future: Real device communication tests via controller
+ * Tests device data flow by checking device_readings for recent data.
+ * Control logic test skipped (needs redesign).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
-// How long ago a device must have been seen to be considered "responding"
-const DEVICE_ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+// 10 min threshold: cloud sync is every ~180s, plus buffer for processing
+const READING_THRESHOLD_MS = 10 * 60 * 1000;
 
 /**
  * POST /api/sites/[siteId]/test
@@ -35,10 +31,10 @@ export async function POST(
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    // Get site to verify it exists and get control method
+    // Verify site exists
     const { data: site, error: siteError } = await supabase
       .from("sites")
-      .select("id, name, control_method, project_id, controller_status, controller_last_seen")
+      .select("id, name")
       .eq("id", siteId)
       .single();
 
@@ -46,27 +42,51 @@ export async function POST(
       return NextResponse.json({ message: "Site not found" }, { status: 404 });
     }
 
-    // Get site devices with their current status
+    // Get enabled devices with template info
     const { data: devices } = await supabase
       .from("site_devices")
       .select(`
-        id, name, enabled, is_online, last_seen, last_error,
+        id, name,
         device_templates(device_type, brand, model)
       `)
       .eq("site_id", siteId)
       .eq("enabled", true);
 
     const now = Date.now();
+    const deviceList = devices || [];
 
-    // Build test results based on current device status
-    const testResults = (devices || []).map((device) => {
-      const lastSeenTime = device.last_seen ? new Date(device.last_seen).getTime() : 0;
-      const isRecent = (now - lastSeenTime) < DEVICE_ONLINE_THRESHOLD_MS;
-      const isPassing = device.is_online && isRecent;
+    // Get latest reading timestamp per device from device_readings
+    const latestReadings: Record<string, string> = {};
+    if (deviceList.length > 0) {
+      const deviceIds = deviceList.map((d) => d.id);
+      // Query latest reading for each device
+      for (const deviceId of deviceIds) {
+        const { data: reading } = await supabase
+          .from("device_readings")
+          .select("timestamp")
+          .eq("device_id", deviceId)
+          .order("timestamp", { ascending: false })
+          .limit(1)
+          .single();
+        if (reading) {
+          latestReadings[deviceId] = reading.timestamp;
+        }
+      }
+    }
 
-      // Handle Supabase join - may return array or object
+    // Build test results based on actual readings data
+    const testResults = deviceList.map((device) => {
+      const lastReadingTs = latestReadings[device.id];
+      const lastReadingTime = lastReadingTs ? new Date(lastReadingTs).getTime() : 0;
+      const isRecent = lastReadingTime > 0 && (now - lastReadingTime) < READING_THRESHOLD_MS;
+
       const rawTemplate = device.device_templates;
       const template = Array.isArray(rawTemplate) ? rawTemplate[0] : rawTemplate;
+
+      const agoSeconds = lastReadingTime > 0 ? Math.round((now - lastReadingTime) / 1000) : 0;
+      const agoLabel = agoSeconds < 60
+        ? `${agoSeconds}s ago`
+        : `${Math.round(agoSeconds / 60)}m ago`;
 
       return {
         device_id: device.id,
@@ -74,45 +94,29 @@ export async function POST(
         device_type: template?.device_type || "unknown",
         brand: template?.brand || "",
         model: template?.model || "",
-        status: isPassing ? "passed" : "failed",
-        message: isPassing
-          ? `Last seen ${Math.round((now - lastSeenTime) / 1000)}s ago`
-          : device.last_error || (device.is_online ? "No recent data" : "Device offline"),
+        status: isRecent ? "passed" : "failed",
+        message: isRecent
+          ? `Last reading ${agoLabel}`
+          : lastReadingTime > 0
+            ? `Last reading ${agoLabel} (stale)`
+            : "No readings found",
         value: null,
       };
-    });
-
-    // Add control logic test (based on controller status)
-    const controllerLastSeen = site.controller_last_seen
-      ? new Date(site.controller_last_seen).getTime()
-      : 0;
-    const controllerRecent = (now - controllerLastSeen) < DEVICE_ONLINE_THRESHOLD_MS;
-    const controllerOnline = site.controller_status === "online" && controllerRecent;
-
-    testResults.push({
-      device_id: null,
-      device_name: "Control Logic",
-      device_type: "control_logic",
-      brand: "",
-      model: "",
-      status: controllerOnline ? "passed" : "failed",
-      message: controllerOnline
-        ? `Controller online, last seen ${Math.round((now - controllerLastSeen) / 1000)}s ago`
-        : "Controller offline or not responding",
-      value: null,
     });
 
     // Determine overall status
     const passedCount = testResults.filter((r) => r.status === "passed").length;
     const totalCount = testResults.length;
     let overallStatus: "passed" | "failed" | "partial" = "failed";
-    if (passedCount === totalCount) {
+    if (totalCount === 0) {
+      overallStatus = "passed";
+    } else if (passedCount === totalCount) {
       overallStatus = "passed";
     } else if (passedCount > 0) {
       overallStatus = "partial";
     }
 
-    // Create test record with results
+    // Create test record
     const { data: testRecord, error: insertError } = await supabase
       .from("site_test_results")
       .insert({
@@ -136,7 +140,7 @@ export async function POST(
     return NextResponse.json({
       test_id: testRecord.id,
       status: overallStatus,
-      device_count: devices?.length || 0,
+      device_count: deviceList.length,
       passed_count: passedCount,
       total_count: totalCount,
     });

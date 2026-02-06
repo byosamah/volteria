@@ -25,6 +25,7 @@ import {
   Play,
   RefreshCw,
 } from "lucide-react";
+import { DEVICE_TYPE_OPTIONS } from "@/lib/device-constants";
 
 // Test result for a single device or check
 interface TestResult {
@@ -127,20 +128,15 @@ export function SiteTestModal({
     }
   };
 
-  // Get device type label
+  // Get device type label from canonical constants
   const getDeviceTypeLabel = (type: string) => {
-    switch (type) {
-      case "load_meter":
-        return "Load Meter";
-      case "inverter":
-        return "Inverter";
-      case "dg":
-        return "Generator Controller";
-      case "control_logic":
-        return "Control Logic";
-      default:
-        return type;
-    }
+    const match = DEVICE_TYPE_OPTIONS.find((o) => o.value === type);
+    if (match) return match.label;
+    // Legacy fallbacks
+    if (type === "load_meter") return "Energy Meter";
+    if (type === "dg") return "Generator Controller";
+    if (type === "sensor") return "Sensor";
+    return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
   // Calculate progress
@@ -192,7 +188,7 @@ export function SiteTestModal({
             {getStatusBadge()}
           </DialogTitle>
           <DialogDescription>
-            Test device communication and control logic for {siteName}
+            Test device communication and data flow for {siteName}
           </DialogDescription>
         </DialogHeader>
 
@@ -239,9 +235,9 @@ export function SiteTestModal({
                       </div>
                     </div>
                     <div className="text-right">
-                      {result.status === "passed" && result.value !== null && (
-                        <span className="text-sm font-medium text-green-600">
-                          {result.value.toFixed(1)} kW
+                      {result.status === "passed" && result.message && (
+                        <span className="text-xs text-green-600">
+                          {result.message}
                         </span>
                       )}
                       {result.status === "failed" && result.message && (
