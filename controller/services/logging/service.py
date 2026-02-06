@@ -1599,15 +1599,14 @@ class LoggingService:
         else:
             # Drift is healthy — track consecutive good checks for auto-resolve
             self._consecutive_low_drift_checks += 1
-            if self._consecutive_low_drift_checks >= 3:
-                # Auto-resolve outstanding LOGGING_HIGH_DRIFT alarms
+            if self._consecutive_low_drift_checks == 3:
+                # Auto-resolve outstanding LOGGING_HIGH_DRIFT alarms (only once)
                 await self._run_db(
                     self.local_db.resolve_alarms_by_type, "LOGGING_HIGH_DRIFT",
                 )
                 if self.cloud_sync:
                     await self.cloud_sync.resolve_alarm_in_cloud("LOGGING_HIGH_DRIFT")
-                if self._consecutive_low_drift_checks == 3:
-                    logger.info("Drift recovered: auto-resolved LOGGING_HIGH_DRIFT alarms")
+                logger.info("Drift recovered: auto-resolved LOGGING_HIGH_DRIFT alarms")
 
         # Check buffer buildup
         if buffer_count > ALERT_BUFFER_SIZE:
