@@ -270,7 +270,7 @@ class ControlService:
 
             # Log control loop
             log_control_loop(
-                logger._logger,
+                logger,
                 solar_limit_pct=self._current_state.solar_limit_pct,
                 total_load_kw=self._current_state.total_load_kw,
                 solar_output_kw=self._current_state.solar_output_kw,

@@ -138,7 +138,7 @@ class RegisterWriter:
                         # Check with tolerance
                         if self._values_match(value, read_back):
                             log_device_write(
-                                logger._logger,
+                                logger,
                                 device.name,
                                 str(register_address),
                                 value,
@@ -168,7 +168,7 @@ class RegisterWriter:
 
                 # Write without verification succeeded
                 log_device_write(
-                    logger._logger,
+                    logger,
                     device.name,
                     str(register_address),
                     value,
@@ -189,7 +189,7 @@ class RegisterWriter:
                     await asyncio.sleep(0.5)
                 else:
                     log_device_write(
-                        logger._logger,
+                        logger,
                         device.name,
                         str(register_address),
                         value,
@@ -203,7 +203,7 @@ class RegisterWriter:
 
             except Exception as e:
                 log_device_write(
-                    logger._logger,
+                    logger,
                     device.name,
                     str(register_address),
                     value,
