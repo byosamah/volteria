@@ -268,6 +268,27 @@ class DeviceService:
                     log_to_cloud=reg_data.get("log_to_cloud", True),
                 ))
 
+            # Also poll visualization + alarm registers (slower 5s interval)
+            # Needed for Live Registers page on RTU Direct devices
+            # (serial port is exclusively held — register_cli reads from SharedState)
+            existing_addrs = {r.address for r in device.registers}
+            for reg_list_key in ("visualization_registers", "alarm_registers"):
+                for reg_data in device_data.get(reg_list_key, []) or []:
+                    if reg_data.get("address") in existing_addrs:
+                        continue
+                    device.registers.append(ModbusRegister(
+                        address=reg_data["address"],
+                        name=reg_data["name"],
+                        type=reg_data.get("type", "holding"),
+                        datatype=RegisterDataType(reg_data.get("datatype", "uint16")),
+                        access=reg_data.get("access", "read"),
+                        scale=reg_data.get("scale", 1.0),
+                        unit=reg_data.get("unit", ""),
+                        poll_interval_ms=5000,
+                        log_to_cloud=False,
+                    ))
+                    existing_addrs.add(reg_data["address"])
+
             self._devices.append(device)
             self.device_manager.register_device(device)
             if device.protocol == "rtu_direct":
