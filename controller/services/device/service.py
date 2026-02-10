@@ -276,11 +276,17 @@ class DeviceService:
                 for reg_data in device_data.get(reg_list_key, []) or []:
                     if reg_data.get("address") in existing_addrs:
                         continue
+                    try:
+                        datatype = RegisterDataType(reg_data.get("datatype", "uint16"))
+                    except ValueError:
+                        # Skip registers with unsupported datatypes (e.g. uint8_hi)
+                        logger.debug(f"Skipping viz register {reg_data.get('name')}: unsupported datatype {reg_data.get('datatype')}")
+                        continue
                     device.registers.append(ModbusRegister(
                         address=reg_data["address"],
                         name=reg_data["name"],
                         type=reg_data.get("type", "holding"),
-                        datatype=RegisterDataType(reg_data.get("datatype", "uint16")),
+                        datatype=datatype,
                         access=reg_data.get("access", "read"),
                         scale=reg_data.get("scale", 1.0),
                         unit=reg_data.get("unit", ""),
