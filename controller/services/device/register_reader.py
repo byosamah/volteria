@@ -128,13 +128,6 @@ class RegisterReader:
                 state.last_polled = now
                 state.consecutive_failures += 1
                 failed_count += 1
-                await self._manager.update_reading(
-                    device_id=device.id,
-                    register_name=register.name,
-                    value=None,
-                    success=False,
-                    error="Device not reachable",
-                )
                 continue
 
             # Read register with retry — hold bus lock for serial
@@ -198,11 +191,17 @@ class RegisterReader:
                 # to skip remaining registers (1 log line instead of 120+)
                 connection_failed = True
 
-        # Log summary for skipped registers
+        # Log summary for skipped registers and update device status once
         if failed_count > 1:
             logger.warning(
                 f"Device {device.name} not reachable — "
                 f"skipped {failed_count - 1} remaining registers"
+            )
+            # Single status update for the device (avoids per-register backoff escalation)
+            await self._manager.update_status(
+                device_id=device.id,
+                success=False,
+                error="Device not reachable",
             )
 
         return results
