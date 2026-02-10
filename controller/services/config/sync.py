@@ -316,12 +316,12 @@ class ConfigSync:
             # Required fields
             "address": reg.get("address", 0),
             "name": reg.get("name", ""),
-            "type": reg.get("type", "input"),  # input or holding
+            "type": reg.get("type") or reg.get("register_type", "input"),  # input or holding
             "access": reg.get("access", "read"),  # read, write, readwrite
-            "datatype": reg.get("datatype", "uint16"),  # uint16, int16, uint32, int32, float32
+            "datatype": reg.get("datatype") or reg.get("data_type", "uint16"),  # uint16, int16, uint32, int32, float32
 
             # Transformation fields
-            "scale": reg.get("scale", 1.0),  # Multiplier
+            "scale": reg.get("scale") or reg.get("scale_factor", 1.0),  # Multiplier
             "offset": reg.get("offset", 0.0),  # Addition (can be negative)
             "scale_order": reg.get("scale_order", "multiply_first"),  # multiply_first or add_first
 

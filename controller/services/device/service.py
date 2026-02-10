@@ -244,6 +244,10 @@ class DeviceService:
                 host=modbus_config.get("host") or device_data.get("host", ""),
                 port=modbus_config.get("port") or device_data.get("port", 502),
                 slave_id=modbus_config.get("slave_id") or device_data.get("slave_id", 1),
+                serial_port=modbus_config.get("serial_port") or device_data.get("serial_port", ""),
+                baudrate=modbus_config.get("baudrate") or device_data.get("baudrate", 9600),
+                parity=modbus_config.get("parity") or device_data.get("parity", "N"),
+                stopbits=modbus_config.get("stopbits") or device_data.get("stopbits", 1),
                 registers=[],
                 rated_power_kw=device_data.get("rated_power_kw"),
                 rated_power_kva=device_data.get("rated_power_kva"),
@@ -266,7 +270,10 @@ class DeviceService:
 
             self._devices.append(device)
             self.device_manager.register_device(device)
-            logger.info(f"Registered device: {device.name} host={device.host} port={device.port} slave_id={device.slave_id}")
+            if device.protocol == "rtu_direct":
+                logger.info(f"Registered device: {device.name} serial={device.serial_port} baud={device.baudrate} slave_id={device.slave_id}")
+            else:
+                logger.info(f"Registered device: {device.name} host={device.host} port={device.port} slave_id={device.slave_id}")
 
         logger.info(f"Loaded {len(self._devices)} devices from config")
 
