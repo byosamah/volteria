@@ -161,8 +161,10 @@ class DeviceManager:
                 status.last_error = error
 
                 if status.consecutive_failures >= self.OFFLINE_THRESHOLD:
+                    was_online = status.is_online
                     status.is_online = False
                     # Apply exponential backoff to reduce CPU when device unreachable
+                    old_backoff = status.backoff_seconds
                     if status.backoff_seconds == 0:
                         status.backoff_seconds = self.INITIAL_BACKOFF_SECONDS
                     else:
@@ -171,9 +173,11 @@ class DeviceManager:
                             self.MAX_BACKOFF_SECONDS
                         )
                     status.next_retry_at = now + timedelta(seconds=status.backoff_seconds)
-                    logger.info(
-                        f"Device {status.device_name} offline, backoff {status.backoff_seconds}s"
-                    )
+                    # Only log on transition (not for every skipped register)
+                    if was_online or status.backoff_seconds != old_backoff:
+                        logger.info(
+                            f"Device {status.device_name} offline, backoff {status.backoff_seconds}s"
+                        )
 
     async def update_status(
         self,
@@ -343,10 +347,12 @@ class DeviceManager:
             if not status.is_online:
                 continue
 
-            # Look for power readings
+            # Look for power readings (try common register names)
             power = status.readings.get("active_power_kw", {}).get("value")
             if power is None:
                 power = status.readings.get("total_power_kw", {}).get("value")
+            if power is None:
+                power = status.readings.get("Total Active Power", {}).get("value")
 
             if power is not None:
                 if status.device_type == DeviceType.INVERTER:
