@@ -30,8 +30,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from pymodbus.client import AsyncModbusTcpClient, AsyncModbusSerialClient
 
-# Use SharedState for config (same as all services) - reads from tmpfs or disk
-from common.state import get_config
+# Use SharedState for config and readings (same as all services)
+from common.state import get_config, SharedState
 
 
 def get_device_config(device_id: str) -> dict | None:
@@ -135,6 +135,69 @@ def _create_client(device: dict) -> tuple:
         return None, slave_id, f"Unsupported protocol: {protocol}"
 
 
+def _read_from_shared_state(device: dict, device_id: str, addresses: list[int]) -> dict:
+    """
+    Read register values from SharedState for RTU Direct devices.
+
+    The device service polls serial devices every 1s and writes to SharedState.
+    Since the serial port is exclusively locked by the device service,
+    register_cli.py reads from SharedState instead of opening its own connection.
+    """
+    result = {
+        "success": False,
+        "device_id": device_id,
+        "readings": {},
+        "errors": []
+    }
+
+    readings_data = SharedState.read("readings")
+    if not readings_data:
+        result["errors"].append("No readings available in SharedState")
+        return result
+
+    device_readings = (
+        readings_data.get("devices", {})
+        .get(device_id, {})
+        .get("readings", {})
+    )
+    if not device_readings:
+        result["errors"].append(f"No readings for device {device_id} — device may be offline")
+        return result
+
+    # Build address → register name mapping from device config
+    address_to_name = {}
+    for key in ("registers", "logging_registers", "visualization_registers"):
+        for reg in device.get(key, []) or []:
+            addr = reg.get("address")
+            name = reg.get("name")
+            if addr is not None and name:
+                address_to_name[addr] = name
+
+    timestamp = readings_data.get("timestamp", datetime.now(timezone.utc).isoformat())
+
+    for address in addresses:
+        reg_name = address_to_name.get(address)
+        if not reg_name:
+            result["errors"].append(f"No register config for address {address}")
+            continue
+
+        reading = device_readings.get(reg_name)
+        if reading is None:
+            result["errors"].append(f"No reading for {reg_name} (address {address})")
+            continue
+
+        value = reading.get("value")
+        if value is not None:
+            result["readings"][str(address)] = {
+                "raw_value": value,
+                "scaled_value": value,
+                "timestamp": reading.get("timestamp", timestamp)
+            }
+
+    result["success"] = len(result["readings"]) > 0
+    return result
+
+
 async def read_registers(device_id: str, addresses: list[int]) -> dict:
     """
     Read multiple registers from a device.
@@ -167,7 +230,14 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
         result["errors"].append(f"Device not found: {device_id}")
         return result
 
-    # Create Modbus client based on protocol
+    # RTU Direct: serial port is exclusively held by device service
+    # Read from SharedState instead (updated every 1s by device service)
+    modbus = device.get("modbus", {})
+    protocol = modbus.get("protocol") or device.get("protocol", "tcp")
+    if protocol == "rtu_direct":
+        return _read_from_shared_state(device, device_id, addresses)
+
+    # TCP / RTU Gateway: create direct connection
     client, slave_id, error = _create_client(device)
     if error:
         result["errors"].append(error)
@@ -273,7 +343,14 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
         result["error"] = f"Device not found: {device_id}"
         return result
 
-    # Create Modbus client based on protocol
+    # RTU Direct: serial port is exclusively held by device service
+    modbus = device.get("modbus", {})
+    protocol = modbus.get("protocol") or device.get("protocol", "tcp")
+    if protocol == "rtu_direct":
+        result["error"] = "Write not supported for RTU Direct devices via CLI"
+        return result
+
+    # TCP / RTU Gateway: create direct connection
     client, slave_id, error = _create_client(device)
     if error:
         result["error"] = error
