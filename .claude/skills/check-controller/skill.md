@@ -478,11 +478,13 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
    systemctl is-active volteria-system volteria-config volteria-device volteria-control volteria-logging
    ```
 
-3. **Check health endpoints**:
+3. **Check health endpoints** (individual calls — for-loops break across double-SSH hop):
    ```bash
-   for port in 8081 8082 8083 8084 8085; do
-     echo "Port $port: $(curl -s http://127.0.0.1:$port/health | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","error"))')";
-   done
+   curl -s http://127.0.0.1:8081/health | python3 -m json.tool  # System
+   curl -s http://127.0.0.1:8082/health | python3 -m json.tool  # Config
+   curl -s http://127.0.0.1:8083/health | python3 -m json.tool  # Device
+   curl -s http://127.0.0.1:8084/health | python3 -m json.tool  # Control
+   curl -s http://127.0.0.1:8085/health | python3 -m json.tool  # Logging
    ```
 
 4. **Check SharedState** (are readings flowing?):
@@ -582,7 +584,11 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | High drift alarms | `curl :8085/stats` | Check SD card I/O, CPU load |
 | SQLite CLI locked (exit code 8) | Logging service holds DB | Use `curl :8085/stats` for unsynced counts, DB size instead |
 | Repeated "Resolved alarm" log spam | Auto-resolve guard `>= N` fires every cycle | Should use `== N` to fire once on transition (fixed 2026-02-06) |
-| Live Registers "not reporting" | Compare tmpfs vs disk config IPs | Ensure `register_cli.py` uses `get_config()` from SharedState |
+| Live Registers "not reporting" (TCP) | Compare tmpfs vs disk config IPs | Ensure `register_cli.py` uses `get_config()` from SharedState |
+| Live Registers "not reporting" (RTU Direct) | `register_cli.py` can't lock serial port | Fixed: reads from SharedState for `rtu_direct` protocol (2026-02-10) |
+| Live Registers viz/alarm "--" (RTU Direct) | Device service only polled logging registers | Fixed: now polls viz/alarm at 5s interval (2026-02-10) |
+| Control service crash-loop (exit code 1) | `journalctl -u volteria-control` for `AttributeError: _logger` | Replace `logger._logger` with `logger` — ServiceLoggerAdapter is interface-compatible (fixed 2026-02-10) |
+| Service healthy but crash-on-shutdown | Health endpoint OK, but `journalctl` shows exit code 1 | Bug may only trigger during shutdown — always check journalctl, not just health |
 | High CPU + restart loop | `journalctl -u volteria-supervisor` for "Read-only file system" | Update service file: add `/run/volteria` to `ReadWritePaths` |
 
 ### SOL532-E16 Specific Issues
@@ -818,22 +824,36 @@ Device (Modbus) → RegisterReader → SharedState (readings.json) [1s poll]
 
 ### Live Registers API (On-Demand Reads)
 
-**Flow**: Frontend → Backend → SSH → `register_cli.py` → Modbus device
+**Flow** (protocol-dependent):
 
+**TCP / RTU Gateway**: Frontend → Backend → SSH → `register_cli.py` → direct Modbus connection → device
 ```
 POST /api/controllers/{id}/registers
-    → Backend validates controller_secret
     → SSH to Pi: python register_cli.py read --device-id X --addresses Y
-    → register_cli.py reads device config from SharedState (get_config())
-    → Connects to device using config IP/port/slave_id
-    → Returns JSON with readings or error
+    → register_cli.py reads device config from SharedState
+    → Creates AsyncModbusTcpClient → reads registers directly
+    → Returns JSON with readings
 ```
+
+**RTU Direct (serial)**: Frontend → Backend → SSH → `register_cli.py` → SharedState (no direct Modbus)
+```
+POST /api/controllers/{id}/registers
+    → SSH to Pi: python register_cli.py read --device-id X --addresses Y
+    → register_cli.py detects protocol = rtu_direct
+    → Reads latest values from SharedState readings.json (updated every 1s by device service)
+    → Maps requested addresses → register names → values
+    → Returns JSON with readings
+```
+
+**Why RTU Direct can't use direct Modbus**: The device service exclusively locks the serial port for continuous polling. A second process (register_cli.py) cannot open the same port — fails with `Could not exclusively lock port /dev/ttyUSB0: Resource temporarily unavailable`. SharedState values are <1s old, effectively live.
 
 **CRITICAL**: `register_cli.py` must use `get_config()` from `common.state` (not hardcoded paths) to read device connection settings. This ensures it reads from tmpfs (latest synced config) even when executed via SSH (outside systemd).
 
-**Common Issue**: "Device not reporting back" despite device being online
-- **Cause**: Script reading stale disk config with old IP instead of tmpfs with new IP
-- **Fix**: `register_cli.py` now uses SharedState pattern (same as logging service)
+**Common Issues with Live Registers**:
+- **"Device not reporting back" (TCP)**: Script reading stale disk config with old IP instead of tmpfs → ensure `register_cli.py` uses `get_config()` from SharedState
+- **"Device not reporting back" (RTU Direct)**: register_cli.py tried to open serial port directly → fixed: now reads from SharedState for `rtu_direct` protocol
+- **Viz/alarm registers show "--" (RTU Direct)**: Device service only polled logging registers → fixed: now polls viz/alarm registers at 5s interval so they appear in SharedState
+- **Device service crash on config load**: Viz registers can have unsupported datatypes (e.g., `uint8_hi`) → fixed: skips unknown datatypes gracefully
 
 ### Live Data Response Shape
 

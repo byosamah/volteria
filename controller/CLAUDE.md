@@ -436,9 +436,11 @@ Without `on_conflict`, entire batch fails if ANY record is duplicate.
 - **CRITICAL**: Every `resolve_alarms_by_type()` call MUST be followed by `cloud_sync.resolve_alarm_in_cloud(alarm_type)` — local-only resolution leaves cloud alarms permanently stuck as Active
 
 ### ServiceLoggerAdapter Compatibility
+<!-- Updated: 2026-02-10 -->
 - `get_service_logger()` returns a `ServiceLoggerAdapter`, not a raw `logging.Logger`
 - ServiceLoggerAdapter IS directly compatible with Logger interface (has .info, .warning, .error, etc.)
 - Pass logger directly to functions expecting `logging.Logger` — do NOT use `logger._logger` (attribute doesn't exist)
+- **Shutdown-only errors**: `_logger` bugs may only surface during shutdown (final loop iteration after SIGTERM). Health endpoint reports healthy during normal operation — always check `journalctl` for exit code 1 failures.
 
 ```python
 # CORRECT usage
