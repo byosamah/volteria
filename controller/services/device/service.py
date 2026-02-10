@@ -18,7 +18,7 @@ import yaml
 from aiohttp import web
 
 from common.state import SharedState, set_service_health, get_config
-from common.config import DeviceConfig, DeviceType, load_site_config
+from common.config import DeviceConfig, DeviceType, Protocol, load_site_config
 from common.logging_setup import get_service_logger
 
 from .connection_pool import ConnectionPool
@@ -240,7 +240,7 @@ class DeviceService:
                 id=device_data["id"],
                 name=device_data["name"],
                 device_type=device_type,
-                protocol=modbus_config.get("protocol") or device_data.get("protocol", "tcp"),
+                protocol=Protocol(modbus_config.get("protocol") or device_data.get("protocol", "tcp")),
                 host=modbus_config.get("host") or device_data.get("host", ""),
                 port=modbus_config.get("port") or device_data.get("port", 502),
                 slave_id=modbus_config.get("slave_id") or device_data.get("slave_id", 1),

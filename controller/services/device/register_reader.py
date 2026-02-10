@@ -106,6 +106,9 @@ class RegisterReader:
             client = await self._pool.get_connection(device.host, device.port)
 
         # Poll each register that is due
+        connection_failed = False
+        failed_count = 0
+
         for register in device.registers:
             key = f"{device.id}:{register.name}"
             state = self._poll_states.get(key)
@@ -118,6 +121,21 @@ class RegisterReader:
                 elapsed_ms = (now - state.last_polled).total_seconds() * 1000
                 if elapsed_ms < state.poll_interval_ms:
                     continue
+
+            # If connection already failed for this device, skip remaining registers
+            # to avoid flooding logs with per-register errors
+            if connection_failed:
+                state.last_polled = now
+                state.consecutive_failures += 1
+                failed_count += 1
+                await self._manager.update_reading(
+                    device_id=device.id,
+                    register_name=register.name,
+                    value=None,
+                    success=False,
+                    error="Device not reachable",
+                )
+                continue
 
             # Read register with retry — hold bus lock for serial
             if bus_lock:
@@ -158,6 +176,7 @@ class RegisterReader:
                 )
             else:
                 state.consecutive_failures += 1
+                failed_count += 1
 
                 await self._manager.update_reading(
                     device_id=device.id,
@@ -174,6 +193,17 @@ class RegisterReader:
                     None,
                     success=False,
                 )
+
+                # After first failed register, mark connection as failed
+                # to skip remaining registers (1 log line instead of 120+)
+                connection_failed = True
+
+        # Log summary for skipped registers
+        if failed_count > 1:
+            logger.warning(
+                f"Device {device.name} not reachable — "
+                f"skipped {failed_count - 1} remaining registers"
+            )
 
         return results
 
