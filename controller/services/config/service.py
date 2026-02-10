@@ -56,8 +56,8 @@ class ConfigService:
         # Extract configuration
         self.site_id = self.local_config.get("site", {}).get("id")
         if not self.site_id:
-            # Try environment variable
-            self.site_id = os.environ.get("VOLTERIA_SITE_ID")
+            # Try environment variable (check both naming conventions)
+            self.site_id = os.environ.get("SITE_ID") or os.environ.get("VOLTERIA_SITE_ID")
 
         # If still no site_id, try to fetch from cloud using controller_id
         if not self.site_id:
