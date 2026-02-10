@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.client import AsyncModbusTcpClient, AsyncModbusSerialClient
 
 # Use SharedState for config (same as all services) - reads from tmpfs or disk
 from common.state import get_config
@@ -90,6 +90,51 @@ def get_register_config(device: dict, address: int) -> dict | None:
     return None
 
 
+def _create_client(device: dict) -> tuple:
+    """
+    Create Modbus client based on device protocol.
+
+    Returns:
+        (client, slave_id, error) — error is None on success
+    """
+    modbus = device.get("modbus", {})
+    protocol = modbus.get("protocol") or device.get("protocol", "tcp")
+    slave_id = modbus.get("slave_id") or device.get("slave_id", 1)
+
+    if protocol == "tcp":
+        host = modbus.get("host") or device.get("ip_address") or device.get("ip")
+        port = modbus.get("port") or device.get("port", 502)
+        if not host:
+            return None, slave_id, "No host/IP configured for TCP device"
+        return AsyncModbusTcpClient(host=host, port=port), slave_id, None
+
+    elif protocol in ("rtu_gateway", "rtu"):
+        host = modbus.get("gateway_ip") or device.get("gateway_ip")
+        port = modbus.get("gateway_port") or device.get("gateway_port", 502)
+        if not host:
+            return None, slave_id, "No gateway_ip configured for RTU Gateway device"
+        return AsyncModbusTcpClient(host=host, port=port), slave_id, None
+
+    elif protocol == "rtu_direct":
+        serial_port = modbus.get("serial_port") or device.get("serial_port")
+        if not serial_port:
+            return None, slave_id, "No serial_port configured for RTU Direct device"
+        baudrate = modbus.get("baudrate") or device.get("baudrate", 9600)
+        parity = modbus.get("parity") or device.get("parity", "N")
+        stopbits = modbus.get("stopbits") or device.get("stopbits", 1)
+        client = AsyncModbusSerialClient(
+            port=serial_port,
+            baudrate=baudrate,
+            parity=parity,
+            stopbits=stopbits,
+            timeout=3,
+        )
+        return client, slave_id, None
+
+    else:
+        return None, slave_id, f"Unsupported protocol: {protocol}"
+
+
 async def read_registers(device_id: str, addresses: list[int]) -> dict:
     """
     Read multiple registers from a device.
@@ -122,34 +167,16 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
         result["errors"].append(f"Device not found: {device_id}")
         return result
 
-    # Determine connection parameters
-    # New format has modbus settings nested, old format has them at root
-    modbus = device.get("modbus", {})
-    protocol = modbus.get("protocol") or device.get("protocol", "tcp")
-
-    if protocol == "tcp":
-        host = modbus.get("host") or device.get("ip_address") or device.get("ip")
-        port = modbus.get("port") or device.get("port", 502)
-    elif protocol in ("rtu_gateway", "rtu"):
-        host = modbus.get("gateway_ip") or device.get("gateway_ip")
-        port = modbus.get("gateway_port") or device.get("gateway_port", 502)
-    else:
-        result["errors"].append(f"Unsupported protocol: {protocol}")
+    # Create Modbus client based on protocol
+    client, slave_id, error = _create_client(device)
+    if error:
+        result["errors"].append(error)
         return result
-
-    if not host:
-        result["errors"].append("No host/IP configured for device")
-        return result
-
-    slave_id = modbus.get("slave_id") or device.get("slave_id", 1)
-
-    # Create Modbus client
-    client = AsyncModbusTcpClient(host=host, port=port)
 
     try:
         connected = await client.connect()
         if not connected:
-            result["errors"].append(f"Failed to connect to {host}:{port}")
+            result["errors"].append("Failed to connect to device")
             return result
 
         timestamp = datetime.now(timezone.utc).isoformat()
@@ -246,34 +273,16 @@ async def write_register(device_id: str, address: int, value: int, verify: bool 
         result["error"] = f"Device not found: {device_id}"
         return result
 
-    # Determine connection parameters
-    # New format has modbus settings nested, old format has them at root
-    modbus = device.get("modbus", {})
-    protocol = modbus.get("protocol") or device.get("protocol", "tcp")
-
-    if protocol == "tcp":
-        host = modbus.get("host") or device.get("ip_address") or device.get("ip")
-        port = modbus.get("port") or device.get("port", 502)
-    elif protocol in ("rtu_gateway", "rtu"):
-        host = modbus.get("gateway_ip") or device.get("gateway_ip")
-        port = modbus.get("gateway_port") or device.get("gateway_port", 502)
-    else:
-        result["error"] = f"Unsupported protocol: {protocol}"
+    # Create Modbus client based on protocol
+    client, slave_id, error = _create_client(device)
+    if error:
+        result["error"] = error
         return result
-
-    if not host:
-        result["error"] = "No host/IP configured for device"
-        return result
-
-    slave_id = modbus.get("slave_id") or device.get("slave_id", 1)
-
-    # Create Modbus client
-    client = AsyncModbusTcpClient(host=host, port=port)
 
     try:
         connected = await client.connect()
         if not connected:
-            result["error"] = f"Failed to connect to {host}:{port}"
+            result["error"] = "Failed to connect to device"
             return result
 
         # Write the register
