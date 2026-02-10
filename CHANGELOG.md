@@ -3,6 +3,19 @@
 > Historical updates archive. Moved from CLAUDE.md to reduce context window usage.
 > For current architecture reference, see [CLAUDE.md](./CLAUDE.md).
 
+## 2026-02-10
+
+### ME437 Energy Meter Template Fix + RTU Direct Integration
+- **Template fix**: All 40 register addresses corrected (-1 offset from datasheet), energy types changed float32→uint32, scale_factor removed — source: ME437 Modbus Protocol V3.0 manual
+- **RTU Direct pipeline**: 5 cascading bugs found and fixed to make serial Modbus work end-to-end:
+  1. `DeviceType` enum missing frontend types (`load`, `subload`, `solar_meter`, etc.)
+  2. `service.py` not populating `serial_port`/`baudrate`/`parity`/`stopbits` in DeviceConfig
+  3. `sync.py` `_normalize_register()` only accepted `datatype`/`type`, not template field names `data_type`/`register_type`
+  4. `service.py` passing protocol as string instead of `Protocol()` enum — comparison with `Protocol.RTU_DIRECT` failed
+  5. `modbus_client.py` serial client using deprecated `slave=` parameter (pymodbus 3.11+ requires `device_id=`)
+- **Log flooding fix**: Offline device now generates 3 log lines per poll cycle (1 failed read + 1 backoff + 1 skip summary) instead of 200+ per-register warnings
+- **Files**: `config.py`, `service.py`, `sync.py`, `register_reader.py`, `modbus_client.py`, `device_manager.py`
+
 ## 2026-02-06
 
 ### Drift Alarm Resolution Spam Fix (Controller)

@@ -174,6 +174,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 12. **ME437 register addresses are 0-based**: Datasheet values = direct Modbus addresses, no offset needed. Energy registers are UInt32 in kWh (V3.0 manual changed from float32/Wh)
 13. **RTU Direct serial requirements**: `pyserial` must be installed in controller venv. pymodbus 3.11+ uses `device_id=` not `slave=`
 14. **Pi 5 USB host crash recovery**: FTDI RS485 adapters can crash xhci-hcd.1; reset with `echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/unbind && sleep 2 && echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/bind`
+15. **Config sync normalizes both field name conventions**: Template uses `data_type`/`register_type`/`scale_factor`, device config uses `datatype`/`type`/`scale` — `_normalize_register()` in `sync.py` accepts both
+16. **RTU Direct DeviceConfig requires explicit serial fields**: `service.py` must populate `serial_port`, `baudrate`, `parity`, `stopbits` from `modbus` config — these don't have defaults that work
 
 ## Key Architecture Decisions
 
@@ -198,6 +200,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 ### Device Polling
 - Exponential backoff on offline devices: 5s → 10s → 20s → 40s → 60s max
 - Resets immediately on first successful read
+- **Offline device isolation**: After first register fails, remaining registers skipped with single summary log (not per-register)
+- Other devices on the same site continue polling normally — one offline device doesn't block others
 
 ### Deletion Cascade
 ```
