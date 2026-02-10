@@ -475,7 +475,7 @@ class ModbusSerialClient:
             response = await self._client.read_holding_registers(
                 address=address,
                 count=count,
-                slave=slave_id,
+                device_id=slave_id,
             )
 
             if response.isError():
@@ -519,7 +519,7 @@ class ModbusSerialClient:
             response = await self._client.read_input_registers(
                 address=address,
                 count=count,
-                slave=slave_id,
+                device_id=slave_id,
             )
 
             if response.isError():
@@ -562,7 +562,7 @@ class ModbusSerialClient:
             response = await self._client.write_register(
                 address=address,
                 value=value,
-                slave=slave_id,
+                device_id=slave_id,
             )
 
             if response.isError():
@@ -603,7 +603,7 @@ class ModbusSerialClient:
             response = await self._client.write_registers(
                 address=address,
                 values=values,
-                slave=slave_id,
+                device_id=slave_id,
             )
 
             if response.isError():
