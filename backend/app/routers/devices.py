@@ -938,6 +938,13 @@ async def update_project_device(
 
         db.table("site_devices").update(update_data).eq("id", str(device_id)).execute()
 
+        # Update site config_changed_at if config-affecting fields changed
+        config_fields = {"ip_address", "port", "gateway_ip", "gateway_port", "slave_id", "enabled", "protocol"}
+        if any(getattr(update, f, None) is not None for f in config_fields):
+            site_result = db.table("site_devices").select("site_id").eq("id", str(device_id)).execute()
+            if site_result.data and site_result.data[0].get("site_id"):
+                db.table("sites").update({"config_changed_at": datetime.utcnow().isoformat()}).eq("id", site_result.data[0]["site_id"]).execute()
+
         # Fetch updated device with template
         result = db.table("site_devices").select(
             "*, device_templates(*)"
@@ -967,7 +974,7 @@ async def remove_project_device(
     """
     try:
         # Check if device exists
-        existing = db.table("site_devices").select("id").eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
+        existing = db.table("site_devices").select("id, site_id").eq("id", str(device_id)).eq("project_id", str(project_id)).execute()
         if not existing.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -976,6 +983,10 @@ async def remove_project_device(
 
         # Soft delete - set enabled to false
         db.table("site_devices").update({"enabled": False}).eq("id", str(device_id)).execute()
+
+        # Update site config_changed_at to trigger controller sync
+        if existing.data[0].get("site_id"):
+            db.table("sites").update({"config_changed_at": datetime.utcnow().isoformat()}).eq("id", existing.data[0]["site_id"]).execute()
 
         return None
     except HTTPException:
@@ -1167,6 +1178,9 @@ async def add_site_device(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to add device"
             )
+
+        # Update site config_changed_at to trigger controller sync
+        db.table("sites").update({"config_changed_at": datetime.utcnow().isoformat()}).eq("id", str(site_id)).execute()
 
         # Fetch with template info
         device_result = db.table("site_devices").select(
