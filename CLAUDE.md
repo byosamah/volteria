@@ -171,6 +171,9 @@ SUPABASE_SERVICE_KEY=your-service-key
 9. **Config readers use SharedState**: All code reading device settings (services, CLI scripts) must use `get_config()` from `common.state` — never hardcode paths
 10. **Debug HTTP errors by tracing full path**: Browser → Nginx → Frontend API → Backend → Database. Don't assume error source — check each hop.
 11. **Device types must be synced**: When adding new device types to frontend/database, also add to `controller/common/config.py` DeviceType enum — controller skips devices with unrecognized types
+12. **ME437 register addresses are 0-based**: Datasheet values = direct Modbus addresses, no offset needed. Energy registers are UInt32 in kWh (V3.0 manual changed from float32/Wh)
+13. **RTU Direct serial requirements**: `pyserial` must be installed in controller venv. pymodbus 3.11+ uses `device_id=` not `slave=`
+14. **Pi 5 USB host crash recovery**: FTDI RS485 adapters can crash xhci-hcd.1; reset with `echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/unbind && sleep 2 && echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/bind`
 
 ## Key Architecture Decisions
 

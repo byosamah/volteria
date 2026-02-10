@@ -351,7 +351,7 @@ class DeviceManager:
             if power is not None:
                 if status.device_type == DeviceType.INVERTER:
                     total_solar += power
-                elif status.device_type == DeviceType.LOAD_METER:
+                elif status.device_type in (DeviceType.LOAD_METER, DeviceType.LOAD, DeviceType.ENERGY_METER):
                     total_load += power
                 elif status.device_type == DeviceType.DG:
                     total_dg += power

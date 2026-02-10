@@ -54,6 +54,13 @@ class DeviceType(str, Enum):
     BELT_SCALE = "belt_scale"
     # Generic
     OTHER_HARDWARE = "other_hardware"
+    # Frontend device types (measurement categories)
+    LOAD = "load"
+    SUBLOAD = "subload"
+    SOLAR_METER = "solar_meter"
+    SOLAR_SENSOR = "solar_sensor"
+    GAS_GENERATOR = "gas_generator"
+    OTHER = "other"
     # Legacy (backwards compatibility)
     LOAD_METER = "load_meter"
     DG = "dg"
@@ -220,8 +227,9 @@ class SiteConfig:
         return self.get_devices_by_type(DeviceType.INVERTER)
 
     def get_load_meters(self) -> list[DeviceConfig]:
-        """Get all load meter devices"""
-        return self.get_devices_by_type(DeviceType.LOAD_METER)
+        """Get all load meter devices (matches load, load_meter, energy_meter types)"""
+        load_types = {DeviceType.LOAD_METER, DeviceType.LOAD, DeviceType.ENERGY_METER}
+        return [d for d in self.devices if d.device_type in load_types]
 
     def get_generators(self) -> list[DeviceConfig]:
         """Get all DG devices"""
