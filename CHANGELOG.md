@@ -5,6 +5,18 @@
 
 ## 2026-02-10
 
+### Live Registers Page — RTU Direct Support
+- **Serial port exclusive lock**: `register_cli.py` can't open serial port (device service holds exclusive lock). Fixed: detects `rtu_direct` protocol and reads from SharedState instead of direct Modbus. TCP/RTU Gateway still uses direct connection.
+- **Viz/alarm registers missing**: Device service only polled `registers` (logging). Visualization and alarm registers never appeared in SharedState → showed "--" on Live Registers page. Fixed: now polls `visualization_registers` and `alarm_registers` at 5s interval (vs 1s for logging), deduplicated by address.
+- **Unsupported datatype crash**: Viz registers can have datatypes like `uint8_hi` not in `RegisterDataType` enum. Device service crashed on startup. Fixed: wraps in try/except, skips unknown datatypes gracefully.
+- **Files**: `register_cli.py`, `services/device/service.py`
+
+### Control Service Crash-Loop Fix
+- **Issue**: Control service crashed with `AttributeError: 'ServiceLoggerAdapter' object has no attribute '_logger'` on every shutdown, causing restart cascade
+- **Root cause**: `logger._logger` used in 5 places (1 in `control/service.py`, 4 in `device/register_writer.py`). `ServiceLoggerAdapter` has no `_logger` attribute — pass `logger` directly (interface-compatible).
+- **Impact**: Bug only manifested during shutdown (final loop iteration after SIGTERM). Health endpoint reported healthy during normal operation.
+- **Files**: `services/control/service.py`, `services/device/register_writer.py`
+
 ### ME437 Energy Meter Template Fix + RTU Direct Integration
 - **Template fix**: All 40 register addresses corrected (-1 offset from datasheet), energy types changed float32→uint32, scale_factor removed — source: ME437 Modbus Protocol V3.0 manual
 - **RTU Direct pipeline**: 5 cascading bugs found and fixed to make serial Modbus work end-to-end:
