@@ -1842,8 +1842,8 @@ class RegisterReadRequest(BaseModel):
 
 class RegisterReading(BaseModel):
     """Single register reading."""
-    raw_value: float
-    scaled_value: float
+    raw_value: float | str
+    scaled_value: float | str
     timestamp: str
 
 
