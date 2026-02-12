@@ -99,14 +99,23 @@ interface Device {
   } | null;
 }
 
-// Helper to get active registers from a device (logging_registers only - these are actively being logged)
+// Helper to get registers from a device (logging + visualization, deduplicated)
 function getDeviceRegisters(device: Device | undefined): Register[] {
   if (!device?.device_templates) return [];
 
-  // Only use logging_registers - these are the active/enabled registers
   const logging = device.device_templates.logging_registers || [];
+  const visualization = device.device_templates.visualization_registers || [];
 
-  return logging.filter(r => r.access === "read" || r.access === "readwrite");
+  // Merge both, dedup by name (logging takes priority)
+  const seen = new Set<string>();
+  const result: Register[] = [];
+  for (const reg of [...logging, ...visualization]) {
+    if (!reg.name || seen.has(reg.name)) continue;
+    if (reg.access && reg.access !== "read" && reg.access !== "readwrite") continue;
+    seen.add(reg.name);
+    result.push(reg);
+  }
+  return result;
 }
 
 interface WidgetConfigDialogProps {
