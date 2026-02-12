@@ -870,15 +870,21 @@ class LoggingService:
                 self.cloud_sync.backfill.reset()
             return 0
 
+        # Dynamic batch size: scale with register count to keep up with production rate
+        # With 462 registers at 1s sampling, 5000 readings = ~10s of data — too slow.
+        # register_count * 200 ≈ 200s of data per batch, enough for both 30s and 180s sync intervals.
+        register_count = len(self._last_register_frequencies) if self._last_register_frequencies else 0
+        batch_size = max(5000, register_count * 200)
+
         # Two-phase backfill strategy:
-        # Phase RECENT_FIRST: sync newest 5000 (dashboard shows current state quickly)
-        # Phase FILLING_GAPS or NORMAL: sync oldest 5000 (fill gaps chronologically)
+        # Phase RECENT_FIRST: sync newest batch (dashboard shows current state quickly)
+        # Phase FILLING_GAPS or NORMAL: sync oldest first (fill gaps chronologically)
         if pending_count > CloudSync.BACKFILL_THRESHOLD and not self.cloud_sync.backfill.recent_synced:
             # First cycle after detecting backfill: sync newest
-            unsynced = await self._run_db(self.local_db.get_unsynced_device_readings_newest, 5000)
+            unsynced = await self._run_db(self.local_db.get_unsynced_device_readings_newest, batch_size)
         else:
             # Normal or gap-filling: sync oldest first
-            unsynced = await self._run_db(self.local_db.get_unsynced_device_readings, 5000)
+            unsynced = await self._run_db(self.local_db.get_unsynced_device_readings, batch_size)
 
         if not unsynced:
             return 0

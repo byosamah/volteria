@@ -685,8 +685,11 @@ class LocalDatabase:
             cursor.execute("SELECT COUNT(*) FROM device_readings WHERE synced_at IS NULL")
             return cursor.fetchone()[0]
 
+    # SQLite parameter limit (safe for all builds)
+    SQLITE_MAX_PARAMS = 999
+
     def mark_device_readings_synced(self, reading_ids: list[int]) -> None:
-        """Mark device readings as synced"""
+        """Mark device readings as synced, chunked for large batches."""
         if not reading_ids:
             return
 
@@ -694,11 +697,14 @@ class LocalDatabase:
             cursor = conn.cursor()
             now = datetime.now(timezone.utc).isoformat()
 
-            placeholders = ",".join("?" for _ in reading_ids)
-            cursor.execute(f"""
-                UPDATE device_readings
-                SET synced_at = ?
-                WHERE id IN ({placeholders})
-            """, [now] + reading_ids)
+            # Chunk to stay within SQLite parameter limit (999 per query)
+            for chunk_start in range(0, len(reading_ids), self.SQLITE_MAX_PARAMS):
+                chunk = reading_ids[chunk_start:chunk_start + self.SQLITE_MAX_PARAMS]
+                placeholders = ",".join("?" for _ in chunk)
+                cursor.execute(f"""
+                    UPDATE device_readings
+                    SET synced_at = ?
+                    WHERE id IN ({placeholders})
+                """, [now] + chunk)
 
             conn.commit()
