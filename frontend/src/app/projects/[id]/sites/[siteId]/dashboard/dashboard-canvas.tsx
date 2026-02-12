@@ -454,13 +454,22 @@ export function DashboardCanvas({
     }
   };
 
-  // Update widget config
+  // Update widget config (preserve current position/size so DB stays in sync)
   const updateWidgetConfig = async (widgetId: string, config: Record<string, unknown>) => {
     try {
+      const currentWidget = widgets.find(w => w.id === widgetId);
+      if (!currentWidget) return;
+
       const response = await fetch(`/api/dashboards/${siteId}/widgets/${widgetId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config }),
+        body: JSON.stringify({
+          config,
+          grid_row: currentWidget.grid_row,
+          grid_col: currentWidget.grid_col,
+          grid_width: currentWidget.grid_width,
+          grid_height: currentWidget.grid_height,
+        }),
       });
 
       if (!response.ok) {
