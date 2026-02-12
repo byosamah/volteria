@@ -13,8 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Check, X, Loader2 } from "lucide-react";
 import type { RegisterRowProps } from "./types";
 
-// Format value for display
-function formatValue(value: number, decimals?: number): string {
+// Format value for display (handles both numeric and string values)
+function formatValue(value: number | string, decimals?: number): string {
+  if (typeof value === "string") return value;
   const d = decimals ?? 2;
   return value.toFixed(d);
 }
@@ -125,18 +126,29 @@ export function RegisterRow({
       {/* Value (raw from Modbus) */}
       <td className="px-3 py-2 text-right font-mono text-muted-foreground">
         {value ? (
-          formatValue(value.raw_value, 0)
+          typeof value.raw_value === "string"
+            ? value.raw_value
+            : formatValue(value.raw_value, 0)
         ) : (
           <span className="text-muted-foreground">--</span>
         )}
       </td>
 
-      {/* Adjusted Value (after scale/offset operations) */}
+      {/* Adjusted Value (after scale/offset + enumeration lookup) */}
       <td className="px-3 py-2 text-right font-mono">
         {value ? (
-          <span className={hasScaling ? "text-green-700 font-medium" : ""}>
-            {formatValue(value.scaled_value, register.decimals)}
-          </span>
+          (() => {
+            // Check enumeration lookup (e.g., 3 → "9600" for baud rate)
+            const enumLabel = register.values?.[String(typeof value.scaled_value === "number" ? Math.floor(value.scaled_value) : value.scaled_value)];
+            if (enumLabel) {
+              return <span className="text-purple-700 font-medium">{enumLabel}</span>;
+            }
+            return (
+              <span className={hasScaling ? "text-green-700 font-medium" : ""}>
+                {formatValue(value.scaled_value, register.decimals)}
+              </span>
+            );
+          })()
         ) : (
           <span className="text-muted-foreground">--</span>
         )}

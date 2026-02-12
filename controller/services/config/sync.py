@@ -344,6 +344,7 @@ class ConfigSync:
             "logging_frequency": reg.get("logging_frequency") or 60,  # In seconds
 
             # Advanced fields
+            "size": reg.get("size", 0),  # Register count override (for UTF8 multi-register strings)
             "mask": reg.get("mask"),  # Bit mask config
             "values": reg.get("values"),  # Enumeration mapping
 

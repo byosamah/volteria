@@ -10,8 +10,8 @@ import type { AlarmSeverity } from "@/lib/types";
 
 // Value returned from a register read
 export interface RegisterValue {
-  raw_value: number;       // Raw value from Modbus
-  scaled_value: number;    // After applying scale/offset
+  raw_value: number | string;       // Raw value from Modbus (string for UTF8)
+  scaled_value: number | string;    // After applying scale/offset (string for UTF8)
   timestamp: string;       // ISO timestamp
 }
 

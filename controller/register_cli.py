@@ -260,24 +260,37 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
                 scale = 1.0
                 offset = 0.0
                 scale_order = "multiply_first"
+                datatype = "uint16"
+                reg_size = 0
 
                 if reg_config:
                     reg_type = reg_config.get("type", "input")
                     scale = reg_config.get("scale", 1.0) or 1.0
                     offset = reg_config.get("offset", 0.0) or 0.0
                     scale_order = reg_config.get("scale_order", "multiply_first")
+                    datatype = reg_config.get("datatype", "uint16")
+                    reg_size = reg_config.get("size", 0) or 0
+
+                # Determine register count based on datatype
+                count = 1
+                if datatype == "utf8":
+                    count = reg_size if reg_size > 0 else 20
+                elif datatype in ("uint32", "int32", "float32"):
+                    count = 2
+                elif datatype == "float64":
+                    count = 4
 
                 # Read based on register type
                 if reg_type == "holding":
                     response = await client.read_holding_registers(
                         address=address,
-                        count=1,
+                        count=count,
                         device_id=slave_id
                     )
                 else:
                     response = await client.read_input_registers(
                         address=address,
-                        count=1,
+                        count=count,
                         device_id=slave_id
                     )
 
@@ -285,19 +298,50 @@ async def read_registers(device_id: str, addresses: list[int]) -> dict:
                     result["errors"].append(f"Failed to read address {address}: {response}")
                     continue
 
-                raw_value = response.registers[0]
-
-                # Apply scale and offset
-                if scale_order == "multiply_first":
-                    scaled_value = (raw_value * scale) + offset
+                # Convert based on datatype
+                registers = response.registers
+                if datatype == "utf8":
+                    raw_bytes = b""
+                    for reg in registers:
+                        raw_bytes += reg.to_bytes(2, byteorder="big")
+                    decoded = raw_bytes.decode("utf-8", errors="replace").rstrip("\x00").strip()
+                    result["readings"][str(address)] = {
+                        "raw_value": decoded,
+                        "scaled_value": decoded,
+                        "timestamp": timestamp
+                    }
                 else:
-                    scaled_value = (raw_value + offset) * scale
+                    import struct
+                    if datatype == "int16":
+                        raw_value = registers[0]
+                        if raw_value >= 0x8000:
+                            raw_value -= 0x10000
+                    elif datatype == "uint32" and len(registers) >= 2:
+                        raw_value = (registers[0] << 16) | registers[1]
+                    elif datatype == "int32" and len(registers) >= 2:
+                        raw_value = (registers[0] << 16) | registers[1]
+                        if raw_value >= 0x80000000:
+                            raw_value -= 0x100000000
+                    elif datatype == "float32" and len(registers) >= 2:
+                        packed = struct.pack(">HH", registers[0], registers[1])
+                        raw_value = struct.unpack(">f", packed)[0]
+                    elif datatype == "float64" and len(registers) >= 4:
+                        packed = struct.pack(">HHHH", *registers[:4])
+                        raw_value = struct.unpack(">d", packed)[0]
+                    else:
+                        raw_value = registers[0]
 
-                result["readings"][str(address)] = {
-                    "raw_value": raw_value,
-                    "scaled_value": scaled_value,
-                    "timestamp": timestamp
-                }
+                    # Apply scale and offset
+                    if scale_order == "multiply_first":
+                        scaled_value = (raw_value * scale) + offset
+                    else:
+                        scaled_value = (raw_value + offset) * scale
+
+                    result["readings"][str(address)] = {
+                        "raw_value": raw_value,
+                        "scaled_value": scaled_value,
+                        "timestamp": timestamp
+                    }
 
             except Exception as e:
                 result["errors"].append(f"Error reading address {address}: {str(e)}")

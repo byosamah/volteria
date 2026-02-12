@@ -215,8 +215,8 @@ class RegisterReader:
         """Read a register with retry logic"""
         for attempt in range(self.MAX_RETRIES + 1):
             try:
-                # Determine register count based on datatype
-                count = ModbusClient.get_register_count(register.datatype)
+                # Determine register count based on datatype (size overrides for UTF8 etc.)
+                count = ModbusClient.get_register_count(register.datatype, register.size)
 
                 # Read based on register type
                 if register.type == "holding":

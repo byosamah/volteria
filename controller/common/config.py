@@ -82,6 +82,7 @@ class RegisterDataType(str, Enum):
     INT32 = "int32"
     FLOAT32 = "float32"
     FLOAT64 = "float64"
+    UTF8 = "utf8"
 
 
 @dataclass
@@ -94,6 +95,7 @@ class ModbusRegister:
     access: str = "read"  # read, read_write
     scale: float = 1.0
     unit: str = ""
+    size: int = 0  # Register count override (0 = use datatype default)
     poll_interval_ms: int = 1000
     log_to_cloud: bool = True
 
@@ -304,6 +306,7 @@ def load_site_config(data: dict) -> SiteConfig:
                 access=r.get("access", "read"),
                 scale=r.get("scale", 1.0),
                 unit=r.get("unit", ""),
+                size=r.get("size", 0),
                 poll_interval_ms=r.get("poll_interval_ms", 1000),
                 log_to_cloud=r.get("log_to_cloud", True),
             )

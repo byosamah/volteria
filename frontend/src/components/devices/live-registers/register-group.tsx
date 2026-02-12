@@ -20,8 +20,8 @@ import { getSeverityColor } from "./types";
 import type { AlarmThreshold } from "@/lib/types";
 
 // Check if a threshold condition is met
-function isThresholdActive(value: number | undefined, threshold: AlarmThreshold): boolean {
-  if (value === undefined) return false;
+function isThresholdActive(value: number | string | undefined, threshold: AlarmThreshold): boolean {
+  if (value === undefined || typeof value === "string") return false;
 
   switch (threshold.operator) {
     case ">": return value > threshold.value;
@@ -35,7 +35,8 @@ function isThresholdActive(value: number | undefined, threshold: AlarmThreshold)
 }
 
 // Format value for display
-function formatValue(value: number, decimals?: number): string {
+function formatValue(value: number | string, decimals?: number): string {
+  if (typeof value === "string") return value;
   const d = decimals ?? 2;
   return value.toFixed(d);
 }

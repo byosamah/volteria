@@ -314,7 +314,7 @@ class ModbusClient:
         self,
         registers: list[int],
         datatype: RegisterDataType,
-    ) -> float | int | None:
+    ) -> float | int | str | None:
         """Convert raw registers to typed value"""
         if not registers:
             return None
@@ -362,6 +362,12 @@ class ModbusClient:
                 )
                 return struct.unpack(">d", packed)[0]
 
+            elif datatype == RegisterDataType.UTF8:
+                raw_bytes = b""
+                for reg in registers:
+                    raw_bytes += reg.to_bytes(2, byteorder="big")
+                return raw_bytes.decode("utf-8", errors="replace").rstrip("\x00").strip()
+
             return registers[0]
 
         except (struct.error, IndexError) as e:
@@ -369,8 +375,10 @@ class ModbusClient:
             return None
 
     @staticmethod
-    def get_register_count(datatype: RegisterDataType) -> int:
-        """Get number of registers for a data type"""
+    def get_register_count(datatype: RegisterDataType, size: int = 0) -> int:
+        """Get number of registers for a data type. size overrides default if > 0."""
+        if size > 0:
+            return size
         counts = {
             RegisterDataType.UINT16: 1,
             RegisterDataType.INT16: 1,
@@ -378,6 +386,7 @@ class ModbusClient:
             RegisterDataType.INT32: 2,
             RegisterDataType.FLOAT32: 2,
             RegisterDataType.FLOAT64: 4,
+            RegisterDataType.UTF8: 20,
         }
         return counts.get(datatype, 1)
 
@@ -638,7 +647,7 @@ class ModbusSerialClient:
         self,
         registers: list[int],
         datatype: RegisterDataType,
-    ) -> float | int | None:
+    ) -> float | int | str | None:
         """Convert raw registers to typed value (same logic as TCP client)"""
         if not registers:
             return None
@@ -684,6 +693,12 @@ class ModbusSerialClient:
                 )
                 return struct.unpack(">d", packed)[0]
 
+            elif datatype == RegisterDataType.UTF8:
+                raw_bytes = b""
+                for reg in registers:
+                    raw_bytes += reg.to_bytes(2, byteorder="big")
+                return raw_bytes.decode("utf-8", errors="replace").rstrip("\x00").strip()
+
             return registers[0]
 
         except (struct.error, IndexError) as e:
@@ -691,6 +706,6 @@ class ModbusSerialClient:
             return None
 
     @staticmethod
-    def get_register_count(datatype: RegisterDataType) -> int:
-        """Get number of registers for a data type"""
-        return ModbusClient.get_register_count(datatype)
+    def get_register_count(datatype: RegisterDataType, size: int = 0) -> int:
+        """Get number of registers for a data type. size overrides default if > 0."""
+        return ModbusClient.get_register_count(datatype, size)

@@ -256,14 +256,20 @@ class DeviceService:
             # Parse registers
             from common.config import ModbusRegister, RegisterDataType
             for reg_data in device_data.get("registers", []):
+                try:
+                    reg_datatype = RegisterDataType(reg_data.get("datatype", "uint16"))
+                except ValueError:
+                    logger.debug(f"Skipping register {reg_data.get('name')}: unsupported datatype {reg_data.get('datatype')}")
+                    continue
                 device.registers.append(ModbusRegister(
                     address=reg_data["address"],
                     name=reg_data["name"],
                     type=reg_data.get("type", "holding"),
-                    datatype=RegisterDataType(reg_data.get("datatype", "uint16")),
+                    datatype=reg_datatype,
                     access=reg_data.get("access", "read"),
                     scale=reg_data.get("scale", 1.0),
                     unit=reg_data.get("unit", ""),
+                    size=reg_data.get("size", 0),
                     poll_interval_ms=reg_data.get("poll_interval_ms", 1000),
                     log_to_cloud=reg_data.get("log_to_cloud", True),
                 ))
@@ -290,6 +296,7 @@ class DeviceService:
                         access=reg_data.get("access", "read"),
                         scale=reg_data.get("scale", 1.0),
                         unit=reg_data.get("unit", ""),
+                        size=reg_data.get("size", 0),
                         poll_interval_ms=5000,
                         log_to_cloud=False,
                     ))

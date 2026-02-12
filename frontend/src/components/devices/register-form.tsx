@@ -35,7 +35,7 @@ export interface ModbusRegister {
   description?: string;
   type: "input" | "holding";
   access: "read" | "write" | "readwrite";
-  datatype: "uint16" | "int16" | "uint32" | "int32" | "float32";
+  datatype: "uint16" | "int16" | "uint32" | "int32" | "float32" | "float64" | "utf8";
   scale?: number;  // Multiplication factor
   offset?: number;  // Addition factor (can be negative)
   scale_order?: "multiply_first" | "add_first";  // Which operation happens first
@@ -55,6 +55,7 @@ export interface ModbusRegister {
     bits: boolean[];
   };
   decimals?: number;  // Display precision (0-10)
+  size?: number;  // Register count override (for UTF8 multi-register strings)
 
   // Template linkage tracking
   // "template": Read-only at device level, synced from template
@@ -196,7 +197,7 @@ export function RegisterForm({
     description: string;
     type: "input" | "holding";
     access: "read" | "write" | "readwrite";
-    datatype: "uint16" | "int16" | "uint32" | "int32" | "float32";
+    datatype: "uint16" | "int16" | "uint32" | "int32" | "float32" | "float64" | "utf8";
     scale: string;
     offset: string;
     scale_order: "multiply_first" | "add_first";
@@ -208,6 +209,7 @@ export function RegisterForm({
     // New fields
     group: string;
     decimals: string;
+    size: string;  // Register count override (for UTF8)
   }>({
     address: "",
     name: "",
@@ -226,6 +228,7 @@ export function RegisterForm({
     // New field defaults
     group: "",
     decimals: "",
+    size: "",
   });
 
   const [errors, setErrors] = useState<string[]>([]);
@@ -271,6 +274,7 @@ export function RegisterForm({
           // Load new fields
           group: register.group || "",
           decimals: register.decimals?.toString() || "",
+          size: register.size?.toString() || "",
         });
         // Load existing thresholds if editing an alarm register
         setThresholds(register.thresholds || []);
@@ -316,6 +320,7 @@ export function RegisterForm({
           // New field defaults
           group: "",
           decimals: "",
+          size: "",
         });
         // For alarm registers: pre-populate with one empty threshold and auto-expand
         // Alarms REQUIRE at least one threshold, so we start with one to guide the user
@@ -516,6 +521,14 @@ export function RegisterForm({
       }
     }
 
+    // Add size if specified (for UTF8 multi-register strings)
+    if (formData.size) {
+      const sz = parseInt(formData.size);
+      if (!isNaN(sz) && sz > 0) {
+        newRegister.size = sz;
+      }
+    }
+
     onSave(newRegister);
     onOpenChange(false);
   };
@@ -684,8 +697,33 @@ export function RegisterForm({
               <option value="uint32">uint32 (unsigned 32-bit)</option>
               <option value="int32">int32 (signed 32-bit)</option>
               <option value="float32">float32 (32-bit float)</option>
+              <option value="float64">float64 (64-bit double)</option>
+              <option value="utf8">utf8 (text string)</option>
             </select>
           </div>
+
+          {/* Size (register count) - shown for UTF8 datatype */}
+          {formData.datatype === "utf8" && (
+            <div className="space-y-2">
+              <Label htmlFor="size">
+                Size (registers) <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="size"
+                name="size"
+                type="number"
+                min={1}
+                max={125}
+                placeholder="e.g., 20"
+                value={formData.size}
+                onChange={handleChange}
+                className="min-h-[44px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                Number of 16-bit registers to read (each = 2 bytes of text)
+              </p>
+            </div>
+          )}
 
           {/* Scale, Offset, and Order - in a row */}
           <div className="grid gap-4 sm:grid-cols-3">
