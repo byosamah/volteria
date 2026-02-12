@@ -98,6 +98,15 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/TABLE?select=*&limit=1
 supabase db push --db-url "postgresql://postgres.usgxhzdctzthcqxyxfxl:$SUPABASE_DB_PASSWORD@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 ```
 
+**Migration fallback** (when CLI fails with `!!` password encoding):
+```bash
+# Execute SQL directly via exec_sql RPC
+curl -s -X POST "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/rpc/exec_sql" \
+  -H "apikey: SERVICE_KEY" -H "Authorization: Bearer SERVICE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "<sql>"}'
+```
+
 ### Key Tables
 | Table | Purpose |
 |-------|---------|
@@ -185,6 +194,9 @@ SUPABASE_SERVICE_KEY=your-service-key
 23. **Template UI edits copy registers to site_devices**: Editing a template in the UI copies registers to `site_devices.registers` with `"source": "template"` tags. Fixing a template alone doesn't fix existing devices — must also update site_devices copies or trigger re-sync.
 24. **ComAp InteliGen NT uses 1-based register numbering**: ComAp register 40013 = Modbus PDU address 12. pymodbus uses 0-based PDU addresses. Template addresses must be `register_number - 1`. Meatrol ME437 is 0-based (no offset needed).
 25. **Device offline-isolation cascade**: When a register read fails with "Illegal Data Address", the device service skips ALL remaining registers for that device. One bad register address blocks the entire device's data flow.
+26. **Logging buffer thresholds are dynamic**: `ALERT_BUFFER_SIZE` and `MAX_BUFFER_SIZE` scale with `register_count × flush_interval`. With 462 registers at 60s flush, thresholds are 55K/83K (not the old hardcoded 5K/10K). Auto-resolves after 3 consecutive healthy checks.
+27. **Disabled devices must be excluded from alarm cron jobs**: `get_non_reporting_devices()` and `check_device_connection_status()` filter by `sd.enabled = true`. Without this, disabled devices with stale readings trigger recurring "Not Reporting" alarms that re-create after every manual resolve.
+28. **DG total power > load meter total is expected**: ~10-15% gap from DG auxiliaries, transformer/distribution losses, and house loads between generation and metering point. No solar = DGs are the only source, so the gap is purely losses.
 
 ## Key Architecture Decisions
 

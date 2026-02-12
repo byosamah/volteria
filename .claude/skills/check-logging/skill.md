@@ -134,7 +134,7 @@ If issues found: list specific problems with remediations below the table.
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| High buffer | Flush stalled | Check SQLite disk space via SSH |
+| High buffer | Flush stalled or register count explosion | Buffer thresholds are dynamic: `register_count × flush_interval × 2` (alert) / `× 3` (max). If buffer alarm fires after adding devices, thresholds auto-recalculate on config reload. Auto-resolves after 3 healthy checks. If persistent, check SQLite disk space. |
 | Cloud errors | Auth/network | Verify Supabase keys in controller config |
 | Freq misses | Stale register names or new registers | Normal briefly after rename; persistent = add `logging_frequency` |
 | Unsynced growing | Network/rate | Check internet, restart controller |

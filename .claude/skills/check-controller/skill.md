@@ -594,6 +594,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Control service crash-loop (exit code 1) | `journalctl -u volteria-control` for `AttributeError: _logger` | Replace `logger._logger` with `logger` — ServiceLoggerAdapter is interface-compatible (fixed 2026-02-10) |
 | Service healthy but crash-on-shutdown | Health endpoint OK, but `journalctl` shows exit code 1 | Bug may only trigger during shutdown — always check journalctl, not just health |
 | High CPU + restart loop | `journalctl -u volteria-supervisor` for "Read-only file system" | Update service file: add `/run/volteria` to `ReadWritePaths` |
+| Disabled device keeps alarming "Not Reporting" | `SELECT enabled FROM site_devices WHERE name = 'X'` | Verify migration 098 applied (`get_non_reporting_devices` filters `sd.enabled = true`) |
 
 ### SOL532-E16 Specific Issues
 
