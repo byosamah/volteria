@@ -141,7 +141,7 @@ export function RegisterRow({
             // Check enumeration lookup (e.g., 3 → "9600" for baud rate)
             const enumLabel = register.values?.[String(typeof value.scaled_value === "number" ? Math.floor(value.scaled_value) : value.scaled_value)];
             if (enumLabel) {
-              return <span className="text-purple-700 font-medium">{enumLabel}</span>;
+              return <span className="text-orange-600 font-medium">{enumLabel}</span>;
             }
             return (
               <span className={hasScaling ? "text-green-700 font-medium" : ""}>
