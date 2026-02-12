@@ -46,6 +46,7 @@ class LoggingSettings(BaseModel):
     local_interval_ms: int = Field(default=1000, ge=100)
     cloud_interval_ms: int = Field(default=5000, ge=1000)
     local_retention_days: int = Field(default=7, ge=1, le=90)
+    local_enabled: bool = True
     cloud_enabled: bool = True
     gateway_enabled: bool = False
 
@@ -88,6 +89,11 @@ class SiteUpdate(BaseModel):
     name: Optional[str] = None
     location: Optional[str] = None
     description: Optional[str] = None
+    controller_serial_number: Optional[str] = None
+    control_method: Optional[str] = None
+    control_method_backup: Optional[str] = None
+    grid_connection: Optional[str] = None
+    is_active: Optional[bool] = None
     control: Optional[ControlSettings] = None
     logging: Optional[LoggingSettings] = None
     safe_mode: Optional[SafeModeSettings] = None
@@ -388,23 +394,40 @@ async def update_site(
         # Build update data
         update_data = {}
 
+        # Basic info
         if update.name is not None:
             update_data["name"] = update.name
         if update.location is not None:
             update_data["location"] = update.location
         if update.description is not None:
             update_data["description"] = update.description
+        if update.controller_serial_number is not None:
+            update_data["controller_serial_number"] = update.controller_serial_number or None
+        if update.control_method is not None:
+            update_data["control_method"] = update.control_method
+        if update.control_method_backup is not None:
+            update_data["control_method_backup"] = update.control_method_backup
+        if update.grid_connection is not None:
+            update_data["grid_connection"] = update.grid_connection
+        if update.is_active is not None:
+            update_data["is_active"] = update.is_active
 
+        # Control settings
         if update.control is not None:
             update_data["control_interval_ms"] = update.control.interval_ms
             update_data["dg_reserve_kw"] = update.control.dg_reserve_kw
             update_data["operation_mode"] = update.control.operation_mode
 
+        # Logging settings
         if update.logging is not None:
             update_data["logging_local_interval_ms"] = update.logging.local_interval_ms
             update_data["logging_cloud_interval_ms"] = update.logging.cloud_interval_ms
             update_data["logging_local_retention_days"] = update.logging.local_retention_days
+            update_data["logging_local_enabled"] = update.logging.local_enabled
+            update_data["logging_cloud_enabled"] = update.logging.cloud_enabled
+            update_data["logging_gateway_enabled"] = update.logging.gateway_enabled
 
+        # Safe mode settings
         if update.safe_mode is not None:
             update_data["safe_mode_enabled"] = update.safe_mode.enabled
             update_data["safe_mode_type"] = update.safe_mode.type
