@@ -144,6 +144,7 @@ If issues found: list specific problems with remediations below the table.
 | Drift alarms accumulating | No auto-resolve | After 3 healthy checks, alarms auto-resolve. If not resolving, check `_consecutive_low_drift_checks` logic |
 | Alarm resolved locally but stuck in cloud | Missing `resolve_alarm_in_cloud()` call | Every `resolve_alarms_by_type()` must be paired with `cloud_sync.resolve_alarm_in_cloud(alarm_type)`. Compare SQLite `resolved=1` vs Supabase `resolved=false` for same alarm. |
 | Repeated "Resolved alarm in cloud" spam | Auto-resolve guard uses `>= N` instead of `== N` | Use `== N` for consecutive-check guards so resolve fires exactly once on transition, not every cycle forever |
+| Retention cleanup never runs | Service restarts reset 2-4 AM timer | Manual cleanup: `sudo systemctl stop volteria-logging && sudo -u volteria python3 /tmp/cleanup.py && sudo systemctl start volteria-logging`. DB owned by `volteria` user. Delete in batches of 50K, then VACUUM. No HTTP endpoint for on-demand cleanup. |
 
 ### Known Behaviors
 

@@ -599,6 +599,8 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | ALL registers fail for one device | Check FIRST register in device's list | Cascade failure: first register failure marks device "not reachable", skips all remaining. Fix the first register to unblock the rest |
 | `can't multiply sequence by non-int` | UTF8 register returns string, scaling crashes | `modbus_client.py` guards with `isinstance(value, str)` — strings skip `value * scale`. If new datatype returns non-numeric, add same guard |
 | Live Registers 500 error on UTF8 device | Backend `RegisterReading` rejects string | `RegisterReading` model uses `float | str` for `raw_value`/`scaled_value` (fixed 2026-02-12) |
+| SQLite write fails "readonly database" | DB owned by `volteria` user, SSH as `voltadmin` | Use `sudo -u volteria python3 script.py`. Stop logging service first, restart after |
+| Register causes "Illegal Data Address" on some devices | Register exists in template but not on hardware | Remove from `visualization_registers` via Supabase PATCH on template + all linked site_devices + INSERT `control_commands` (`command_type: sync_config`) |
 
 ### SOL532-E16 Specific Issues
 
