@@ -183,6 +183,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 21. **Config sync reads `logging_registers` from templates**: `device_templates` stores registers in `logging_registers` column, but `site_devices` uses `registers`. `sync.py` reads both columns and prefers `logging_registers` when `registers` is empty. `_fetch_template_registers()` also fetches both.
 22. **Supabase RLS silent failure**: UPDATE/DELETE blocked by RLS returns `{data: null, error: null}` — no error thrown. Always verify RLS policies exist for write operations, not just SELECT.
 23. **Template UI edits copy registers to site_devices**: Editing a template in the UI copies registers to `site_devices.registers` with `"source": "template"` tags. Fixing a template alone doesn't fix existing devices — must also update site_devices copies or trigger re-sync.
+24. **ComAp InteliGen NT uses 1-based register numbering**: ComAp register 40013 = Modbus PDU address 12. pymodbus uses 0-based PDU addresses. Template addresses must be `register_number - 1`. Meatrol ME437 is 0-based (no offset needed).
+25. **Device offline-isolation cascade**: When a register read fails with "Illegal Data Address", the device service skips ALL remaining registers for that device. One bad register address blocks the entire device's data flow.
 
 ## Key Architecture Decisions
 
