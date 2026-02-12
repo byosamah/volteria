@@ -197,6 +197,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 26. **Logging buffer thresholds are dynamic**: `ALERT_BUFFER_SIZE` and `MAX_BUFFER_SIZE` scale with `register_count × flush_interval`. With 462 registers at 60s flush, thresholds are 55K/83K (not the old hardcoded 5K/10K). Auto-resolves after 3 consecutive healthy checks.
 27. **Disabled devices must be excluded from alarm cron jobs**: `get_non_reporting_devices()` and `check_device_connection_status()` filter by `sd.enabled = true`. Without this, disabled devices with stale readings trigger recurring "Not Reporting" alarms that re-create after every manual resolve.
 28. **DG total power > load meter total is expected**: ~10-15% gap from DG auxiliaries, transformer/distribution losses, and house loads between generation and metering point. No solar = DGs are the only source, so the gap is purely losses.
+29. **SQLite parameter limit**: `WHERE id IN (...)` queries must chunk at 999 parameters max. `local_db.py` uses `SQLITE_MAX_PARAMS = 999` constant for chunked marking.
+30. **Cloud sync batch size is dynamic**: `max(5000, register_count * 200)` scales with register count. For 462 registers = 92,400 per batch. Ensures sync throughput exceeds production rate even with many devices.
 
 ## Key Architecture Decisions
 
@@ -208,6 +210,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 - **Register rename**: Old name stops logging immediately after config sync; old data preserved as "Non-Active" in Historical Data
 - **SQLite in thread pool**: All `local_db` calls run via `run_in_executor` — never block asyncio event loop
 - **Smart backfill**: After offline recovery, syncs newest first (dashboard current), then fills gaps chronologically
+- **Dynamic scaling**: Buffer threshold (`register_count × flush_interval × 3`) and sync batch size (`max(5000, register_count × 200)`) auto-scale with device count — no manual tuning needed
 
 ### Historical Data
 - Server-side aggregation via `get_historical_readings()` RPC

@@ -137,7 +137,7 @@ If issues found: list specific problems with remediations below the table.
 | High buffer | Flush stalled or register count explosion | Buffer thresholds are dynamic: `register_count × flush_interval × 2` (alert) / `× 3` (max). If buffer alarm fires after adding devices, thresholds auto-recalculate on config reload. Auto-resolves after 3 healthy checks. If persistent, check SQLite disk space. |
 | Cloud errors | Auth/network | Verify Supabase keys in controller config |
 | Freq misses | Stale register names or new registers | Normal briefly after rename; persistent = add `logging_frequency` |
-| Unsynced growing | Network/rate | Check internet, restart controller |
+| Unsynced growing | Network/rate or batch too small | Check internet first. If network OK, check sync throughput: production rate (registers/s) must not exceed sync rate (batch_size / sync_interval). Batch size is dynamic: `max(5000, register_count * 200)`. For 462 registers = 92,400 per batch. |
 | No clock buckets | No device reads | Verify device service is running |
 | Empty batches | All filtered | Lower `logging_frequency` values |
 | LOGGING_HIGH_DRIFT alarms | Blocking SQLite on event loop | Ensure all `local_db` calls use `_run_db()` wrapper (run_in_executor). Threshold is 5000ms. |
@@ -149,6 +149,8 @@ If issues found: list specific problems with remediations below the table.
 
 - **`resolve_alarm_in_cloud()` logs success even when no alarm exists** — PATCH on 0 matching rows returns HTTP 200 OK. The log "Resolved alarm in cloud: X" does NOT confirm an alarm was actually updated. Always cross-check cloud alarms table.
 - **To verify cloud data gaps**: Query `device_readings` in Supabase around known offline events (from `alarms` table). Expected: gap duration matches offline duration, continuous data before/after.
+- **Historical data gaps (~35-40s every 60s)**: Caused by old fixed `MAX_BUFFER_SIZE=10,000` overflow with high register counts. Dynamic buffer threshold `max(10000, register_count × flush_interval × 3)` prevents this (fixed 2026-02-12).
+- **False `not_reporting` alarms from sync lag**: Cloud cron checks `device_readings` timestamps. If sync throughput < production rate, stale timestamps trigger false alarms even though controller is healthy. Fix: dynamic sync batch size (fixed 2026-02-12).
 
 ## Restart Controller (if needed)
 

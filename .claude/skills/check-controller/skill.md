@@ -595,6 +595,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Service healthy but crash-on-shutdown | Health endpoint OK, but `journalctl` shows exit code 1 | Bug may only trigger during shutdown — always check journalctl, not just health |
 | High CPU + restart loop | `journalctl -u volteria-supervisor` for "Read-only file system" | Update service file: add `/run/volteria` to `ReadWritePaths` |
 | Disabled device keeps alarming "Not Reporting" | `SELECT enabled FROM site_devices WHERE name = 'X'` | Verify migration 098 applied (`get_non_reporting_devices` filters `sd.enabled = true`) |
+| All devices offline after deploy | `curl :8083/health` — devices online? | Transient (~30s restart window). Verify via health endpoint before investigating. If persistent, check `journalctl -u volteria-device` |
 
 ### SOL532-E16 Specific Issues
 
