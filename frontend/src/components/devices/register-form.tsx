@@ -245,7 +245,7 @@ export function RegisterForm({
 
   // Helper to determine bit count based on datatype
   const getBitCount = (datatype: string): 16 | 32 => {
-    return datatype.includes("32") ? 32 : 16;
+    return datatype?.includes("32") ? 32 : 16;
   };
 
   // Reset form when dialog opens
@@ -259,7 +259,7 @@ export function RegisterForm({
           description: register.description || "",
           type: register.type,
           access: register.access,
-          datatype: register.datatype,
+          datatype: register.datatype || "uint16",
           scale: register.scale?.toString() || "1",
           offset: register.offset?.toString() || "0",
           scale_order: register.scale_order || "multiply_first",
@@ -290,11 +290,11 @@ export function RegisterForm({
         if (register.mask) {
           setMaskEnabled(register.mask.enabled);
           setMaskHex(register.mask.hex_value || "");
-          setMaskBits(register.mask.bits || new Array(getBitCount(register.datatype)).fill(false));
+          setMaskBits(register.mask.bits || new Array(getBitCount(register.datatype || "uint16")).fill(false));
         } else {
           setMaskEnabled(false);
           setMaskHex("");
-          setMaskBits(new Array(getBitCount(register.datatype)).fill(false));
+          setMaskBits(new Array(getBitCount(register.datatype || "uint16")).fill(false));
         }
       } else {
         // Adding: reset to empty form
