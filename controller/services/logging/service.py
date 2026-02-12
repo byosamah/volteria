@@ -148,6 +148,13 @@ class LoggingService:
         # Drift auto-resolve: track consecutive low-drift checks
         self._consecutive_low_drift_checks: int = 0
 
+        # Buffer auto-resolve: track consecutive low-buffer checks
+        self._consecutive_low_buffer_checks: int = 0
+
+        # Dynamic buffer thresholds (recalculated on config load based on register count)
+        self._alert_buffer_size: int = ALERT_BUFFER_SIZE
+        self._max_buffer_size: int = 10000
+
         # Alarm condition tracking: track which alarms are currently triggered
         # Used for auto-resolution when condition clears (value returns to normal
         # or threshold config changes)
@@ -415,10 +422,17 @@ class LoggingService:
             len(device.get("registers", []))
             for device in config.get("devices", [])
         )
+        # Dynamic buffer thresholds based on register count and flush interval
+        # Expected buffer at flush time = registers × flush_interval (e.g., 282 × 60 = 16,920)
+        expected_per_flush = register_count * self._local_flush_interval
+        self._alert_buffer_size = max(ALERT_BUFFER_SIZE, expected_per_flush * 2)
+        self._max_buffer_size = max(10000, expected_per_flush * 3)
+
         logger.info(
             f"Loaded logging config: {register_count} registers, "
             f"{len(self._calculated_fields_to_log)} calc fields, "
-            f"local={self._local_enabled}, cloud={self._cloud_enabled}"
+            f"local={self._local_enabled}, cloud={self._cloud_enabled}, "
+            f"buffer_alert={self._alert_buffer_size}, buffer_max={self._max_buffer_size}"
         )
 
         # Initialize cloud sync
@@ -653,12 +667,12 @@ class LoggingService:
                         "timestamp": current_timestamp,  # Always use aligned timestamp
                     })
 
-        # Prevent unbounded memory growth (max 10000 readings ~= 2-3 MB)
+        # Prevent unbounded memory growth (dynamic max based on register count)
         async with self._readings_buffer_lock:
-            if len(self._device_readings_buffer) > 10000:
-                excess = len(self._device_readings_buffer) - 10000
+            if len(self._device_readings_buffer) > self._max_buffer_size:
+                excess = len(self._device_readings_buffer) - self._max_buffer_size
                 self._device_readings_buffer = self._device_readings_buffer[excess:]
-                logger.warning(f"RAM buffer overflow, dropped {excess} oldest readings")
+                logger.warning(f"RAM buffer overflow, dropped {excess} oldest readings (max={self._max_buffer_size})")
 
         # Build device_readings dict for alarm evaluation
         # Structure: {device_id: {register_name: value}}
@@ -1608,17 +1622,27 @@ class LoggingService:
                     await self.cloud_sync.resolve_alarm_in_cloud("LOGGING_HIGH_DRIFT")
                 logger.info("Drift recovered: auto-resolved LOGGING_HIGH_DRIFT alarms")
 
-        # Check buffer buildup
-        if buffer_count > ALERT_BUFFER_SIZE:
+        # Check buffer buildup (dynamic threshold based on register count)
+        if buffer_count > self._alert_buffer_size:
+            self._consecutive_low_buffer_checks = 0
             if self._last_buffer_alert is None or (now - self._last_buffer_alert) > cooldown:
                 self._last_buffer_alert = now
                 await self._run_db(
                     self.local_db.insert_alarm,
                     str(uuid.uuid4()), self._site_id, "LOGGING_BUFFER_BUILDUP",
-                    f"Logging buffer has {buffer_count} readings (threshold: {ALERT_BUFFER_SIZE})",
+                    f"Logging buffer has {buffer_count} readings (threshold: {self._alert_buffer_size})",
                     "warning", now.isoformat(),
                 )
                 logger.warning(f"Logging health alert: buffer buildup {buffer_count} readings")
+        else:
+            self._consecutive_low_buffer_checks += 1
+            if self._consecutive_low_buffer_checks == 3:
+                await self._run_db(
+                    self.local_db.resolve_alarms_by_type, "LOGGING_BUFFER_BUILDUP",
+                )
+                if self.cloud_sync:
+                    await self.cloud_sync.resolve_alarm_in_cloud("LOGGING_BUFFER_BUILDUP")
+                logger.info("Buffer recovered: auto-resolved LOGGING_BUFFER_BUILDUP alarms")
 
         # Check consecutive errors
         max_consecutive = max(self._consecutive_sample_errors, self._consecutive_flush_errors)
