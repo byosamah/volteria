@@ -596,6 +596,9 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | High CPU + restart loop | `journalctl -u volteria-supervisor` for "Read-only file system" | Update service file: add `/run/volteria` to `ReadWritePaths` |
 | Disabled device keeps alarming "Not Reporting" | `SELECT enabled FROM site_devices WHERE name = 'X'` | Verify migration 098 applied (`get_non_reporting_devices` filters `sd.enabled = true`) |
 | All devices offline after deploy | `curl :8083/health` — devices online? | Transient (~30s restart window). Verify via health endpoint before investigating. If persistent, check `journalctl -u volteria-device` |
+| ALL registers fail for one device | Check FIRST register in device's list | Cascade failure: first register failure marks device "not reachable", skips all remaining. Fix the first register to unblock the rest |
+| `can't multiply sequence by non-int` | UTF8 register returns string, scaling crashes | `modbus_client.py` guards with `isinstance(value, str)` — strings skip `value * scale`. If new datatype returns non-numeric, add same guard |
+| Live Registers 500 error on UTF8 device | Backend `RegisterReading` rejects string | `RegisterReading` model uses `float | str` for `raw_value`/`scaled_value` (fixed 2026-02-12) |
 
 ### SOL532-E16 Specific Issues
 

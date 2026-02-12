@@ -199,6 +199,9 @@ SUPABASE_SERVICE_KEY=your-service-key
 28. **DG total power > load meter total is expected**: ~10-15% gap from DG auxiliaries, transformer/distribution losses, and house loads between generation and metering point. No solar = DGs are the only source, so the gap is purely losses.
 29. **SQLite parameter limit**: `WHERE id IN (...)` queries must chunk at 999 parameters max. `local_db.py` uses `SQLITE_MAX_PARAMS = 999` constant for chunked marking.
 30. **Cloud sync batch size is dynamic**: `max(5000, register_count * 200)` scales with register count. For 462 registers = 92,400 per batch. Ensures sync throughput exceeds production rate even with many devices.
+31. **UTF8 Modbus strings skip scaling**: `modbus_client.py` guards with `isinstance(value, str)` at 4 locations (TCP+Serial, holding+input). Backend `RegisterReading` Pydantic model uses `float | str` for raw/scaled values.
+32. **Enumeration display is register-type agnostic**: `RegisterRow` uses `register.values` for enum lookup identically across logging, visualization, and alarm registers. No special handling per type.
+33. **Never add special colors to data values**: All register values in Live Registers tables must use the same default formatting. Don't add color-coded styling to specific value types (enums, scaled, etc.) unless user explicitly requests it.
 
 ## Key Architecture Decisions
 
