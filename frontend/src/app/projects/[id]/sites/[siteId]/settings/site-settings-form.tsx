@@ -9,6 +9,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,6 +84,7 @@ interface SiteSettingsFormProps {
 
 export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
   const router = useRouter();
+  const supabase = createClient();
 
   // Form state
   const [loading, setLoading] = useState(false);
@@ -146,54 +148,52 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
         return;
       }
 
-      // Update site via backend API (bypasses RLS on sites table)
-      const response = await fetch(`/api/sites/${site.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // Update site in Supabase
+      const { error } = await supabase
+        .from("sites")
+        .update({
+          // Basic info
           name: formData.name.trim(),
           location: formData.location.trim() || null,
           description: formData.description.trim() || null,
+          is_active: formData.is_active,
           controller_serial_number: formData.controller_serial_number.trim() || null,
+          // Control method
           control_method: formData.control_method,
           control_method_backup: formData.control_method_backup,
           grid_connection: formData.grid_connection,
-          is_active: formData.is_active,
-          control: {
-            interval_ms: formData.control_interval_ms,
-            dg_reserve_kw: formData.dg_reserve_kw,
-            operation_mode: formData.operation_mode,
-          },
-          logging: {
-            local_interval_ms: formData.logging_local_interval_ms,
-            cloud_interval_ms: formData.logging_cloud_interval_ms,
-            local_retention_days: formData.logging_local_retention_days,
-            local_enabled: formData.logging_local_enabled,
-            cloud_enabled: formData.logging_cloud_enabled,
-            gateway_enabled: formData.logging_gateway_enabled,
-          },
-          safe_mode: {
-            enabled: formData.safe_mode_enabled,
-            type: formData.safe_mode_type,
-            timeout_s: formData.safe_mode_timeout_s,
-            rolling_window_min: formData.safe_mode_rolling_window_min,
-            threshold_pct: formData.safe_mode_threshold_pct,
-            power_limit_kw: formData.safe_mode_power_limit_kw || null,
-          },
-        }),
-      });
+          // Control settings
+          dg_reserve_kw: formData.dg_reserve_kw,
+          control_interval_ms: formData.control_interval_ms,
+          operation_mode: formData.operation_mode,
+          // Logging settings
+          logging_local_interval_ms: formData.logging_local_interval_ms,
+          logging_cloud_interval_ms: formData.logging_cloud_interval_ms,
+          logging_local_retention_days: formData.logging_local_retention_days,
+          logging_local_enabled: formData.logging_local_enabled,
+          logging_cloud_enabled: formData.logging_cloud_enabled,
+          logging_gateway_enabled: formData.logging_gateway_enabled,
+          // Safe mode settings
+          safe_mode_enabled: formData.safe_mode_enabled,
+          safe_mode_type: formData.safe_mode_type,
+          safe_mode_timeout_s: formData.safe_mode_timeout_s,
+          safe_mode_rolling_window_min: formData.safe_mode_rolling_window_min,
+          safe_mode_threshold_pct: formData.safe_mode_threshold_pct,
+          safe_mode_power_limit_kw: formData.safe_mode_power_limit_kw || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", site.id);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        console.error("Error updating site:", errorData);
-        toast.error(errorData?.error || errorData?.detail || "Failed to update site");
+      if (error) {
+        console.error("Error updating site:", error);
+        toast.error(error.message || "Failed to update site");
         setLoading(false);
         return;
       }
 
-      // Success — navigate back to site page for fresh render
+      // Success!
       toast.success("Site settings updated successfully");
-      router.push(`/projects/${projectId}/sites/${site.id}`);
+      router.refresh();
     } catch (err) {
       console.error("Unexpected error:", err);
       toast.error("An unexpected error occurred");
