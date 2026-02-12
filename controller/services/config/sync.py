@@ -187,7 +187,7 @@ class ConfigSync:
             params={
                 "site_id": f"eq.{self.site_id}",
                 "enabled": "eq.true",
-                "select": "*,device_templates(id,template_id,name,device_type,brand,model,alarm_registers,registers)",
+                "select": "*,device_templates(id,template_id,name,device_type,brand,model,alarm_registers,registers,logging_registers,visualization_registers)",
             },
             headers=self._headers(),
             timeout=30.0,
@@ -220,9 +220,10 @@ class ConfigSync:
             template = device.get("device_templates") or {}
 
             # Determine registers: device > template join > fetched template
+            # Note: site_devices uses "registers", device_templates uses "logging_registers"
             registers = device.get("registers") or []
             if not registers:
-                registers = template.get("registers") or []
+                registers = template.get("registers") or template.get("logging_registers") or []
             if not registers and device.get("template_id"):
                 registers = template_registers_map.get(device["template_id"], [])
 
@@ -289,7 +290,7 @@ class ConfigSync:
             f"{self.supabase_url}/rest/v1/device_templates",
             params={
                 "id": f"eq.{template_id}",
-                "select": "registers",
+                "select": "registers,logging_registers",
             },
             headers=self._headers(),
             timeout=10.0,
@@ -297,8 +298,9 @@ class ConfigSync:
         response.raise_for_status()
         data = response.json()
 
-        if data and data[0].get("registers"):
-            return data[0]["registers"]
+        if data:
+            # Prefer logging_registers (modern), fallback to registers (legacy)
+            return data[0].get("logging_registers") or data[0].get("registers") or []
         return []
 
     def _normalize_register(self, reg: dict) -> dict:

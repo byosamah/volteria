@@ -174,11 +174,14 @@ SUPABASE_SERVICE_KEY=your-service-key
 12. **ME437 register addresses are 0-based**: Datasheet values = direct Modbus addresses, no offset needed. Energy registers are UInt32 in kWh (V3.0 manual changed from float32/Wh)
 13. **RTU Direct serial requirements**: `pyserial` must be installed in controller venv. pymodbus 3.11+ uses `device_id=` not `slave=`
 14. **Pi 5 USB host crash recovery**: FTDI RS485 adapters can crash xhci-hcd.1; reset with `echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/unbind && sleep 2 && echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/bind`
-15. **Config sync normalizes both field name conventions**: Template uses `data_type`/`register_type`/`scale_factor`, device config uses `datatype`/`type`/`scale` — `_normalize_register()` in `sync.py` accepts both
+15. **Config sync normalizes both field name conventions**: Template uses `data_type`/`register_type`/`scale_factor`, device config uses `datatype`/`type`/`scale` — `_normalize_register()` in `sync.py` accepts both. Frontend `template-form-dialog.tsx` also normalizes on load
 16. **RTU Direct DeviceConfig requires explicit serial fields**: `service.py` must populate `serial_port`, `baudrate`, `parity`, `stopbits` from `modbus` config — these don't have defaults that work
 17. **RTU Direct Live Registers read from SharedState**: Serial port is exclusively locked by device service — `register_cli.py` can't open its own connection. For `rtu_direct` protocol, reads latest values from SharedState instead of direct Modbus. TCP/RTU Gateway still uses direct connection.
 18. **Device service polls ALL register types**: Visualization and alarm registers are polled at 5s interval (vs 1s for logging registers) so they appear in SharedState for Live Registers page. Registers with unsupported datatypes (e.g., `uint8_hi`) are skipped gracefully.
-19. **Dashboard widgets use logging + visualization registers**: `getDeviceRegisters()` in `widget-config-dialog.tsx` merges both `logging_registers` and `visualization_registers` from device templates, deduplicated by name. Never restrict to logging-only — dashboard is a visualization tool.
+19. **Dashboard widgets use logging + visualization registers**: `getDeviceRegisters()` in `widget-config-dialog.tsx` merges both `logging_registers` and `visualization_registers` from device templates, deduplicated by name. Exception: **chart widgets** filter to logging-only registers for historical queries (viz registers aren't stored in `device_readings`).
+20. **Template register JSONB may lack fields**: Registers stored in `device_templates` JSONB can have missing `datatype`, `type`, or `unit` fields. Frontend code accessing these must use fallback defaults (e.g., `reg.datatype || "uint16"`, `reg.type || "input"`).
+21. **Config sync reads `logging_registers` from templates**: `device_templates` stores registers in `logging_registers` column, but `site_devices` uses `registers`. `sync.py` reads both columns and prefers `logging_registers` when `registers` is empty. `_fetch_template_registers()` also fetches both.
+22. **Supabase RLS silent failure**: UPDATE/DELETE blocked by RLS returns `{data: null, error: null}` — no error thrown. Always verify RLS policies exist for write operations, not just SELECT.
 
 ## Key Architecture Decisions
 

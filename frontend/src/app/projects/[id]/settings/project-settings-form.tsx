@@ -84,9 +84,9 @@ export function ProjectSettingsForm({ project }: ProjectSettingsFormProps) {
         return;
       }
 
-      // Success!
+      // Success — navigate back to project page for fresh render
       toast.success("Project updated successfully");
-      router.refresh();
+      router.push(`/projects/${project.id}`);
     } catch (err) {
       console.error("Unexpected error:", err);
       toast.error("An unexpected error occurred");
