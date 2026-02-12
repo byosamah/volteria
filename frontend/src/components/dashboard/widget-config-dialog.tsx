@@ -99,7 +99,7 @@ interface Device {
   } | null;
 }
 
-// Helper to get registers from a device (logging + visualization, deduplicated)
+// All registers (logging + visualization, deduplicated) — for live-data widgets
 function getDeviceRegisters(device: Device | undefined): Register[] {
   if (!device?.device_templates) return [];
 
@@ -116,6 +116,13 @@ function getDeviceRegisters(device: Device | undefined): Register[] {
     result.push(reg);
   }
   return result;
+}
+
+// Logging registers only — for widgets that read historical data (charts)
+function getLoggingRegisters(device: Device | undefined): Register[] {
+  if (!device?.device_templates) return [];
+  const logging = device.device_templates.logging_registers || [];
+  return logging.filter(r => !r.access || r.access === "read" || r.access === "readwrite");
 }
 
 interface WidgetConfigDialogProps {
@@ -845,15 +852,15 @@ export function WidgetConfigDialog({
   const renderChartForm = () => {
     const parameters = (config.parameters as ChartParameter[]) || [];
 
-    // Get devices with logging registers
+    // Get devices with logging registers (charts use historical data, not vis registers)
     const devicesWithRegisters = devices.filter(d => {
-      const regs = getDeviceRegisters(d);
+      const regs = getLoggingRegisters(d);
       return regs.length > 0;
     });
 
-    // Get registers for selected device in chart config
+    // Get logging registers for selected device in chart config
     const chartSelectedDevice = devices.find(d => d.id === chartSelectedDeviceId);
-    const availableRegisters = getDeviceRegisters(chartSelectedDevice);
+    const availableRegisters = getLoggingRegisters(chartSelectedDevice);
 
     // Add parameter
     const addParameter = () => {

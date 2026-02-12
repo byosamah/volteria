@@ -178,6 +178,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 16. **RTU Direct DeviceConfig requires explicit serial fields**: `service.py` must populate `serial_port`, `baudrate`, `parity`, `stopbits` from `modbus` config — these don't have defaults that work
 17. **RTU Direct Live Registers read from SharedState**: Serial port is exclusively locked by device service — `register_cli.py` can't open its own connection. For `rtu_direct` protocol, reads latest values from SharedState instead of direct Modbus. TCP/RTU Gateway still uses direct connection.
 18. **Device service polls ALL register types**: Visualization and alarm registers are polled at 5s interval (vs 1s for logging registers) so they appear in SharedState for Live Registers page. Registers with unsupported datatypes (e.g., `uint8_hi`) are skipped gracefully.
+19. **Dashboard widgets use logging + visualization registers**: `getDeviceRegisters()` in `widget-config-dialog.tsx` merges both `logging_registers` and `visualization_registers` from device templates, deduplicated by name. Never restrict to logging-only — dashboard is a visualization tool.
 
 ## Key Architecture Decisions
 
