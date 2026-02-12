@@ -298,13 +298,21 @@ export function TemplateFormDialog({
         });
         // Set enterprise ID for custom templates
         setSelectedEnterpriseId(template.enterprise_id || "");
+        // Normalize register field names from DB (template convention → frontend convention)
+        // DB may store register_type/data_type/scale_factor vs type/datatype/scale
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const normalizeRegister = (reg: any): ModbusRegister => ({
+          ...reg,
+          type: (reg.type || reg.register_type || "input") as ModbusRegister["type"],
+          datatype: (reg.datatype || reg.data_type || "uint16") as ModbusRegister["datatype"],
+          scale: (reg.scale ?? reg.scale_factor ?? 1) as number,
+        }) as ModbusRegister;
         // Load logging registers from template
-        // Check both new column name and legacy column name for backward compatibility
-        setLoggingRegisters(template.logging_registers || template.registers || []);
+        setLoggingRegisters((template.logging_registers || template.registers || []).map(normalizeRegister));
         // Load visualization registers from template
-        setVisualizationRegisters(template.visualization_registers || []);
+        setVisualizationRegisters((template.visualization_registers || []).map(normalizeRegister));
         // Load alarm registers from template
-        setAlarmRegisters(template.alarm_registers || []);
+        setAlarmRegisters((template.alarm_registers || []).map(normalizeRegister));
         // Load calculated fields from template
         setCalculatedFields(template.calculated_fields || []);
       } else {
@@ -910,7 +918,7 @@ export function TemplateFormDialog({
                             <th className="px-3 py-2 text-left font-medium">Addr</th>
                             <th className="px-3 py-2 text-left font-medium">Name</th>
                             <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
-                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Unit</th>
                             <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Log Freq</th>
                             <th className="px-3 py-2 text-right font-medium">Actions</th>
                           </tr>
@@ -927,7 +935,7 @@ export function TemplateFormDialog({
                                   {reg.type}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.unit || "—"}</td>
                               <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
                                 {formatLoggingFrequency(reg.logging_frequency)}
                               </td>
@@ -1008,7 +1016,7 @@ export function TemplateFormDialog({
                             <th className="px-3 py-2 text-left font-medium">Addr</th>
                             <th className="px-3 py-2 text-left font-medium">Name</th>
                             <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
-                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Unit</th>
                             <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Scale</th>
                             <th className="px-3 py-2 text-right font-medium">Actions</th>
                           </tr>
@@ -1025,7 +1033,7 @@ export function TemplateFormDialog({
                                   {reg.type}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.unit || "—"}</td>
                               <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">
                                 {reg.scale || 1}
                               </td>
@@ -1106,7 +1114,7 @@ export function TemplateFormDialog({
                             <th className="px-3 py-2 text-left font-medium">Addr</th>
                             <th className="px-3 py-2 text-left font-medium">Name</th>
                             <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Type</th>
-                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Datatype</th>
+                            <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Unit</th>
                             <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Thresholds</th>
                             <th className="px-3 py-2 text-right font-medium">Actions</th>
                           </tr>
@@ -1123,7 +1131,7 @@ export function TemplateFormDialog({
                                   {reg.type}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.datatype}</td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{reg.unit || "—"}</td>
                               <td className="px-3 py-2 hidden md:table-cell">
                                 {reg.thresholds && reg.thresholds.length > 0 ? (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
