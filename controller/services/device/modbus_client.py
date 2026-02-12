@@ -141,7 +141,7 @@ class ModbusClient:
 
             # Convert to value based on datatype
             value = self._convert_registers(response.registers, datatype)
-            scaled_value = value * scale if value is not None else None
+            scaled_value = value * scale if value is not None and not isinstance(value, str) else value
 
             return ReadResult(
                 success=True,
@@ -185,7 +185,7 @@ class ModbusClient:
                 )
 
             value = self._convert_registers(response.registers, datatype)
-            scaled_value = value * scale if value is not None else None
+            scaled_value = value * scale if value is not None and not isinstance(value, str) else value
 
             return ReadResult(
                 success=True,
@@ -494,7 +494,7 @@ class ModbusSerialClient:
                 )
 
             value = self._convert_registers(response.registers, datatype)
-            scaled_value = value * scale if value is not None else None
+            scaled_value = value * scale if value is not None and not isinstance(value, str) else value
 
             return ReadResult(
                 success=True,
@@ -538,7 +538,7 @@ class ModbusSerialClient:
                 )
 
             value = self._convert_registers(response.registers, datatype)
-            scaled_value = value * scale if value is not None else None
+            scaled_value = value * scale if value is not None and not isinstance(value, str) else value
 
             return ReadResult(
                 success=True,

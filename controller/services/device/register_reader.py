@@ -211,7 +211,7 @@ class RegisterReader:
         client: Union[ModbusClient, ModbusSerialClient],
         device: DeviceConfig,
         register: ModbusRegister,
-    ) -> float | None:
+    ) -> float | str | None:
         """Read a register with retry logic"""
         for attempt in range(self.MAX_RETRIES + 1):
             try:
