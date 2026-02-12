@@ -231,6 +231,10 @@ Config service fetches from Supabase and extracts **meaningful fields** for chan
 - `safe_mode` settings
 - `dg_reserve_kw`, `operation_mode`, `control_interval_ms`
 
+**Column naming**: Template stores registers in `logging_registers` column, but `site_devices` uses `registers`. `sync.py` bridges both — reads `logging_registers` from templates when `registers` is empty.
+
+<!-- Updated: 2026-02-12 - Added column naming note for config sync -->
+
 ### Change Detection (MD5 Hash)
 
 ```

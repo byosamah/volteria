@@ -182,6 +182,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 20. **Template register JSONB may lack fields**: Registers stored in `device_templates` JSONB can have missing `datatype`, `type`, or `unit` fields. Frontend code accessing these must use fallback defaults (e.g., `reg.datatype || "uint16"`, `reg.type || "input"`).
 21. **Config sync reads `logging_registers` from templates**: `device_templates` stores registers in `logging_registers` column, but `site_devices` uses `registers`. `sync.py` reads both columns and prefers `logging_registers` when `registers` is empty. `_fetch_template_registers()` also fetches both.
 22. **Supabase RLS silent failure**: UPDATE/DELETE blocked by RLS returns `{data: null, error: null}` — no error thrown. Always verify RLS policies exist for write operations, not just SELECT.
+23. **Template UI edits copy registers to site_devices**: Editing a template in the UI copies registers to `site_devices.registers` with `"source": "template"` tags. Fixing a template alone doesn't fix existing devices — must also update site_devices copies or trigger re-sync.
 
 ## Key Architecture Decisions
 
@@ -261,6 +262,7 @@ ssh root@159.223.224.203 "sshpass -p '<ssh_password>' ssh -o StrictHostKeyChecki
 - NEVER ask user for controller SSH passwords — read from controllers table
 - NEVER add device types to frontend/database without also adding to `controller/common/config.py` DeviceType enum
 - NEVER use `>= N` for consecutive-check auto-resolve guards — use `== N` (fire once on transition)
+- NEVER bypass RLS with backend service_role for operations that should work through proper RLS policies — add the correct policy instead
 
 ## Documentation Convention
 
