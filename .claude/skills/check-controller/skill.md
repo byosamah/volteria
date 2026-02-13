@@ -617,6 +617,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Register causes "Illegal Data Address" on some devices | Register exists in template but not on hardware | Register-specific error — only that register fails, others continue (fixed 2026-02-13). Remove from `visualization_registers` via Supabase PATCH on template + all linked site_devices + INSERT `control_commands` (`command_type: sync_config`) |
 | Some registers fail but device "still reachable" | `journalctl -u volteria-device` for "register-specific errors" | Normal behavior — ExceptionResponse / address validation errors are isolated. Bad registers fail individually, good registers continue. Remove bad registers from template if persistent |
 | REGISTER_READ_FAILED alarm | `cat /run/volteria/state/register_errors.json` | 20+ consecutive failures → alarm created by logging service. Auto-resolves when failures clear. Remove bad registers from template to fix permanently |
+| DB file huge but retention works | `sudo -u volteria python3 -c "..."` check `PRAGMA auto_vacuum` | If `auto_vacuum=0` (NONE), `incremental_vacuum` is no-op. Fixed 2026-02-13: `cleanup_old_data()` auto-converts to INCREMENTAL via one-time full VACUUM at off-peak. New DBs get INCREMENTAL from creation |
 
 ### SOL532-E16 Specific Issues
 

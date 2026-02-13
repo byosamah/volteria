@@ -46,9 +46,17 @@ class LocalDatabase:
             cursor = conn.cursor()
 
             # Enable incremental auto_vacuum mode for non-blocking cleanup
-            # This must be set before any tables are created (or requires VACUUM to take effect)
-            # INCREMENTAL mode allows vacuuming in small chunks via PRAGMA incremental_vacuum(N)
+            # For NEW databases: takes effect before CREATE TABLE below
+            # For EXISTING databases: no-op here, cleanup_old_data() handles one-time migration
             cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
+
+            # Log auto_vacuum status for diagnostics
+            av_mode = cursor.execute("PRAGMA auto_vacuum").fetchone()[0]
+            if av_mode == 0:
+                logger.warning(
+                    "SQLite auto_vacuum=NONE (existing DB). "
+                    "Will convert to INCREMENTAL on next retention cleanup."
+                )
 
             # Control logs table with aggregated values
             cursor.execute("""

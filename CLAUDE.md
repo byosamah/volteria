@@ -202,7 +202,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 31. **UTF8 Modbus strings skip scaling**: `modbus_client.py` guards with `isinstance(value, str)` at 4 locations (TCP+Serial, holding+input). Backend `RegisterReading` Pydantic model uses `float | str` for raw/scaled values.
 32. **Enumeration display is register-type agnostic**: `RegisterRow` uses `register.values` for enum lookup identically across logging, visualization, and alarm registers. No special handling per type.
 33. **Never add special colors to data values**: All register values in Live Registers tables must use the same default formatting. Don't add color-coded styling to specific value types (enums, scaled, etc.) unless user explicitly requests it.
-34. **SQLite retention runs 2-4 AM only**: `_retention_loop()` checks hourly but only deletes during 2-4 AM local time. Service restarts reset the timer — if deploys happen during that window, cleanup never fires. Manual cleanup: stop logging service, run Python script as `volteria` user (DB owner), restart service.
+34. **SQLite retention runs 1-5 AM only**: `_retention_loop()` checks hourly but only deletes during 1-5 AM local time. Service restarts reset the timer. On first cleanup, detects `auto_vacuum=NONE` (SQLite default for existing DBs) and runs one-time full VACUUM to convert to INCREMENTAL mode — without this, `incremental_vacuum` is a no-op and deleted rows never reclaim disk space. New DBs get INCREMENTAL from creation. Manual cleanup: stop logging service, run Python script as `volteria` user (DB owner), restart service.
 35. **Removing bad registers from templates**: Must PATCH both `device_templates` AND all linked `site_devices` (they have independent copies of `visualization_registers`). Then trigger config sync via `control_commands` INSERT (`command_type: "sync_config"`). Controller polls commands every 5s.
 36. **Cable flow is 3-state with thresholds**: `CableConfig` has `flowUpperThreshold`/`flowLowerThreshold` (default 0) + per-state colors (`color`, `reverseColor`, `stoppedColor`). Value > upper = forward, value < lower = reverse, between = stopped (static dashes). No `animationSource` (null value) = always forward for backward compat.
 37. **Alarm deduplication/resolution matches by device_id**: Alarms match by `device_id` (UUID, immutable), not `device_name`. Old alarms without `device_id` fall back to `device_name` matching. Migration 099. Device rename is safe across the full stack — all core data pipelines use UUID.
@@ -218,7 +218,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 - **SQLite in thread pool**: All `local_db` calls run via `run_in_executor` — never block asyncio event loop
 - **Smart backfill**: After offline recovery, syncs newest first (dashboard current), then fills gaps chronologically
 - **Dynamic scaling**: Buffer threshold (`register_count × flush_interval × 3`) and sync batch size (`max(5000, register_count × 200)`) auto-scale with device count — no manual tuning needed
-- **Local retention**: 7 days default (`local_retention_days`). Cleanup runs 2-4 AM only. ~380 MB/day at 462 registers × 1s = ~2.6 GB steady state (safe for 32GB SD card)
+- **Local retention**: 7 days default (`local_retention_days`). Cleanup runs 1-5 AM local time. First cleanup on existing DBs runs full VACUUM (converts `auto_vacuum=NONE` → `INCREMENTAL`, reclaims dead pages). ~380 MB/day at 462 registers × 1s = ~2.6 GB steady state (safe for 32GB SD card)
 
 ### Historical Data
 - Server-side aggregation via `get_historical_readings()` RPC
