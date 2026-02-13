@@ -204,6 +204,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 33. **Never add special colors to data values**: All register values in Live Registers tables must use the same default formatting. Don't add color-coded styling to specific value types (enums, scaled, etc.) unless user explicitly requests it.
 34. **SQLite retention runs 2-4 AM only**: `_retention_loop()` checks hourly but only deletes during 2-4 AM local time. Service restarts reset the timer — if deploys happen during that window, cleanup never fires. Manual cleanup: stop logging service, run Python script as `volteria` user (DB owner), restart service.
 35. **Removing bad registers from templates**: Must PATCH both `device_templates` AND all linked `site_devices` (they have independent copies of `visualization_registers`). Then trigger config sync via `control_commands` INSERT (`command_type: "sync_config"`). Controller polls commands every 5s.
+36. **Cable flow is 3-state with thresholds**: `CableConfig` has `flowUpperThreshold`/`flowLowerThreshold` (default 0) + per-state colors (`color`, `reverseColor`, `stoppedColor`). Value > upper = forward, value < lower = reverse, between = stopped (static dashes). No `animationSource` (null value) = always forward for backward compat.
 
 ## Key Architecture Decisions
 
