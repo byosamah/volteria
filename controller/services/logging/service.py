@@ -1095,17 +1095,17 @@ class LoggingService:
         """
         Periodic data retention cleanup.
 
-        Only runs between 2-4 AM local time to avoid impacting
+        Only runs between 1-5 AM local time to avoid impacting
         performance during peak hours. Checks every hour.
         """
         while self._running:
             await asyncio.sleep(RETENTION_CHECK_INTERVAL_S)
 
-            # Only run cleanup between 2-4 AM local time (off-peak)
-            # This avoids VACUUM/cleanup impacting daytime performance
+            # Only run cleanup between 1-5 AM local time (off-peak)
+            # Wide window to survive service restarts during the night
             now = datetime.now()
-            if not (2 <= now.hour < 4):
-                logger.debug(f"Skipping retention cleanup (hour={now.hour}, off-peak=2-4)")
+            if not (1 <= now.hour < 5):
+                logger.debug(f"Skipping retention cleanup (hour={now.hour}, off-peak=1-5)")
                 continue
 
             try:

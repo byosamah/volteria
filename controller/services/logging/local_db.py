@@ -501,12 +501,24 @@ class LocalDatabase:
 
             conn.commit()
 
-            # Incremental vacuum to reclaim space (non-blocking)
-            # Vacuums up to 1000 pages (~4MB) at a time, runs in <1 second
-            # Full VACUUM on large DBs (500MB+) can take 30-60s and block all access
-            cursor.execute("PRAGMA incremental_vacuum(1000)")
-
             total_deleted = logs_deleted + alarms_deleted + readings_deleted
+
+            # Reclaim disk space from deleted rows
+            auto_vacuum_mode = cursor.execute("PRAGMA auto_vacuum").fetchone()[0]
+            if auto_vacuum_mode == 0:
+                # DB was created with auto_vacuum=NONE (SQLite default).
+                # incremental_vacuum does nothing in this mode.
+                # One-time fix: convert to INCREMENTAL via full VACUUM.
+                # Runs at off-peak (1-5 AM), blocks DB for 30-60s on large DBs.
+                if total_deleted > 0:
+                    logger.info("One-time VACUUM: converting auto_vacuum to INCREMENTAL")
+                    cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
+                    cursor.execute("VACUUM")
+                    logger.info("One-time VACUUM complete — incremental_vacuum now works")
+            else:
+                # INCREMENTAL mode active — vacuum in small chunks
+                cursor.execute("PRAGMA incremental_vacuum(5000)")
+
             if total_deleted > 0:
                 logger.info(
                     f"Cleaned up {logs_deleted} logs, {alarms_deleted} alarms, "
