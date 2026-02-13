@@ -197,6 +197,7 @@ class CloudSync:
             record = {
                 "site_id": alarm.get("site_id") or self.site_id,
                 "alarm_type": alarm["alarm_type"],
+                "device_id": alarm.get("device_id"),
                 "device_name": alarm.get("device_name"),
                 "message": alarm.get("message"),
                 "condition": alarm.get("condition"),
@@ -529,6 +530,7 @@ class CloudSync:
         record = {
             "site_id": alarm.get("site_id") or self.site_id,
             "alarm_type": alarm["alarm_type"],
+            "device_id": alarm.get("device_id"),
             "device_name": alarm.get("device_name"),
             "message": alarm.get("message"),
             "condition": alarm.get("condition"),
@@ -562,7 +564,7 @@ class CloudSync:
             logger.error(f"Failed to immediately sync alarm: {e}")
             return False
 
-    async def resolve_alarm_in_cloud(self, alarm_type: str) -> bool:
+    async def resolve_alarm_in_cloud(self, alarm_type: str, device_id: str | None = None) -> bool:
         """
         Resolve an alarm in cloud (Supabase) when controller auto-resolves it.
 
@@ -571,6 +573,7 @@ class CloudSync:
 
         Args:
             alarm_type: The alarm type (e.g., reg_{device_id}_{register_name})
+            device_id: Optional device ID for per-device resolution
 
         Returns:
             True if alarm was resolved in cloud
@@ -578,15 +581,19 @@ class CloudSync:
         try:
             resolved_at = datetime.now(timezone.utc).isoformat()
 
+            params = {
+                "site_id": f"eq.{self.site_id}",
+                "alarm_type": f"eq.{alarm_type}",
+                "resolved": "eq.false",
+            }
+            if device_id:
+                params["device_id"] = f"eq.{device_id}"
+
             async with httpx.AsyncClient() as client:
                 # PATCH updates existing records matching the filter
                 response = await client.patch(
                     f"{self.supabase_url}/rest/v1/alarms",
-                    params={
-                        "site_id": f"eq.{self.site_id}",
-                        "alarm_type": f"eq.{alarm_type}",
-                        "resolved": "eq.false",
-                    },
+                    params=params,
                     json={
                         "resolved": True,
                         "resolved_at": resolved_at,
@@ -611,7 +618,7 @@ class CloudSync:
     async def check_unresolved_alarm(
         self,
         alarm_type: str,
-        device_name: str | None = None,
+        device_id: str | None = None,
     ) -> bool:
         """
         Check if an unresolved alarm exists in cloud (Supabase).
@@ -621,7 +628,7 @@ class CloudSync:
 
         Args:
             alarm_type: The alarm type (e.g., reg_{device_id}_{register_name})
-            device_name: Optional device name for additional filtering
+            device_id: Optional device ID for additional filtering
 
         Returns:
             True if unresolved alarm exists in cloud
@@ -634,8 +641,8 @@ class CloudSync:
                 "resolved": "eq.false",
                 "limit": "1",
             }
-            if device_name:
-                params["device_name"] = f"eq.{device_name}"
+            if device_id:
+                params["device_id"] = f"eq.{device_id}"
 
             async with httpx.AsyncClient() as client:
                 response = await client.get(
@@ -673,7 +680,7 @@ class CloudSync:
                 response = await client.get(
                     f"{self.supabase_url}/rest/v1/alarms",
                     params={
-                        "select": "alarm_type,device_name,resolved_at",
+                        "select": "alarm_type,device_id,resolved_at",
                         "site_id": f"eq.{self.site_id}",
                         "resolved": "eq.true",
                         # Get resolved in last 24 hours to handle offline recovery
@@ -695,7 +702,7 @@ class CloudSync:
             updated_count = 0
             for alarm in resolved_alarms:
                 alarm_type = alarm.get("alarm_type")
-                device_name = alarm.get("device_name")
+                device_id_val = alarm.get("device_id")
                 resolved_at = alarm.get("resolved_at")
 
                 if not alarm_type:
@@ -716,7 +723,7 @@ class CloudSync:
                 count = self.local_db.sync_alarm_resolution(
                     site_id=self.site_id,
                     alarm_type=alarm_type,
-                    device_name=device_name,
+                    device_id=device_id_val,
                     resolved_at=resolved_at,
                 )
                 updated_count += count

@@ -314,7 +314,7 @@ class LocalDatabase:
             conn.commit()
             return cursor.rowcount
 
-    def resolve_alarms_by_type_and_device(self, alarm_type: str, device_name: str) -> int:
+    def resolve_alarms_by_type_and_device(self, alarm_type: str, device_id: str) -> int:
         """Mark unresolved alarms of a given type+device as resolved."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -322,8 +322,8 @@ class LocalDatabase:
             cursor.execute("""
                 UPDATE alarms
                 SET resolved = 1, resolved_at = ?
-                WHERE alarm_type = ? AND device_name = ? AND resolved = 0
-            """, (now, alarm_type, device_name))
+                WHERE alarm_type = ? AND device_id = ? AND resolved = 0
+            """, (now, alarm_type, device_id))
             conn.commit()
             return cursor.rowcount
 
@@ -331,7 +331,7 @@ class LocalDatabase:
         self,
         site_id: str,
         alarm_type: str,
-        device_name: str | None = None,
+        device_id: str | None = None,
     ) -> bool:
         """Check if an unresolved alarm already exists for this type/device.
 
@@ -339,12 +339,12 @@ class LocalDatabase:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            if device_name:
+            if device_id:
                 cursor.execute("""
                     SELECT 1 FROM alarms
-                    WHERE site_id = ? AND alarm_type = ? AND device_name = ? AND resolved = 0
+                    WHERE site_id = ? AND alarm_type = ? AND device_id = ? AND resolved = 0
                     LIMIT 1
-                """, (site_id, alarm_type, device_name))
+                """, (site_id, alarm_type, device_id))
             else:
                 cursor.execute("""
                     SELECT 1 FROM alarms
@@ -357,7 +357,7 @@ class LocalDatabase:
         self,
         site_id: str,
         alarm_type: str,
-        device_name: str | None,
+        device_id: str | None,
         resolved_at: str | None,
     ) -> int:
         """Sync alarm resolution status from cloud to local.
@@ -368,7 +368,7 @@ class LocalDatabase:
         Args:
             site_id: Site ID
             alarm_type: Alarm type (e.g., reg_{device_id}_{register_name})
-            device_name: Device name (optional)
+            device_id: Device ID (optional)
             resolved_at: Resolution timestamp from cloud
 
         Returns:
@@ -380,13 +380,13 @@ class LocalDatabase:
 
             # Only resolve alarms created BEFORE the resolution timestamp
             # This prevents incorrectly resolving NEW alarms when syncing old resolutions
-            if device_name:
+            if device_id:
                 cursor.execute("""
                     UPDATE alarms
                     SET resolved = 1, resolved_at = ?
-                    WHERE site_id = ? AND alarm_type = ? AND device_name = ? AND resolved = 0
+                    WHERE site_id = ? AND alarm_type = ? AND device_id = ? AND resolved = 0
                       AND created_at <= ?
-                """, (resolved_time, site_id, alarm_type, device_name, resolved_time))
+                """, (resolved_time, site_id, alarm_type, device_id, resolved_time))
             else:
                 cursor.execute("""
                     UPDATE alarms

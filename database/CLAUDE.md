@@ -97,6 +97,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 093 | Security fixes | SECURITY DEFINER functions search_path |
 | 094 | Belt scale support | belt_scale device type for conveyor integrators |
 | 095 | Controller offline alarm | pg_cron job for controller_offline alarm detection |
+| 099 | Alarm device_id | Match alarms by device_id UUID instead of device_name TEXT |
 
 ## RPC Functions
 
@@ -111,7 +112,7 @@ SELECT * FROM check_device_connection_status(600);  -- 600s = 10 min timeout
 SELECT create_not_reporting_alarm(site_id, device_id, device_name);
 
 -- Resolve alarm when device comes back online
-SELECT resolve_not_reporting_alarm(site_id, device_name);
+SELECT resolve_not_reporting_alarm(site_id, device_id, device_name);
 
 -- Get list of non-reporting devices
 SELECT * FROM get_non_reporting_devices(600);

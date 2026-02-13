@@ -1394,7 +1394,7 @@ class LoggingService:
             self.local_db.has_unresolved_alarm,
             self._site_id,
             alarm.alarm_id,
-            alarm.device_name,
+            alarm.device_id,
         )
         if has_existing:
             logger.debug(
@@ -1407,7 +1407,7 @@ class LoggingService:
         if alarm.severity in ["critical", "major"] and self.cloud_sync:
             has_cloud = await self.cloud_sync.check_unresolved_alarm(
                 alarm.alarm_id,
-                alarm.device_name,
+                device_id=alarm.device_id,
             )
             if has_cloud:
                 logger.debug(
@@ -1442,6 +1442,7 @@ class LoggingService:
                     "condition": condition,
                     "severity": alarm.severity,
                     "device_name": alarm.device_name,
+                    "device_id": alarm.device_id,
                     "timestamp": alarm.timestamp.isoformat(),
                 })
                 # Mark as synced to prevent duplicate sync via sync_alarms()
@@ -1679,12 +1680,12 @@ class LoggingService:
             if not failed:
                 continue
 
-            devices_with_failures.add(device_name)
+            devices_with_failures.add(device_id)
 
             # Only create alarm if one doesn't already exist for this device
             has_alarm = await self._run_db(
                 self.local_db.has_unresolved_alarm,
-                self._site_id, "REGISTER_READ_FAILED", device_name,
+                self._site_id, "REGISTER_READ_FAILED", device_id,
             )
             if not has_alarm:
                 details = ", ".join(
@@ -1702,20 +1703,20 @@ class LoggingService:
                     message, "warning", now.isoformat(),
                     device_id, device_name,
                 )
-                self._devices_with_register_alarms.add(device_name)
+                self._devices_with_register_alarms.add(device_id)
                 logger.warning(f"Register failure alarm: {message}")
 
         # Auto-resolve: devices that previously had alarms but no longer have failures
         resolved_devices = self._devices_with_register_alarms - devices_with_failures
-        for device_name in resolved_devices:
+        for dev_id in resolved_devices:
             count = await self._run_db(
                 self.local_db.resolve_alarms_by_type_and_device,
-                "REGISTER_READ_FAILED", device_name,
+                "REGISTER_READ_FAILED", dev_id,
             )
             if count > 0:
                 if self.cloud_sync:
-                    await self.cloud_sync.resolve_alarm_in_cloud("REGISTER_READ_FAILED")
-                logger.info(f"Register failures cleared: auto-resolved alarm for {device_name}")
+                    await self.cloud_sync.resolve_alarm_in_cloud("REGISTER_READ_FAILED", device_id=dev_id)
+                logger.info(f"Register failures cleared: auto-resolved alarm for {dev_id}")
         self._devices_with_register_alarms = devices_with_failures
 
     async def _start_health_server(self) -> None:
