@@ -283,6 +283,12 @@ CREATE POLICY "Users can view own project data" ON public.new_table
 
 ---
 
+## Migration Execution Notes
+
+<!-- Updated: 2026-02-13 -->
+- When running migrations with `$$` (PL/pgSQL function bodies) via `exec_sql` RPC, use a Python script — curl on Windows mangles `$$` delimiters.
+- Backfill migrations matching by `device_name` only work for current names. Already-renamed devices won't match — run backfills before renames when possible.
+
 ## Creating New Migrations
 
 ```sql
