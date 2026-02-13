@@ -30,6 +30,11 @@ export interface CableConfig {
     deviceId: string;
     registerName: string;
   };
+
+  // Flow thresholds (when direction source is set)
+  flowUpperThreshold?: number;  // value > this → forward flow. Default: 0
+  flowLowerThreshold?: number;  // value < this → reverse flow. Default: 0
+  reverseColor?: string;        // optional color when flowing in reverse
 }
 
 interface CableWidgetProps {
@@ -147,8 +152,21 @@ export function CableWidget({
     [start.x, start.y, end.x, end.y, config.pathStyle]
   );
 
-  // Determine animation direction based on value
-  const isReverse = liveValue !== null && liveValue !== undefined && liveValue < 0;
+  // Determine flow state from value + thresholds
+  const upperThreshold = config.flowUpperThreshold ?? 0;
+  const lowerThreshold = config.flowLowerThreshold ?? 0;
+
+  const flowState: "forward" | "reverse" | "stopped" = (() => {
+    // No data source or no value → always animate forward (backward compat)
+    if (liveValue === null || liveValue === undefined) return "forward";
+    if (liveValue > upperThreshold) return "forward";
+    if (liveValue < lowerThreshold) return "reverse";
+    return "stopped";
+  })();
+
+  const isFlowing = flowState !== "stopped";
+  const isReverse = flowState === "reverse";
+  const activeColor = (isReverse && config.reverseColor) ? config.reverseColor : config.color;
   const animationDuration = ANIMATION_DURATIONS[config.animationSpeed] || "1s";
 
   // Hover state for endpoint circles
@@ -200,25 +218,29 @@ export function CableWidget({
       <path
         d={pathD}
         fill="none"
-        stroke={config.color}
+        stroke={activeColor}
         strokeWidth={config.thickness}
         strokeLinecap="round"
         strokeLinejoin="round"
         className={cn(
-          config.animated && "cable-animated",
-          config.animated && isReverse && "cable-reverse",
+          config.animated && isFlowing && "cable-animated",
+          config.animated && isFlowing && isReverse && "cable-reverse",
           isEditMode && "cursor-move"
         )}
         style={
-          config.animated
+          config.animated && isFlowing
             ? {
-                // Scale dash pattern with thickness for visible animation
                 strokeDasharray: `${config.thickness * 4} ${config.thickness * 2}`,
                 strokeDashoffset: 0,
                 animation: `cable-flow-${config.thickness} ${animationDuration} linear infinite`,
                 animationDirection: isReverse ? "reverse" : "normal",
               }
-            : undefined
+            : config.animated
+              ? {
+                  // Stopped: static dashes (visual hint that cable can animate)
+                  strokeDasharray: `${config.thickness * 4} ${config.thickness * 2}`,
+                }
+              : undefined
         }
         onClick={isEditMode ? onClick : undefined}
         onMouseDown={isEditMode ? (e) => {

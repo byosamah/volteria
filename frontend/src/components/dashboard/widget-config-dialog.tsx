@@ -1685,6 +1685,9 @@ export function WidgetConfigDialog({
     const animationSpeed = (config.animationSpeed as string) || "medium";
     const animationDeviceId = (config.animationSource as { deviceId?: string; registerName?: string })?.deviceId || "";
     const animationRegisterName = (config.animationSource as { deviceId?: string; registerName?: string })?.registerName || "";
+    const flowUpperThreshold = (config.flowUpperThreshold as number) ?? 0;
+    const flowLowerThreshold = (config.flowLowerThreshold as number) ?? 0;
+    const reverseColor = (config.reverseColor as string) || "";
 
     // Get registers for animation device
     const animationDevice = devices.find((d) => d.id === animationDeviceId);
@@ -1783,9 +1786,9 @@ export function WidgetConfigDialog({
                     <Info className="h-4 w-4 text-muted-foreground" />
                   </PopoverTrigger>
                   <PopoverContent className="text-sm">
-                    <p>Optionally link to a register value.</p>
+                    <p>Link to a register to control flow direction.</p>
                     <p className="mt-1 text-muted-foreground">
-                      Positive values = forward flow, negative = reverse.
+                      Set thresholds below to define forward, reverse, and stopped zones.
                     </p>
                   </PopoverContent>
                 </Popover>
@@ -1839,6 +1842,84 @@ export function WidgetConfigDialog({
                   </SelectContent>
                 </Select>
               </div>
+            )}
+
+            {/* Flow Thresholds (when device + register selected) */}
+            {animationDeviceId && animationRegisterName && (
+              <>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label>Flow Thresholds</Label>
+                    <Popover>
+                      <PopoverTrigger>
+                        <Info className="h-4 w-4 text-muted-foreground" />
+                      </PopoverTrigger>
+                      <PopoverContent className="text-sm">
+                        <p>Controls when the cable animates:</p>
+                        <ul className="mt-1 space-y-1 text-muted-foreground">
+                          <li><span className="font-medium text-foreground">Above upper</span> → forward flow (→)</li>
+                          <li><span className="font-medium text-foreground">Below lower</span> → reverse flow (←)</li>
+                          <li><span className="font-medium text-foreground">Between</span> → stopped</li>
+                        </ul>
+                        <p className="mt-2 text-muted-foreground">
+                          Both default to 0 (positive = forward, negative = reverse, zero = stopped).
+                        </p>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground w-24 shrink-0">Forward (→) above</Label>
+                    <Input
+                      type="number"
+                      value={flowUpperThreshold}
+                      onChange={(e) => updateConfig("flowUpperThreshold", parseFloat(e.target.value) || 0)}
+                      className="flex-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground w-24 shrink-0">Reverse (←) below</Label>
+                    <Input
+                      type="number"
+                      value={flowLowerThreshold}
+                      onChange={(e) => updateConfig("flowLowerThreshold", parseFloat(e.target.value) || 0)}
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+
+                {/* Reverse Color (optional) */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label>Reverse Color</Label>
+                    <span className="text-xs text-muted-foreground">(optional)</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type="color"
+                      value={reverseColor || color}
+                      onChange={(e) => updateConfig("reverseColor", e.target.value)}
+                      className="w-12 h-10 p-1 cursor-pointer"
+                    />
+                    <Input
+                      type="text"
+                      value={reverseColor}
+                      onChange={(e) => updateConfig("reverseColor", e.target.value)}
+                      placeholder="Same as cable"
+                      className="flex-1"
+                    />
+                    {reverseColor && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => updateConfig("reverseColor", "")}
+                        className="shrink-0"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )}
