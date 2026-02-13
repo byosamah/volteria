@@ -173,6 +173,7 @@ export const ShapeWidget = memo(function ShapeWidget({
         viewBox="0 0 100 100"
         preserveAspectRatio="none"
         className="absolute inset-0"
+        style={{ pointerEvents: "none" }}
       >
         {/* Arrow marker definition */}
         {shapeType === "arrow" && (

@@ -1038,6 +1038,7 @@ export function DashboardCanvas({
                     gridColumn: `${widget.grid_col} / span ${widget.grid_width}`,
                     zIndex: widget.z_index,
                     opacity: draggingWidgetId === widget.id ? 0.5 : 1,
+                    pointerEvents: draggingWidgetId ? "none" : undefined,
                     transition: "opacity 0.15s ease",
                   }}
                   draggable={isEditMode && !resizingWidget}
