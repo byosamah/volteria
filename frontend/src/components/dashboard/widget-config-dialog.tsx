@@ -29,7 +29,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { DASHBOARD_ICONS } from "@/lib/dashboard-icons";
 import { PRESET_IMAGES, IMAGE_UPLOAD_GUIDELINES, getPresetImageById } from "@/lib/dashboard-preset-images";
-import { Upload, X, Info, Plus, Trash2 } from "lucide-react";
+import { Upload, X, Info, Plus, Trash2, ChevronsDown, ChevronDown, ChevronUp, ChevronsUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -128,14 +128,18 @@ function getLoggingRegisters(device: Device | undefined): Register[] {
 interface WidgetConfigDialogProps {
   widget: Widget;
   devices: Device[];
+  widgets: Widget[];
   onSave: (config: Record<string, unknown>) => void;
+  onLayerChange: (widgetId: string, zIndex: number) => void;
   onClose: () => void;
 }
 
 export function WidgetConfigDialog({
   widget,
   devices,
+  widgets,
   onSave,
+  onLayerChange,
   onClose,
 }: WidgetConfigDialogProps) {
   const [config, setConfig] = useState<Record<string, unknown>>(widget.config);
@@ -1904,9 +1908,10 @@ export function WidgetConfigDialog({
     const strokeWidth = (config.stroke_width as number) || 2;
     const strokeStyle = (config.stroke_style as string) || "solid";
     const borderRadius = (config.border_radius as number) || 0;
-    const lineDirection = (config.line_direction as string) || "horizontal";
     const arrowEnd = (config.arrow_end as string) || "end";
-    const sendToBack = (config.send_to_back as boolean) ?? true;
+    // Rotation: use explicit value, or migrate from legacy line_direction
+    const DIRECTION_TO_ROTATION: Record<string, number> = { horizontal: 0, "diagonal-down": 45, vertical: 90, "diagonal-up": 315 };
+    const rotation = (config.rotation as number) ?? (config.line_direction ? DIRECTION_TO_ROTATION[config.line_direction as string] ?? 0 : 0);
 
     return (
       <div className="space-y-4">
@@ -2058,27 +2063,6 @@ export function WidgetConfigDialog({
           </div>
         )}
 
-        {/* Line Direction (line/arrow only) */}
-        {(shapeType === "line" || shapeType === "arrow") && (
-          <div className="space-y-2 pt-3 border-t">
-            <Label>Direction</Label>
-            <Select
-              value={lineDirection}
-              onValueChange={(v) => updateConfig("line_direction", v)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="horizontal">Horizontal</SelectItem>
-                <SelectItem value="vertical">Vertical</SelectItem>
-                <SelectItem value="diagonal-down">Diagonal ↘</SelectItem>
-                <SelectItem value="diagonal-up">Diagonal ↗</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
         {/* Arrow Head (arrow only) */}
         {shapeType === "arrow" && (
           <div className="space-y-2 pt-3 border-t">
@@ -2091,25 +2075,97 @@ export function WidgetConfigDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="end">End only →</SelectItem>
-                <SelectItem value="start">Start only ←</SelectItem>
-                <SelectItem value="both">Both ends ↔</SelectItem>
+                <SelectItem value="end">End only</SelectItem>
+                <SelectItem value="start">Start only</SelectItem>
+                <SelectItem value="both">Both ends</SelectItem>
               </SelectContent>
             </Select>
           </div>
         )}
 
-        {/* Layer Control */}
-        <div className="pt-3 border-t">
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={sendToBack}
-              onCheckedChange={(checked) => updateConfig("send_to_back", checked)}
-            />
-            <Label className="font-normal">Send to back</Label>
+        {/* Rotation */}
+        <div className="space-y-2 pt-3 border-t">
+          <Label>Rotation ({rotation}°)</Label>
+          <input
+            type="range"
+            min={0}
+            max={359}
+            step={1}
+            value={rotation}
+            onChange={(e) => updateConfig("rotation", parseInt(e.target.value))}
+            className="w-full"
+          />
+          <div className="flex flex-wrap gap-1">
+            {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+              <button
+                key={angle}
+                type="button"
+                onClick={() => updateConfig("rotation", angle)}
+                className={cn(
+                  "px-2 py-0.5 text-xs rounded-md border transition-colors",
+                  rotation === angle
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background hover:bg-accent"
+                )}
+              >
+                {angle}°
+              </button>
+            ))}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Enable to use this shape as a visual frame behind other widgets
+        </div>
+
+        {/* Layer Control */}
+        <div className="space-y-2 pt-3 border-t">
+          <Label>Layer ({widget.z_index})</Label>
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => onLayerChange(widget.id, 0)}
+              disabled={widget.z_index === 0}
+            >
+              <ChevronsDown className="h-3.5 w-3.5 mr-1" />
+              Back
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => onLayerChange(widget.id, Math.max(0, widget.z_index - 1))}
+              disabled={widget.z_index === 0}
+            >
+              <ChevronDown className="h-3.5 w-3.5 mr-1" />
+              -1
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => onLayerChange(widget.id, widget.z_index + 1)}
+            >
+              <ChevronUp className="h-3.5 w-3.5 mr-1" />
+              +1
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => {
+                const maxZ = Math.max(...widgets.map(w => w.z_index), 0);
+                onLayerChange(widget.id, maxZ + 1);
+              }}
+            >
+              <ChevronsUp className="h-3.5 w-3.5 mr-1" />
+              Front
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Lower layers appear behind other widgets
           </p>
         </div>
       </div>

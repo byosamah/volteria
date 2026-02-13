@@ -44,9 +44,10 @@ export interface ShapeWidgetConfig {
   stroke_width?: number;
   stroke_style?: "solid" | "dashed" | "dotted";
   border_radius?: number;
-  line_direction?: "horizontal" | "vertical" | "diagonal-down" | "diagonal-up";
+  rotation?: number;
   arrow_end?: "end" | "start" | "both";
-  send_to_back?: boolean;
+  // Legacy — mapped to rotation on read
+  line_direction?: "horizontal" | "vertical" | "diagonal-down" | "diagonal-up";
 }
 
 const STROKE_DASHARRAY: Record<string, string | undefined> = {
@@ -55,19 +56,13 @@ const STROKE_DASHARRAY: Record<string, string | undefined> = {
   dotted: "2 2",
 };
 
-function getLineEndpoints(direction: string) {
-  switch (direction) {
-    case "vertical":
-      return { x1: 50, y1: 5, x2: 50, y2: 95 };
-    case "diagonal-down":
-      return { x1: 5, y1: 5, x2: 95, y2: 95 };
-    case "diagonal-up":
-      return { x1: 5, y1: 95, x2: 95, y2: 5 };
-    case "horizontal":
-    default:
-      return { x1: 5, y1: 50, x2: 95, y2: 50 };
-  }
-}
+/** Map legacy line_direction values to rotation degrees */
+const DIRECTION_TO_ROTATION: Record<string, number> = {
+  horizontal: 0,
+  "diagonal-down": 45,
+  vertical: 90,
+  "diagonal-up": 315,
+};
 
 export const ShapeWidget = memo(function ShapeWidget({
   widget,
@@ -84,8 +79,10 @@ export const ShapeWidget = memo(function ShapeWidget({
   const strokeWidth = config.stroke_width || 2;
   const strokeStyle = config.stroke_style || "solid";
   const borderRadius = config.border_radius || 0;
-  const lineDirection = config.line_direction || "horizontal";
   const arrowEnd = config.arrow_end || "end";
+
+  // Rotation: use explicit rotation, or migrate from legacy line_direction
+  const rotation = config.rotation ?? (config.line_direction ? DIRECTION_TO_ROTATION[config.line_direction] ?? 0 : 0);
 
   const dashArray = STROKE_DASHARRAY[strokeStyle];
   const fill = fillMode === "solid" ? fillColor : "none";
@@ -130,14 +127,13 @@ export const ShapeWidget = memo(function ShapeWidget({
         );
 
       case "line":
-      case "arrow": {
-        const endpoints = getLineEndpoints(lineDirection);
+      case "arrow":
         return (
           <line
-            x1={endpoints.x1}
-            y1={endpoints.y1}
-            x2={endpoints.x2}
-            y2={endpoints.y2}
+            x1={5}
+            y1={50}
+            x2={95}
+            y2={50}
             stroke={strokeColor}
             strokeWidth={strokeWidth}
             strokeDasharray={dashArray}
@@ -155,7 +151,6 @@ export const ShapeWidget = memo(function ShapeWidget({
             }
           />
         );
-      }
 
       default:
         return null;
@@ -166,6 +161,7 @@ export const ShapeWidget = memo(function ShapeWidget({
     <div
       className={cn("h-full w-full relative", isEditMode && "cursor-pointer")}
       onClick={isEditMode ? onSelect : undefined}
+      style={rotation ? { transform: `rotate(${rotation}deg)` } : undefined}
     >
       <svg
         width="100%"

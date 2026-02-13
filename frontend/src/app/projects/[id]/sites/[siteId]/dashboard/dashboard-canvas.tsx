@@ -462,19 +462,12 @@ export function DashboardCanvas({
       const currentWidget = widgets.find(w => w.id === widgetId);
       if (!currentWidget) return;
 
-      // Sync z_index for shape widgets based on send_to_back config
-      // z_index: 0 = behind regular widgets (they have z_index >= 1), but above grid cells
-      let zIndex = currentWidget.z_index;
-      if (currentWidget.widget_type === "shape") {
-        zIndex = (config.send_to_back as boolean) !== false ? 0 : widgets.length;
-      }
-
       const response = await fetch(`/api/dashboards/${siteId}/widgets/${widgetId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           config,
-          z_index: zIndex,
+          z_index: currentWidget.z_index,
           grid_row: currentWidget.grid_row,
           grid_col: currentWidget.grid_col,
           grid_width: currentWidget.grid_width,
@@ -493,6 +486,33 @@ export function DashboardCanvas({
     } catch (error) {
       console.error("Failed to update widget:", error);
       alert("Failed to update widget. Please try again.");
+    }
+  };
+
+  const handleLayerChange = async (widgetId: string, zIndex: number) => {
+    try {
+      const currentWidget = widgets.find(w => w.id === widgetId);
+      if (!currentWidget) return;
+
+      const response = await fetch(`/api/dashboards/${siteId}/widgets/${widgetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          config: currentWidget.config,
+          z_index: zIndex,
+          grid_row: currentWidget.grid_row,
+          grid_col: currentWidget.grid_col,
+          grid_width: currentWidget.grid_width,
+          grid_height: currentWidget.grid_height,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to update layer");
+      const updated = await response.json();
+      setWidgets(prev => prev.map((w) => (w.id === widgetId ? updated : w)));
+      setSelectedWidget(updated);
+    } catch (error) {
+      console.error("Failed to update layer:", error);
     }
   };
 
@@ -1121,7 +1141,9 @@ export function DashboardCanvas({
         <WidgetConfigDialog
           widget={selectedWidget}
           devices={devices}
+          widgets={widgets}
           onSave={(config) => updateWidgetConfig(selectedWidget.id, config)}
+          onLayerChange={handleLayerChange}
           onClose={() => {
             setShowConfigDialog(false);
             setSelectedWidget(null);
