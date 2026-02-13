@@ -259,9 +259,16 @@ class RegisterReader:
 
                 last_error = result.error or ""
 
-                # ExceptionResponse = device responded with a Modbus exception
-                # (e.g., Illegal Data Address) — register-specific, not connection
-                if "ExceptionResponse" in last_error:
+                # Register-specific errors (device is reachable, but register is invalid):
+                # - ExceptionResponse: device responded with Modbus exception
+                #   (e.g., Illegal Data Address, Illegal Function)
+                # - "address" validation: pymodbus address range check failed
+                #   (e.g., "0 < address -1 < 65535 !")
+                is_register_error = (
+                    "ExceptionResponse" in last_error
+                    or "address" in last_error.lower()
+                )
+                if is_register_error:
                     logger.warning(
                         f"Read failed for {device.name}.{register.name}: {last_error}"
                     )
