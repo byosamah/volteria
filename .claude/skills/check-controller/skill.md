@@ -186,6 +186,7 @@ File-based IPC with atomic writes (`common/state.py`).
 | `safe_mode_override.json` | supervisor | control | Safe mode trigger |
 | `controller_config.json` | main_v2 | all | Boot config from YAML |
 | `config_status.json` | config | device, control, logging | Change notification |
+| `register_errors.json` | device | logging | Persistent register read failures (20+ consecutive) |
 
 ### Path Resolution (tmpfs vs disk)
 
@@ -527,12 +528,17 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
    sqlite3 /opt/volteria/data/controller.db "SELECT COUNT(*) FROM alarms WHERE synced_at IS NULL"
    ```
 
-9. **Check safe mode state**:
+9. **Check register errors** (persistent register read failures):
+   ```bash
+   cat /run/volteria/state/register_errors.json 2>/dev/null | python3 -m json.tool || echo "No register errors (all registers healthy)"
+   ```
+
+10. **Check safe mode state**:
    ```bash
    cat /opt/volteria/data/state/safe_mode_override.json 2>/dev/null || echo "No safe mode file"
    ```
 
-10. **Check system resources**:
+11. **Check system resources**:
     ```bash
     df -h /opt/volteria/data/          # Disk usage
     free -m                             # Memory
@@ -540,37 +546,37 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
     cat /sys/class/thermal/thermal_zone0/temp  # CPU temp (millidegrees)
     ```
 
-11. **Check network/DNS**:
+12. **Check network/DNS**:
     ```bash
     getent hosts google.com             # DNS working? (always available)
     curl -s -o /dev/null -w "%{http_code}" https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/  # Cloud reachable?
     nmcli con show --active             # Active network connections
     ```
 
-12. **Check config version**:
+13. **Check config version**:
     ```bash
     cat /opt/volteria/data/state/config_status.json | python3 -m json.tool
     cat /etc/volteria/config.yaml | head -20
     ```
 
-13. **Logging service detailed stats**:
+14. **Logging service detailed stats**:
     ```bash
     curl -s http://127.0.0.1:8085/stats | python3 -m json.tool
     curl -s http://127.0.0.1:8085/debug | python3 -m json.tool
     ```
 
-14. **Recent boot logs** (after restart/reboot):
+15. **Recent boot logs** (after restart/reboot):
     ```bash
     journalctl -b -u volteria-system --no-pager | head -50
     ```
 
-15. **Compare service ReadWritePaths** (for permission errors like "Read-only file system"):
+16. **Compare service ReadWritePaths** (for permission errors like "Read-only file system"):
     ```bash
     grep -h ReadWritePaths /etc/systemd/system/volteria-*.service
     # All services should have /run/volteria - if one is missing, that's the bug
     ```
 
-16. **Clear old logs after fix** (for clean verification):
+17. **Clear old logs after fix** (for clean verification):
     ```bash
     sudo journalctl --rotate && sudo journalctl --vacuum-time=1s
     # Then monitor for new issues with a clean slate
@@ -603,6 +609,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | SQLite write fails "readonly database" | DB owned by `volteria` user, SSH as `voltadmin` | Use `sudo -u volteria python3 script.py`. Stop logging service first, restart after |
 | Register causes "Illegal Data Address" on some devices | Register exists in template but not on hardware | Register-specific error — only that register fails, others continue (fixed 2026-02-13). Remove from `visualization_registers` via Supabase PATCH on template + all linked site_devices + INSERT `control_commands` (`command_type: sync_config`) |
 | Some registers fail but device "still reachable" | `journalctl -u volteria-device` for "register-specific errors" | Normal behavior — ExceptionResponse / address validation errors are isolated. Bad registers fail individually, good registers continue. Remove bad registers from template if persistent |
+| REGISTER_READ_FAILED alarm | `cat /run/volteria/state/register_errors.json` | 20+ consecutive failures → alarm created by logging service. Auto-resolves when failures clear. Remove bad registers from template to fix permanently |
 
 ### SOL532-E16 Specific Issues
 
@@ -930,4 +937,4 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 - **Never recommend changing per-register logging frequencies** — they are configured per-site for production use. Test registers with unusual frequencies (e.g., 5s on a static value) are intentional.
 - Focus diagnostics on service health, data flow, and errors — not config tuning.
 
-<!-- Updated: 2026-02-13 - Register error isolation: ExceptionResponse/address errors fail only that register, connection errors cascade. Updated Common Issues table. -->
+<!-- Updated: 2026-02-13 - Added REGISTER_READ_FAILED alarm, register_errors.json SharedState file, diagnostic step 9 for register errors -->

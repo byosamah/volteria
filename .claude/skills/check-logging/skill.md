@@ -145,6 +145,7 @@ If issues found: list specific problems with remediations below the table.
 | Alarm resolved locally but stuck in cloud | Missing `resolve_alarm_in_cloud()` call | Every `resolve_alarms_by_type()` must be paired with `cloud_sync.resolve_alarm_in_cloud(alarm_type)`. Compare SQLite `resolved=1` vs Supabase `resolved=false` for same alarm. |
 | Repeated "Resolved alarm in cloud" spam | Auto-resolve guard uses `>= N` instead of `== N` | Use `== N` for consecutive-check guards so resolve fires exactly once on transition, not every cycle forever |
 | Retention cleanup never runs | Service restarts reset 2-4 AM timer | Manual cleanup: `sudo systemctl stop volteria-logging && sudo -u volteria python3 /tmp/cleanup.py && sudo systemctl start volteria-logging`. DB owned by `volteria` user. Delete in batches of 50K, then VACUUM. No HTTP endpoint for on-demand cleanup. |
+| REGISTER_READ_FAILED alarm | Device service detects 20+ consecutive register failures | Alarm created per device during health check cycle (~10 min). Auto-resolves when failures clear. Check: `cat /run/volteria/state/register_errors.json`. Remove bad registers from template to fix permanently. |
 
 ### Known Behaviors
 
@@ -313,4 +314,4 @@ When alarm register is removed from config, existing unresolved alarms are auto-
 - `condition`: Threshold condition text (e.g., "Ambient Temperature < 50")
 - `alarm_type`: For `reg_*` alarms: `reg_{device_id}_{register_name}`
 
-<!-- Updated: 2026-02-13 - Added register error isolation note (bad register no longer blocks device data) -->
+<!-- Updated: 2026-02-13 - Added REGISTER_READ_FAILED alarm (device service writes failures to SharedState, logging service creates/auto-resolves per-device alarm) -->
