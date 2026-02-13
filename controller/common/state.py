@@ -214,6 +214,30 @@ def get_pending_commands() -> dict:
     return SharedState.read("commands")
 
 
+def get_register_errors() -> dict:
+    """Get persistent register read failures reported by device service"""
+    return SharedState.read("register_errors")
+
+
+def set_register_errors(device_id: str, device_name: str, failed_registers: list[dict]) -> None:
+    """Write register failures for a device (merge into existing)"""
+    errors = SharedState.read("register_errors", use_cache=False)
+    errors[device_id] = {
+        "device_name": device_name,
+        "failed_registers": failed_registers,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    SharedState.write("register_errors", errors)
+
+
+def clear_register_errors(device_id: str) -> None:
+    """Clear register failures for a device (all registers recovered)"""
+    errors = SharedState.read("register_errors", use_cache=False)
+    if device_id in errors:
+        del errors[device_id]
+        SharedState.write("register_errors", errors)
+
+
 def set_readings(readings: dict) -> None:
     """Update device readings"""
     SharedState.write("readings", readings)

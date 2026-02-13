@@ -12,6 +12,7 @@ from typing import Any, Union
 
 from common.config import DeviceConfig, ModbusRegister, Protocol, RegisterDataType
 from common.logging_setup import get_service_logger, log_device_read
+from common.state import set_register_errors, clear_register_errors
 from .modbus_client import ModbusClient, ModbusSerialClient
 from .connection_pool import ConnectionPool
 from .device_manager import DeviceManager
@@ -25,6 +26,7 @@ class RegisterPollState:
     last_polled: datetime | None = None
     poll_interval_ms: int = 1000
     consecutive_failures: int = 0
+    last_error: str = ""
 
 
 class RegisterReader:
@@ -39,6 +41,7 @@ class RegisterReader:
 
     MAX_RETRIES = 2
     RETRY_DELAY_MS = 500
+    FAILURE_ALARM_THRESHOLD = 20  # Consecutive failures before alarm (~20s for 1s registers)
 
     def __init__(
         self,
@@ -127,19 +130,20 @@ class RegisterReader:
             if connection_failed:
                 state.last_polled = now
                 state.consecutive_failures += 1
+                state.last_error = "Device not reachable (cascade)"
                 failed_count += 1
                 continue
 
             # Read register with retry — hold bus lock for serial
             if bus_lock:
                 async with bus_lock:
-                    value, is_conn_error = await self._read_register_with_retry(
+                    value, is_conn_error, error_msg = await self._read_register_with_retry(
                         client=client,
                         device=device,
                         register=register,
                     )
             else:
-                value, is_conn_error = await self._read_register_with_retry(
+                value, is_conn_error, error_msg = await self._read_register_with_retry(
                     client=client,
                     device=device,
                     register=register,
@@ -151,6 +155,7 @@ class RegisterReader:
             if value is not None:
                 results[register.name] = value
                 state.consecutive_failures = 0
+                state.last_error = ""
 
                 # Update device manager
                 await self._manager.update_reading(
@@ -169,6 +174,7 @@ class RegisterReader:
                 )
             else:
                 state.consecutive_failures += 1
+                state.last_error = error_msg
                 failed_count += 1
 
                 await self._manager.update_reading(
@@ -211,6 +217,23 @@ class RegisterReader:
                 f"(register-specific errors, device still reachable)"
             )
 
+        # Report persistent register failures to SharedState for alarm creation
+        persistent_failures = []
+        for register in device.registers:
+            key = f"{device.id}:{register.name}"
+            reg_state = self._poll_states.get(key)
+            if reg_state and reg_state.consecutive_failures >= self.FAILURE_ALARM_THRESHOLD:
+                persistent_failures.append({
+                    "name": register.name,
+                    "failures": reg_state.consecutive_failures,
+                    "last_error": reg_state.last_error,
+                })
+
+        if persistent_failures:
+            set_register_errors(device.id, device.name, persistent_failures)
+        else:
+            clear_register_errors(device.id)
+
         return results
 
     async def _read_register_with_retry(
@@ -218,14 +241,14 @@ class RegisterReader:
         client: Union[ModbusClient, ModbusSerialClient],
         device: DeviceConfig,
         register: ModbusRegister,
-    ) -> tuple[float | str | None, bool]:
+    ) -> tuple[float | str | None, bool, str]:
         """Read a register with retry logic.
 
         Returns:
-            Tuple of (value, is_connection_error):
-            - (value, False) on success
-            - (None, False) on register-specific error (device responded but register invalid)
-            - (None, True) on connection error (device unreachable)
+            Tuple of (value, is_connection_error, error_message):
+            - (value, False, "") on success
+            - (None, False, error) on register-specific error (device responded but register invalid)
+            - (None, True, error) on connection error (device unreachable)
         """
         last_error = ""
         for attempt in range(self.MAX_RETRIES + 1):
@@ -252,10 +275,10 @@ class RegisterReader:
                     )
                 else:
                     logger.warning(f"Unsupported register type: {register.type}")
-                    return None, False
+                    return None, False, f"Unsupported type: {register.type}"
 
                 if result.success:
-                    return result.value, False
+                    return result.value, False, ""
 
                 last_error = result.error or ""
 
@@ -272,7 +295,7 @@ class RegisterReader:
                     logger.warning(
                         f"Read failed for {device.name}.{register.name}: {last_error}"
                     )
-                    return None, False
+                    return None, False, last_error
 
                 # Other errors (timeout, connection) — retry
                 if attempt < self.MAX_RETRIES:
@@ -299,7 +322,7 @@ class RegisterReader:
                         f"Exception reading {device.name}.{register.name}: {e}"
                     )
 
-        return None, True
+        return None, True, last_error
 
     async def read_single_register(
         self,
@@ -325,9 +348,9 @@ class RegisterReader:
                 stopbits=device.stopbits,
             )
             async with bus_lock:
-                value, _ = await self._read_register_with_retry(client, device, register)
+                value, _, _ = await self._read_register_with_retry(client, device, register)
                 return value
         else:
             client = await self._pool.get_connection(device.host, device.port)
-            value, _ = await self._read_register_with_retry(client, device, register)
+            value, _, _ = await self._read_register_with_retry(client, device, register)
             return value

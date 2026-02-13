@@ -314,6 +314,19 @@ class LocalDatabase:
             conn.commit()
             return cursor.rowcount
 
+    def resolve_alarms_by_type_and_device(self, alarm_type: str, device_name: str) -> int:
+        """Mark unresolved alarms of a given type+device as resolved."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+            cursor.execute("""
+                UPDATE alarms
+                SET resolved = 1, resolved_at = ?
+                WHERE alarm_type = ? AND device_name = ? AND resolved = 0
+            """, (now, alarm_type, device_name))
+            conn.commit()
+            return cursor.rowcount
+
     def has_unresolved_alarm(
         self,
         site_id: str,

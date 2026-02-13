@@ -31,7 +31,7 @@ from collections import deque, defaultdict
 import yaml
 from aiohttp import web
 
-from common.state import SharedState, set_service_health, get_config, get_control_state
+from common.state import SharedState, set_service_health, get_config, get_control_state, get_register_errors
 from common.config import AlarmDefinition, AlarmCondition
 from common.logging_setup import get_service_logger
 from common.timestamp import get_aligned_now_iso
@@ -150,6 +150,9 @@ class LoggingService:
 
         # Buffer auto-resolve: track consecutive low-buffer checks
         self._consecutive_low_buffer_checks: int = 0
+
+        # Register failure alarm tracking: device names that currently have alarms
+        self._devices_with_register_alarms: set[str] = set()
 
         # Dynamic buffer thresholds (recalculated on config load based on register count)
         self._alert_buffer_size: int = ALERT_BUFFER_SIZE
@@ -1663,6 +1666,57 @@ class LoggingService:
                     "major", now.isoformat(),
                 )
                 logger.error(f"Logging health alert: {max_consecutive} consecutive {error_type} errors")
+
+        # Check persistent register read failures (from device service via SharedState)
+        register_errors = get_register_errors()
+        devices_with_failures = set()
+
+        for device_id, error_info in register_errors.items():
+            if device_id.startswith("_"):
+                continue  # Skip metadata keys like _updated_at
+            failed = error_info.get("failed_registers", [])
+            device_name = error_info.get("device_name", "Unknown")
+            if not failed:
+                continue
+
+            devices_with_failures.add(device_name)
+
+            # Only create alarm if one doesn't already exist for this device
+            has_alarm = await self._run_db(
+                self.local_db.has_unresolved_alarm,
+                self._site_id, "REGISTER_READ_FAILED", device_name,
+            )
+            if not has_alarm:
+                details = ", ".join(
+                    f"{r['name']} ({r.get('last_error', 'unknown')})"
+                    for r in failed[:5]
+                )
+                suffix = f" +{len(failed) - 5} more" if len(failed) > 5 else ""
+                message = (
+                    f"{device_name}: {len(failed)} register(s) consistently "
+                    f"failing — {details}{suffix}"
+                )
+                await self._run_db(
+                    self.local_db.insert_alarm,
+                    str(uuid.uuid4()), self._site_id, "REGISTER_READ_FAILED",
+                    message, "warning", now.isoformat(),
+                    device_id, device_name,
+                )
+                self._devices_with_register_alarms.add(device_name)
+                logger.warning(f"Register failure alarm: {message}")
+
+        # Auto-resolve: devices that previously had alarms but no longer have failures
+        resolved_devices = self._devices_with_register_alarms - devices_with_failures
+        for device_name in resolved_devices:
+            count = await self._run_db(
+                self.local_db.resolve_alarms_by_type_and_device,
+                "REGISTER_READ_FAILED", device_name,
+            )
+            if count > 0:
+                if self.cloud_sync:
+                    await self.cloud_sync.resolve_alarm_in_cloud("REGISTER_READ_FAILED")
+                logger.info(f"Register failures cleared: auto-resolved alarm for {device_name}")
+        self._devices_with_register_alarms = devices_with_failures
 
     async def _start_health_server(self) -> None:
         """Start the health check HTTP server"""
