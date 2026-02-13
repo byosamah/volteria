@@ -35,6 +35,7 @@ export interface CableConfig {
   flowUpperThreshold?: number;  // value > this → forward flow. Default: 0
   flowLowerThreshold?: number;  // value < this → reverse flow. Default: 0
   reverseColor?: string;        // optional color when flowing in reverse
+  stoppedColor?: string;        // optional color when stopped (between thresholds)
 }
 
 interface CableWidgetProps {
@@ -166,7 +167,11 @@ export function CableWidget({
 
   const isFlowing = flowState !== "stopped";
   const isReverse = flowState === "reverse";
-  const activeColor = (isReverse && config.reverseColor) ? config.reverseColor : config.color;
+  const activeColor = isReverse && config.reverseColor
+    ? config.reverseColor
+    : !isFlowing && config.stoppedColor
+      ? config.stoppedColor
+      : config.color;
   const animationDuration = ANIMATION_DURATIONS[config.animationSpeed] || "1s";
 
   // Hover state for endpoint circles

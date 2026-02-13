@@ -1688,6 +1688,7 @@ export function WidgetConfigDialog({
     const flowUpperThreshold = (config.flowUpperThreshold as number) ?? 0;
     const flowLowerThreshold = (config.flowLowerThreshold as number) ?? 0;
     const reverseColor = (config.reverseColor as string) || "";
+    const stoppedColor = (config.stoppedColor as string) || "";
 
     // Get registers for animation device
     const animationDevice = devices.find((d) => d.id === animationDeviceId);
@@ -1912,6 +1913,39 @@ export function WidgetConfigDialog({
                         variant="ghost"
                         size="icon"
                         onClick={() => updateConfig("reverseColor", "")}
+                        className="shrink-0"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stopped Color (optional) */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label>Stopped Color</Label>
+                    <span className="text-xs text-muted-foreground">(optional)</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type="color"
+                      value={stoppedColor || color}
+                      onChange={(e) => updateConfig("stoppedColor", e.target.value)}
+                      className="w-12 h-10 p-1 cursor-pointer"
+                    />
+                    <Input
+                      type="text"
+                      value={stoppedColor}
+                      onChange={(e) => updateConfig("stoppedColor", e.target.value)}
+                      placeholder="Same as cable"
+                      className="flex-1"
+                    />
+                    {stoppedColor && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => updateConfig("stoppedColor", "")}
                         className="shrink-0"
                       >
                         <X className="h-4 w-4" />
