@@ -418,6 +418,7 @@ Without `on_conflict`, entire batch fails if ANY record is duplicate.
 - When device read fails, stale readings are deleted from SharedState
 - Prevents old data from being logged as current
 - Device marked offline in cloud (`is_online: false`)
+- **Register error isolation**: `_read_register_with_retry()` returns `(value, is_connection_error)`. ExceptionResponse and address validation errors are register-specific — only that register fails, others continue. Connection errors (timeout, unreachable) cascade to skip remaining registers.
 
 ### Connection Alarm Settings
 - Per-device `connection_alarm_enabled` controls alarm generation

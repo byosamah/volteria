@@ -458,6 +458,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | SQLite calls via `_run_db()` in thread pool | Never block asyncio event loop |
 | Orphan alarms auto-resolved on config change | Prevents stale alarms when registers removed |
 | Alarm condition in separate column | Never embed condition in message field |
+| Register errors isolated from connection errors | ExceptionResponse/address → fail register only; timeout → cascade skip |
 | RTU Direct: asyncio.Lock per serial port | Prevent bus contention on RS-485 |
 | SOL532-E16: watchdog feed every 30s | System reboots if service hangs >60s |
 | SOL532-E16: UPS monitor on GPIO16 | Graceful shutdown on power loss |
@@ -596,11 +597,12 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | High CPU + restart loop | `journalctl -u volteria-supervisor` for "Read-only file system" | Update service file: add `/run/volteria` to `ReadWritePaths` |
 | Disabled device keeps alarming "Not Reporting" | `SELECT enabled FROM site_devices WHERE name = 'X'` | Verify migration 098 applied (`get_non_reporting_devices` filters `sd.enabled = true`) |
 | All devices offline after deploy | `curl :8083/health` — devices online? | Transient (~30s restart window). Verify via health endpoint before investigating. If persistent, check `journalctl -u volteria-device` |
-| ALL registers fail for one device | Check FIRST register in device's list | Cascade failure: first register failure marks device "not reachable", skips all remaining. Fix the first register to unblock the rest |
+| ALL registers fail for one device | `journalctl -u volteria-device` for "not reachable" | Connection error (timeout/unreachable) cascades to skip remaining. Register-specific errors (ExceptionResponse, address) only fail that register — check logs for "register-specific errors, device still reachable" |
 | `can't multiply sequence by non-int` | UTF8 register returns string, scaling crashes | `modbus_client.py` guards with `isinstance(value, str)` — strings skip `value * scale`. If new datatype returns non-numeric, add same guard |
 | Live Registers 500 error on UTF8 device | Backend `RegisterReading` rejects string | `RegisterReading` model uses `float | str` for `raw_value`/`scaled_value` (fixed 2026-02-12) |
 | SQLite write fails "readonly database" | DB owned by `volteria` user, SSH as `voltadmin` | Use `sudo -u volteria python3 script.py`. Stop logging service first, restart after |
-| Register causes "Illegal Data Address" on some devices | Register exists in template but not on hardware | Remove from `visualization_registers` via Supabase PATCH on template + all linked site_devices + INSERT `control_commands` (`command_type: sync_config`) |
+| Register causes "Illegal Data Address" on some devices | Register exists in template but not on hardware | Register-specific error — only that register fails, others continue (fixed 2026-02-13). Remove from `visualization_registers` via Supabase PATCH on template + all linked site_devices + INSERT `control_commands` (`command_type: sync_config`) |
+| Some registers fail but device "still reachable" | `journalctl -u volteria-device` for "register-specific errors" | Normal behavior — ExceptionResponse / address validation errors are isolated. Bad registers fail individually, good registers continue. Remove bad registers from template if persistent |
 
 ### SOL532-E16 Specific Issues
 
@@ -928,4 +930,4 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 - **Never recommend changing per-register logging frequencies** — they are configured per-site for production use. Test registers with unusual frequencies (e.g., 5s on a static value) are intentional.
 - Focus diagnostics on service health, data flow, and errors — not config tuning.
 
-<!-- Updated: 2026-02-06 - Added .claude permission fix, logging frequency boundary, SQLite HTTP endpoint preference -->
+<!-- Updated: 2026-02-13 - Register error isolation: ExceptionResponse/address errors fail only that register, connection errors cascade. Updated Common Issues table. -->

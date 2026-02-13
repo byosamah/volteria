@@ -152,6 +152,7 @@ If issues found: list specific problems with remediations below the table.
 - **To verify cloud data gaps**: Query `device_readings` in Supabase around known offline events (from `alarms` table). Expected: gap duration matches offline duration, continuous data before/after.
 - **Historical data gaps (~35-40s every 60s)**: Caused by old fixed `MAX_BUFFER_SIZE=10,000` overflow with high register counts. Dynamic buffer threshold `max(10000, register_count × flush_interval × 3)` prevents this (fixed 2026-02-12).
 - **False `not_reporting` alarms from sync lag**: Cloud cron checks `device_readings` timestamps. If sync throughput < production rate, stale timestamps trigger false alarms even though controller is healthy. Fix: dynamic sync batch size (fixed 2026-02-12).
+- **Bad register no longer blocks device data**: Register-specific errors (ExceptionResponse, address validation like "0 < address -1 < 65535 !") only fail that register — other registers on the same device continue logging normally. Only connection errors (timeout, unreachable) cascade to skip remaining registers (fixed 2026-02-13).
 
 ## Restart Controller (if needed)
 
@@ -312,4 +313,4 @@ When alarm register is removed from config, existing unresolved alarms are auto-
 - `condition`: Threshold condition text (e.g., "Ambient Temperature < 50")
 - `alarm_type`: For `reg_*` alarms: `reg_{device_id}_{register_name}`
 
-<!-- Updated: 2026-02-06 - Added resolve spam fix pattern, resolve_alarm_in_cloud known behavior, cloud gap verification -->
+<!-- Updated: 2026-02-13 - Added register error isolation note (bad register no longer blocks device data) -->

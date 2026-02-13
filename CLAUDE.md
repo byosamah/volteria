@@ -193,7 +193,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 22. **Supabase RLS silent failure**: UPDATE/DELETE blocked by RLS returns `{data: null, error: null}` — no error thrown. Always verify RLS policies exist for write operations, not just SELECT.
 23. **Template UI edits copy registers to site_devices**: Editing a template in the UI copies registers to `site_devices.registers` with `"source": "template"` tags. Fixing a template alone doesn't fix existing devices — must also update site_devices copies or trigger re-sync.
 24. **ComAp InteliGen NT uses 1-based register numbering**: ComAp register 40013 = Modbus PDU address 12. pymodbus uses 0-based PDU addresses. Template addresses must be `register_number - 1`. Meatrol ME437 is 0-based (no offset needed).
-25. **Device offline-isolation cascade**: When a register read fails with "Illegal Data Address", the device service skips ALL remaining registers for that device. One bad register address blocks the entire device's data flow.
+25. **Register error isolation**: `_read_register_with_retry()` returns `(value, is_connection_error)` tuple. ExceptionResponse and address validation errors are register-specific (`is_connection_error=False`) — only that register fails, others continue. Connection errors (timeout, unreachable) cascade to skip remaining registers. One bad register never blocks the whole device.
 26. **Logging buffer thresholds are dynamic**: `ALERT_BUFFER_SIZE` and `MAX_BUFFER_SIZE` scale with `register_count × flush_interval`. With 462 registers at 60s flush, thresholds are 55K/83K (not the old hardcoded 5K/10K). Auto-resolves after 3 consecutive healthy checks.
 27. **Disabled devices must be excluded from alarm cron jobs**: `get_non_reporting_devices()` and `check_device_connection_status()` filter by `sd.enabled = true`. Without this, disabled devices with stale readings trigger recurring "Not Reporting" alarms that re-create after every manual resolve.
 28. **DG total power > load meter total is expected**: ~10-15% gap from DG auxiliaries, transformer/distribution losses, and house loads between generation and metering point. No solar = DGs are the only source, so the gap is purely losses.
@@ -230,7 +230,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 ### Device Polling
 - Exponential backoff on offline devices: 5s → 10s → 20s → 40s → 60s max
 - Resets immediately on first successful read
-- **Offline device isolation**: After first register fails, remaining registers skipped with single summary log (not per-register)
+- **Register error isolation**: Register-specific errors (ExceptionResponse, address validation) fail only that register — other registers on the same device continue. Connection errors (timeout, unreachable) cascade to skip remaining registers with single summary log.
 - Other devices on the same site continue polling normally — one offline device doesn't block others
 - **Three register types polled**: `registers` (1s), `visualization_registers` (5s), `alarm_registers` (5s) — all appear in SharedState
 - Deduplicates by address across register types to avoid double-reads
