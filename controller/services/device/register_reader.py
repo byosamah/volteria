@@ -133,13 +133,13 @@ class RegisterReader:
             # Read register with retry — hold bus lock for serial
             if bus_lock:
                 async with bus_lock:
-                    value = await self._read_register_with_retry(
+                    value, is_conn_error = await self._read_register_with_retry(
                         client=client,
                         device=device,
                         register=register,
                     )
             else:
-                value = await self._read_register_with_retry(
+                value, is_conn_error = await self._read_register_with_retry(
                     client=client,
                     device=device,
                     register=register,
@@ -187,12 +187,14 @@ class RegisterReader:
                     success=False,
                 )
 
-                # After first failed register, mark connection as failed
-                # to skip remaining registers (1 log line instead of 120+)
-                connection_failed = True
+                # Only cascade on connection errors (device unreachable).
+                # Register-specific errors (ExceptionResponse) skip just
+                # that register — other registers may still be readable.
+                if is_conn_error:
+                    connection_failed = True
 
         # Log summary for skipped registers and update device status once
-        if failed_count > 1:
+        if connection_failed and failed_count > 1:
             logger.warning(
                 f"Device {device.name} not reachable — "
                 f"skipped {failed_count - 1} remaining registers"
@@ -203,6 +205,11 @@ class RegisterReader:
                 success=False,
                 error="Device not reachable",
             )
+        elif failed_count > 0 and not connection_failed:
+            logger.info(
+                f"Device {device.name}: {failed_count} register(s) failed "
+                f"(register-specific errors, device still reachable)"
+            )
 
         return results
 
@@ -211,8 +218,16 @@ class RegisterReader:
         client: Union[ModbusClient, ModbusSerialClient],
         device: DeviceConfig,
         register: ModbusRegister,
-    ) -> float | str | None:
-        """Read a register with retry logic"""
+    ) -> tuple[float | str | None, bool]:
+        """Read a register with retry logic.
+
+        Returns:
+            Tuple of (value, is_connection_error):
+            - (value, False) on success
+            - (None, False) on register-specific error (device responded but register invalid)
+            - (None, True) on connection error (device unreachable)
+        """
+        last_error = ""
         for attempt in range(self.MAX_RETRIES + 1):
             try:
                 # Determine register count based on datatype (size overrides for UTF8 etc.)
@@ -237,24 +252,35 @@ class RegisterReader:
                     )
                 else:
                     logger.warning(f"Unsupported register type: {register.type}")
-                    return None
+                    return None, False
 
                 if result.success:
-                    return result.value
+                    return result.value, False
 
-                # Log error and retry
+                last_error = result.error or ""
+
+                # ExceptionResponse = device responded with a Modbus exception
+                # (e.g., Illegal Data Address) — register-specific, not connection
+                if "ExceptionResponse" in last_error:
+                    logger.warning(
+                        f"Read failed for {device.name}.{register.name}: {last_error}"
+                    )
+                    return None, False
+
+                # Other errors (timeout, connection) — retry
                 if attempt < self.MAX_RETRIES:
                     logger.debug(
-                        f"Read failed for {device.name}.{register.name}: {result.error}, "
+                        f"Read failed for {device.name}.{register.name}: {last_error}, "
                         f"retrying ({attempt + 1}/{self.MAX_RETRIES})"
                     )
                     await asyncio.sleep(self.RETRY_DELAY_MS / 1000)
                 else:
                     logger.warning(
-                        f"Read failed for {device.name}.{register.name}: {result.error}"
+                        f"Read failed for {device.name}.{register.name}: {last_error}"
                     )
 
             except Exception as e:
+                last_error = str(e)
                 if attempt < self.MAX_RETRIES:
                     logger.debug(
                         f"Exception reading {device.name}.{register.name}: {e}, "
@@ -266,7 +292,7 @@ class RegisterReader:
                         f"Exception reading {device.name}.{register.name}: {e}"
                     )
 
-        return None
+        return None, True
 
     async def read_single_register(
         self,
@@ -292,7 +318,9 @@ class RegisterReader:
                 stopbits=device.stopbits,
             )
             async with bus_lock:
-                return await self._read_register_with_retry(client, device, register)
+                value, _ = await self._read_register_with_retry(client, device, register)
+                return value
         else:
             client = await self._pool.get_connection(device.host, device.port)
-            return await self._read_register_with_retry(client, device, register)
+            value, _ = await self._read_register_with_retry(client, device, register)
+            return value

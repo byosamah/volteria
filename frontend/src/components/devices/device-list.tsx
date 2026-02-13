@@ -894,7 +894,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
               )}
             </div>
             <p className="text-sm text-muted-foreground truncate">
-              {device.device_templates?.brand} {device.device_templates?.model}
+              {device.device_templates?.name}
             </p>
             {/* Protocol, Slave ID, and IP shown on mobile */}
             <p className="text-xs text-muted-foreground sm:hidden">
@@ -1067,7 +1067,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
           <DialogHeader>
             <DialogTitle>Edit Device: {editDevice?.name}</DialogTitle>
             <DialogDescription>
-              {editDevice?.device_templates?.brand} {editDevice?.device_templates?.model}
+              {editDevice?.device_templates?.name}
             </DialogDescription>
             {/* Protocol badge - shows connection type */}
             {editDevice && (
