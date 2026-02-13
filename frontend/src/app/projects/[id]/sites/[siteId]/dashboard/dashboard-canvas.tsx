@@ -351,7 +351,7 @@ export function DashboardCanvas({
           grid_width: size.width,
           grid_height: size.height,
           config: {},
-          z_index: widgetType === "shape" ? -1 : widgets.length,
+          z_index: widgetType === "shape" ? 0 : widgets.length,
         }),
       });
 
@@ -463,9 +463,10 @@ export function DashboardCanvas({
       if (!currentWidget) return;
 
       // Sync z_index for shape widgets based on send_to_back config
+      // z_index: 0 = behind regular widgets (they have z_index >= 1), but above grid cells
       let zIndex = currentWidget.z_index;
       if (currentWidget.widget_type === "shape") {
-        zIndex = (config.send_to_back as boolean) !== false ? -1 : 0;
+        zIndex = (config.send_to_back as boolean) !== false ? 0 : widgets.length;
       }
 
       const response = await fetch(`/api/dashboards/${siteId}/widgets/${widgetId}`, {
