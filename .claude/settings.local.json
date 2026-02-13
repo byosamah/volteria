@@ -149,7 +149,29 @@
       "Bash(C:/Users/Hp/scoop/shims/supabase.exe --help)",
       "Bash(C:/Users/Hp/scoop/shims/supabase.exe sql --help)",
       "Bash(del \"C:\\\\Users\\\\Hp\\\\volteria\\\\temp_beltway_template.json\")",
-      "Bash(del \"C:\\\\Users\\\\Hp\\\\volteria\\\\temp_beltway_update.json\")"
+      "Bash(del \"C:\\\\Users\\\\Hp\\\\volteria\\\\temp_beltway_update.json\")",
+      "Bash(PGPASSWORD=8nGHcalk7HEYw523 psql:*)",
+      "Bash(__NEW_LINE_cb4f4032f2958c9a__ echo \"\")",
+      "Bash(__NEW_LINE_1d25c79c5bee0ae2__ echo \"\")",
+      "WebFetch(domain:www.amazon.ae)",
+      "Bash(git clone:*)",
+      "Bash(ipconfig:*)",
+      "Bash(ip addr:*)",
+      "Bash(HH\", r.registers[0], r.registers[1]\\)\n    val = struct.unpack\\(\")",
+      "Bash(f\", raw\\)[0]\n    print\\(f\" {name} @ {addr}: {val:.4f}\"\\)\n    return val\n\ndef read_u16\\(slave, addr, name\\):\n    r = client.read_holding_registers\\(addr, 1, slave=slave\\)\n    if r.isError\\(\\):\n        print\\(f\" {name} @ {addr}: ERROR - {r}\"\\)\n        return None\n    print\\(f\" {name} @ {addr}: {r.registers[0]}\"\\)\n    return r.registers[0]\n\nfor sid in [1, 2]:\n    print\\(f\"n=== METER ID {sid} ===\"\\)\n    read_u16\\(sid, 81, \"Modbus Addr\"\\)\n    read_f32\\(sid, 2001, \"PF Phase1\"\\)\n    read_f32\\(sid, 2003, \"PF Phase2\"\\)\n    read_f32\\(sid, 2005, \"PF Phase3\"\\)\n    read_f32\\(sid, 2016, \"Freq Ph1\"\\)\n    read_f32\\(sid, 4001, \"Energy Import Ph1\"\\)\n\nclient.close\\(\\)\nprint\\(\"nDone.\"\\)\nSCRIPT\n''\")",
+      "WebFetch(domain:www.aggsoft.com)",
+      "WebFetch(domain:www.scribd.com)",
+      "WebFetch(domain:www.rogowski.cn)",
+      "WebFetch(domain:www.manualslib.com)",
+      "Bash(git clean:*)",
+      "WebFetch(domain:www.controlin.com)",
+      "WebFetch(domain:www.sunpoweree.com.my)",
+      "WebFetch(domain:forum.hms-networks.com)",
+      "WebFetch(domain:communityarchive.victronenergy.com)",
+      "Bash(git log:*)",
+      "WebFetch(domain:manualzz.com)",
+      "Bash(set \"SUPABASE_DB_PASSWORD=Mohkof1106!!\")",
+      "Bash(APIKEY=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzZ3hoemRjdHp0aGNxeHl4ZnhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTAwOTQ2MywiZXhwIjoyMDgwNTg1NDYzfQ.4iKrB2pv7OVaKv_VY7QoyWQzSPuALcNPNJnD5S3Z74I\")"
     ]
   }
 }
