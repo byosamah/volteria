@@ -128,6 +128,12 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?select=alarm_ty
 
 **Cross-check local vs cloud**: If cloud shows unresolved LOGGING_* alarms but controller SQLite has them resolved (`resolved=1`), the cloud resolve call was missed. Fix: manually PATCH the alarm in Supabase and verify `resolve_alarm_in_cloud()` is called after every `resolve_alarms_by_type()`.
 
+Also check for persistent register read failures (device service writes these):
+```bash
+cat /run/volteria/state/register_errors.json 2>/dev/null | python3 -m json.tool || echo "No register errors"
+```
+If this file exists with entries, specific registers are consistently failing (20+ consecutive). Logging service creates `REGISTER_READ_FAILED` alarm during health check (~10 min cycle). Auto-resolves when failures clear.
+
 If issues found: list specific problems with remediations below the table.
 
 ## Remediation Guide
@@ -154,6 +160,7 @@ If issues found: list specific problems with remediations below the table.
 - **Historical data gaps (~35-40s every 60s)**: Caused by old fixed `MAX_BUFFER_SIZE=10,000` overflow with high register counts. Dynamic buffer threshold `max(10000, register_count × flush_interval × 3)` prevents this (fixed 2026-02-12).
 - **False `not_reporting` alarms from sync lag**: Cloud cron checks `device_readings` timestamps. If sync throughput < production rate, stale timestamps trigger false alarms even though controller is healthy. Fix: dynamic sync batch size (fixed 2026-02-12).
 - **Bad register no longer blocks device data**: Register-specific errors (ExceptionResponse, address validation like "0 < address -1 < 65535 !") only fail that register — other registers on the same device continue logging normally. Only connection errors (timeout, unreachable) cascade to skip remaining registers (fixed 2026-02-13).
+- **Viz register failures were invisible before REGISTER_READ_FAILED alarm**: Logging registers are first in `device.registers` list, viz/alarm registers appended after. If only viz registers fail, logging data continues flowing → cloud `check_device_connection_status` cron sees fresh `device_readings` timestamps → no alarm. `REGISTER_READ_FAILED` alarm (added 2026-02-13) closes this gap via SharedState IPC: device service writes `register_errors.json` after 20 consecutive failures → logging service health check creates per-device alarm.
 
 ## Restart Controller (if needed)
 

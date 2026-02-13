@@ -422,6 +422,13 @@ sudo chown -R voltadmin:voltadmin /opt/volteria/.claude
 cd /opt/volteria && git pull origin main
 ```
 
+### Local Changes Blocking Pull
+Pi often has uncommitted/untracked local changes from previous sessions:
+```bash
+# Stash modified files + remove untracked blockers
+cd /opt/volteria && git stash && rm -f <untracked_file> && git pull origin main
+```
+
 As a last resort, update specific files only:
 ```bash
 cd /opt/volteria && git fetch origin main && git checkout origin/main -- controller/services/config/sync.py
