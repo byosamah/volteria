@@ -177,6 +177,8 @@ export function WidgetConfigDialog({
         return renderGaugeForm();
       case "cable":
         return renderCableForm();
+      case "shape":
+        return renderShapeForm();
       default:
         return <p className="text-muted-foreground">Unknown widget type</p>;
     }
@@ -1849,6 +1851,271 @@ export function WidgetConfigDialog({
     );
   };
 
+  // Shape type options for visual selector
+  const SHAPE_TYPES = [
+    { id: "rectangle", name: "Rectangle" },
+    { id: "circle", name: "Circle" },
+    { id: "line", name: "Line" },
+    { id: "arrow", name: "Arrow" },
+  ];
+
+  const ShapePreview = ({ type, color }: { type: string; color: string }) => {
+    switch (type) {
+      case "rectangle":
+        return (
+          <svg viewBox="0 0 40 30" className="w-10 h-7">
+            <rect x="4" y="4" width="32" height="22" rx="2" fill="none" stroke={color} strokeWidth="2" />
+          </svg>
+        );
+      case "circle":
+        return (
+          <svg viewBox="0 0 40 40" className="w-10 h-10">
+            <ellipse cx="20" cy="20" rx="16" ry="16" fill="none" stroke={color} strokeWidth="2" />
+          </svg>
+        );
+      case "line":
+        return (
+          <svg viewBox="0 0 40 20" className="w-10 h-5">
+            <line x1="4" y1="10" x2="36" y2="10" stroke={color} strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        );
+      case "arrow":
+        return (
+          <svg viewBox="0 0 40 20" className="w-10 h-5">
+            <defs>
+              <marker id="preview-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
+              </marker>
+            </defs>
+            <line x1="4" y1="10" x2="32" y2="10" stroke={color} strokeWidth="2" markerEnd="url(#preview-arrow)" />
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderShapeForm = () => {
+    const shapeType = (config.shape_type as string) || "rectangle";
+    const fillMode = (config.fill_mode as string) || "none";
+    const fillColor = (config.fill_color as string) || "#3b82f6";
+    const fillOpacity = (config.fill_opacity as number) ?? 20;
+    const strokeColor = (config.stroke_color as string) || "#3b82f6";
+    const strokeWidth = (config.stroke_width as number) || 2;
+    const strokeStyle = (config.stroke_style as string) || "solid";
+    const borderRadius = (config.border_radius as number) || 0;
+    const lineDirection = (config.line_direction as string) || "horizontal";
+    const arrowEnd = (config.arrow_end as string) || "end";
+    const sendToBack = (config.send_to_back as boolean) ?? true;
+
+    return (
+      <div className="space-y-4">
+        {/* Shape Type Selector */}
+        <div className="space-y-2">
+          <Label>Shape Type</Label>
+          <div className="grid grid-cols-4 gap-2 p-2 border rounded-md bg-muted/30">
+            {SHAPE_TYPES.map((type) => (
+              <button
+                key={type.id}
+                type="button"
+                onClick={() => updateConfig("shape_type", type.id)}
+                className={cn(
+                  "flex flex-col items-center p-2 rounded-md transition-all",
+                  "hover:bg-accent hover:text-accent-foreground",
+                  shapeType === type.id
+                    ? "bg-primary/10 ring-2 ring-primary"
+                    : "bg-background"
+                )}
+              >
+                <ShapePreview type={type.id} color={strokeColor} />
+                <span className="text-[10px] mt-1 text-center">{type.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Stroke */}
+        <div className="space-y-3 pt-3 border-t">
+          <Label className="text-sm font-medium">Stroke</Label>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Color</Label>
+            <div className="flex gap-2">
+              <Input
+                type="color"
+                value={strokeColor}
+                onChange={(e) => updateConfig("stroke_color", e.target.value)}
+                className="w-12 h-10 p-1 cursor-pointer"
+              />
+              <Input
+                type="text"
+                value={strokeColor}
+                onChange={(e) => updateConfig("stroke_color", e.target.value)}
+                className="flex-1"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              Thickness ({strokeWidth}px)
+            </Label>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              value={strokeWidth}
+              onChange={(e) => updateConfig("stroke_width", parseInt(e.target.value))}
+              className="w-full"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Style</Label>
+            <Select
+              value={strokeStyle}
+              onValueChange={(v) => updateConfig("stroke_style", v)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="solid">Solid</SelectItem>
+                <SelectItem value="dashed">Dashed</SelectItem>
+                <SelectItem value="dotted">Dotted</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Fill (rectangle and circle only) */}
+        {(shapeType === "rectangle" || shapeType === "circle") && (
+          <div className="space-y-3 pt-3 border-t">
+            <Label className="text-sm font-medium">Fill</Label>
+
+            <Select
+              value={fillMode}
+              onValueChange={(v) => updateConfig("fill_mode", v)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Frame Only (transparent)</SelectItem>
+                <SelectItem value="solid">Filled</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {fillMode === "solid" && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Fill Color</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="color"
+                      value={fillColor}
+                      onChange={(e) => updateConfig("fill_color", e.target.value)}
+                      className="w-12 h-10 p-1 cursor-pointer"
+                    />
+                    <Input
+                      type="text"
+                      value={fillColor}
+                      onChange={(e) => updateConfig("fill_color", e.target.value)}
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">
+                    Opacity ({fillOpacity}%)
+                  </Label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={fillOpacity}
+                    onChange={(e) => updateConfig("fill_opacity", parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Border Radius (rectangle only) */}
+        {shapeType === "rectangle" && (
+          <div className="space-y-2 pt-3 border-t">
+            <Label>Corner Radius ({borderRadius}px)</Label>
+            <input
+              type="range"
+              min={0}
+              max={50}
+              value={borderRadius}
+              onChange={(e) => updateConfig("border_radius", parseInt(e.target.value))}
+              className="w-full"
+            />
+          </div>
+        )}
+
+        {/* Line Direction (line/arrow only) */}
+        {(shapeType === "line" || shapeType === "arrow") && (
+          <div className="space-y-2 pt-3 border-t">
+            <Label>Direction</Label>
+            <Select
+              value={lineDirection}
+              onValueChange={(v) => updateConfig("line_direction", v)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="horizontal">Horizontal</SelectItem>
+                <SelectItem value="vertical">Vertical</SelectItem>
+                <SelectItem value="diagonal-down">Diagonal ↘</SelectItem>
+                <SelectItem value="diagonal-up">Diagonal ↗</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Arrow Head (arrow only) */}
+        {shapeType === "arrow" && (
+          <div className="space-y-2 pt-3 border-t">
+            <Label>Arrow Head</Label>
+            <Select
+              value={arrowEnd}
+              onValueChange={(v) => updateConfig("arrow_end", v)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="end">End only →</SelectItem>
+                <SelectItem value="start">Start only ←</SelectItem>
+                <SelectItem value="both">Both ends ↔</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Layer Control */}
+        <div className="pt-3 border-t">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={sendToBack}
+              onCheckedChange={(checked) => updateConfig("send_to_back", checked)}
+            />
+            <Label className="font-normal">Send to back</Label>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Enable to use this shape as a visual frame behind other widgets
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   // Widget type titles
   const titles: Record<string, string> = {
     icon: "Configure Image Widget",
@@ -1859,6 +2126,7 @@ export function WidgetConfigDialog({
     text: "Configure Text Widget",
     gauge: "Configure Gauge Widget",
     cable: "Configure Cable",
+    shape: "Configure Shape",
   };
 
   return (

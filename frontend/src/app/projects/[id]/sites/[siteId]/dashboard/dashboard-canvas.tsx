@@ -32,6 +32,7 @@ import { StatusIndicatorWidget } from "@/components/dashboard/status-indicator-w
 import { TextWidget } from "@/components/dashboard/text-widget";
 import { GaugeWidget } from "@/components/dashboard/gauge-widget";
 import { CableWidget, CableConfig } from "@/components/dashboard/cable-widget";
+import { ShapeWidget } from "@/components/dashboard/shape-widget";
 import { WidgetPicker } from "@/components/dashboard/widget-picker";
 import { WidgetConfigDialog } from "@/components/dashboard/widget-config-dialog";
 
@@ -335,6 +336,7 @@ export function DashboardCanvas({
         status_indicator: { width: 2, height: 1 },
         text: { width: 3, height: 1 },
         gauge: { width: 2, height: 3 },
+        shape: { width: 3, height: 2 },
       };
 
       const size = defaultSizes[widgetType] || { width: 2, height: 2 };
@@ -349,7 +351,7 @@ export function DashboardCanvas({
           grid_width: size.width,
           grid_height: size.height,
           config: {},
-          z_index: widgets.length,
+          z_index: widgetType === "shape" ? -1 : widgets.length,
         }),
       });
 
@@ -460,11 +462,18 @@ export function DashboardCanvas({
       const currentWidget = widgets.find(w => w.id === widgetId);
       if (!currentWidget) return;
 
+      // Sync z_index for shape widgets based on send_to_back config
+      let zIndex = currentWidget.z_index;
+      if (currentWidget.widget_type === "shape") {
+        zIndex = (config.send_to_back as boolean) !== false ? -1 : 0;
+      }
+
       const response = await fetch(`/api/dashboards/${siteId}/widgets/${widgetId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           config,
+          z_index: zIndex,
           grid_row: currentWidget.grid_row,
           grid_col: currentWidget.grid_col,
           grid_width: currentWidget.grid_width,
@@ -709,6 +718,8 @@ export function DashboardCanvas({
         return <TextWidget {...commonProps} />;
       case "gauge":
         return <GaugeWidget {...commonProps} />;
+      case "shape":
+        return <ShapeWidget {...commonProps} />;
       case "cable":
         return null; // Cables render in SVG overlay
       default:
@@ -1015,7 +1026,9 @@ export function DashboardCanvas({
                 <div
                   key={widget.id}
                   className={cn(
-                    "relative bg-card rounded-lg border shadow-sm overflow-hidden",
+                    "relative overflow-hidden",
+                    widget.widget_type !== "shape" && "bg-card rounded-lg border shadow-sm",
+                    widget.widget_type === "shape" && isEditMode && "border border-dashed border-muted-foreground/30 rounded-lg",
                     isEditMode && "cursor-grab active:cursor-grabbing",
                     isEditMode && selectedWidget?.id === widget.id && "ring-2 ring-primary"
                   )}

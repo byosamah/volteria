@@ -17,6 +17,7 @@ import {
   Type,
   Hash,
   Cable,
+  Shapes,
 } from "lucide-react";
 
 interface WidgetPickerProps {
@@ -72,6 +73,12 @@ const WIDGET_TYPES = [
     name: "Cable",
     description: "Connect widgets visually",
     icon: Cable,
+  },
+  {
+    id: "shape",
+    name: "Shape",
+    description: "Rectangle, circle, line, arrow",
+    icon: Shapes,
   },
 ];
 
