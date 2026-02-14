@@ -207,6 +207,9 @@ SUPABASE_SERVICE_KEY=your-service-key
 35. **Removing bad registers from templates**: Must PATCH both `device_templates` AND all linked `site_devices` (they have independent copies of `visualization_registers`). Then trigger config sync via `control_commands` INSERT (`command_type: "sync_config"`). Controller polls commands every 5s.
 36. **Cable flow is 3-state with thresholds**: `CableConfig` has `flowUpperThreshold`/`flowLowerThreshold` (default 0) + per-state colors (`color`, `reverseColor`, `stoppedColor`). Value > upper = forward, value < lower = reverse, between = stopped (static dashes). No `animationSource` (null value) = always forward for backward compat.
 37. **Alarm deduplication/resolution matches by device_id**: Alarms match by `device_id` (UUID, immutable), not `device_name`. Old alarms without `device_id` fall back to `device_name` matching. Migration 099. Device rename is safe across the full stack — all core data pipelines use UUID.
+38. **SharedState lives in tmpfs**: Production path is `/run/volteria/state/` (RAM-backed). `/opt/volteria/data/state/` is stale fallback from before tmpfs was set up. Always read from `/run/volteria/state/config.json` for current config. Config version history at `/opt/volteria/data/config_history/v_*.json`.
+39. **Site settings auto-sync to controller**: Saving site settings auto-calls `/api/sites/[siteId]/sync` — same endpoint as manual sync button. One code path for both manual and auto sync. Never create separate sync logic.
+40. **Controller systemd units are per-service**: Use `volteria-config`, `volteria-logging`, `volteria-device`, `volteria-control`, `volteria-system`, `volteria-supervisor`. NOT `volteria` (doesn't exist).
 
 ## Key Architecture Decisions
 
