@@ -46,21 +46,21 @@ class LocalDatabase:
             cursor = conn.cursor()
 
             # Enable incremental auto_vacuum for NEW databases only.
-            # IMPORTANT: Setting PRAGMA auto_vacuum on existing DBs changes the
-            # reported value but doesn't convert the file — masks the real state
-            # and makes cleanup_old_data() skip the one-time full VACUUM.
+            # Don't set on existing DBs — it writes to the header without
+            # converting the file, masking the need for a full VACUUM.
             table_count = cursor.execute(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
             ).fetchone()[0]
             if table_count == 0:
                 cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
 
-            # Log actual auto_vacuum status for diagnostics
-            av_mode = cursor.execute("PRAGMA auto_vacuum").fetchone()[0]
-            if av_mode == 0:
+            # Log vacuum status — marker file is the reliable indicator
+            from pathlib import Path
+            vacuum_marker = Path(self.db_path).parent / ".vacuum_done"
+            if table_count > 0 and not vacuum_marker.exists():
                 logger.warning(
-                    "SQLite auto_vacuum=NONE (existing DB). "
-                    "Will convert to INCREMENTAL on next retention cleanup."
+                    "SQLite needs one-time VACUUM (marker not found). "
+                    "Will run on next retention cleanup."
                 )
 
             # Control logs table with aggregated values
@@ -516,20 +516,20 @@ class LocalDatabase:
 
             total_deleted = logs_deleted + alarms_deleted + readings_deleted
 
-            # Reclaim disk space from deleted rows
-            auto_vacuum_mode = cursor.execute("PRAGMA auto_vacuum").fetchone()[0]
-            if auto_vacuum_mode == 0:
-                # DB was created with auto_vacuum=NONE (SQLite default).
-                # incremental_vacuum does nothing in this mode.
-                # One-time fix: convert to INCREMENTAL via full VACUUM.
-                # Runs at off-peak (1-5 AM), blocks DB for 30-60s on large DBs.
-                if total_deleted > 0:
-                    logger.info("One-time VACUUM: converting auto_vacuum to INCREMENTAL")
-                    cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
-                    cursor.execute("VACUUM")
-                    logger.info("One-time VACUUM complete — incremental_vacuum now works")
+            # Reclaim disk space from deleted rows.
+            # Use a marker file because PRAGMA auto_vacuum is unreliable —
+            # previous _init_db() calls wrote INCREMENTAL to the header
+            # without actually converting the DB via VACUUM.
+            from pathlib import Path
+            vacuum_marker = Path(self.db_path).parent / ".vacuum_done"
+            if not vacuum_marker.exists() and total_deleted > 0:
+                logger.info("One-time VACUUM: converting DB and reclaiming space")
+                cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
+                cursor.execute("VACUUM")
+                vacuum_marker.touch()
+                logger.info("One-time VACUUM complete — incremental_vacuum now works")
             else:
-                # INCREMENTAL mode active — vacuum in small chunks
+                # Subsequent cleanups: incremental vacuum in small chunks
                 cursor.execute("PRAGMA incremental_vacuum(5000)")
 
             if total_deleted > 0:
