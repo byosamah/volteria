@@ -522,7 +522,7 @@ class LocalDatabase:
             # without actually converting the DB via VACUUM.
             from pathlib import Path
             vacuum_marker = Path(self.db_path).parent / ".vacuum_done"
-            if not vacuum_marker.exists() and total_deleted > 0:
+            if not vacuum_marker.exists():
                 logger.info("One-time VACUUM: converting DB and reclaiming space")
                 cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
                 cursor.execute("VACUUM")
