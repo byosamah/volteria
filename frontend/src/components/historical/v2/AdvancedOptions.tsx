@@ -308,26 +308,30 @@ export function AdvancedOptions({
                       <div className="space-y-1.5">
                         {field.operands.map((operand, idx) => (
                           <div key={idx} className="flex items-center gap-1.5">
-                            {/* Operation toggle (+/-) — first operand locked to + */}
+                            {/* Operation selector (+/-) — first operand locked to + */}
                             {idx === 0 ? (
-                              <div className="w-8 h-8 flex items-center justify-center text-xs font-bold text-green-600 bg-green-50 rounded border border-green-200">
+                              <div className="w-14 h-8 flex items-center justify-center text-xs font-bold text-green-600 bg-green-50 rounded border border-green-200">
                                 +
                               </div>
                             ) : (
-                              <button
-                                type="button"
-                                className={`w-8 h-8 flex items-center justify-center text-xs font-bold rounded border transition-colors ${
+                              <Select
+                                value={operand.operation}
+                                onValueChange={(value: "+" | "-") =>
+                                  updateOperand(field.id, idx, { operation: value })
+                                }
+                              >
+                                <SelectTrigger className={`w-14 h-8 text-xs font-bold ${
                                   operand.operation === "+"
                                     ? "text-green-600 bg-green-50 border-green-200"
                                     : "text-red-600 bg-red-50 border-red-200"
-                                }`}
-                                onClick={() => updateOperand(field.id, idx, {
-                                  operation: operand.operation === "+" ? "-" : "+",
-                                })}
-                                title={operand.operation === "+" ? "Switch to subtract" : "Switch to add"}
-                              >
-                                {operand.operation === "+" ? "+" : "\u2212"}
-                              </button>
+                                }`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="+" className="text-xs font-bold text-green-600">+ Add</SelectItem>
+                                  <SelectItem value="-" className="text-xs font-bold text-red-600">&minus; Subtract</SelectItem>
+                                </SelectContent>
+                              </Select>
                             )}
 
                             {/* Parameter dropdown */}

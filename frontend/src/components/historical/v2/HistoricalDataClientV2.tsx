@@ -17,6 +17,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { ControlsRow } from "./ControlsRow";
 import { ParameterSelector } from "./ParameterSelector";
 import { HistoricalChart } from "./HistoricalChart";
@@ -98,6 +99,7 @@ export function HistoricalDataClientV2({
   // Reference lines and calculated fields
   const [referenceLines, setReferenceLines] = useState<ReferenceLine[]>([]);
   const [calculatedFields, setCalculatedFields] = useState<CalculatedField[]>([]);
+  const [showCalcOnly, setShowCalcOnly] = useState(false);
 
   // Chart data
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -751,11 +753,14 @@ export function HistoricalDataClientV2({
       );
     });
 
+    // When "show calculated only" — skip raw param columns
+    const exportParams = showCalcOnly ? [] : allParams;
+
     // Headers: datetime_utc, datetime_local (timezone), data columns, calculated field columns
     const headers = [
       "datetime_utc",
       `datetime_local (${displayTimezone})`,
-      ...allParams.map((p) => escapeCSV(`${p.deviceName} - ${p.registerName} (${p.unit})`)),
+      ...exportParams.map((p) => escapeCSV(`${p.deviceName} - ${p.registerName} (${p.unit})`)),
       ...validCalcFields.map((f) => escapeCSV(`${f.name} (Calculated) (${f.unit})`)),
     ];
 
@@ -766,7 +771,7 @@ export function HistoricalDataClientV2({
         point.timestamp,
         localTime,
       ];
-      for (const param of allParams) {
+      for (const param of exportParams) {
         const key = `${param.deviceId}:${param.registerName}`;
         row.push(String(point[key] ?? ""));
       }
@@ -785,7 +790,7 @@ export function HistoricalDataClientV2({
     link.download = `historical-data-${selectedSiteId}-${dateRange.start.toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [chartDataWithCalcFields, leftAxisParams, rightAxisParams, calculatedFields, selectedSiteId, dateRange, displayTimezone, formatTimestampForCSV, escapeCSV]);
+  }, [chartDataWithCalcFields, leftAxisParams, rightAxisParams, calculatedFields, showCalcOnly, selectedSiteId, dateRange, displayTimezone, formatTimestampForCSV, escapeCSV]);
 
   // Export PNG (placeholder - would need html2canvas or similar)
   const exportPNG = useCallback(() => {
@@ -828,8 +833,8 @@ export function HistoricalDataClientV2({
         <CardContent className="pt-6">
           <HistoricalChart
             data={chartDataWithCalcFields}
-            leftAxisParams={[...leftAxisParams, ...calcFieldLeftParams]}
-            rightAxisParams={[...rightAxisParams, ...calcFieldRightParams]}
+            leftAxisParams={showCalcOnly ? calcFieldLeftParams : [...leftAxisParams, ...calcFieldLeftParams]}
+            rightAxisParams={showCalcOnly ? calcFieldRightParams : [...rightAxisParams, ...calcFieldRightParams]}
             referenceLines={referenceLines}
             isLoading={isLoading}
             onRefresh={fetchData}
@@ -845,22 +850,42 @@ export function HistoricalDataClientV2({
             metadata={metadata}
             timezone={displayTimezone}
           />
-          {/* Timezone indicator */}
-          {selectedProjectId && (
-            <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
+          {/* Below-chart row: calculated-only toggle + timezone */}
+          <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
+            {/* Calculated fields only toggle — only visible when calc fields exist */}
+            {calcFieldParams.length > 0 ? (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Switch
+                  checked={showCalcOnly}
+                  onCheckedChange={setShowCalcOnly}
+                  className="scale-75 origin-left"
+                />
+                <span className={showCalcOnly ? "text-foreground font-medium" : ""}>
+                  Show calculated fields only
+                </span>
+              </label>
+            ) : selectedProjectId ? (
               <span>
                 Timezone: <span className="font-medium">{displayTimezone}</span>
                 <span className="ml-1 opacity-70">
                   ({isUsingBrowserTimezone ? "browser timezone" : "project timezone"})
                 </span>
               </span>
+            ) : <span />}
+            {selectedProjectId && (
               <span>
+                {calcFieldParams.length > 0 && (
+                  <>
+                    <span className="font-medium">{displayTimezone}</span>
+                    <span className="mx-1">•</span>
+                  </>
+                )}
                 {isUsingBrowserTimezone
-                  ? "Times shown in your browser's local timezone"
-                  : "Times shown in project's configured timezone"}
+                  ? "Browser timezone"
+                  : "Project timezone"}
               </span>
-            </div>
-          )}
+            )}
+          </div>
         </CardContent>
       </Card>
 
