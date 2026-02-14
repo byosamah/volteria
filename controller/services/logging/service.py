@@ -1101,9 +1101,10 @@ class LoggingService:
         performance during peak hours. Checks every hour.
         """
         while self._running:
-            # TEMP: all-hours window for testing (revert to 1-5 AM after verification)
+            # Only run cleanup between 1-5 AM local time (off-peak)
+            # Wide window to survive service restarts during the night
             now = datetime.now()
-            if not (0 <= now.hour < 24):
+            if not (1 <= now.hour < 5):
                 logger.debug(f"Skipping retention cleanup (hour={now.hour}, off-peak=1-5)")
             else:
                 try:
