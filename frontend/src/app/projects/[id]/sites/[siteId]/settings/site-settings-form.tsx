@@ -191,8 +191,22 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
         return;
       }
 
-      // Success!
-      toast.success("Site settings updated successfully");
+      // Success! Now auto-sync to controller (uses same endpoint as manual sync button)
+      toast.success("Site settings saved. Syncing to controller...");
+
+      try {
+        const syncRes = await fetch(`/api/sites/${site.id}/sync`, { method: "POST" });
+        if (syncRes.ok) {
+          toast.success("Settings synced to controller");
+        } else {
+          const syncErr = await syncRes.json().catch(() => null);
+          // Non-fatal: settings saved, sync can be retried manually
+          toast.warning(syncErr?.error || "Settings saved but sync failed. Use manual sync.");
+        }
+      } catch {
+        toast.warning("Settings saved but sync failed. Use manual sync.");
+      }
+
       router.refresh();
     } catch (err) {
       console.error("Unexpected error:", err);
