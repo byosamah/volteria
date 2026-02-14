@@ -47,7 +47,7 @@ logger = get_service_logger("logging")
 HEALTH_PORT = 8085
 
 # Default intervals (can be overridden by site config)
-RETENTION_CHECK_INTERVAL_S = 60  # TEMPORARY: 60s for cleanup test (revert to 3600)
+RETENTION_CHECK_INTERVAL_S = 3600  # Check retention every hour
 
 # Health alert thresholds
 ALERT_DRIFT_MS = 5000  # Warn if scheduler drift > 5 seconds
@@ -1104,7 +1104,7 @@ class LoggingService:
             # Only run cleanup between 1-5 AM local time (off-peak)
             # Wide window to survive service restarts during the night
             now = datetime.now()
-            if not (17 <= now.hour < 21):  # TEMPORARY: test window (revert to 1-5)
+            if not (1 <= now.hour < 5):
                 logger.debug(f"Skipping retention cleanup (hour={now.hour}, off-peak=1-5)")
             else:
                 try:
