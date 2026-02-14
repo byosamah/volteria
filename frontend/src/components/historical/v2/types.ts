@@ -89,11 +89,18 @@ export interface ReferenceLine {
   axis: "left" | "right";
 }
 
+// Calculated field operand (a register + operation)
+export interface CalculatedFieldOperand {
+  parameterId: string;  // AxisParameter.id (must be on chart)
+  operation: "+" | "-";
+}
+
 // Calculated field configuration
 export interface CalculatedField {
   id: string;
   name: string;
-  formula: string;
+  operands: CalculatedFieldOperand[];
+  unit: string;
   color: string;
   axis: "left" | "right";
 }

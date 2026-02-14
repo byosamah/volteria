@@ -593,6 +593,111 @@ export function HistoricalDataClientV2({
     }
   }, [leftAxisParams, rightAxisParams]);
 
+  // Compute calculated field values and inject into chart data
+  // Uses forward-fill: at each timestamp, carry forward the last known value per operand
+  const { chartDataWithCalcFields, calcFieldParams } = useMemo(() => {
+    const allParams = [...leftAxisParams, ...rightAxisParams];
+
+    // Filter to valid calculated fields (all operands reference existing params with data)
+    const validFields = calculatedFields.filter((field) => {
+      if (field.operands.length < 2) return false;
+      return field.operands.every((op) => {
+        if (!op.parameterId) return false;
+        return allParams.some((p) => p.id === op.parameterId);
+      });
+    });
+
+    if (validFields.length === 0 || chartData.length === 0) {
+      return { chartDataWithCalcFields: chartData, calcFieldParams: [] };
+    }
+
+    // Build virtual AxisParameter for each valid calc field
+    const virtualParams: AxisParameter[] = validFields.map((field) => ({
+      id: `calcparam-${field.id}`,
+      registerId: field.id,
+      registerName: field.name,
+      deviceId: `calc`,
+      deviceName: "Calculated",
+      siteId: "",
+      siteName: "",
+      unit: field.unit,
+      color: field.color,
+      chartType: "line" as const,
+    }));
+
+    // Build forward-fill lookup: track last known value per data key (single pass, O(n))
+    const allDataKeys = new Set<string>();
+    for (const field of validFields) {
+      for (const op of field.operands) {
+        const param = allParams.find((p) => p.id === op.parameterId);
+        if (param) allDataKeys.add(`${param.deviceId}:${param.registerName}`);
+      }
+    }
+    const lastKnown: Record<string, number> = {};
+
+    // Inject computed values into chart data (new array, don't mutate)
+    const enriched = chartData.map((point) => {
+      const newPoint = { ...point };
+
+      // Update forward-fill tracker for all relevant keys
+      for (const key of allDataKeys) {
+        const val = point[key];
+        if (val !== null && val !== undefined) {
+          lastKnown[key] = val as number;
+        }
+      }
+
+      for (const field of validFields) {
+        let result: number | null = null;
+
+        for (const operand of field.operands) {
+          const param = allParams.find((p) => p.id === operand.parameterId);
+          if (!param) { result = null; break; }
+
+          const dataKey = `${param.deviceId}:${param.registerName}`;
+          const value = (point[dataKey] !== null && point[dataKey] !== undefined)
+            ? point[dataKey] as number
+            : lastKnown[dataKey] ?? null;
+
+          if (value === null) {
+            result = null;
+            break;
+          }
+
+          if (result === null) {
+            result = operand.operation === "-" ? -value : value;
+          } else {
+            result = operand.operation === "-" ? result - value : result + value;
+          }
+        }
+
+        const calcKey = `calc:${field.name}`;
+        newPoint[calcKey] = result !== null ? Math.round(result * 1000) / 1000 : null;
+      }
+
+      return newPoint;
+    });
+
+    return { chartDataWithCalcFields: enriched, calcFieldParams: virtualParams };
+  }, [chartData, calculatedFields, leftAxisParams, rightAxisParams]);
+
+  // Split virtual params by axis for chart rendering
+  const calcFieldLeftParams = useMemo(() =>
+    calcFieldParams.filter((_, i) => {
+      const field = calculatedFields.find((f) => `calcparam-${f.id}` === calcFieldParams[i]?.id);
+      return field?.axis === "left";
+    }),
+    [calcFieldParams, calculatedFields]
+  );
+
+  const calcFieldRightParams = useMemo(() =>
+    calcFieldParams.filter((_, i) => {
+      const field = calculatedFields.find((f) => `calcparam-${f.id}` === calcFieldParams[i]?.id);
+      return field?.axis === "right";
+    }),
+    [calcFieldParams, calculatedFields]
+  );
+
   // Format timestamp in a specific timezone (CSV-safe, no commas)
   const formatTimestampForCSV = useCallback((isoString: string, timezone: string): string => {
     try {
@@ -632,30 +737,42 @@ export function HistoricalDataClientV2({
     return value;
   }, []);
 
-  // Export CSV with UTC and local time columns
+  // Export CSV with UTC and local time columns (includes calculated fields)
   const exportCSV = useCallback(() => {
-    if (chartData.length === 0 || !dateRange) return;
+    if (chartDataWithCalcFields.length === 0 || !dateRange) return;
 
     const allParams = [...leftAxisParams, ...rightAxisParams];
 
-    // Headers: datetime_utc, datetime_local (timezone), then data columns
+    // Valid calculated fields for export
+    const validCalcFields = calculatedFields.filter((field) => {
+      if (field.operands.length < 2) return false;
+      return field.operands.every((op) =>
+        op.parameterId && allParams.some((p) => p.id === op.parameterId)
+      );
+    });
+
+    // Headers: datetime_utc, datetime_local (timezone), data columns, calculated field columns
     const headers = [
       "datetime_utc",
       `datetime_local (${displayTimezone})`,
       ...allParams.map((p) => escapeCSV(`${p.deviceName} - ${p.registerName} (${p.unit})`)),
+      ...validCalcFields.map((f) => escapeCSV(`${f.name} (Calculated) (${f.unit})`)),
     ];
 
-    const rows = chartData.map((point) => {
-      // Format local time as YYYY-MM-DD HH:MM:SS (no commas)
+    const rows = chartDataWithCalcFields.map((point) => {
       const localTime = formatTimestampForCSV(point.timestamp, displayTimezone);
 
       const row = [
-        point.timestamp, // UTC ISO string
-        localTime,       // Clean formatted local time (YYYY-MM-DD HH:MM:SS)
+        point.timestamp,
+        localTime,
       ];
       for (const param of allParams) {
         const key = `${param.deviceId}:${param.registerName}`;
         row.push(String(point[key] ?? ""));
+      }
+      for (const field of validCalcFields) {
+        const calcKey = `calc:${field.name}`;
+        row.push(String(point[calcKey] ?? ""));
       }
       return row.join(",");
     });
@@ -668,7 +785,7 @@ export function HistoricalDataClientV2({
     link.download = `historical-data-${selectedSiteId}-${dateRange.start.toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [chartData, leftAxisParams, rightAxisParams, selectedSiteId, dateRange, displayTimezone, formatTimestampForCSV, escapeCSV]);
+  }, [chartDataWithCalcFields, leftAxisParams, rightAxisParams, calculatedFields, selectedSiteId, dateRange, displayTimezone, formatTimestampForCSV, escapeCSV]);
 
   // Export PNG (placeholder - would need html2canvas or similar)
   const exportPNG = useCallback(() => {
@@ -710,9 +827,9 @@ export function HistoricalDataClientV2({
       <Card>
         <CardContent className="pt-6">
           <HistoricalChart
-            data={chartData}
-            leftAxisParams={leftAxisParams}
-            rightAxisParams={rightAxisParams}
+            data={chartDataWithCalcFields}
+            leftAxisParams={[...leftAxisParams, ...calcFieldLeftParams]}
+            rightAxisParams={[...rightAxisParams, ...calcFieldRightParams]}
             referenceLines={referenceLines}
             isLoading={isLoading}
             onRefresh={fetchData}

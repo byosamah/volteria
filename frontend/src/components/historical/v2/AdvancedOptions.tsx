@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ChevronDown, Plus, Trash2, Calculator, Ruler } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Calculator, Ruler, Minus, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,7 +17,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { COLOR_PALETTE } from "./constants";
-import type { ReferenceLine, CalculatedField, AxisParameter } from "./types";
+import type { ReferenceLine, CalculatedField, CalculatedFieldOperand, AxisParameter } from "./types";
 
 // Maximum allowed for each type
 const MAX_REFERENCE_LINES = 3;
@@ -72,13 +72,17 @@ export function AdvancedOptions({
     onReferenceLinesChange(referenceLines.filter((line) => line.id !== id));
   };
 
-  // Add calculated field
+  // Add calculated field with 2 empty operand slots
   const addCalculatedField = () => {
     if (!canAddCalcField) return;
     const newField: CalculatedField = {
       id: `calc-${Date.now()}`,
       name: `Calculated ${calculatedFields.length + 1}`,
-      formula: "",
+      operands: [
+        { parameterId: "", operation: "+" },
+        { parameterId: "", operation: "+" },
+      ],
+      unit: "",
       color: COLOR_PALETTE[(calculatedFields.length + 5) % COLOR_PALETTE.length],
       axis: "left",
     };
@@ -97,6 +101,47 @@ export function AdvancedOptions({
   // Remove calculated field
   const removeCalculatedField = (id: string) => {
     onCalculatedFieldsChange(calculatedFields.filter((field) => field.id !== id));
+  };
+
+  // Add operand to a calculated field
+  const addOperand = (fieldId: string) => {
+    const field = calculatedFields.find((f) => f.id === fieldId);
+    if (!field || field.operands.length >= 5) return;
+    updateCalculatedField(fieldId, {
+      operands: [...field.operands, { parameterId: "", operation: "+" }],
+    });
+  };
+
+  // Update a specific operand
+  const updateOperand = (fieldId: string, index: number, updates: Partial<CalculatedFieldOperand>) => {
+    const field = calculatedFields.find((f) => f.id === fieldId);
+    if (!field) return;
+    const newOperands = field.operands.map((op, i) =>
+      i === index ? { ...op, ...updates } : op
+    );
+    // Auto-set unit from first operand's parameter
+    let unit = field.unit;
+    if (index === 0 && updates.parameterId) {
+      const param = parameters.find((p) => p.id === updates.parameterId);
+      if (param) unit = param.unit;
+    }
+    updateCalculatedField(fieldId, { operands: newOperands, unit });
+  };
+
+  // Remove an operand (min 2)
+  const removeOperand = (fieldId: string, index: number) => {
+    const field = calculatedFields.find((f) => f.id === fieldId);
+    if (!field || field.operands.length <= 2) return;
+    updateCalculatedField(fieldId, {
+      operands: field.operands.filter((_, i) => i !== index),
+    });
+  };
+
+  // Check if a calculated field has orphaned operands (referencing removed params)
+  const hasOrphanedOperands = (field: CalculatedField): boolean => {
+    return field.operands.some(
+      (op) => op.parameterId && !parameters.find((p) => p.id === op.parameterId)
+    );
   };
 
   return (
@@ -204,15 +249,17 @@ export function AdvancedOptions({
         </div>
       </Collapsible>
 
-      {/* Calculated Fields - Disabled until implemented */}
+      {/* Calculated Fields */}
       <Collapsible open={calcFieldsOpen} onOpenChange={setCalcFieldsOpen}>
-        <div className="border rounded-lg opacity-60">
+        <div className="border rounded-lg">
           <CollapsibleTrigger asChild>
             <button className="flex items-center justify-between w-full p-4 text-left hover:bg-muted/50 transition-colors">
               <div className="flex items-center gap-2">
                 <Calculator className="h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">Calculated Fields</span>
-                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">Coming soon</span>
+                <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                  {calculatedFields.length}/{MAX_CALCULATED_FIELDS}
+                </span>
               </div>
               <ChevronDown
                 className={`h-4 w-4 transition-transform ${
@@ -223,11 +270,168 @@ export function AdvancedOptions({
           </CollapsibleTrigger>
           <CollapsibleContent>
             <div className="px-4 pb-4 space-y-3">
-              {/* Explanation */}
               <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                Create formulas to combine parameters (e.g., Total = Param1 + Param2).
-                <span className="block mt-1 text-amber-600 font-medium">This feature is under development and will be available soon.</span>
+                Combine chart parameters with + / - to create derived values (e.g., Total Load = Meter 1 + Meter 2).
               </p>
+
+              {parameters.length < 2 && (
+                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                  Add at least 2 parameters to the chart first.
+                </p>
+              )}
+
+              {calculatedFields.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No calculated fields added yet.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {calculatedFields.map((field) => (
+                    <div key={field.id} className="p-3 bg-muted/30 rounded-md space-y-2">
+                      {/* Warning if source params removed */}
+                      {hasOrphanedOperands(field) && (
+                        <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 p-1.5 rounded">
+                          <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                          <span>Some source parameters were removed from the chart.</span>
+                        </div>
+                      )}
+
+                      {/* Name */}
+                      <Input
+                        value={field.name}
+                        onChange={(e) => updateCalculatedField(field.id, { name: e.target.value })}
+                        placeholder="Field name"
+                        className="h-8 font-medium"
+                      />
+
+                      {/* Operand rows */}
+                      <div className="space-y-1.5">
+                        {field.operands.map((operand, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5">
+                            {/* Operation toggle (+/-) — first operand locked to + */}
+                            {idx === 0 ? (
+                              <div className="w-8 h-8 flex items-center justify-center text-xs font-bold text-green-600 bg-green-50 rounded border border-green-200">
+                                +
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className={`w-8 h-8 flex items-center justify-center text-xs font-bold rounded border transition-colors ${
+                                  operand.operation === "+"
+                                    ? "text-green-600 bg-green-50 border-green-200"
+                                    : "text-red-600 bg-red-50 border-red-200"
+                                }`}
+                                onClick={() => updateOperand(field.id, idx, {
+                                  operation: operand.operation === "+" ? "-" : "+",
+                                })}
+                                title={operand.operation === "+" ? "Switch to subtract" : "Switch to add"}
+                              >
+                                {operand.operation === "+" ? "+" : "\u2212"}
+                              </button>
+                            )}
+
+                            {/* Parameter dropdown */}
+                            <Select
+                              value={operand.parameterId || undefined}
+                              onValueChange={(value) => updateOperand(field.id, idx, { parameterId: value })}
+                            >
+                              <SelectTrigger className="flex-1 h-8 text-xs">
+                                <SelectValue placeholder="Select parameter..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {parameters.map((p) => (
+                                  <SelectItem key={p.id} value={p.id} className="text-xs">
+                                    <span className="flex items-center gap-1.5">
+                                      <span
+                                        className="w-2 h-2 rounded-full flex-shrink-0"
+                                        style={{ backgroundColor: p.color }}
+                                      />
+                                      {p.deviceName} - {p.registerName}
+                                      {p.unit && <span className="text-muted-foreground">({p.unit})</span>}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+
+                            {/* Remove operand (only if > 2) */}
+                            {field.operands.length > 2 && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 flex-shrink-0"
+                                onClick={() => removeOperand(field.id, idx)}
+                              >
+                                <Minus className="h-3 w-3 text-muted-foreground" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Add operand button */}
+                      {field.operands.length < 5 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs w-full"
+                          onClick={() => addOperand(field.id)}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add operand
+                        </Button>
+                      )}
+
+                      {/* Bottom row: unit, axis, color, delete */}
+                      <div className="flex items-center gap-2 pt-1 border-t border-border/30">
+                        <Input
+                          value={field.unit}
+                          onChange={(e) => updateCalculatedField(field.id, { unit: e.target.value })}
+                          placeholder="Unit"
+                          className="w-16 h-8 text-xs"
+                        />
+                        <Select
+                          value={field.axis}
+                          onValueChange={(value: "left" | "right") =>
+                            updateCalculatedField(field.id, { axis: value })
+                          }
+                        >
+                          <SelectTrigger className="w-[100px] h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="left">Left Axis</SelectItem>
+                            <SelectItem value="right">Right Axis</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <DebouncedColorPicker
+                          value={field.color}
+                          onChange={(color) => updateCalculatedField(field.id, { color })}
+                        />
+                        <div className="flex-1" />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => removeCalculatedField(field.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={addCalculatedField}
+                disabled={!canAddCalcField || parameters.length < 2}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                {!canAddCalcField ? "Maximum reached (3)" : "Add Calculated Field"}
+              </Button>
             </div>
           </CollapsibleContent>
         </div>
