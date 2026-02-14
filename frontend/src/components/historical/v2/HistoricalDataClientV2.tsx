@@ -596,25 +596,52 @@ export function HistoricalDataClientV2({
   }, [leftAxisParams, rightAxisParams]);
 
   // Compute calculated field values and inject into chart data
+  // Supports field-to-field references with topological ordering
   // Uses forward-fill: at each timestamp, carry forward the last known value per operand
   const { chartDataWithCalcFields, calcFieldParams } = useMemo(() => {
     const allParams = [...leftAxisParams, ...rightAxisParams];
+    const calcFieldMap = new Map(calculatedFields.map((f) => [f.id, f]));
 
-    // Filter to valid calculated fields (all operands reference existing params with data)
+    // Validate: each operand must reference a valid param or another calc field
+    const isOperandValid = (op: { parameterId: string; type?: string }) => {
+      if (!op.parameterId) return false;
+      if (op.type === "field") return calcFieldMap.has(op.parameterId);
+      return allParams.some((p) => p.id === op.parameterId);
+    };
+
     const validFields = calculatedFields.filter((field) => {
       if (field.operands.length < 2) return false;
-      return field.operands.every((op) => {
-        if (!op.parameterId) return false;
-        return allParams.some((p) => p.id === op.parameterId);
-      });
+      return field.operands.every(isOperandValid);
     });
 
     if (validFields.length === 0 || chartData.length === 0) {
       return { chartDataWithCalcFields: chartData, calcFieldParams: [] };
     }
 
-    // Build virtual AxisParameter for each valid calc field
-    const virtualParams: AxisParameter[] = validFields.map((field) => ({
+    // Topological sort: fields that depend on other fields come after their dependencies
+    const sorted: typeof validFields = [];
+    const visited = new Set<string>();
+    const visiting = new Set<string>(); // cycle detection
+
+    const visit = (field: (typeof validFields)[0]) => {
+      if (visited.has(field.id)) return;
+      if (visiting.has(field.id)) return; // circular — skip
+      visiting.add(field.id);
+      // Visit dependencies first
+      for (const op of field.operands) {
+        if (op.type === "field") {
+          const dep = validFields.find((f) => f.id === op.parameterId);
+          if (dep) visit(dep);
+        }
+      }
+      visiting.delete(field.id);
+      visited.add(field.id);
+      sorted.push(field);
+    };
+    for (const field of validFields) visit(field);
+
+    // Build virtual AxisParameter for each valid calc field (in sorted order)
+    const virtualParams: AxisParameter[] = sorted.map((field) => ({
       id: `calcparam-${field.id}`,
       registerId: field.id,
       registerName: field.name,
@@ -627,12 +654,14 @@ export function HistoricalDataClientV2({
       chartType: "line" as const,
     }));
 
-    // Build forward-fill lookup: track last known value per data key (single pass, O(n))
+    // Build forward-fill lookup for raw data keys (single pass, O(n))
     const allDataKeys = new Set<string>();
-    for (const field of validFields) {
+    for (const field of sorted) {
       for (const op of field.operands) {
-        const param = allParams.find((p) => p.id === op.parameterId);
-        if (param) allDataKeys.add(`${param.deviceId}:${param.registerName}`);
+        if (op.type !== "field") {
+          const param = allParams.find((p) => p.id === op.parameterId);
+          if (param) allDataKeys.add(`${param.deviceId}:${param.registerName}`);
+        }
       }
     }
     const lastKnown: Record<string, number> = {};
@@ -641,7 +670,7 @@ export function HistoricalDataClientV2({
     const enriched = chartData.map((point) => {
       const newPoint = { ...point };
 
-      // Update forward-fill tracker for all relevant keys
+      // Update forward-fill tracker for raw data keys
       for (const key of allDataKeys) {
         const val = point[key];
         if (val !== null && val !== undefined) {
@@ -649,17 +678,29 @@ export function HistoricalDataClientV2({
         }
       }
 
-      for (const field of validFields) {
+      // Compute each field in dependency order
+      for (const field of sorted) {
         let result: number | null = null;
 
         for (const operand of field.operands) {
-          const param = allParams.find((p) => p.id === operand.parameterId);
-          if (!param) { result = null; break; }
+          let value: number | null = null;
 
-          const dataKey = `${param.deviceId}:${param.registerName}`;
-          const value = (point[dataKey] !== null && point[dataKey] !== undefined)
-            ? point[dataKey] as number
-            : lastKnown[dataKey] ?? null;
+          if (operand.type === "field") {
+            // Read from a previously-computed calculated field
+            const depField = calcFieldMap.get(operand.parameterId);
+            if (!depField) { result = null; break; }
+            const depKey = `calc:${depField.name}`;
+            const depVal = newPoint[depKey];
+            value = (depVal !== null && depVal !== undefined) ? depVal as number : null;
+          } else {
+            // Read from raw chart parameter with forward-fill
+            const param = allParams.find((p) => p.id === operand.parameterId);
+            if (!param) { result = null; break; }
+            const dataKey = `${param.deviceId}:${param.registerName}`;
+            value = (point[dataKey] !== null && point[dataKey] !== undefined)
+              ? point[dataKey] as number
+              : lastKnown[dataKey] ?? null;
+          }
 
           if (value === null) {
             result = null;

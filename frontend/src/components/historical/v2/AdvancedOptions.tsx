@@ -79,8 +79,8 @@ export function AdvancedOptions({
       id: `calc-${Date.now()}`,
       name: `Calculated ${calculatedFields.length + 1}`,
       operands: [
-        { parameterId: "", operation: "+" },
-        { parameterId: "", operation: "+" },
+        { parameterId: "", operation: "+", type: "parameter" },
+        { parameterId: "", operation: "+", type: "parameter" },
       ],
       unit: "",
       color: COLOR_PALETTE[(calculatedFields.length + 5) % COLOR_PALETTE.length],
@@ -108,24 +108,48 @@ export function AdvancedOptions({
     const field = calculatedFields.find((f) => f.id === fieldId);
     if (!field || field.operands.length >= 5) return;
     updateCalculatedField(fieldId, {
-      operands: [...field.operands, { parameterId: "", operation: "+" }],
+      operands: [...field.operands, { parameterId: "", operation: "+", type: "parameter" }],
     });
   };
 
-  // Update a specific operand
+  // Update a specific operand — auto-detects type from selection
   const updateOperand = (fieldId: string, index: number, updates: Partial<CalculatedFieldOperand>) => {
     const field = calculatedFields.find((f) => f.id === fieldId);
     if (!field) return;
+
+    // Auto-detect type when parameterId changes
+    if (updates.parameterId) {
+      const isCalcField = calculatedFields.some((f) => f.id === updates.parameterId);
+      updates.type = isCalcField ? "field" : "parameter";
+    }
+
     const newOperands = field.operands.map((op, i) =>
       i === index ? { ...op, ...updates } : op
     );
-    // Auto-set unit from first operand's parameter
+    // Auto-set unit from first operand
     let unit = field.unit;
     if (index === 0 && updates.parameterId) {
-      const param = parameters.find((p) => p.id === updates.parameterId);
-      if (param) unit = param.unit;
+      if (updates.type === "field") {
+        const calcField = calculatedFields.find((f) => f.id === updates.parameterId);
+        if (calcField) unit = calcField.unit;
+      } else {
+        const param = parameters.find((p) => p.id === updates.parameterId);
+        if (param) unit = param.unit;
+      }
     }
     updateCalculatedField(fieldId, { operands: newOperands, unit });
+  };
+
+  // Get calculated fields available as operands for a given field (exclude self + fields that reference this one)
+  const getAvailableCalcFields = (fieldId: string): CalculatedField[] => {
+    return calculatedFields.filter((other) => {
+      if (other.id === fieldId) return false; // can't reference self
+      // Prevent circular: if 'other' already references 'fieldId', don't show it
+      const referencesThis = other.operands.some(
+        (op) => op.type === "field" && op.parameterId === fieldId
+      );
+      return !referencesThis;
+    });
   };
 
   // Remove an operand (min 2)
@@ -137,11 +161,15 @@ export function AdvancedOptions({
     });
   };
 
-  // Check if a calculated field has orphaned operands (referencing removed params)
+  // Check if a calculated field has orphaned operands (referencing removed params or deleted calc fields)
   const hasOrphanedOperands = (field: CalculatedField): boolean => {
-    return field.operands.some(
-      (op) => op.parameterId && !parameters.find((p) => p.id === op.parameterId)
-    );
+    return field.operands.some((op) => {
+      if (!op.parameterId) return false;
+      if (op.type === "field") {
+        return !calculatedFields.some((f) => f.id === op.parameterId);
+      }
+      return !parameters.find((p) => p.id === op.parameterId);
+    });
   };
 
   return (
@@ -334,15 +362,21 @@ export function AdvancedOptions({
                               </Select>
                             )}
 
-                            {/* Parameter dropdown */}
+                            {/* Parameter / Calculated Field dropdown */}
                             <Select
                               value={operand.parameterId || undefined}
                               onValueChange={(value) => updateOperand(field.id, idx, { parameterId: value })}
                             >
                               <SelectTrigger className="flex-1 h-8 text-xs">
-                                <SelectValue placeholder="Select parameter..." />
+                                <SelectValue placeholder="Select source..." />
                               </SelectTrigger>
                               <SelectContent>
+                                {/* Raw chart parameters */}
+                                {parameters.length > 0 && (
+                                  <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                    Parameters
+                                  </div>
+                                )}
                                 {parameters.map((p) => (
                                   <SelectItem key={p.id} value={p.id} className="text-xs">
                                     <span className="flex items-center gap-1.5">
@@ -355,6 +389,23 @@ export function AdvancedOptions({
                                     </span>
                                   </SelectItem>
                                 ))}
+                                {/* Other calculated fields */}
+                                {getAvailableCalcFields(field.id).length > 0 && (
+                                  <>
+                                    <div className="px-2 py-1 mt-1 border-t text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                      Calculated Fields
+                                    </div>
+                                    {getAvailableCalcFields(field.id).map((cf) => (
+                                      <SelectItem key={cf.id} value={cf.id} className="text-xs">
+                                        <span className="flex items-center gap-1.5">
+                                          <Calculator className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                          {cf.name}
+                                          {cf.unit && <span className="text-muted-foreground">({cf.unit})</span>}
+                                        </span>
+                                      </SelectItem>
+                                    ))}
+                                  </>
+                                )}
                               </SelectContent>
                             </Select>
 
