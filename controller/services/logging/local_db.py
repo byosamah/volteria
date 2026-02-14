@@ -529,8 +529,9 @@ class LocalDatabase:
                 vacuum_marker.touch()
                 logger.info("One-time VACUUM complete — incremental_vacuum now works")
             else:
-                # Subsequent cleanups: incremental vacuum in small chunks
-                cursor.execute("PRAGMA incremental_vacuum(5000)")
+                # Subsequent cleanups: incremental vacuum (~200 MB per cycle)
+                # 50,000 pages × 4KB = ~200 MB — safe for SD card at off-peak
+                cursor.execute("PRAGMA incremental_vacuum(50000)")
 
             if total_deleted > 0:
                 logger.info(
