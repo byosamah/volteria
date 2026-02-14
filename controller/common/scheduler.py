@@ -114,8 +114,17 @@ class ScheduledLoop:
             # Track drift (how late we are)
             actual_time = time.time()
             drift = actual_time - self._next_run
-            self._drift_total += max(0, drift)
-            self._last_drift_ms = drift * 1000
+
+            if drift > 30:
+                # Clock jump detected (NTP sync after boot, suspend/resume, etc.)
+                # Don't accumulate as real drift — this is a system clock correction
+                logger.info(
+                    f"Scheduler '{self.name}' clock jump detected ({drift:.0f}s), realigning"
+                )
+                self._last_drift_ms = 0
+            else:
+                self._drift_total += max(0, drift)
+                self._last_drift_ms = drift * 1000
 
             # Execute callback
             try:

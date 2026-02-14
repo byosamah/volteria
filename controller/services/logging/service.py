@@ -1095,25 +1095,25 @@ class LoggingService:
         """
         Periodic data retention cleanup.
 
+        Checks hour FIRST, then sleeps — so if the service starts
+        inside the cleanup window, it runs immediately on first iteration.
         Only runs between 1-5 AM local time to avoid impacting
         performance during peak hours. Checks every hour.
         """
         while self._running:
-            await asyncio.sleep(RETENTION_CHECK_INTERVAL_S)
-
-            # Only run cleanup between 1-5 AM local time (off-peak)
-            # Wide window to survive service restarts during the night
+            # TEMP: all-hours window for testing (revert to 1-5 AM after verification)
             now = datetime.now()
-            if not (1 <= now.hour < 5):
+            if not (0 <= now.hour < 24):
                 logger.debug(f"Skipping retention cleanup (hour={now.hour}, off-peak=1-5)")
-                continue
+            else:
+                try:
+                    deleted = await self._run_db(self.local_db.cleanup_old_data, self._retention_days)
+                    if deleted > 0:
+                        logger.info(f"Retention cleanup: deleted {deleted} old records")
+                except Exception as e:
+                    logger.error(f"Retention cleanup error: {e}")
 
-            try:
-                deleted = await self._run_db(self.local_db.cleanup_old_data, self._retention_days)
-                if deleted > 0:
-                    logger.info(f"Retention cleanup: deleted {deleted} old records")
-            except Exception as e:
-                logger.error(f"Retention cleanup error: {e}")
+            await asyncio.sleep(RETENTION_CHECK_INTERVAL_S)
 
     async def _config_watch_loop(self) -> None:
         """
