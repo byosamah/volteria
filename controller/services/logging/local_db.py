@@ -45,12 +45,17 @@ class LocalDatabase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
-            # Enable incremental auto_vacuum mode for non-blocking cleanup
-            # For NEW databases: takes effect before CREATE TABLE below
-            # For EXISTING databases: no-op here, cleanup_old_data() handles one-time migration
-            cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
+            # Enable incremental auto_vacuum for NEW databases only.
+            # IMPORTANT: Setting PRAGMA auto_vacuum on existing DBs changes the
+            # reported value but doesn't convert the file — masks the real state
+            # and makes cleanup_old_data() skip the one-time full VACUUM.
+            table_count = cursor.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
+            ).fetchone()[0]
+            if table_count == 0:
+                cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
 
-            # Log auto_vacuum status for diagnostics
+            # Log actual auto_vacuum status for diagnostics
             av_mode = cursor.execute("PRAGMA auto_vacuum").fetchone()[0]
             if av_mode == 0:
                 logger.warning(
