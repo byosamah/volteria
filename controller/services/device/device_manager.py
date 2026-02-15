@@ -353,7 +353,7 @@ class DeviceManager:
                     readings=calc_readings,
                     device_configs=device_configs,
                     site_calculations=site_calcs_config,
-                    project_timezone=config.get("project", {}).get("timezone", "UTC"),
+                    project_timezone=config.get("project", {}).get("timezone") or "UTC",
                 )
                 if site_calc_results:
                     readings_data["devices"][controller_device_id] = {
