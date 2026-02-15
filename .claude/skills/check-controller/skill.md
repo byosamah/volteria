@@ -599,7 +599,7 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Safe mode active | `cat safe_mode_override.json` | Identify failed service, manual restart |
 | Device offline | Modbus connectivity | Check gateway IP, slave ID, cable |
 | Readings not syncing | SQLite pending count | Check cloud_sync errors in logging logs |
-| High drift alarms | `curl :8085/stats` | Check SD card I/O, CPU load |
+| High drift alarms after reboot | `journalctl | grep "clock jump"` | NTP clock correction after stale RTC — scheduler detects >30s drift as clock jump, won't alarm (fixed 2026-02-14). Old behavior: every power outage → false LOGGING_HIGH_DRIFT |
 | SQLite CLI locked (exit code 8) | Logging service holds DB | Use `curl :8085/stats` for unsynced counts, DB size instead |
 | Repeated "Resolved alarm" log spam | Auto-resolve guard `>= N` fires every cycle | Should use `== N` to fire once on transition (fixed 2026-02-06) |
 | Live Registers "not reporting" (TCP) | Compare tmpfs vs disk config IPs | Ensure `register_cli.py` uses `get_config()` from SharedState |
@@ -617,7 +617,8 @@ check hourly → download → verify SHA256 → wait approval → apply → veri
 | Register causes "Illegal Data Address" on some devices | Register exists in template but not on hardware | Register-specific error — only that register fails, others continue (fixed 2026-02-13). Remove from `visualization_registers` via Supabase PATCH on template + all linked site_devices + INSERT `control_commands` (`command_type: sync_config`) |
 | Some registers fail but device "still reachable" | `journalctl -u volteria-device` for "register-specific errors" | Normal behavior — ExceptionResponse / address validation errors are isolated. Bad registers fail individually, good registers continue. Remove bad registers from template if persistent |
 | REGISTER_READ_FAILED alarm | `cat /run/volteria/state/register_errors.json` | 20+ consecutive failures → alarm created by logging service. Auto-resolves when failures clear. Remove bad registers from template to fix permanently |
-| DB file huge but retention works | `sudo -u volteria python3 -c "..."` check `PRAGMA auto_vacuum` | If `auto_vacuum=0` (NONE), `incremental_vacuum` is no-op. Fixed 2026-02-13: `cleanup_old_data()` auto-converts to INCREMENTAL via one-time full VACUUM at off-peak. New DBs get INCREMENTAL from creation |
+| DB file huge but retention works | `ls -la /opt/volteria/data/.vacuum_done` | If marker missing: one-time VACUUM hasn't run yet. Uses marker file (not PRAGMA — unreliable). Fixed 2026-02-14: `cleanup_old_data()` triggers VACUUM on first run, creates marker. ~16 min on 10GB DB, blocks writes (run at 1-5 AM). |
+| Retention cleanup never runs | `journalctl -u volteria-logging \| grep retention` | Fixed 2026-02-14: retention loop now checks hour FIRST, then sleeps (was sleep-then-check — if service started at hour 4, first check was hour 5, outside window). |
 
 ### SOL532-E16 Specific Issues
 
