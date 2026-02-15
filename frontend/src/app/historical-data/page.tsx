@@ -142,6 +142,25 @@ export default async function HistoricalDataPage() {
         };
       });
     }
+
+    // Also fetch Site Controller master devices (for site calculations)
+    const { data: controllerDevices } = await supabase
+      .from("site_master_devices")
+      .select("id, name, site_id")
+      .in("site_id", siteIds)
+      .eq("device_type", "controller");
+
+    if (controllerDevices) {
+      for (const cd of controllerDevices) {
+        devices.push({
+          id: cd.id,
+          name: cd.name || "Site Controller",
+          site_id: cd.site_id,
+          device_type: "site_controller",
+          enabled: true,
+        });
+      }
+    }
   }
 
   return (

@@ -57,11 +57,9 @@ export function AvailableParametersList({
     return currentSiteId !== localLockedSiteId;
   }, [dataSource, localLockedSiteId, currentSiteId]);
 
-  // All devices are regular devices - controller is always added as special entry
-  const regularDevices = devices;
-
-  // Controller is always available as a special option (hardcoded)
-  const CONTROLLER_ID = "site-controller";
+  // Split devices into controller(s) and regular devices
+  const controllerDevices = devices.filter((d) => d.device_type === "site_controller" || d.device_type === "controller");
+  const regularDevices = devices.filter((d) => d.device_type !== "site_controller" && d.device_type !== "controller");
 
   // Filter registers by search query and active filter
   const filteredRegisters = useMemo(() => {
@@ -102,12 +100,10 @@ export function AvailableParametersList({
   }, [filteredRegisters]);
 
   // Check if controller is selected
-  const isControllerSelected = selectedDeviceId === CONTROLLER_ID;
+  const isControllerSelected = controllerDevices.some((d) => d.id === selectedDeviceId);
 
   // Get selected device name for display
-  const selectedDevice = isControllerSelected
-    ? { id: CONTROLLER_ID, name: "Site Controller", device_type: "controller", site_id: "" }
-    : devices.find((d) => d.id === selectedDeviceId);
+  const selectedDevice = devices.find((d) => d.id === selectedDeviceId);
 
   return (
     <div className="flex flex-col h-full">
@@ -131,18 +127,22 @@ export function AvailableParametersList({
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {/* Master Device - always available as first option */}
-          <SelectGroup>
-            <SelectLabel className="text-xs text-muted-foreground flex items-center gap-1">
-              <Cpu className="h-3 w-3" /> Master Device (Site Level)
-            </SelectLabel>
-            <SelectItem value={CONTROLLER_ID}>
-              <span className="flex items-center gap-2">
-                <Cpu className="h-3.5 w-3.5 text-blue-500" />
-                Site Controller
-              </span>
-            </SelectItem>
-          </SelectGroup>
+          {/* Master Device - controller devices from site_master_devices */}
+          {controllerDevices.length > 0 && (
+            <SelectGroup>
+              <SelectLabel className="text-xs text-muted-foreground flex items-center gap-1">
+                <Cpu className="h-3 w-3" /> Master Device (Site Level)
+              </SelectLabel>
+              {controllerDevices.map((cd) => (
+                <SelectItem key={cd.id} value={cd.id}>
+                  <span className="flex items-center gap-2">
+                    <Cpu className="h-3.5 w-3.5 text-blue-500" />
+                    {cd.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          )}
 
           {/* Devices section */}
           {regularDevices.length > 0 && (

@@ -323,4 +323,10 @@ When alarm register is removed from config, existing unresolved alarms are auto-
 - `condition`: Threshold condition text (e.g., "Ambient Temperature < 50")
 - `alarm_type`: For `reg_*` alarms: `reg_{device_id}_{register_name}`
 
+## Cross-References
+
+- **Site calculations data flow**: Use `/check-calculations` to verify computed totals (Total Load, Total DG, Total Solar) from register_role through control_state to device_readings
+- **Controller/device issues**: Use `/check-controller` for service health, Modbus, safe mode
+
+<!-- Updated: 2026-02-15 - Added cross-reference to /check-calculations for site calculation data flow -->
 <!-- Updated: 2026-02-13 - Added REGISTER_READ_FAILED alarm (device service writes failures to SharedState, logging service creates/auto-resolves per-device alarm) -->

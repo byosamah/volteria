@@ -61,6 +61,8 @@ class DeviceType(str, Enum):
     SOLAR_SENSOR = "solar_sensor"
     GAS_GENERATOR = "gas_generator"
     OTHER = "other"
+    # Virtual (computed, not polled via Modbus)
+    SITE_CONTROLLER = "site_controller"
     # Legacy (backwards compatibility)
     LOAD_METER = "load_meter"
     DG = "dg"

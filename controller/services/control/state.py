@@ -57,9 +57,12 @@ class ControlState:
     write_success: bool = True
     write_error: str | None = None
 
+    # Site calculations (computed from register_role)
+    site_calculations: dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging"""
-        return {
+        result = {
             "timestamp": self.timestamp.isoformat(),
             "total_load_kw": self.total_load_kw,
             "solar_output_kw": self.solar_output_kw,
@@ -80,6 +83,9 @@ class ControlState:
             "write_success": self.write_success,
             "write_error": self.write_error,
         }
+        if self.site_calculations:
+            result["site_calculations"] = self.site_calculations
+        return result
 
 
 @dataclass

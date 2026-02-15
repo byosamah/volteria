@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from common.config import DeviceConfig, DeviceType
-from common.state import SharedState
+from common.state import SharedState, get_control_state
 from common.logging_setup import get_service_logger
 
 logger = get_service_logger("device.manager")
@@ -334,6 +334,22 @@ class DeviceManager:
         # Also add computed totals
         totals = await self._compute_totals()
         readings_data.update(totals)
+
+        # Inject site calculations from control service as virtual controller device
+        control_state = get_control_state()
+        site_calcs = control_state.get("site_calculations", {}) if control_state else {}
+        cid = site_calcs.get("controller_device_id")
+        if cid and site_calcs.get("fields"):
+            readings_data["devices"][cid] = {
+                "readings": {
+                    fd["name"]: {"value": fd["value"], "unit": fd.get("unit", "")}
+                    for fd in site_calcs["fields"].values()
+                },
+            }
+            readings_data["status"][cid] = {
+                "is_online": True,
+                "last_seen": datetime.now(timezone.utc).isoformat(),
+            }
 
         SharedState.write("readings", readings_data)
 

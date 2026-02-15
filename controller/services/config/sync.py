@@ -401,14 +401,18 @@ class ConfigSync:
         for defn in definitions:
             field_id = defn.get("field_id")
             selection = selection_map.get(field_id, {})
+            calc_config = defn.get("calculation_config") or {}
             result.append({
                 "field_id": field_id,
                 "name": defn.get("name"),
                 "calculation_type": defn.get("calculation_type"),
-                "source_devices": defn.get("source_devices", []),
-                "source_register": defn.get("source_register", ""),
+                "source_devices": calc_config.get("source_device_types", []),
+                "source_register": calc_config.get("source_register", ""),
+                "register_role": calc_config.get("register_role"),
+                "calculation_config": calc_config,
                 "unit": defn.get("unit", ""),
                 "time_window": defn.get("time_window"),
+                "logging_frequency": defn.get("logging_frequency_seconds", 60),
                 # Controller-specific settings
                 "storage_mode": selection.get("storage_mode", "log"),
                 "enabled": selection.get("enabled", True),
@@ -462,6 +466,49 @@ class ConfigSync:
             mode_settings["peak_threshold_kw"] = site.get("peak_threshold_kw", 500.0)
             mode_settings["battery_reserve_pct"] = site.get("battery_reserve_pct", 20.0)
 
+        # Build site_calculations from calculated_fields that have register_role
+        site_calculations = []
+        for cf in calculated_fields:
+            register_role = cf.get("register_role")
+            if register_role and cf.get("enabled", True):
+                site_calculations.append({
+                    "field_id": cf["field_id"],
+                    "name": cf["name"],
+                    "register_role": register_role,
+                    "type": cf.get("calculation_type", "sum"),
+                    "unit": cf.get("unit", ""),
+                    "logging_frequency": cf.get("logging_frequency", 60),
+                })
+
+        # Controller device ID (for site calculations storage)
+        controller_device_id = controller_device.get("id") if controller_device else None
+
+        # Build virtual controller device for logging whitelist
+        # This ensures the logging service includes site calculation fields
+        if controller_device_id and site_calculations:
+            controller_virtual_device = {
+                "id": controller_device_id,
+                "name": controller_device.get("name", "Site Controller"),
+                "device_type": "site_controller",
+                "enabled": True,
+                "modbus": {},
+                "registers": [
+                    {
+                        "name": sc["name"],
+                        "address": 0,
+                        "type": "virtual",
+                        "datatype": "float32",
+                        "unit": sc.get("unit", ""),
+                        "logging_frequency": sc.get("logging_frequency", 60),
+                        "register_role": sc.get("register_role"),
+                    }
+                    for sc in site_calculations
+                ],
+                "visualization_registers": [],
+                "alarm_registers": [],
+            }
+            devices = devices + [controller_virtual_device]
+
         return {
             "id": site["id"],
             "project_id": site.get("project_id"),
@@ -506,6 +553,9 @@ class ConfigSync:
             "devices": devices,
             # Site-level calculated fields (from controller device selection)
             "calculated_fields": calculated_fields,
+            # Site calculations for register_role-based computation
+            "site_calculations": site_calculations,
+            "controller_device_id": controller_device_id,
             # Site-level alarms (from controller device)
             "site_level_alarms": (controller_device.get("site_level_alarms") or []) if controller_device else [],
             "alarm_overrides": {

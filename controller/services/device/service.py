@@ -233,6 +233,10 @@ class DeviceService:
                 )
                 continue
 
+            # Skip virtual devices (computed, not polled via Modbus)
+            if device_type == DeviceType.SITE_CONTROLLER:
+                continue
+
             # Extract modbus settings (can be nested under "modbus" or at root level)
             modbus_config = device_data.get("modbus", {})
 

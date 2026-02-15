@@ -27,7 +27,6 @@ import {
   DUMMY_REGISTERS,
   DUMMY_PROJECTS,
   DUMMY_SITES,
-  SITE_CONTROLLER_ID,
   generateDummyChartData,
   MAX_DATE_RANGE,
   AGGREGATION_THRESHOLDS,
@@ -193,25 +192,6 @@ export function HistoricalDataClientV2({
       const cached = registersCache.current.get(cacheKey);
       if (cached) {
         setAvailableRegisters(cached);
-        return;
-      }
-
-      // Handle Site Controller (calculated fields) - use dummy data
-      if (selectedDeviceId === SITE_CONTROLLER_ID) {
-        const controllerRegs = DUMMY_REGISTERS[SITE_CONTROLLER_ID] || [];
-        const mappedRegs = controllerRegs.map((reg) => ({
-          id: reg.id,
-          name: reg.name,
-          unit: reg.unit,
-          deviceId: SITE_CONTROLLER_ID,
-          deviceName: "Site Controller",
-          siteId: selectedSiteId,
-          siteName: selectedSiteName,
-          preferred_chart_type: reg.preferred_chart_type,
-          status: "active" as const,
-        }));
-        registersCache.current.set(cacheKey, mappedRegs);
-        setAvailableRegisters(mappedRegs);
         return;
       }
 
@@ -486,7 +466,7 @@ export function HistoricalDataClientV2({
     try {
       // Collect unique site IDs and device IDs from parameters
       const siteIds = [...new Set(allParams.map((p) => p.siteId).filter(Boolean))];
-      const deviceIds = [...new Set(allParams.map((p) => p.deviceId).filter((id) => id && id !== SITE_CONTROLLER_ID))];
+      const deviceIds = [...new Set(allParams.map((p) => p.deviceId).filter(Boolean))];
       const registerNames = [...new Set(allParams.map((p) => p.registerName))];
 
       // Convert aggregationType to simple form for API (raw, hourly, daily)

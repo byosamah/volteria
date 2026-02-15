@@ -2,13 +2,12 @@
 Calculated Fields
 
 Computes derived metrics from device readings:
-- Total Solar (sum of all inverters)
-- Total Load (sum of all load meters)
-- Total DG (sum of all generators)
-- Implied DG (Load - Solar)
-- Energy totals (cumulative)
+- Site-level calculations using register_role (Total Load, Total DG, Total Solar)
+- Legacy totals (backward compat for control algorithm)
+- Custom field definitions (sum, difference, cumulative, average, max, min)
 """
 
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,18 +21,128 @@ class CalculatedFieldsProcessor:
     """
     Computes calculated fields from device readings.
 
-    Supports:
-    - sum: Sum values from multiple devices
-    - difference: Difference between two sums
-    - cumulative: Accumulated energy over time
-    - average: Average across devices
-    - max/min: Maximum/minimum across devices
+    Two modes:
+    1. Site calculations (register_role-based): compute_site_calculations()
+    2. Legacy field definitions: compute_all() / compute_standard_totals()
+
+    Supports calc types: sum, difference, cumulative, average, max, min, delta (Phase 2)
     """
 
     def __init__(self):
         # Energy accumulators for cumulative fields
         self._energy_accumulators: dict[str, float] = {}
         self._last_power_readings: dict[str, tuple[datetime, float]] = {}
+        # Delta window start values for energy calculations (Phase 2)
+        # {field_id: {device_id: first_reading_value}}
+        self._window_start_values: dict[str, dict[str, float]] = {}
+        # Role index cache (rebuilt on config change)
+        self._role_index: dict[str, list[tuple[str, str]]] | None = None
+        self._role_index_config_hash: str | None = None
+
+    # =========================================================================
+    # Site Calculations (register_role-based)
+    # =========================================================================
+
+    def compute_site_calculations(
+        self,
+        readings: dict[str, dict],
+        device_configs: list[dict],
+        site_calculations: list[dict],
+    ) -> dict[str, dict]:
+        """
+        Compute site-level calculations using register_role.
+
+        Args:
+            readings: {device_id: {register_name: {value: X, ...}}}
+            device_configs: List of device config dicts (with registers containing register_role)
+            site_calculations: List of site calculation definitions:
+                [{"field_id": str, "name": str, "register_role": str, "type": str, "unit": str}]
+
+        Returns:
+            {field_id: {"value": float, "name": str, "unit": str}}
+        """
+        if not site_calculations:
+            return {}
+
+        # Build register_role index from device configs
+        role_index = self._build_role_index(device_configs)
+
+        results = {}
+        for calc_def in site_calculations:
+            field_id = calc_def.get("field_id", "")
+            calc_type = calc_def.get("type", "sum")
+
+            try:
+                if calc_type == "sum":
+                    value = self._compute_role_sum(
+                        readings, role_index, calc_def.get("register_role", "")
+                    )
+                else:
+                    # Phase 2: delta, difference, cumulative, average, max, min
+                    logger.debug(f"Calc type '{calc_type}' not yet implemented for {field_id}")
+                    continue
+
+                if value is not None:
+                    results[field_id] = {
+                        "value": value,
+                        "name": calc_def.get("name", field_id),
+                        "unit": calc_def.get("unit", ""),
+                    }
+            except Exception as e:
+                logger.warning(f"Error computing site calc {field_id}: {e}")
+
+        return results
+
+    def _build_role_index(
+        self, device_configs: list[dict]
+    ) -> dict[str, list[tuple[str, str]]]:
+        """
+        Build index: {register_role: [(device_id, register_name), ...]}
+
+        Scans all register types (logging, visualization, alarm) for register_role.
+        """
+        role_index: dict[str, list[tuple[str, str]]] = defaultdict(list)
+
+        for device in device_configs:
+            device_id = device.get("id")
+            if not device_id:
+                continue
+
+            # Check all register collections
+            for reg_key in ("registers", "visualization_registers", "alarm_registers"):
+                for reg in device.get(reg_key, []):
+                    role = reg.get("register_role")
+                    if role and role != "none":
+                        role_index[role].append((device_id, reg.get("name", "")))
+
+        return dict(role_index)
+
+    def _compute_role_sum(
+        self,
+        readings: dict[str, dict],
+        role_index: dict[str, list[tuple[str, str]]],
+        register_role: str,
+    ) -> float | None:
+        """Sum all register values matching a register_role."""
+        matches = role_index.get(register_role, [])
+        if not matches:
+            return None
+
+        total = 0.0
+        found_any = False
+
+        for device_id, register_name in matches:
+            device_readings = readings.get(device_id, {})
+            value = self._get_register_value(device_readings, register_name)
+            if value is not None:
+                total += value
+                found_any = True
+
+        return round(total, 2) if found_any else None
+
+    # =========================================================================
+    # Legacy field definitions
+    # =========================================================================
 
     def compute_all(
         self,

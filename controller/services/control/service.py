@@ -66,6 +66,11 @@ class ControlService:
         self._inverter_ids: list[str] = []
         self._device_types: dict[str, str] = {}
 
+        # Site calculations config
+        self._site_calculations: list[dict] = []
+        self._controller_device_id: str | None = None
+        self._device_configs: list[dict] = []
+
         # Health server
         self._health_app: web.Application | None = None
         self._health_runner: web.AppRunner | None = None
@@ -235,6 +240,11 @@ class ControlService:
                 if rated_power:
                     self._solar_capacity_kw += rated_power
 
+        # Site calculations config
+        self._site_calculations = config.get("site_calculations", [])
+        self._controller_device_id = config.get("controller_device_id")
+        self._device_configs = devices
+
         # Validate config for operation mode
         errors = validate_config_for_mode(self._operation_mode, config)
         if errors:
@@ -242,7 +252,8 @@ class ControlService:
 
         logger.info(
             f"Config loaded: {len(devices)} devices, "
-            f"{self._solar_capacity_kw:.0f}kW solar capacity"
+            f"{self._solar_capacity_kw:.0f}kW solar capacity, "
+            f"{len(self._site_calculations)} site calculations"
         )
 
     async def _control_loop(self) -> None:
@@ -298,6 +309,23 @@ class ControlService:
             readings=device_readings,
             device_types=self._device_types,
         )
+
+        # 2b. Compute site calculations (register_role-based)
+        if self._site_calculations and self._controller_device_id:
+            site_calc_results = self.calculated_fields.compute_site_calculations(
+                readings=device_readings,
+                device_configs=self._device_configs,
+                site_calculations=self._site_calculations,
+            )
+            if site_calc_results:
+                self._current_state.site_calculations = {
+                    "controller_device_id": self._controller_device_id,
+                    "fields": site_calc_results,
+                }
+            else:
+                self._current_state.site_calculations = {}
+        else:
+            self._current_state.site_calculations = {}
 
         # 3. Update state with readings
         self._current_state.timestamp = datetime.now(timezone.utc)
@@ -438,6 +466,7 @@ class ControlService:
                 "control_interval_ms": config.get("control_interval_ms"),
                 "safe_mode": config.get("safe_mode", {}),
                 "mode_settings": config.get("mode_settings", {}),
+                "site_calculations": config.get("site_calculations", []),
             }
             content_str = json.dumps(content, sort_keys=True, default=str)
             return hashlib.md5(content_str.encode()).hexdigest()
