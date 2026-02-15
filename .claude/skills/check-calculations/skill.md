@@ -14,14 +14,14 @@ Register Role (template) → Config Sync (register_role in calculation_config)
     ↓
 Config (site_calculations list + controller_device_id)
     ↓
-Control Service: compute_site_calculations() → control_state.json
-    ↓
-Device Manager: injects into readings.json as virtual controller device
+Device Manager: compute_site_calculations() inline → readings.json (zero-lag)
     ↓
 Logging Service: samples into buffer → SQLite → Cloud (device_readings table)
     ↓
 Historical Data: query by controller device_id
 ```
+
+Pure functions in `common/site_calculations.py` (shared by device + control services).
 
 ## Calculation Types
 
@@ -107,39 +107,28 @@ ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p
   'python3 -c \"import json; c=json.load(open(\\\"/run/volteria/state/config.json\\\")); [print(json.dumps(d, indent=2)) for d in c.get(\\\"devices\\\", []) if d.get(\\\"device_type\\\") == \\\"site_controller\\\"]\"'"
 ```
 
-## Step 2: Check control_state.json
+## Step 2: Verify readings.json (zero-lag inline computation)
 
-```bash
-ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
-  'python3 -c \"import json; cs=json.load(open(\\\"/run/volteria/state/control_state.json\\\")); print(json.dumps(cs.get(\\\"site_calculations\\\", {}), indent=2))\"'"
-```
+Site calculations are computed inline in `device_manager.update_shared_state()` using current readings (not via control_state). Verify the controller device appears with calculated values:
 
-Expected:
-```json
-{
-  "controller_device_id": "uuid",
-  "fields": {
-    "total_load_kw": {"value": 180.3, "name": "Total Load", "unit": "kW"},
-    "total_generator_kw": {"value": 95.0, "name": "Total Generator Power", "unit": "kW"}
-  }
-}
-```
-
-If empty/missing: control service not computing. Check `journalctl -u volteria-control --since "5 min ago" | grep -i "site calc\|site_calc"`.
-
-## Step 3: Check readings.json
-
-Verify virtual controller device appears in readings:
 ```bash
 ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
   'python3 -c \"import json; r=json.load(open(\\\"/run/volteria/state/readings.json\\\")); cid=\\\"CONTROLLER_DEVICE_ID\\\"; print(json.dumps(r[\\\"devices\\\"].get(cid, \\\"NOT FOUND\\\"), indent=2))\"'"
 ```
 
-Replace `CONTROLLER_DEVICE_ID` with the UUID from Step 1b.
+Expected:
+```json
+{
+  "readings": {
+    "Total Load Active Power": {"value": 180.3, "unit": "kW"},
+    "Total Generator Active Power": {"value": 95.0, "unit": "kW"}
+  }
+}
+```
 
-Expected: Device entry with `readings` dict containing calculated field names as register names.
+If NOT FOUND: device_manager not injecting. Check `controller_device_id` in config (Step 1b) and device service logs: `journalctl -u volteria-device --since "5 min ago" | grep -i "site_calc\|common.site_calc"`.
 
-## Step 4: Check SQLite
+## Step 3: Check SQLite
 
 ```bash
 ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
@@ -148,7 +137,7 @@ ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p
 
 Expected: Recent rows with calculated field names (Total Load, Total Generator Power, etc.).
 
-## Step 5: Check Cloud
+## Step 4: Check Cloud
 
 ```bash
 curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device_id=eq.CONTROLLER_DEVICE_ID&order=timestamp.desc&limit=10&select=register_name,value,timestamp,unit" \
@@ -157,7 +146,7 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 
 Expected: Cloud has recent calculated field readings matching SQLite data.
 
-## Step 6: Check DB Definitions
+## Step 5: Check DB Definitions
 
 Verify `calculated_field_definitions` have `register_role` in `calculation_config`:
 ```bash
@@ -189,7 +178,7 @@ Check that sum-type fields have `register_role` in their `calculation_config`.
 | Total is 0 but devices have readings | register_role not assigned | Check template registers, assign role via frontend |
 | site_calculations empty in config | Fields not selected on controller | Enable in Site Calculations tab of controller edit |
 | controller_device_id missing | site_master_devices row missing | Create controller master device for this site |
-| Calcs not in readings.json | Device manager not injecting | Check device service logs, verify control_state has data |
+| Calcs not in readings.json | Device manager not computing inline | Check device service logs, verify config has site_calculations + controller_device_id |
 | Calcs not in SQLite | Logging service not sampling | Check virtual controller device in config devices list (whitelist) |
 | Calcs not in cloud | Not synced yet or field not in config | Check `/check-logging` for sync health |
 | Wrong register_role mapping | calculation_config missing register_role | Update `calculated_field_definitions.calculation_config` in DB |
@@ -201,4 +190,4 @@ Check that sum-type fields have `register_role` in their `calculation_config`.
 - **Device connectivity**: Use `/check-controller` for Modbus, safe mode, service health
 - **Register names/types**: Check device templates in frontend
 
-<!-- Updated: 2026-02-15 - Initial creation for site-level calculations via register_role -->
+<!-- Updated: 2026-02-15 - Zero-lag architecture: site calcs computed in device_manager, not control_state -->

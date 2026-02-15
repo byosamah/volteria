@@ -154,6 +154,7 @@ ssh volteria "docker logs sdc-frontend --tail=50"
 | Controller | `/check-controller` | Service health, SSH access, safe mode, architecture, SharedState |
 | Setup | `/check-setup` | Wizard flow, provisioning, registration, SSH tunnel setup, tests |
 | Logging | `/check-logging` | Data flow, SQLite, cloud sync, downsampling, drift, alarms |
+| Calculations | `/check-calculations` | Calculated fields pipeline, register_role, Total Load/DG/Solar, data flow |
 
 ## Environment Variables
 
@@ -211,6 +212,11 @@ SUPABASE_SERVICE_KEY=your-service-key
 39. **Site settings auto-sync to controller**: Saving site settings auto-calls `/api/sites/[siteId]/sync` — same endpoint as manual sync button. One code path for both manual and auto sync. Never create separate sync logic.
 40. **Controller systemd units are per-service**: Use `volteria-config`, `volteria-logging`, `volteria-device`, `volteria-control`, `volteria-system`, `volteria-supervisor`. NOT `volteria` (doesn't exist).
 41. **Interactive controls must look interactive**: Use dropdowns/selects instead of click-toggles for non-obvious state changes. Static displays and clickable controls must be visually distinct (learned: +/- toggle looked identical to locked first operand, users couldn't discover it).
+42. **exec_sql RPC works for writes**: `exec_sql` returns `{"success": true}` without row data for UPDATE/DELETE. It works but verify via REST API after. Active controllers may write rows with old names during rename windows.
+43. **Renaming register_name in device_readings**: Trigger config sync FIRST (so controller starts writing new names), then rename existing rows via REST API PATCH. Handle unique constraint `(device_id, register_name, timestamp)` conflicts by DELETE-ing old-name duplicates at overlapping timestamps.
+44. **Calculated field rename is DB-only**: Names flow from `calculated_field_definitions` → registers API → Historical page. Rename requires updating: (1) `calculated_field_definitions.name`, (2) `device_readings.register_name`, (3) JSONB `name` in `controller_templates` + `site_master_devices`. No code changes needed.
+45. **Site calculations compute in device_manager (zero-lag)**: `common/site_calculations.py` has pure functions shared by device + control services. Device manager computes inline in `update_shared_state()` using current readings — never read stale `control_state`. Control service no longer relays site calculations; `ControlState` has no `site_calculations` field.
+46. **Controller git pull requires root**: `sudo -u volteria git pull` fails (safe.directory + FETCH_HEAD permissions). Use: `sudo bash -c "cd /opt/volteria && git config --global --add safe.directory /opt/volteria && git pull origin main"`
 
 ## Key Architecture Decisions
 
@@ -231,6 +237,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 - Local source available via SSH for super admins
 - **Calculated fields** use forward-fill (last known value) for registers with different logging frequencies in raw mode. Aggregated mode aligns timestamps naturally.
 - **Cross-field references**: Calculated fields can reference other calculated fields (field-to-field math). Computation uses topological sort for dependency ordering. Circular refs prevented in AdvancedOptions dropdown.
+- **Site-level calculations (register_role)**: Controller computes totals (Total Load Active Power, Total Generator Active Power, Total Solar Active Power) from `register_role` tags on device registers. Pipeline: `calculated_field_definitions` → `controller_templates`/`site_master_devices` JSONB → config sync → `device_manager.update_shared_state()` computes inline from current readings (zero-lag) → logged to `device_readings` under master device ID. Pure functions in `common/site_calculations.py` (shared by device + control services). Historical page reads via `handleMasterDevice()` in registers API.
 
 ### Device Config
 - Devices dict structure: `{load_meters: [], inverters: [], generators: [], sensors: [], other: []}`
