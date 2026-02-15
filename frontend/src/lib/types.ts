@@ -400,7 +400,8 @@ export type CalculationType =
   | "cumulative"   // Rolling sum over time (Daily Energy)
   | "average"      // Average of values
   | "max"          // Maximum value
-  | "min";         // Minimum value
+  | "min"          // Minimum value
+  | "delta";       // Counter delta over time window (Energy Consumption)
 
 // Time window for cumulative calculations
 export type TimeWindow = "hour" | "day" | "week" | "month" | "year";

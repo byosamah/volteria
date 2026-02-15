@@ -41,6 +41,7 @@ const calculationTypeLabels: Record<CalculationType, string> = {
   average: "Average",
   max: "Maximum",
   min: "Minimum",
+  delta: "Delta (Energy)",
 };
 
 /**

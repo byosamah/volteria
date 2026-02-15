@@ -52,9 +52,13 @@ class CalculatedFieldsProcessor:
         readings: dict[str, dict],
         device_configs: list[dict],
         site_calculations: list[dict],
+        project_timezone: str = "UTC",
     ) -> dict[str, dict]:
         """Delegate to common.site_calculations module."""
-        return _compute_site_calculations_common(readings, device_configs, site_calculations)
+        return _compute_site_calculations_common(
+            readings, device_configs, site_calculations,
+            project_timezone=project_timezone,
+        )
 
     # =========================================================================
     # Legacy field definitions

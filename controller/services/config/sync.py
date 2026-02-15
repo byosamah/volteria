@@ -478,6 +478,7 @@ class ConfigSync:
                     "type": cf.get("calculation_type", "sum"),
                     "unit": cf.get("unit", ""),
                     "logging_frequency": cf.get("logging_frequency", 60),
+                    "time_window": cf.get("time_window"),
                 })
 
         # Controller device ID (for site calculations storage)

@@ -7,10 +7,99 @@ service (for algorithm).
 """
 
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from common.logging_setup import get_service_logger
 
 logger = get_service_logger("common.site_calc")
+
+
+# =============================================================================
+# DeltaTracker — module-level singleton for energy counter tracking
+# =============================================================================
+
+class DeltaTracker:
+    """
+    Tracks kWh counter deltas per field per device over time windows.
+
+    State: {field_id: {device_id: {"window_key": str, "first": float, "latest": float}}}
+
+    Window keys:
+      - hour: "2026-02-15T14" (ISO date + hour)
+      - day:  "2026-02-15"   (ISO date)
+    """
+
+    def __init__(self):
+        self._state: dict[str, dict[str, dict]] = {}
+
+    def get_delta(
+        self,
+        field_id: str,
+        device_id: str,
+        value: float,
+        window_key: str,
+    ) -> float:
+        """
+        Track a counter reading and return the delta within the current window.
+
+        Returns 0 on first reading in a new window or on counter reset.
+        """
+        if field_id not in self._state:
+            self._state[field_id] = {}
+
+        device_state = self._state[field_id].get(device_id)
+
+        if device_state is None or device_state["window_key"] != window_key:
+            # New window — record first reading, delta is 0
+            self._state[field_id][device_id] = {
+                "window_key": window_key,
+                "first": value,
+                "latest": value,
+            }
+            return 0.0
+
+        # Same window — update latest
+        device_state["latest"] = value
+        delta = device_state["latest"] - device_state["first"]
+
+        # Counter reset protection (value wrapped around or device reset)
+        if delta < 0:
+            return 0.0
+
+        return delta
+
+    def reset(self):
+        """Clear all tracked state."""
+        self._state.clear()
+
+
+# Module-level singleton
+_delta_tracker = DeltaTracker()
+
+
+def _get_window_key(time_window: str, project_timezone: str) -> str:
+    """
+    Get the current window key based on time_window type and project timezone.
+
+    Returns:
+      - hour: "2026-02-15T14"
+      - day:  "2026-02-15"
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(project_timezone)
+    except Exception:
+        tz = timezone.utc
+
+    now = datetime.now(tz)
+
+    if time_window == "hour":
+        return now.strftime("%Y-%m-%dT%H")
+    elif time_window == "day":
+        return now.strftime("%Y-%m-%d")
+    else:
+        # Fallback: treat as day
+        return now.strftime("%Y-%m-%d")
 
 
 def build_role_index(device_configs: list[dict]) -> dict[str, list[tuple[str, str]]]:
@@ -63,10 +152,44 @@ def compute_role_sum(
     return round(total, 2) if found_any else None
 
 
+def compute_role_delta(
+    readings: dict[str, dict],
+    role_index: dict[str, list[tuple[str, str]]],
+    register_role: str,
+    field_id: str,
+    time_window: str,
+    project_timezone: str,
+) -> float | None:
+    """
+    Compute delta (latest - first) for each device's kWh counter in the
+    current time window, then sum across all devices.
+
+    Returns None if no matching devices have readings.
+    """
+    matches = role_index.get(register_role, [])
+    if not matches:
+        return None
+
+    window_key = _get_window_key(time_window, project_timezone)
+    total = 0.0
+    found_any = False
+
+    for device_id, register_name in matches:
+        device_readings = readings.get(device_id, {})
+        value = _get_register_value(device_readings, register_name)
+        if value is not None:
+            delta = _delta_tracker.get_delta(field_id, device_id, value, window_key)
+            total += delta
+            found_any = True
+
+    return round(total, 2) if found_any else None
+
+
 def compute_site_calculations(
     readings: dict[str, dict],
     device_configs: list[dict],
     site_calculations: list[dict],
+    project_timezone: str = "UTC",
 ) -> dict[str, dict]:
     """
     Compute site-level calculations using register_role.
@@ -75,7 +198,9 @@ def compute_site_calculations(
         readings: {device_id: {register_name: {value: X, ...}}}
         device_configs: List of device config dicts (with registers containing register_role)
         site_calculations: List of site calculation definitions:
-            [{"field_id": str, "name": str, "register_role": str, "type": str, "unit": str}]
+            [{"field_id": str, "name": str, "register_role": str, "type": str,
+              "unit": str, "time_window": str (for delta)}]
+        project_timezone: IANA timezone string (e.g. "Asia/Dubai")
 
     Returns:
         {field_id: {"value": float, "name": str, "unit": str}}
@@ -94,6 +219,15 @@ def compute_site_calculations(
             if calc_type == "sum":
                 value = compute_role_sum(
                     readings, role_index, calc_def.get("register_role", "")
+                )
+            elif calc_type == "delta":
+                value = compute_role_delta(
+                    readings,
+                    role_index,
+                    calc_def.get("register_role", ""),
+                    field_id,
+                    calc_def.get("time_window", "hour"),
+                    project_timezone,
                 )
             else:
                 logger.debug(f"Calc type '{calc_type}' not yet implemented for {field_id}")

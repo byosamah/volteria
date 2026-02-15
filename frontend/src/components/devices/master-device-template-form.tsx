@@ -1055,7 +1055,12 @@ export function MasterDeviceTemplateForm({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {CALC_FIELD_FREQUENCY_OPTIONS.map((opt) => (
+                            {(dbField?.calculation_type === "delta"
+                              ? CALC_FIELD_FREQUENCY_OPTIONS.filter(
+                                  (opt) => opt.value === 3600 || opt.value === 86400
+                                )
+                              : CALC_FIELD_FREQUENCY_OPTIONS
+                            ).map((opt) => (
                               <SelectItem key={opt.value} value={opt.value.toString()}>
                                 {opt.label}
                               </SelectItem>
