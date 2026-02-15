@@ -103,6 +103,7 @@ const REGISTER_ROLE_OPTIONS = [
   // Solar Inverter roles
   { value: "solar_active_power", label: "Solar: Total Active Power" },
   { value: "solar_reactive_power", label: "Solar: Total Reactive Power" },
+  { value: "solar_apparent_power", label: "Solar: Total Apparent Power" },
   { value: "solar_power_limit_read", label: "Solar: Power Limit (Read)" },
   { value: "solar_power_limit_write", label: "Solar: Power Limit Control (Write)" },
   { value: "solar_reactive_limit_read", label: "Solar: Reactive Limit (Read)" },
@@ -111,18 +112,22 @@ const REGISTER_ROLE_OPTIONS = [
   // Load Meter roles
   { value: "load_active_power", label: "Load: Total Active Power" },
   { value: "load_reactive_power", label: "Load: Total Reactive Power" },
+  { value: "load_apparent_power", label: "Load: Total Apparent Power" },
   { value: "load_kwh_counter", label: "Load: Total kWh Counter" },
   // Sub Load Meter roles
   { value: "subload_active_power", label: "Sub Load: Total Active Power" },
   { value: "subload_reactive_power", label: "Sub Load: Total Reactive Power" },
+  { value: "subload_apparent_power", label: "Sub Load: Total Apparent Power" },
   { value: "subload_kwh_counter", label: "Sub Load: Total kWh Counter" },
   // Diesel Generator roles
   { value: "diesel_generator_active_power", label: "Diesel Generator: Total Active Power" },
   { value: "diesel_generator_reactive_power", label: "Diesel Generator: Total Reactive Power" },
+  { value: "diesel_generator_apparent_power", label: "Diesel Generator: Total Apparent Power" },
   { value: "diesel_generator_kwh_counter", label: "Diesel Generator: Total kWh Counter" },
   // Gas Generator roles
   { value: "gas_generator_active_power", label: "Gas Generator: Total Active Power" },
   { value: "gas_generator_reactive_power", label: "Gas Generator: Total Reactive Power" },
+  { value: "gas_generator_apparent_power", label: "Gas Generator: Total Apparent Power" },
   { value: "gas_generator_kwh_counter", label: "Gas Generator: Total kWh Counter" },
   // Fuel Sensor roles (standalone sensors)
   { value: "fuel_volume", label: "Fuel: Volume" },
