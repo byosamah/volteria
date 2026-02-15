@@ -108,6 +108,10 @@ class CalculatedFieldsProcessor:
             if not device_id:
                 continue
 
+            # Skip virtual devices (their registers ARE the computed outputs)
+            if device.get("device_type") == "site_controller":
+                continue
+
             # Check all register collections
             for reg_key in ("registers", "visualization_registers", "alarm_registers"):
                 for reg in device.get(reg_key, []):

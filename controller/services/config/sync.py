@@ -500,7 +500,6 @@ class ConfigSync:
                         "datatype": "float32",
                         "unit": sc.get("unit", ""),
                         "logging_frequency": sc.get("logging_frequency", 60),
-                        "register_role": sc.get("register_role"),
                     }
                     for sc in site_calculations
                 ],
