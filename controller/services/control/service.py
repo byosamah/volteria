@@ -301,8 +301,18 @@ class ControlService:
 
         # 1. Get latest readings
         readings_data = get_readings()
-        device_readings = readings_data.get("devices", {})
+        raw_devices = readings_data.get("devices", {})
         device_status = readings_data.get("status", {})
+
+        # Unwrap 'readings' subkey → flat {device_id: {register_name: {value, ...}}}
+        # SharedState format: {device_id: {"readings": {...}}}
+        # Calculator expects: {device_id: {register_name: {...}}}
+        device_readings = {}
+        for dev_id, dev_data in raw_devices.items():
+            if isinstance(dev_data, dict) and "readings" in dev_data:
+                device_readings[dev_id] = dev_data["readings"]
+            else:
+                device_readings[dev_id] = dev_data
 
         # 2. Compute totals
         totals = self.calculated_fields.compute_standard_totals(
