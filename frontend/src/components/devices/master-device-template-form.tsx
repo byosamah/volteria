@@ -126,12 +126,6 @@ const CALC_FIELD_FREQUENCY_OPTIONS = [
   { value: 86400, label: "24 hours" },
 ];
 
-// Delta fields have fixed frequencies based on time_window (not user-editable)
-function getDeltaFrequency(field: { calculation_type?: string; time_window?: string | null }): number | null {
-  if (field.calculation_type !== "delta") return null;
-  return field.time_window === "day" ? 86400 : 3600;
-}
-
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
@@ -327,7 +321,7 @@ export function MasterDeviceTemplateForm({
           field_id: field.field_id,
           name: field.name,
           storage_mode: "log" as StorageMode,
-          logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 60,
+          logging_frequency_seconds: field.logging_frequency_seconds || 60,
           enabled: false,
         }))
       );
@@ -384,7 +378,7 @@ export function MasterDeviceTemplateForm({
                   field_id: field.field_id,
                   name: field.name,
                   storage_mode: (existing as { storage_mode?: StorageMode }).storage_mode || "log",
-                  logging_frequency_seconds: getDeltaFrequency(field) || (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || field.logging_frequency_seconds || 60,
+                  logging_frequency_seconds: (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || field.logging_frequency_seconds || 60,
                   enabled: true,
                 };
               } else if (typeof existing === "string") {
@@ -392,7 +386,7 @@ export function MasterDeviceTemplateForm({
                   field_id: field.field_id,
                   name: field.name,
                   storage_mode: "log" as StorageMode,
-                  logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 60,
+                  logging_frequency_seconds: field.logging_frequency_seconds || 60,
                   enabled: true,
                 };
               }
@@ -507,7 +501,7 @@ export function MasterDeviceTemplateForm({
               field_id: field.field_id,
               name: field.name,
               storage_mode: "log" as StorageMode,
-              logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 60,
+              logging_frequency_seconds: field.logging_frequency_seconds || 60,
               enabled: false,
             }))
           );
@@ -1055,18 +1049,13 @@ export function MasterDeviceTemplateForm({
                           onValueChange={(value) =>
                             updateCalculatedFieldFrequency(field.field_id, parseInt(value))
                           }
-                          disabled={!field.enabled || dbField?.calculation_type === "delta"}
+                          disabled={!field.enabled}
                         >
                           <SelectTrigger className="w-[120px] h-8">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {(dbField?.calculation_type === "delta"
-                              ? CALC_FIELD_FREQUENCY_OPTIONS.filter(
-                                  (opt) => opt.value === 3600 || opt.value === 86400
-                                )
-                              : CALC_FIELD_FREQUENCY_OPTIONS
-                            ).map((opt) => (
+                            {CALC_FIELD_FREQUENCY_OPTIONS.map((opt) => (
                               <SelectItem key={opt.value} value={opt.value.toString()}>
                                 {opt.label}
                               </SelectItem>
