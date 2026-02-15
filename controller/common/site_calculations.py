@@ -7,7 +7,7 @@ service (for algorithm).
 """
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from common.logging_setup import get_service_logger
 
@@ -101,7 +101,11 @@ def _get_window_key(time_window: str, project_timezone: str) -> str:
     except Exception:
         tz = timezone.utc
 
-    now = datetime.now(tz)
+    # Look 3 seconds ahead so the window transition fires BEFORE the hour
+    # boundary.  This ensures readings.json has the new completed total by
+    # :00:00, avoiding the race with the logging service's first sample.
+    # Precision loss: ~3s of a 3600s window = 0.08% — negligible.
+    now = datetime.now(tz) + timedelta(seconds=3)
 
     if time_window == "hour":
         return now.strftime("%Y-%m-%dT%H")
