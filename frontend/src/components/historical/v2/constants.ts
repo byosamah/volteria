@@ -120,20 +120,8 @@ export const DUMMY_DEVICES = [
   { id: "dev5", name: "Solar Array", site_id: "site2", device_type: "inverter", enabled: true },
 ];
 
-// Controller ID constant (matches AvailableParametersList)
-export const SITE_CONTROLLER_ID = "site-controller";
-
-// Dummy registers per device (including controller calculated fields)
+// Dummy registers per device (dev fallback only)
 export const DUMMY_REGISTERS: Record<string, { id: string; name: string; unit: string; preferred_chart_type?: string }[]> = {
-  // Site Controller calculated fields - always available
-  "site-controller": [
-    { id: "calc1", name: "Total Site Load", unit: "kW", preferred_chart_type: "area" },
-    { id: "calc2", name: "Total Solar Generation", unit: "kW", preferred_chart_type: "area" },
-    { id: "calc3", name: "Net Power (Load - Solar)", unit: "kW", preferred_chart_type: "line" },
-    { id: "calc4", name: "Solar Utilization", unit: "%", preferred_chart_type: "line" },
-    { id: "calc5", name: "DG Runtime Today", unit: "h" },
-    { id: "calc6", name: "Peak Load Today", unit: "kW" },
-  ],
   dev1: [
     { id: "r1", name: "Total Active Power", unit: "kW", preferred_chart_type: "area" },
     { id: "r2", name: "Frequency", unit: "Hz", preferred_chart_type: "line" },

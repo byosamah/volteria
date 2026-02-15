@@ -29,6 +29,103 @@ interface DeviceRegistersResponse {
   registers: RegisterDefinition[];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleMasterDevice(
+  supabase: any,
+  deviceId: string,
+  user: { id: string }
+): Promise<NextResponse | null> {
+  // Check site_master_devices (controllers)
+  const { data: masterDevice, error: masterError } = await supabase
+    .from("site_master_devices")
+    .select("id, name, device_type, site_id, controller_template_id")
+    .eq("id", deviceId)
+    .single();
+
+  if (masterError || !masterDevice) return null;
+  if (masterDevice.device_type !== "controller") return null;
+
+  // Access check via site → project
+  const { data: siteData } = await supabase
+    .from("sites")
+    .select("id, project_id")
+    .eq("id", masterDevice.site_id)
+    .single();
+
+  if (!siteData) {
+    return NextResponse.json({ error: "Site not found" }, { status: 404 });
+  }
+
+  const { data: userProfile } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const isAdmin =
+    userProfile?.role === "super_admin" ||
+    userProfile?.role === "backend_admin";
+
+  if (!isAdmin) {
+    const { data: projectAccess } = await supabase
+      .from("user_projects")
+      .select("project_id")
+      .eq("user_id", user.id)
+      .eq("project_id", siteData.project_id)
+      .single();
+
+    if (!projectAccess) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+  }
+
+  // Get enabled calculated fields from controller template
+  const registers: RegisterDefinition[] = [];
+
+  if (masterDevice.controller_template_id) {
+    const { data: template } = await supabase
+      .from("controller_templates")
+      .select("calculated_fields")
+      .eq("id", masterDevice.controller_template_id)
+      .single();
+
+    const enabledFieldIds: string[] = (template?.calculated_fields || [])
+      .map((f: { field_id: string }) => f.field_id);
+
+    if (enabledFieldIds.length > 0) {
+      // Fetch definitions for enabled fields — only those with register_role (implemented)
+      const { data: fieldDefs } = await supabase
+        .from("calculated_field_definitions")
+        .select("field_id, name, unit, calculation_config")
+        .eq("scope", "controller")
+        .eq("is_active", true)
+        .in("field_id", enabledFieldIds);
+
+      for (const def of fieldDefs || []) {
+        // Only include fields that use register_role (implemented pipeline)
+        const config = def.calculation_config as { register_role?: string } | null;
+        if (!config?.register_role) continue;
+
+        registers.push({
+          name: def.name,
+          address: 0,
+          datatype: "float32",
+          scale: 1,
+          unit: def.unit || "",
+          access: "read",
+        });
+      }
+    }
+  }
+
+  return NextResponse.json({
+    deviceId: masterDevice.id,
+    deviceName: masterDevice.name,
+    deviceType: masterDevice.device_type,
+    registers,
+  } as DeviceRegistersResponse);
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ deviceId: string }> }
@@ -71,7 +168,10 @@ export async function GET(
       .eq("id", deviceId)
       .single();
 
+    // If not found in site_devices, check site_master_devices (controller)
     if (deviceError || !deviceData) {
+      const masterResponse = await handleMasterDevice(supabase, deviceId, user);
+      if (masterResponse) return masterResponse;
       return NextResponse.json(
         { error: "Device not found" },
         { status: 404 }

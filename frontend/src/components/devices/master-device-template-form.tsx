@@ -90,11 +90,12 @@ function generateNumericTemplateId(): string {
 // Types imported from controller-readings-form.tsx:
 // - StorageMode, ReadingSelection, StatusAlarmConfig, getDefaultAlarmConfig
 
-// Field selection with storage mode (for calculated fields)
+// Field selection with storage mode and logging frequency (for calculated fields)
 interface FieldSelection {
   field_id: string;
   name: string;
   storage_mode: StorageMode;
+  logging_frequency_seconds: number;
   enabled: boolean;
 }
 
@@ -109,6 +110,21 @@ interface FormData {
   enterprise_id: string; // For custom templates
   is_active: boolean; // Only super_admin can toggle this
 }
+
+// Logging frequency options for calculated fields (matches register-form.tsx)
+const CALC_FIELD_FREQUENCY_OPTIONS = [
+  { value: 1, label: "1 second" },
+  { value: 5, label: "5 seconds" },
+  { value: 10, label: "10 seconds" },
+  { value: 30, label: "30 seconds" },
+  { value: 60, label: "1 minute" },
+  { value: 300, label: "5 minutes" },
+  { value: 600, label: "10 minutes" },
+  { value: 900, label: "15 minutes" },
+  { value: 1800, label: "30 minutes" },
+  { value: 3600, label: "1 hour" },
+  { value: 86400, label: "24 hours" },
+];
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -305,6 +321,7 @@ export function MasterDeviceTemplateForm({
           field_id: field.field_id,
           name: field.name,
           storage_mode: "log" as StorageMode,
+          logging_frequency_seconds: field.logging_frequency_seconds || 60,
           enabled: false,
         }))
       );
@@ -361,6 +378,7 @@ export function MasterDeviceTemplateForm({
                   field_id: field.field_id,
                   name: field.name,
                   storage_mode: (existing as { storage_mode?: StorageMode }).storage_mode || "log",
+                  logging_frequency_seconds: (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || field.logging_frequency_seconds || 60,
                   enabled: true,
                 };
               } else if (typeof existing === "string") {
@@ -368,6 +386,7 @@ export function MasterDeviceTemplateForm({
                   field_id: field.field_id,
                   name: field.name,
                   storage_mode: "log" as StorageMode,
+                  logging_frequency_seconds: field.logging_frequency_seconds || 60,
                   enabled: true,
                 };
               }
@@ -375,6 +394,7 @@ export function MasterDeviceTemplateForm({
                 field_id: field.field_id,
                 name: field.name,
                 storage_mode: "log" as StorageMode,
+                logging_frequency_seconds: field.logging_frequency_seconds || 60,
                 enabled: false,
               };
             })
@@ -481,6 +501,7 @@ export function MasterDeviceTemplateForm({
               field_id: field.field_id,
               name: field.name,
               storage_mode: "log" as StorageMode,
+              logging_frequency_seconds: field.logging_frequency_seconds || 60,
               enabled: false,
             }))
           );
@@ -546,13 +567,14 @@ export function MasterDeviceTemplateForm({
         data: { user },
       } = await supabase.auth.getUser();
 
-      // Build calculated_fields array with storage_mode
+      // Build calculated_fields array with storage_mode and logging_frequency
       const selectedCalculatedFields = calculatedFields
         .filter((f) => f.enabled)
         .map((f) => ({
           field_id: f.field_id,
           name: f.name,
           storage_mode: f.storage_mode,
+          logging_frequency_seconds: f.logging_frequency_seconds,
         }));
 
       // Build registers array from selected readings with logging frequency
@@ -725,6 +747,15 @@ export function MasterDeviceTemplateForm({
     setCalculatedFields((prev) =>
       prev.map((f) =>
         f.field_id === field_id ? { ...f, storage_mode: mode } : f
+      )
+    );
+  };
+
+  // Update logging frequency for a calculated field
+  const updateCalculatedFieldFrequency = (field_id: string, seconds: number) => {
+    setCalculatedFields((prev) =>
+      prev.map((f) =>
+        f.field_id === field_id ? { ...f, logging_frequency_seconds: seconds } : f
       )
     );
   };
@@ -1011,6 +1042,26 @@ export function MasterDeviceTemplateForm({
                             </span>
                           )}
                         </label>
+
+                        {/* Logging Frequency Selector */}
+                        <Select
+                          value={field.logging_frequency_seconds.toString()}
+                          onValueChange={(value) =>
+                            updateCalculatedFieldFrequency(field.field_id, parseInt(value))
+                          }
+                          disabled={!field.enabled}
+                        >
+                          <SelectTrigger className="w-[120px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CALC_FIELD_FREQUENCY_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value.toString()}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
 
                         {/* Storage Mode Selector */}
                         <Select

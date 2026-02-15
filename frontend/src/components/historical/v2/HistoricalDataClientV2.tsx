@@ -24,7 +24,6 @@ import { HistoricalChart } from "./HistoricalChart";
 import { AdvancedOptions } from "./AdvancedOptions";
 import {
   DUMMY_DEVICES,
-  DUMMY_REGISTERS,
   DUMMY_PROJECTS,
   DUMMY_SITES,
   generateDummyChartData,
@@ -268,22 +267,7 @@ export function HistoricalDataClientV2({
 
       } catch (error) {
         console.error("Failed to fetch registers:", error);
-        // Fall back to dummy registers (don't cache errors)
-        const regs = DUMMY_REGISTERS[selectedDeviceId] || [];
-        const device = filteredDevices.find((d) => d.id === selectedDeviceId);
-        setAvailableRegisters(
-          regs.map((reg) => ({
-            id: reg.id,
-            name: reg.name,
-            unit: reg.unit,
-            deviceId: selectedDeviceId,
-            deviceName: device?.name || "Unknown",
-            siteId: selectedSiteId,
-            siteName: selectedSiteName,
-            preferred_chart_type: reg.preferred_chart_type,
-            status: "active" as const,
-          }))
-        );
+        setAvailableRegisters([]);
       } finally {
         setIsLoadingRegisters(false);
       }
