@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from common.config import DeviceConfig, DeviceType
-from common.state import SharedState, get_control_state
+from common.state import SharedState, get_config
+from common.site_calculations import compute_site_calculations
 from common.logging_setup import get_service_logger
 
 logger = get_service_logger("device.manager")
@@ -335,21 +336,35 @@ class DeviceManager:
         totals = await self._compute_totals()
         readings_data.update(totals)
 
-        # Inject site calculations from control service as virtual controller device
-        control_state = get_control_state()
-        site_calcs = control_state.get("site_calculations", {}) if control_state else {}
-        cid = site_calcs.get("controller_device_id")
-        if cid and site_calcs.get("fields"):
-            readings_data["devices"][cid] = {
-                "readings": {
-                    fd["name"]: {"value": fd["value"], "unit": fd.get("unit", "")}
-                    for fd in site_calcs["fields"].values()
-                },
-            }
-            readings_data["status"][cid] = {
-                "is_online": True,
-                "last_seen": datetime.now(timezone.utc).isoformat(),
-            }
+        # Compute site calculations INLINE from current readings
+        # (eliminates 1-iteration lag from reading stale control_state)
+        config = get_config()
+        if config:
+            site_calcs_config = config.get("site_calculations", [])
+            controller_device_id = config.get("controller_device_id")
+            device_configs = config.get("devices", [])
+
+            if site_calcs_config and controller_device_id:
+                calc_readings = {
+                    dev_id: dev_data.get("readings", {})
+                    for dev_id, dev_data in readings_data["devices"].items()
+                }
+                site_calc_results = compute_site_calculations(
+                    readings=calc_readings,
+                    device_configs=device_configs,
+                    site_calculations=site_calcs_config,
+                )
+                if site_calc_results:
+                    readings_data["devices"][controller_device_id] = {
+                        "readings": {
+                            fd["name"]: {"value": fd["value"], "unit": fd.get("unit", "")}
+                            for fd in site_calc_results.values()
+                        },
+                    }
+                    readings_data["status"][controller_device_id] = {
+                        "is_online": True,
+                        "last_seen": datetime.now(timezone.utc).isoformat(),
+                    }
 
         SharedState.write("readings", readings_data)
 

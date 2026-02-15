@@ -57,9 +57,6 @@ class ControlState:
     write_success: bool = True
     write_error: str | None = None
 
-    # Site calculations (computed from register_role)
-    site_calculations: dict[str, Any] = field(default_factory=dict)
-
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging"""
         result = {
@@ -83,8 +80,6 @@ class ControlState:
             "write_success": self.write_success,
             "write_error": self.write_error,
         }
-        if self.site_calculations:
-            result["site_calculations"] = self.site_calculations
         return result
 
 

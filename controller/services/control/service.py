@@ -320,22 +320,9 @@ class ControlService:
             device_types=self._device_types,
         )
 
-        # 2b. Compute site calculations (register_role-based)
-        if self._site_calculations and self._controller_device_id:
-            site_calc_results = self.calculated_fields.compute_site_calculations(
-                readings=device_readings,
-                device_configs=self._device_configs,
-                site_calculations=self._site_calculations,
-            )
-            if site_calc_results:
-                self._current_state.site_calculations = {
-                    "controller_device_id": self._controller_device_id,
-                    "fields": site_calc_results,
-                }
-            else:
-                self._current_state.site_calculations = {}
-        else:
-            self._current_state.site_calculations = {}
+        # Note: Site calculations (register_role-based) are computed inline in
+        # device_manager.update_shared_state() for zero-lag logging.
+        # Control service only needs compute_standard_totals() for its algorithm.
 
         # 3. Update state with readings
         self._current_state.timestamp = datetime.now(timezone.utc)
