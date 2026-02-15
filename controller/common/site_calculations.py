@@ -21,8 +21,15 @@ logger = get_service_logger("common.site_calc")
 class DeltaTracker:
     """
     Tracks kWh counter deltas per field per device over time windows.
+    Emits COMPLETED window totals (not running totals).
+
+    On window transition, computes the old window's total and holds it
+    stable for the entire next window. This ensures cloud downsampling
+    (which picks the first reading per bucket) always captures the
+    correct total.
 
     State: {field_id: {device_id: {"window_key": str, "first": float, "latest": float}}}
+    Completed: {field_id: {device_id: float}}  — last completed window's total
 
     Window keys:
       - hour: "2026-02-15T14" (ISO date + hour)
@@ -31,6 +38,7 @@ class DeltaTracker:
 
     def __init__(self):
         self._state: dict[str, dict[str, dict]] = {}
+        self._completed: dict[str, dict[str, float]] = {}
 
     def get_delta(
         self,
@@ -40,9 +48,10 @@ class DeltaTracker:
         window_key: str,
     ) -> float:
         """
-        Track a counter reading and return the delta within the current window.
+        Track a counter reading and return the completed window's total.
 
-        Returns 0 on first reading in a new window or on counter reset.
+        Returns 0 until the first window completes. After that, returns
+        the total from the most recently completed window (stable value).
         """
         if field_id not in self._state:
             self._state[field_id] = {}
@@ -50,27 +59,28 @@ class DeltaTracker:
         device_state = self._state[field_id].get(device_id)
 
         if device_state is None or device_state["window_key"] != window_key:
-            # New window — record first reading, delta is 0
+            # Window transition — compute completed total from old window
+            if device_state is not None:
+                completed = device_state["latest"] - device_state["first"]
+                self._completed.setdefault(field_id, {})[device_id] = max(0.0, completed)
+
+            # Start new window
             self._state[field_id][device_id] = {
                 "window_key": window_key,
                 "first": value,
                 "latest": value,
             }
-            return 0.0
+        else:
+            # Same window — update latest
+            device_state["latest"] = value
 
-        # Same window — update latest
-        device_state["latest"] = value
-        delta = device_state["latest"] - device_state["first"]
-
-        # Counter reset protection (value wrapped around or device reset)
-        if delta < 0:
-            return 0.0
-
-        return delta
+        # Return COMPLETED window's total (not running total)
+        return self._completed.get(field_id, {}).get(device_id, 0.0)
 
     def reset(self):
         """Clear all tracked state."""
         self._state.clear()
+        self._completed.clear()
 
 
 # Module-level singleton
