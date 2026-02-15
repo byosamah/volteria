@@ -394,6 +394,9 @@ class LoggingService:
                 }
                 self._alarm_definitions.append(self._parse_alarm_definition(alarm_def))
 
+        # Clear calculated fields before re-populating (prevent stale entries on reload)
+        self._calculated_fields_to_log.clear()
+
         # Load device-level calculated fields to log
         for device in config.get("devices", []):
             device_id = device.get("id")

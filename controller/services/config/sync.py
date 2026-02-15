@@ -412,7 +412,7 @@ class ConfigSync:
                 "calculation_config": calc_config,
                 "unit": defn.get("unit", ""),
                 "time_window": defn.get("time_window"),
-                "logging_frequency": defn.get("logging_frequency_seconds", 60),
+                "logging_frequency": selection.get("logging_frequency_seconds", defn.get("logging_frequency_seconds", 60)),
                 # Controller-specific settings
                 "storage_mode": selection.get("storage_mode", "log"),
                 "enabled": selection.get("enabled", True),
