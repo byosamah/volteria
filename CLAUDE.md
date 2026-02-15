@@ -217,6 +217,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 44. **Calculated field rename is DB-only**: Names flow from `calculated_field_definitions` → registers API → Historical page. Rename requires updating: (1) `calculated_field_definitions.name`, (2) `device_readings.register_name`, (3) JSONB `name` in `controller_templates` + `site_master_devices`. No code changes needed.
 45. **Site calculations compute in device_manager (zero-lag)**: `common/site_calculations.py` has pure functions shared by device + control services. Device manager computes inline in `update_shared_state()` using current readings — never read stale `control_state`. Control service no longer relays site calculations; `ControlState` has no `site_calculations` field.
 46. **Controller git pull requires root**: `sudo -u volteria git pull` fails (safe.directory + FETCH_HEAD permissions). Use: `sudo bash -c "cd /opt/volteria && git config --global --add safe.directory /opt/volteria && git pull origin main"`
+47. **Calculated field settings flow through 3 tables**: `calculated_field_definitions` (global definitions + defaults) → `controller_templates.calculated_fields` (template-level) → `site_master_devices.calculated_fields` (per-device overrides with `logging_frequency_seconds`, `storage_mode`, `enabled`). Config sync merges per-device overrides from `site_master_devices` with global defaults from `calculated_field_definitions`.
+48. **Config reload must clear all re-populated collections**: In logging service `_load_config()`, both `_alarm_definitions` and `_calculated_fields_to_log` must be cleared before re-populating. Missing `.clear()` causes stale entries to accumulate across config reloads.
 
 ## Key Architecture Decisions
 

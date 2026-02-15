@@ -182,7 +182,9 @@ Check that sum-type fields have `register_role` in their `calculation_config`.
 | Calcs not in SQLite | Logging service not sampling | Check virtual controller device in config devices list (whitelist) |
 | Calcs not in cloud | Not synced yet or field not in config | Check `/check-logging` for sync health |
 | Wrong register_role mapping | calculation_config missing register_role | Update `calculated_field_definitions.calculation_config` in DB |
+| logging_frequency not applied | Config sync reads from wrong table | Verify `site_master_devices.calculated_fields` has correct `logging_frequency_seconds`, then check controller config `site_calculations[].logging_frequency` matches. Fix is in `sync.py` line 415: must read from `selection` (per-device) not `defn` (global). |
 | "Calc type not yet implemented" log | Using delta/difference (Phase 2) | Only `sum` implemented in Phase 1 |
+| Cloud verification shows mismatch | Timestamp misalignment | Calculated fields may log at different frequency (e.g., 5s) than source registers (e.g., 60s). Verify from SharedState (real-time) or align to minute boundaries where both have data. |
 
 ## Cross-References
 
@@ -190,4 +192,4 @@ Check that sum-type fields have `register_role` in their `calculation_config`.
 - **Device connectivity**: Use `/check-controller` for Modbus, safe mode, service health
 - **Register names/types**: Check device templates in frontend
 
-<!-- Updated: 2026-02-15 - Zero-lag architecture: site calcs computed in device_manager, not control_state -->
+<!-- Updated: 2026-02-15 - Added logging_frequency troubleshooting (per-device override in site_master_devices) -->
