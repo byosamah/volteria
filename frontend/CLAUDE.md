@@ -320,7 +320,7 @@ src/components/
 │       ├── ParameterSelector.tsx      # Device/register selection
 │       ├── ParameterCard.tsx          # Parameter card with site/device info
 │       ├── AvailableParametersList.tsx # Register list with loading state
-│       ├── AdvancedOptions.tsx        # Reference lines and calculated fields
+│       ├── AdvancedOptions.tsx        # Reference lines + calculated fields (cross-field math)
 │       ├── AxisDropZone.tsx           # Drag-and-drop axis management
 │       ├── AggregationSelector.tsx    # Raw/Hourly/Daily selector
 │       ├── DateRangeSelector.tsx      # Calendar with presets
@@ -726,17 +726,27 @@ Multi-site historical data viewer with server-side aggregation:
 - **No Browser Caching**: Refresh/Plot always fetch fresh data
 - **Register Caching**: In-memory cache for fast device switching
 - **Local Source**: Single-site only, 1h max for raw, 30d for aggregated
+- **Calculated Fields**: Client-side math on chart parameters (add/subtract), with cross-field references
+- **Show Calc Only**: Toggle to hide source parameters, reflected in both chart and CSV export
+
+**Calculated Fields Architecture**:
+- **Virtual AxisParameter pattern**: Computed fields create fake `AxisParameter` objects (`deviceId='calc'`, `registerId=fieldId`, key=`calc:{name}`) that flow through existing chart/tooltip/CSV pipeline unchanged — zero modifications to `HistoricalChart`, `ChartOverlay`, or `OverlayTooltip`
+- **Forward-fill**: SCADA-standard single-pass O(n) algorithm carries last known value per register at each timestamp, handling mixed logging frequencies
+- **Cross-field math**: Fields can reference other fields as operands (`type: "parameter" | "field"` discriminator). Topological sort (DFS) ensures dependencies compute first. Circular refs prevented in dropdown
+- **Operand UI**: Min 2, max 5 operands per field. First operand locked to `+`. Select dropdown for `+/-` (not click-toggle — Rule 41)
+- **Aggregation caveat**: `avg(A) + avg(B)` works for hourly_avg. For min/max, sum-of-extremes ≠ extreme-of-sums — acceptable for industrial monitoring
 
 **Components** (`frontend/src/components/historical/v2/`):
 | Component | Purpose |
 |-----------|---------|
-| `HistoricalDataClientV2.tsx` | Main orchestrator component |
+| `HistoricalDataClientV2.tsx` | Main orchestrator + calculated field computation engine |
 | `HistoricalChart.tsx` | Recharts visualization (no mouse handlers) |
 | `ChartOverlay.tsx` | DOM overlay for hover/drag interactions |
 | `OverlayTooltip.tsx` | Positioned tooltip with site/device hierarchy |
 | `ParameterSelector.tsx` | Device + register selection |
 | `AvailableParametersList.tsx` | Register list with loading state + local site blocking |
 | `ParameterCard.tsx` | Parameter card with site/device info |
+| `AdvancedOptions.tsx` | Reference lines + calculated fields with cross-field math |
 | `AggregationSelector.tsx` | Raw/Hourly/Daily + Avg/Min/Max selector |
 | `DateRangeSelector.tsx` | Calendar picker with presets |
 | `ControlsRow.tsx` | All controls in single row |
@@ -836,3 +846,5 @@ npx shadcn@latest add dialog
 16. **Downsampling Must Preserve Critical Points**: When downsampling chart data, preserve critical state-change points (e.g., offline markers with `status === 0`) - uniform step sampling can remove important events that should always be visible.
 
 17. **Time-Series Window Start Detection**: Time-series charts must detect gaps at window START (startTime to first data point), not just between consecutive points - otherwise offline/gap periods at the beginning of the view are invisible.
+
+18. **Virtual AxisParameter Pattern**: To add computed/derived data to charts without modifying chart/tooltip/CSV components, create fake `AxisParameter` objects with synthetic IDs (e.g., `deviceId='calc'`). They flow through existing rendering pipeline unchanged. Used by Calculated Fields — extend this pattern for any future derived data.

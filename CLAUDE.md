@@ -210,6 +210,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 38. **SharedState lives in tmpfs**: Production path is `/run/volteria/state/` (RAM-backed). `/opt/volteria/data/state/` is stale fallback from before tmpfs was set up. Always read from `/run/volteria/state/config.json` for current config. Config version history at `/opt/volteria/data/config_history/v_*.json`.
 39. **Site settings auto-sync to controller**: Saving site settings auto-calls `/api/sites/[siteId]/sync` — same endpoint as manual sync button. One code path for both manual and auto sync. Never create separate sync logic.
 40. **Controller systemd units are per-service**: Use `volteria-config`, `volteria-logging`, `volteria-device`, `volteria-control`, `volteria-system`, `volteria-supervisor`. NOT `volteria` (doesn't exist).
+41. **Interactive controls must look interactive**: Use dropdowns/selects instead of click-toggles for non-obvious state changes. Static displays and clickable controls must be visually distinct (learned: +/- toggle looked identical to locked first operand, users couldn't discover it).
 
 ## Key Architecture Decisions
 
@@ -228,6 +229,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 - Server-side aggregation via `get_historical_readings()` RPC
 - Raw (30d max), Hourly (90d), Daily (2y)
 - Local source available via SSH for super admins
+- **Calculated fields** use forward-fill (last known value) for registers with different logging frequencies in raw mode. Aggregated mode aligns timestamps naturally.
+- **Cross-field references**: Calculated fields can reference other calculated fields (field-to-field math). Computation uses topological sort for dependency ordering. Circular refs prevented in AdvancedOptions dropdown.
 
 ### Device Config
 - Devices dict structure: `{load_meters: [], inverters: [], generators: [], sensors: [], other: []}`
