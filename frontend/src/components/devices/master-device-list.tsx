@@ -920,6 +920,19 @@ export function MasterDeviceList({
       );
 
       toast.success("Master device updated");
+
+      // Trigger config sync for controller devices
+      if (editingDevice.device_type === "controller" && siteId) {
+        try {
+          const syncRes = await fetch(`/api/sites/${siteId}/sync`, { method: "POST" });
+          if (syncRes.ok) {
+            toast.success("Settings synced to controller");
+          }
+        } catch {
+          toast.warning("Saved but sync failed — use manual sync button");
+        }
+      }
+
       setEditingDevice(null);
       router.refresh();
     } catch (err) {
