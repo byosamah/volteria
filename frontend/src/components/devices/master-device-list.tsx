@@ -115,7 +115,7 @@ interface MasterDevice {
   modbus_extra_delay?: number | null;
   modbus_slave_timeout?: number | null;
   modbus_write_function?: string | null;
-  calculated_fields?: { field_id: string; enabled: boolean; storage_mode: string }[] | null;
+  calculated_fields?: { field_id: string; enabled: boolean; storage_mode: string; logging_frequency_seconds?: number }[] | null;
   site_level_alarms?: SiteLevelAlarm[] | null;
   // Controller offline alarm settings (stored in DB, not template)
   controller_alarm_enabled?: boolean | null;
@@ -141,6 +141,31 @@ interface CalculatedFieldDef {
   calculation_type: string;
   time_window: string | null;
 }
+
+// Calculated field selection with storage mode + logging frequency
+interface CalcFieldSelection {
+  field_id: string;
+  name: string;
+  unit: string | null;
+  enabled: boolean;
+  storage_mode: "log" | "viz_only";
+  logging_frequency_seconds: number;
+}
+
+// Logging frequency options for calculated fields (matches register-form.tsx)
+const CALC_FIELD_FREQUENCY_OPTIONS = [
+  { value: 1, label: "1 sec" },
+  { value: 5, label: "5 sec" },
+  { value: 10, label: "10 sec" },
+  { value: 30, label: "30 sec" },
+  { value: 60, label: "1 min" },
+  { value: 300, label: "5 min" },
+  { value: 600, label: "10 min" },
+  { value: 900, label: "15 min" },
+  { value: 1800, label: "30 min" },
+  { value: 3600, label: "1 hr" },
+  { value: 86400, label: "24 hr" },
+];
 
 // Controller template definition (from controller_templates table)
 interface ControllerTemplateData {
@@ -346,7 +371,7 @@ export function MasterDeviceList({
 
   // Edit form state - Calculated fields (for controllers)
   // These are loaded directly from calculated_field_definitions with scope='controller'
-  const [editSelectedCalculatedFields, setEditSelectedCalculatedFields] = useState<string[]>([]);
+  const [editCalcFieldSelections, setEditCalcFieldSelections] = useState<CalcFieldSelection[]>([]);
   const [availableCalculatedFields, setAvailableCalculatedFields] = useState<CalculatedFieldDef[]>([]);
   const [loadingCalculatedFields, setLoadingCalculatedFields] = useState(false);
 
@@ -428,9 +453,20 @@ export function MasterDeviceList({
       setEditModbusSlaveTimeout(device.modbus_slave_timeout?.toString() || "1000");
       setEditModbusWriteFunction(device.modbus_write_function || "auto");
 
-      // Load existing calculated fields selection
-      const existingFieldIds = device.calculated_fields?.map(f => f.field_id) || [];
-      setEditSelectedCalculatedFields(existingFieldIds);
+      // Load existing calculated fields selection with frequency + storage mode
+      setEditCalcFieldSelections(
+        availableCalculatedFields.map((field) => {
+          const existing = device.calculated_fields?.find(f => f.field_id === field.field_id);
+          return {
+            field_id: field.field_id,
+            name: field.name,
+            unit: field.unit,
+            enabled: !!existing,
+            storage_mode: (existing?.storage_mode as "log" | "viz_only") || "log",
+            logging_frequency_seconds: existing?.logging_frequency_seconds || 60,
+          };
+        })
+      );
 
       // Load existing site-level alarms - always use SITE_LEVEL_ALARMS as source of truth
       // Only preserve enabled state from saved device data
@@ -498,10 +534,22 @@ export function MasterDeviceList({
 
           if (templateData) {
             setControllerTemplate(templateData as ControllerTemplateData);
-            // If device has no calculated fields selection, use template defaults
-            if (existingFieldIds.length === 0 && templateData.calculated_fields) {
-              setEditSelectedCalculatedFields(
-                templateData.calculated_fields.map((f: { field_id: string }) => f.field_id)
+            // If device has no calculated fields, use template defaults
+            const hasDeviceCalcFields = device.calculated_fields && device.calculated_fields.length > 0;
+            if (!hasDeviceCalcFields && templateData.calculated_fields) {
+              const templateCalcFields = templateData.calculated_fields as { field_id: string; storage_mode?: string; logging_frequency_seconds?: number }[];
+              setEditCalcFieldSelections(
+                availableCalculatedFields.map((field) => {
+                  const tmpl = templateCalcFields.find((f) => f.field_id === field.field_id);
+                  return {
+                    field_id: field.field_id,
+                    name: field.name,
+                    unit: field.unit,
+                    enabled: !!tmpl,
+                    storage_mode: (tmpl?.storage_mode as "log" | "viz_only") || "log",
+                    logging_frequency_seconds: tmpl?.logging_frequency_seconds || 60,
+                  };
+                })
               );
             }
 
@@ -561,8 +609,18 @@ export function MasterDeviceList({
         if (fieldDefs) {
           setAvailableCalculatedFields(fieldDefs);
           // If device has no existing selection and no template, pre-select all fields
-          if (existingFieldIds.length === 0 && !device.controller_template_id) {
-            setEditSelectedCalculatedFields(fieldDefs.map(f => f.field_id));
+          const hasDeviceCalcFields = device.calculated_fields && device.calculated_fields.length > 0;
+          if (!hasDeviceCalcFields && !device.controller_template_id) {
+            setEditCalcFieldSelections(
+              fieldDefs.map((f) => ({
+                field_id: f.field_id,
+                name: f.name,
+                unit: f.unit,
+                enabled: true,
+                storage_mode: "log" as const,
+                logging_frequency_seconds: 60,
+              }))
+            );
           }
         }
       } catch (err) {
@@ -669,7 +727,16 @@ export function MasterDeviceList({
         offline_severity: "critical",
       });
       // Reset calculated fields to all selected
-      setEditSelectedCalculatedFields(availableCalculatedFields.map(f => f.field_id));
+      setEditCalcFieldSelections(
+        availableCalculatedFields.map((f) => ({
+          field_id: f.field_id,
+          name: f.name,
+          unit: f.unit,
+          enabled: true,
+          storage_mode: "log" as const,
+          logging_frequency_seconds: 60,
+        }))
+      );
       // Reset site-level alarms to defaults
       setEditSiteLevelAlarms(SITE_LEVEL_ALARMS.map((alarm) => ({ ...alarm })));
       return;
@@ -690,11 +757,20 @@ export function MasterDeviceList({
         populateReadingsFromTemplate(templateData as ControllerTemplateData);
 
         // Update calculated fields from template
-        if (templateData.calculated_fields && Array.isArray(templateData.calculated_fields)) {
-          setEditSelectedCalculatedFields(
-            templateData.calculated_fields.map((f: { field_id: string }) => f.field_id)
-          );
-        }
+        const templateCalcFields = (templateData.calculated_fields || []) as { field_id: string; storage_mode?: string; logging_frequency_seconds?: number }[];
+        setEditCalcFieldSelections(
+          availableCalculatedFields.map((field) => {
+            const tmpl = templateCalcFields.find((f) => f.field_id === field.field_id);
+            return {
+              field_id: field.field_id,
+              name: field.name,
+              unit: field.unit,
+              enabled: !!tmpl,
+              storage_mode: (tmpl?.storage_mode as "log" | "viz_only") || "log",
+              logging_frequency_seconds: tmpl?.logging_frequency_seconds || 60,
+            };
+          })
+        );
 
         // Update site-level alarms from template - always use SITE_LEVEL_ALARMS as source of truth
         // Only preserve enabled state from template data
@@ -746,12 +822,16 @@ export function MasterDeviceList({
         // Add controller template ID
         updateData.controller_template_id = editSelectedTemplateId || null;
 
-        // Add calculated fields selection
-        updateData.calculated_fields = editSelectedCalculatedFields.map(id => ({
-          field_id: id,
-          enabled: true,
-          storage_mode: "log"
-        }));
+        // Add calculated fields selection with frequency + storage mode
+        updateData.calculated_fields = editCalcFieldSelections
+          .filter((f) => f.enabled)
+          .map((f) => ({
+            field_id: f.field_id,
+            name: f.name,
+            enabled: true,
+            storage_mode: f.storage_mode,
+            logging_frequency_seconds: f.logging_frequency_seconds,
+          }));
 
         // Add site-level alarms
         updateData.site_level_alarms = editSiteLevelAlarms;
@@ -1390,57 +1470,105 @@ export function MasterDeviceList({
               <TabsContent value="site-calculations" className="space-y-6 py-4">
                 {/* Section 1: Calculated Fields */}
                 <div className="space-y-3">
-                  <div>
-                    <p className="text-sm font-medium">Calculated Fields</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Site-level measurements aggregated from all devices
-                    </p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Calculated Fields</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Site-level measurements aggregated from all devices
+                      </p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {editCalcFieldSelections.filter((f) => f.enabled).length} selected
+                    </span>
                   </div>
 
                   {loadingCalculatedFields ? (
                     <div className="flex items-center justify-center py-4">
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
                     </div>
-                  ) : availableCalculatedFields.length === 0 ? (
+                  ) : editCalcFieldSelections.length === 0 ? (
                     <div className="text-sm text-muted-foreground py-4 text-center">
                       No calculated fields available.
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {availableCalculatedFields.map((field) => (
-                        <label
+                    <div className="border rounded-lg divide-y">
+                      {editCalcFieldSelections.map((field) => (
+                        <div
                           key={field.field_id}
-                          htmlFor={`edit-${field.field_id}`}
-                          className="flex items-start gap-3 p-3 rounded-lg border bg-muted/20 cursor-pointer hover:bg-muted/30 transition-colors"
+                          className="flex items-center gap-3 p-3 hover:bg-muted/30"
                         >
                           <Checkbox
-                            id={`edit-${field.field_id}`}
-                            checked={editSelectedCalculatedFields.includes(field.field_id)}
+                            id={`edit-calc-${field.field_id}`}
+                            checked={field.enabled}
                             onCheckedChange={(checked) => {
-                              if (checked) {
-                                setEditSelectedCalculatedFields([...editSelectedCalculatedFields, field.field_id]);
-                              } else {
-                                setEditSelectedCalculatedFields(editSelectedCalculatedFields.filter(id => id !== field.field_id));
-                              }
+                              setEditCalcFieldSelections((prev) =>
+                                prev.map((f) =>
+                                  f.field_id === field.field_id
+                                    ? { ...f, enabled: !!checked }
+                                    : f
+                                )
+                              );
                             }}
-                            className="mt-0.5"
                           />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium text-sm">{field.name}</span>
-                              {field.unit && (
-                                <Badge variant="outline" className="text-xs">
-                                  {field.unit}
-                                </Badge>
-                              )}
-                            </div>
-                            {field.description && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {field.description}
-                              </p>
+                          <label
+                            htmlFor={`edit-calc-${field.field_id}`}
+                            className="flex-1 text-sm cursor-pointer"
+                          >
+                            {field.name}
+                            {field.unit && (
+                              <span className="text-muted-foreground ml-1">({field.unit})</span>
                             )}
-                          </div>
-                        </label>
+                          </label>
+
+                          {/* Logging Frequency */}
+                          <Select
+                            value={field.logging_frequency_seconds.toString()}
+                            onValueChange={(value) => {
+                              setEditCalcFieldSelections((prev) =>
+                                prev.map((f) =>
+                                  f.field_id === field.field_id
+                                    ? { ...f, logging_frequency_seconds: parseInt(value) }
+                                    : f
+                                )
+                              );
+                            }}
+                            disabled={!field.enabled}
+                          >
+                            <SelectTrigger className="w-[100px] h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CALC_FIELD_FREQUENCY_OPTIONS.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value.toString()}>
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          {/* Storage Mode */}
+                          <Select
+                            value={field.storage_mode}
+                            onValueChange={(value) => {
+                              setEditCalcFieldSelections((prev) =>
+                                prev.map((f) =>
+                                  f.field_id === field.field_id
+                                    ? { ...f, storage_mode: value as "log" | "viz_only" }
+                                    : f
+                                )
+                              );
+                            }}
+                            disabled={!field.enabled}
+                          >
+                            <SelectTrigger className="w-[100px] h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="log">Log</SelectItem>
+                              <SelectItem value="viz_only">Viz Only</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       ))}
                     </div>
                   )}

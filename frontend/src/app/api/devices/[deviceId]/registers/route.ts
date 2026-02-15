@@ -38,7 +38,7 @@ async function handleMasterDevice(
   // Check site_master_devices (controllers)
   const { data: masterDevice, error: masterError } = await supabase
     .from("site_master_devices")
-    .select("id, name, device_type, site_id, controller_template_id")
+    .select("id, name, device_type, site_id, controller_template_id, calculated_fields")
     .eq("id", deviceId)
     .single();
 
@@ -79,42 +79,48 @@ async function handleMasterDevice(
     }
   }
 
-  // Get enabled calculated fields from controller template
+  // Get enabled calculated fields — device-specific first, then template fallback
   const registers: RegisterDefinition[] = [];
 
-  if (masterDevice.controller_template_id) {
+  // Priority 1: device's own calculated_fields (saved from site-level edit)
+  const deviceCalcFields = masterDevice.calculated_fields as { field_id: string }[] | null;
+  let enabledFieldIds: string[] = [];
+
+  if (deviceCalcFields && deviceCalcFields.length > 0) {
+    enabledFieldIds = deviceCalcFields.map((f) => f.field_id);
+  } else if (masterDevice.controller_template_id) {
+    // Priority 2: template's calculated_fields
     const { data: template } = await supabase
       .from("controller_templates")
       .select("calculated_fields")
       .eq("id", masterDevice.controller_template_id)
       .single();
 
-    const enabledFieldIds: string[] = (template?.calculated_fields || [])
+    enabledFieldIds = (template?.calculated_fields || [])
       .map((f: { field_id: string }) => f.field_id);
+  }
 
-    if (enabledFieldIds.length > 0) {
-      // Fetch definitions for enabled fields — only those with register_role (implemented)
-      const { data: fieldDefs } = await supabase
-        .from("calculated_field_definitions")
-        .select("field_id, name, unit, calculation_config")
-        .eq("scope", "controller")
-        .eq("is_active", true)
-        .in("field_id", enabledFieldIds);
+  if (enabledFieldIds.length > 0) {
+    // Fetch definitions for enabled fields — only those with register_role (implemented)
+    const { data: fieldDefs } = await supabase
+      .from("calculated_field_definitions")
+      .select("field_id, name, unit, calculation_config")
+      .eq("scope", "controller")
+      .eq("is_active", true)
+      .in("field_id", enabledFieldIds);
 
-      for (const def of fieldDefs || []) {
-        // Only include fields that use register_role (implemented pipeline)
-        const config = def.calculation_config as { register_role?: string } | null;
-        if (!config?.register_role) continue;
+    for (const def of fieldDefs || []) {
+      const config = def.calculation_config as { register_role?: string } | null;
+      if (!config?.register_role) continue;
 
-        registers.push({
-          name: def.name,
-          address: 0,
-          datatype: "float32",
-          scale: 1,
-          unit: def.unit || "",
-          access: "read",
-        });
-      }
+      registers.push({
+        name: def.name,
+        address: 0,
+        datatype: "float32",
+        scale: 1,
+        unit: def.unit || "",
+        access: "read",
+      });
     }
   }
 
