@@ -453,20 +453,7 @@ export function MasterDeviceList({
       setEditModbusSlaveTimeout(device.modbus_slave_timeout?.toString() || "1000");
       setEditModbusWriteFunction(device.modbus_write_function || "auto");
 
-      // Load existing calculated fields selection with frequency + storage mode
-      setEditCalcFieldSelections(
-        availableCalculatedFields.map((field) => {
-          const existing = device.calculated_fields?.find(f => f.field_id === field.field_id);
-          return {
-            field_id: field.field_id,
-            name: field.name,
-            unit: field.unit,
-            enabled: !!existing,
-            storage_mode: (existing?.storage_mode as "log" | "viz_only") || "log",
-            logging_frequency_seconds: existing?.logging_frequency_seconds || 60,
-          };
-        })
-      );
+      // Calculated field selections are populated after async load (see below)
 
       // Load existing site-level alarms - always use SITE_LEVEL_ALARMS as source of truth
       // Only preserve enabled state from saved device data
@@ -608,20 +595,25 @@ export function MasterDeviceList({
 
         if (fieldDefs) {
           setAvailableCalculatedFields(fieldDefs);
-          // If device has no existing selection and no template, pre-select all fields
-          const hasDeviceCalcFields = device.calculated_fields && device.calculated_fields.length > 0;
-          if (!hasDeviceCalcFields && !device.controller_template_id) {
-            setEditCalcFieldSelections(
-              fieldDefs.map((f) => ({
+          // Build selections from device's saved fields (or default all enabled)
+          const deviceCalcFields = device.calculated_fields;
+          const hasDeviceCalcFields = deviceCalcFields && deviceCalcFields.length > 0;
+          setEditCalcFieldSelections(
+            fieldDefs.map((f) => {
+              const existing = hasDeviceCalcFields
+                ? deviceCalcFields.find((d) => d.field_id === f.field_id)
+                : null;
+              return {
                 field_id: f.field_id,
                 name: f.name,
                 unit: f.unit,
-                enabled: true,
-                storage_mode: "log" as const,
-                logging_frequency_seconds: 60,
-              }))
-            );
-          }
+                // If device has saved selections, use them; otherwise enable all
+                enabled: hasDeviceCalcFields ? !!existing : true,
+                storage_mode: (existing?.storage_mode as "log" | "viz_only") || "log",
+                logging_frequency_seconds: existing?.logging_frequency_seconds || 60,
+              };
+            })
+          );
         }
       } catch (err) {
         console.error("Failed to load calculated fields:", err);
