@@ -63,11 +63,16 @@ class DeltaTracker:
             if device_state is not None:
                 completed = device_state["latest"] - device_state["first"]
                 self._completed.setdefault(field_id, {})[device_id] = max(0.0, completed)
+                # Carry old latest as new first — consecutive windows are
+                # perfectly contiguous, no energy falls between the cracks.
+                new_first = device_state["latest"]
+            else:
+                new_first = value  # first window ever, no carry-over
 
             # Start new window
             self._state[field_id][device_id] = {
                 "window_key": window_key,
-                "first": value,
+                "first": new_first,
                 "latest": value,
             }
         else:
