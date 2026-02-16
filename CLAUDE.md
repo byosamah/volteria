@@ -111,9 +111,12 @@ curl -s -X POST "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/rpc/exec_sql" 
 | Table | Purpose |
 |-------|---------|
 | `users` | Accounts (RLS disabled) |
-| `projects`, `sites` | Project/site hierarchy |
+| `projects`, `sites` | Project/site hierarchy (timezone on `projects`) |
 | `site_devices` | Device configs per site |
 | `device_templates` | Reusable device definitions |
+| `site_master_devices` | Per-site controller devices (calculated field overrides in JSONB) |
+| `controller_templates` | Template-level calculated field selections |
+| `calculated_field_definitions` | Global calculated field definitions (sum, delta, difference) |
 | `control_logs`, `device_readings` | Time-series data |
 | `alarms` | System alarms with auto-resolve |
 | `controller_heartbeats` | Controller status |
@@ -203,7 +206,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 31. **UTF8 Modbus strings skip scaling**: `modbus_client.py` guards with `isinstance(value, str)` at 4 locations (TCP+Serial, holding+input). Backend `RegisterReading` Pydantic model uses `float | str` for raw/scaled values.
 32. **Enumeration display is register-type agnostic**: `RegisterRow` uses `register.values` for enum lookup identically across logging, visualization, and alarm registers. No special handling per type.
 33. **Never add special colors to data values**: All register values in Live Registers tables must use the same default formatting. Don't add color-coded styling to specific value types (enums, scaled, etc.) unless user explicitly requests it.
-34. **SQLite retention runs 1-5 AM only**: `_retention_loop()` checks hour FIRST, then sleeps — so if service starts inside the cleanup window, it runs immediately. Uses `.vacuum_done` marker file (not `PRAGMA auto_vacuum`) to detect first-run VACUUM need — PRAGMA value is unreliable because `_init_db()` writes INCREMENTAL to header without converting. First cleanup creates marker + runs full VACUUM (~16 min on 10GB DB, blocks writes). Subsequent cleanups use `PRAGMA incremental_vacuum(50000)` = ~200 MB/cycle (don't reduce — 5K pages was too slow, took 11 nights). DB file size only shrinks after incremental_vacuum runs; deleted rows just go on the freelist. New DBs get INCREMENTAL from creation. Manual cleanup: stop logging service, run Python script as `volteria` user (DB owner), restart service.
+34. **SQLite retention with boot catch-up**: `_retention_loop()` checks `.last_cleanup` marker on first iteration — if >24h old or missing, runs cleanup immediately regardless of hour (handles sites that lose power overnight). Normal schedule: 1-5 AM local time, hourly checks. Uses `.vacuum_done` marker file for first-run full VACUUM. `incremental_vacuum(50000)` runs after each cleanup but **fails silently with active WAL writers** (~1 page/call). For large space reclamation: stop logging service, run full VACUUM as `volteria` user, `sudo fuser -k 8085/tcp`, restart service. Full VACUUM temporarily doubles disk usage (~59% spike on 15 GB DB). New DBs get INCREMENTAL auto_vacuum from creation.
 34a. **Scheduler detects NTP clock jumps**: `ScheduledLoop` in `scheduler.py` treats drift >30s as clock jump (NTP sync after boot with stale RTC). Doesn't accumulate as real drift — prevents false LOGGING_HIGH_DRIFT alarms after every power outage. Pi RTC can drift hours during prolonged outage; NTP corrects on reconnect.
 35. **Removing bad registers from templates**: Must PATCH both `device_templates` AND all linked `site_devices` (they have independent copies of `visualization_registers`). Then trigger config sync via `control_commands` INSERT (`command_type: "sync_config"`). Controller polls commands every 5s.
 36. **Cable flow is 3-state with thresholds**: `CableConfig` has `flowUpperThreshold`/`flowLowerThreshold` (default 0) + per-state colors (`color`, `reverseColor`, `stoppedColor`). Value > upper = forward, value < lower = reverse, between = stopped (static dashes). No `animationSource` (null value) = always forward for backward compat.
@@ -219,6 +222,8 @@ SUPABASE_SERVICE_KEY=your-service-key
 46. **Controller git pull requires root**: `sudo -u volteria git pull` fails (safe.directory + FETCH_HEAD permissions). Use: `sudo bash -c "cd /opt/volteria && git config --global --add safe.directory /opt/volteria && git pull origin main"`
 47. **Calculated field settings flow through 3 tables**: `calculated_field_definitions` (global definitions + defaults) → `controller_templates.calculated_fields` (template-level) → `site_master_devices.calculated_fields` (per-device overrides with `logging_frequency_seconds`, `storage_mode`, `enabled`). Config sync merges per-device overrides from `site_master_devices` with global defaults from `calculated_field_definitions`.
 48. **Config reload must clear all re-populated collections**: In logging service `_load_config()`, both `_alarm_definitions` and `_calculated_fields_to_log` must be cleared before re-populating. Missing `.clear()` causes stale entries to accumulate across config reloads.
+49. **Delta calculated fields have locked frequencies**: DeltaTracker emits completed window totals (not running totals). Frequency locked to 3600s (hourly) / 86400s (daily) — frontend dropdown disabled, DB definitions must match. Cloud downsampling picks FIRST reading per bucket; stable completed totals ensure any sample captures the correct value. First window after restart shows 0 (no previous window to complete).
+50. **Projects must have timezone set**: `projects.timezone` (IANA format, e.g., `Asia/Dubai`) controls DeltaTracker hourly/daily window boundaries. Null timezone falls back to UTC — hourly windows misalign with local time. Timezone is on `projects` table (not `sites`). Config sync hash doesn't include timezone — must restart config service after changing it.
 
 ## Key Architecture Decisions
 
@@ -231,7 +236,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 - **SQLite in thread pool**: All `local_db` calls run via `run_in_executor` — never block asyncio event loop
 - **Smart backfill**: After offline recovery, syncs newest first (dashboard current), then fills gaps chronologically
 - **Dynamic scaling**: Buffer threshold (`register_count × flush_interval × 3`) and sync batch size (`max(5000, register_count × 200)`) auto-scale with device count — no manual tuning needed
-- **Local retention**: 7 days default (`local_retention_days`). Cleanup runs 1-5 AM local time, checks hourly. First cleanup on existing DBs runs full VACUUM (converts `auto_vacuum=NONE` → `INCREMENTAL`). Subsequent cleanups: `incremental_vacuum(50000)` = ~200 MB/cycle. ~380 MB/day at 462 registers × 1s = ~2.6 GB steady state (safe for 32GB SD card)
+- **Local retention**: 7 days default (`local_retention_days`). Boot catch-up: `.last_cleanup` marker checked on start — runs immediately if >24h stale (handles sites losing power overnight). Normal: 1-5 AM local time, hourly. `incremental_vacuum(50000)` after each cleanup but fails with active WAL writers — manual full VACUUM needed for large reclamation. ~380 MB/day at 462 registers × 1s = ~2.6 GB steady state (safe for 32GB SD card)
 
 ### Historical Data
 - Server-side aggregation via `get_historical_readings()` RPC
