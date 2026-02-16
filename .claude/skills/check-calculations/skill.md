@@ -224,7 +224,7 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
   -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
 ```
 
-Expected: Sum of per-device deltas matches calculated field value within ~1 kWh. Larger gaps (scaling with device count) indicate DeltaTracker window gap bug — verify `new_first = device_state["latest"]` in `site_calculations.py`.
+Expected: Sum of per-device deltas matches calculated field value within ~1 kWh (residual from 3s lookahead shifting the window edge by ~3s vs cloud's clock-aligned timestamps). Larger gaps (scaling with device count) indicate DeltaTracker window gap bug — verify `new_first = device_state["latest"]` in `site_calculations.py`.
 
 ## Output Format
 
@@ -262,6 +262,7 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh.
 | Delta undercount scaling with device count | Old DeltaTracker gap: `first = value` instead of `first = old_latest` | Verify `new_first = device_state["latest"]` in `site_calculations.py`. Gap = ~1 kWh/device/hour with integer counters |
 | Timezone change shows partial values | Window key changed mid-hour | Expected — first values after timezone change are from a partial window |
 | Cloud verification shows mismatch | Timestamp misalignment | Calculated fields may log at different frequency (e.g., 5s) than source registers (e.g., 60s). Verify from SharedState (real-time) or align to minute boundaries where both have data. |
+| Cloud shows wrong delta after restart | Logging service sampled before DeltaTracker transition wrote to readings.json | One-time artifact of restart — next full hour will be correct. Verify via readings.json (real-time) not cloud (hourly sample). The 3s lookahead mitigates but doesn't guarantee the race. |
 
 ## Cross-References
 
@@ -269,4 +270,4 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh.
 - **Device connectivity**: Use `/check-controller` for Modbus, safe mode, service health
 - **Register names/types**: Check device templates in frontend
 
-<!-- Updated: 2026-02-16 - Added cross-check step 6, SQLite sudo -u volteria fix, delta undercount troubleshooting entry -->
+<!-- Updated: 2026-02-16 - Added cross-check step 6, SQLite sudo -u volteria fix, delta undercount troubleshooting, cloud-after-restart race condition entry -->

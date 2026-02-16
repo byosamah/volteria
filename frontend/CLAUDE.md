@@ -848,3 +848,5 @@ npx shadcn@latest add dialog
 17. **Time-Series Window Start Detection**: Time-series charts must detect gaps at window START (startTime to first data point), not just between consecutive points - otherwise offline/gap periods at the beginning of the view are invisible.
 
 18. **Virtual AxisParameter Pattern**: To add computed/derived data to charts without modifying chart/tooltip/CSV components, create fake `AxisParameter` objects with synthetic IDs (e.g., `deviceId='calc'`). They flow through existing rendering pipeline unchanged. Used by Calculated Fields — extend this pattern for any future derived data.
+
+19. **ChartOverlay pixelToIndex uses band-based mapping**: `pixelToIndex()` divides data area into N equal bands (`dataWidth / data.length`) with `Math.floor` to match Recharts categorical axis positioning. Never use point-based mapping (`Math.round(ratio * (N-1))`) — it misaligns tooltip snapping with bar chart clusters, causing hover on one bar to show adjacent data point's values.
