@@ -179,7 +179,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 4. **httpx version**: Backend requires `httpx==0.24.1`
 5. **DG reserve**: Minimum is 0 kW (never negative)
 6. **Template linkage**: Template registers are live references, not copies
-7. **Controller deploy order**: `POST /api/controllers/{id}/update` pulls from git — commit and push BEFORE deploying
+7. **Controller deploy order**: `POST /api/controllers/{id}/update` pulls from git — commit and push BEFORE deploying. Auth: `{"controller_secret": "<ssh_password>"}` or admin JWT. Deploy to ALL active controllers after controller-side code fixes.
 8. **Setup script auto-updates**: Controller setup clones from main — code fixes are automatically available to new controllers after push
 9. **Config readers use SharedState**: All code reading device settings (services, CLI scripts) must use `get_config()` from `common.state` — never hardcode paths
 10. **Debug HTTP errors by tracing full path**: Browser → Nginx → Frontend API → Backend → Database. Don't assume error source — check each hop.

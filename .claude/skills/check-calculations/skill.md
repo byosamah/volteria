@@ -25,14 +25,37 @@ Pure functions in `common/site_calculations.py` (shared by device + control serv
 
 ## Calculation Types
 
-| Type | Phase | Description | Example |
-|------|-------|-------------|---------|
-| `sum` | 1 | Sum register values across devices by register_role | Total Load = sum(load_active_power) |
-| `delta` | 2 | Last - first reading over time window, then sum | Daily Energy = sum(kwh_end - kwh_start) |
-| `difference` | 2 | One calculated field minus another | DG Power = Load - Solar |
-| `cumulative` | 2 | Trapezoidal integration of power over time | Energy from power |
-| `average` | 2 | Average across matching devices | Average temperature |
-| `max`/`min` | 2 | Peak/minimum across devices | Peak load |
+| Type | Description | Example |
+|------|-------------|---------|
+| `sum` | Sum register values across devices by register_role | Total Load = sum(load_active_power) |
+| `delta` | Completed window total (last - first) per device per time window, summed | Hourly DG Energy = sum(kwh_end - kwh_start) per hour |
+| `difference` | One calculated field minus another | DG Power = Load - Solar |
+| `cumulative` | Trapezoidal integration of power over time | Energy from power |
+| `average` | Average across matching devices | Average temperature |
+| `max`/`min` | Peak/minimum across devices | Peak load |
+
+## Delta Fields (DeltaTracker)
+
+Delta fields track kWh counter deltas using a **completed window totals** pattern:
+
+```
+14:00:01  DeltaTracker detects hour 13→14 transition
+          Computes hour-13 total = latest - first = 28.5 kWh
+          Stores completed[hour-13] = 28.5
+          Output = 28.5 (stable for ALL of hour 14)
+14:00:02  Output = 28.5
+...
+14:59:59  Output = 28.5
+15:00:01  Detects hour 14→15 transition → Output = hour-14 total
+```
+
+**Key properties:**
+- Output is a **stable constant** for the entire window (not a running total)
+- Cloud downsampling picks FIRST reading per bucket → always correct (all readings = same value)
+- **Frequencies locked**: 3600s (hourly), 86400s (daily) — frontend dropdown disabled
+- **First window after restart**: Shows 0 (no previous window to complete) — expected, not a bug
+- **Offline devices excluded gracefully**: No readings in SharedState = skipped in delta sum
+- Singleton `_delta_tracker` in `common/site_calculations.py` — state resets on service restart
 
 ## Register Role Reference
 
@@ -41,9 +64,9 @@ Pure functions in `common/site_calculations.py` (shared by device + control serv
 | `load_active_power` | load/load_meter | Active power kW | total_load_kw |
 | `diesel_generator_active_power` | diesel_generator/dg | Active power kW | total_generator_kw |
 | `solar_active_power` | inverter | Active power kW | total_solar_kw |
-| `load_kwh_counter` | load/load_meter | Energy counter kWh | (Phase 2: daily_load_energy) |
-| `diesel_generator_kwh_counter` | diesel_generator/dg | Energy counter kWh | (Phase 2: daily_dg_energy) |
-| `solar_kwh_counter` | inverter | Energy counter kWh | (Phase 2: daily_solar_energy) |
+| `load_kwh_counter` | load/load_meter | Energy counter kWh | hourly/daily_load_energy_kwh |
+| `diesel_generator_kwh_counter` | diesel_generator/dg | Energy counter kWh | hourly/daily_dg_energy_kwh |
+| `solar_kwh_counter` | inverter | Energy counter kWh | hourly/daily_solar_energy_kwh |
 
 ## Step 0: Identify Controller
 
@@ -62,7 +85,18 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/controllers?select=ssh
 
 ## Step 1: Check Config (site_calculations + register_role)
 
-### 1a. Verify config has site_calculations
+### 1a. Verify project timezone is set
+
+```bash
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/projects?id=eq.PROJECT_ID&select=id,name,timezone" \
+  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
+```
+
+Expected: `"timezone": "Asia/Dubai"` (or appropriate IANA timezone). **If null**, delta field windows use UTC instead of local time — fix with `PATCH projects SET timezone = 'Asia/Dubai'`. Timezone is on `projects` table, NOT `sites`.
+
+**After fixing timezone**: Restart config service (`systemctl restart volteria-config`) — timezone change alone doesn't trigger config hash change.
+
+### 1b. Verify config has site_calculations
 
 SSH to controller and check config:
 ```bash
@@ -74,7 +108,7 @@ Expected: List of calculations with `field_id`, `name`, `register_role`, `type`,
 
 If empty: calculated fields not selected on controller device OR config sync hasn't run.
 
-### 1b. Verify controller_device_id
+### 1c. Verify controller_device_id
 
 ```bash
 ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
@@ -83,7 +117,7 @@ ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p
 
 Expected: UUID of the Site Controller from `site_master_devices`.
 
-### 1c. Verify register_roles on device registers
+### 1d. Verify register_roles on device registers
 
 ```bash
 ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
@@ -99,7 +133,7 @@ for d in c.get(\\\"devices\\\", []):
 
 Expected: Each device with assigned register_roles showing correct role names.
 
-### 1d. Verify virtual controller device in config
+### 1e. Verify virtual controller device in config
 
 Check that a `site_controller` device exists in the devices list (needed for logging whitelist):
 ```bash
@@ -109,7 +143,7 @@ ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p
 
 ## Step 2: Verify readings.json (zero-lag inline computation)
 
-Site calculations are computed inline in `device_manager.update_shared_state()` using current readings (not via control_state). Verify the controller device appears with calculated values:
+Site calculations live in `readings.json` (virtual controller device), **NOT** in `control_state.json`. Never check control_state for calculated field values.
 
 ```bash
 ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
@@ -120,19 +154,43 @@ Expected:
 ```json
 {
   "readings": {
-    "Total Load Active Power": {"value": 180.3, "unit": "kW"},
-    "Total Generator Active Power": {"value": 95.0, "unit": "kW"}
+    "Total Load Active Power": {"value": 567.0, "unit": "kW"},
+    "Hourly DG Energy Production": {"value": 24.0, "unit": "kWh"},
+    "Daily Load Energy Consumption": {"value": 0.0, "unit": "kWh"}
   }
 }
 ```
 
 If NOT FOUND: device_manager not injecting. Check `controller_device_id` in config (Step 1b) and device service logs: `journalctl -u volteria-device --since "5 min ago" | grep -i "site_calc\|common.site_calc"`.
 
+### Step 2b: Verify delta field stability (not running total)
+
+For delta fields, sample twice with a gap to confirm values are stable:
+```bash
+ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
+  'python3 -c \"
+import json, time
+def get_energy():
+    r = json.load(open(\\\"/run/volteria/state/readings.json\\\"))
+    vc = r[\\\"devices\\\"].get(\\\"CONTROLLER_DEVICE_ID\\\", {}).get(\\\"readings\\\", {})
+    return {k: v[\\\"value\\\"] for k, v in vc.items() if \\\"Energy\\\" in k}
+v1 = get_energy(); print(f\\\"Sample 1: {v1}\\\")
+time.sleep(5)
+v2 = get_energy(); print(f\\\"Sample 2: {v2}\\\")
+print(\\\"PASS: Stable\\\" if v1 == v2 else \\\"FAIL: Running total detected!\\\")
+\"'"
+```
+
+Expected: Both samples identical (completed window totals are constant within a window).
+If FAIL: Old DeltaTracker code still deployed — verify `_completed` exists in `site_calculations.py`.
+
 ## Step 3: Check SQLite
+
+**Note:** Must use `sudo -u volteria sqlite3` — bare `sqlite3` or `-readonly` flag fails with "attempt to write a readonly database" when run as voltadmin.
 
 ```bash
 ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
-  'sqlite3 /opt/volteria/data/controller.db \"SELECT register_name, value, timestamp FROM device_readings WHERE device_id = \\\"CONTROLLER_DEVICE_ID\\\" ORDER BY id DESC LIMIT 10\"'"
+  'sudo -u volteria sqlite3 /opt/volteria/data/controller.db \"SELECT register_name, value, timestamp FROM device_readings WHERE device_id = \\\"CONTROLLER_DEVICE_ID\\\" ORDER BY id DESC LIMIT 10\"'"
 ```
 
 Expected: Recent rows with calculated field names (Total Load, Total Generator Power, etc.).
@@ -156,6 +214,18 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/calculated_field_defin
 
 Check that sum-type fields have `register_role` in their `calculation_config`.
 
+## Step 6: Cross-Check Individual Devices vs Calculated Totals
+
+For delta fields, verify the site-level total matches the sum of individual device kWh counter deltas. Query cloud `device_readings` for each device's kWh counter at hour boundaries, compute `end - start` per device, and compare against the calculated field value.
+
+```bash
+# Get individual device kWh counters at hour boundaries (adjust device_ids and timestamps)
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device_id=in.(DEV1,DEV2)&register_name=eq.COUNTER_REGISTER&timestamp=in.(START_UTC,END_UTC)&order=device_id,timestamp.asc&select=device_id,value,timestamp" \
+  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
+```
+
+Expected: Sum of per-device deltas matches calculated field value within ~1 kWh. Larger gaps (scaling with device count) indicate DeltaTracker window gap bug — verify `new_first = device_state["latest"]` in `site_calculations.py`.
+
 ## Output Format
 
 **Site Calculations: [HEALTHY / ISSUES FOUND]**
@@ -166,8 +236,8 @@ Check that sum-type fields have `register_role` in their `calculation_config`.
 | Config: controller_device_id | OK/Missing | UUID present |
 | Config: register_roles assigned | OK/Missing | X roles across Y devices |
 | Config: virtual controller device | OK/Missing | site_controller in devices list |
-| control_state: computed values | OK/Zero/Missing | field values |
 | readings.json: controller device | OK/Missing | device injected with readings |
+| readings.json: delta stability | OK/Running total | Sample twice, values should match |
 | SQLite: calculated fields logged | OK/No data | X recent rows |
 | Cloud: data synced | OK/No data | X recent rows |
 
@@ -183,7 +253,14 @@ Check that sum-type fields have `register_role` in their `calculation_config`.
 | Calcs not in cloud | Not synced yet or field not in config | Check `/check-logging` for sync health |
 | Wrong register_role mapping | calculation_config missing register_role | Update `calculated_field_definitions.calculation_config` in DB |
 | logging_frequency not applied | Config sync reads from wrong table | Verify `site_master_devices.calculated_fields` has correct `logging_frequency_seconds`, then check controller config `site_calculations[].logging_frequency` matches. Fix is in `sync.py` line 415: must read from `selection` (per-device) not `defn` (global). |
-| "Calc type not yet implemented" log | Using delta/difference (Phase 2) | Only `sum` implemented in Phase 1 |
+| Delta fields show 0 after restart | First window has no completed total | Expected — wait for first window transition (next hour/midnight) |
+| Delta values changing every second | Old running-total DeltaTracker deployed | Verify `_completed` dict exists in `site_calculations.py` on Pi |
+| Hourly delta frequency not 3600 | DB or config mismatch | Check `calculated_field_definitions.logging_frequency_seconds` and `site_master_devices.calculated_fields` JSONB |
+| One offline device breaks all calcs | Should not happen | Offline devices have 0 readings in SharedState → gracefully excluded from sums/deltas |
+| Delta windows misaligned (UTC not local) | `projects.timezone` is null | Set timezone on projects table (not sites). Restart config service after — not in hash |
+| Delta values identical for different fields | Likely partial window after restart | Wait for first full completed window. Old running-total data proves mapping correct if values differ |
+| Delta undercount scaling with device count | Old DeltaTracker gap: `first = value` instead of `first = old_latest` | Verify `new_first = device_state["latest"]` in `site_calculations.py`. Gap = ~1 kWh/device/hour with integer counters |
+| Timezone change shows partial values | Window key changed mid-hour | Expected — first values after timezone change are from a partial window |
 | Cloud verification shows mismatch | Timestamp misalignment | Calculated fields may log at different frequency (e.g., 5s) than source registers (e.g., 60s). Verify from SharedState (real-time) or align to minute boundaries where both have data. |
 
 ## Cross-References
@@ -192,4 +269,4 @@ Check that sum-type fields have `register_role` in their `calculation_config`.
 - **Device connectivity**: Use `/check-controller` for Modbus, safe mode, service health
 - **Register names/types**: Check device templates in frontend
 
-<!-- Updated: 2026-02-15 - Added logging_frequency troubleshooting (per-device override in site_master_devices) -->
+<!-- Updated: 2026-02-16 - Added cross-check step 6, SQLite sudo -u volteria fix, delta undercount troubleshooting entry -->
