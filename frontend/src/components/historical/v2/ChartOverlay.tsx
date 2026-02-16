@@ -81,10 +81,12 @@ export function ChartOverlay({
       if (pixelX < dataLeft || pixelX > dataRight) return -1;
 
       const relativeX = pixelX - dataLeft;
-      const ratio = relativeX / dataWidth;
 
-      // Linear mapping to index
-      const index = Math.round(ratio * (data.length - 1));
+      // Band-based mapping: Recharts categorical XAxis divides the data area
+      // into N equal-width bands (one per data point). Each bar cluster fills
+      // one band. floor(pixel / bandWidth) gives the correct band index.
+      const bandWidth = dataWidth / data.length;
+      const index = Math.floor(relativeX / bandWidth);
       return Math.max(0, Math.min(data.length - 1, index));
     },
     [data.length, dataLeft, dataRight, dataWidth]
