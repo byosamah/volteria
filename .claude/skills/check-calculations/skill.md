@@ -257,6 +257,7 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 | Delta values changing every second | Old running-total DeltaTracker deployed | Verify `_completed` dict exists in `site_calculations.py` on Pi |
 | Hourly delta frequency not 3600 | DB or config mismatch | Check `calculated_field_definitions.logging_frequency_seconds` and `site_master_devices.calculated_fields` JSONB |
 | One offline device breaks all calcs | Should not happen | Offline devices have 0 readings in SharedState → gracefully excluded from sums/deltas |
+| Device showing 0 kW assumed offline | 0 output ≠ offline | 0 kW/kVA means idle/unloaded, NOT offline. Only truly offline if zero readings in SharedState. Verify from Live Registers page before declaring offline |
 | Delta windows misaligned (UTC not local) | `projects.timezone` is null | Set timezone on projects table (not sites). Restart config service after — not in hash |
 | Delta values identical for different fields | Likely partial window after restart | Wait for first full completed window. Old running-total data proves mapping correct if values differ |
 | Delta undercount scaling with device count | Old DeltaTracker gap: `first = value` instead of `first = old_latest` | Verify `new_first = device_state["latest"]` in `site_calculations.py`. Gap = ~1 kWh/device/hour with integer counters |
@@ -264,10 +265,16 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 | Cloud verification shows mismatch | Timestamp misalignment | Calculated fields may log at different frequency (e.g., 5s) than source registers (e.g., 60s). Verify from SharedState (real-time) or align to minute boundaries where both have data. |
 | Cloud shows wrong delta after restart | Logging service sampled before DeltaTracker transition wrote to readings.json | One-time artifact of restart — next full hour will be correct. Verify via readings.json (real-time) not cloud (hourly sample). The 3s lookahead mitigates but doesn't guarantee the race. |
 
+## Verification Best Practices
+
+- **Prefer Pi SQLite (1s) over cloud for cross-checks**: SQLite has 1s resolution for ALL registers. Cloud is downsampled (5s/60s/600s/3600s). For definitive verification, query SQLite directly.
+- **Use temp Python scripts for complex queries**: `cat > /tmp/check.py << 'PYEOF' ... PYEOF && sudo -u volteria python3 /tmp/check.py` — avoids bash escaping issues with multi-table joins.
+- **Device ID → name mapping from config**: Always read from `config.json` device list. Never guess DG1/DG2/DG3/DG4 order from device ID strings — the mapping is arbitrary.
+
 ## Cross-References
 
 - **Data pipeline issues**: Use `/check-logging` for buffer, sync, and cloud diagnostics
 - **Device connectivity**: Use `/check-controller` for Modbus, safe mode, service health
 - **Register names/types**: Check device templates in frontend
 
-<!-- Updated: 2026-02-16 - Added cross-check step 6, SQLite sudo -u volteria fix, delta undercount troubleshooting, cloud-after-restart race condition entry -->
+<!-- Updated: 2026-02-17 - Added verification best practices (Pi SQLite 1s, temp scripts, device ID mapping), idle vs offline troubleshooting entry -->
