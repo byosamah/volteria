@@ -1098,22 +1098,49 @@ class LoggingService:
         """
         Periodic data retention cleanup.
 
-        Checks hour FIRST, then sleeps — so if the service starts
-        inside the cleanup window, it runs immediately on first iteration.
-        Only runs between 1-5 AM local time to avoid impacting
-        performance during peak hours. Checks every hour.
+        On first iteration: runs immediately if last cleanup was >24h ago
+        (handles sites where Pi is powered off during 1-5 AM window).
+        Normal schedule: 1-5 AM local time, checks every hour.
         """
+        from pathlib import Path
+        cleanup_marker = Path("/opt/volteria/data/.last_cleanup")
+        first_iteration = True
+
         while self._running:
-            # Only run cleanup between 1-5 AM local time (off-peak)
-            # Wide window to survive service restarts during the night
             now = datetime.now()
-            if not (1 <= now.hour < 5):
-                logger.debug(f"Skipping retention cleanup (hour={now.hour}, off-peak=1-5)")
-            else:
+            should_run = False
+
+            if first_iteration:
+                first_iteration = False
+                # Catch-up: run if last cleanup was >24h ago or never ran
+                try:
+                    if cleanup_marker.exists():
+                        last_ts = float(cleanup_marker.read_text().strip())
+                        hours_since = (now.timestamp() - last_ts) / 3600
+                        if hours_since > 24:
+                            logger.info(f"Retention catch-up: last cleanup was {hours_since:.1f}h ago")
+                            should_run = True
+                    else:
+                        logger.info("Retention catch-up: no previous cleanup recorded")
+                        should_run = True
+                except (ValueError, OSError) as e:
+                    logger.warning(f"Could not read cleanup marker: {e}")
+                    should_run = True
+
+            if not should_run:
+                # Normal schedule: 1-5 AM local time
+                if 1 <= now.hour < 5:
+                    should_run = True
+                else:
+                    logger.debug(f"Skipping retention cleanup (hour={now.hour}, off-peak=1-5)")
+
+            if should_run:
                 try:
                     deleted = await self._run_db(self.local_db.cleanup_old_data, self._retention_days)
                     if deleted > 0:
                         logger.info(f"Retention cleanup: deleted {deleted} old records")
+                    # Update marker after successful run (even if 0 deleted)
+                    cleanup_marker.write_text(str(now.timestamp()))
                 except Exception as e:
                     logger.error(f"Retention cleanup error: {e}")
 
