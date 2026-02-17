@@ -153,6 +153,7 @@ class LoggingService:
 
         # Register failure alarm tracking: device names that currently have alarms
         self._devices_with_register_alarms: set[str] = set()
+        self._register_alarm_tracking_seeded: bool = False
 
         # Dynamic buffer thresholds (recalculated on config load based on register count)
         self._alert_buffer_size: int = ALERT_BUFFER_SIZE
@@ -1698,6 +1699,19 @@ class LoggingService:
                     "major", now.isoformat(),
                 )
                 logger.error(f"Logging health alert: {max_consecutive} consecutive {error_type} errors")
+
+        # Seed tracking set from SQLite on first check (catches pre-restart alarms)
+        if not self._register_alarm_tracking_seeded:
+            self._devices_with_register_alarms = await self._run_db(
+                self.local_db.get_unresolved_device_ids_for_alarm_type,
+                "REGISTER_READ_FAILED",
+            )
+            self._register_alarm_tracking_seeded = True
+            if self._devices_with_register_alarms:
+                logger.info(
+                    f"Seeded register alarm tracking with {len(self._devices_with_register_alarms)} "
+                    f"device(s) from pre-restart alarms"
+                )
 
         # Check persistent register read failures (from device service via SharedState)
         register_errors = get_register_errors()

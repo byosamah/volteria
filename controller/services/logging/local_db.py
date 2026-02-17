@@ -340,6 +340,16 @@ class LocalDatabase:
             conn.commit()
             return cursor.rowcount
 
+    def get_unresolved_device_ids_for_alarm_type(self, alarm_type: str) -> set[str]:
+        """Get device_ids that have unresolved alarms of a given type."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT device_id FROM alarms
+                WHERE alarm_type = ? AND resolved = 0 AND device_id IS NOT NULL
+            """, (alarm_type,))
+            return {row[0] for row in cursor.fetchall()}
+
     def has_unresolved_alarm(
         self,
         site_id: str,
