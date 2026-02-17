@@ -224,6 +224,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 48. **Config reload must clear all re-populated collections**: In logging service `_load_config()`, both `_alarm_definitions` and `_calculated_fields_to_log` must be cleared before re-populating. Missing `.clear()` causes stale entries to accumulate across config reloads.
 49. **Delta calculated fields have locked frequencies**: DeltaTracker emits completed window totals (not running totals). Frequency locked to 3600s (hourly) / 86400s (daily) — frontend dropdown disabled, DB definitions must match. Cloud downsampling picks FIRST reading per bucket; stable completed totals ensure any sample captures the correct value. First window after restart shows 0 (no previous window to complete). Window transitions carry old `latest` as new `first` — consecutive windows are contiguous, no energy lost between polls.
 50. **Projects must have timezone set**: `projects.timezone` (IANA format, e.g., `Asia/Dubai`) controls DeltaTracker hourly/daily window boundaries. Null timezone falls back to UTC — hourly windows misalign with local time. Timezone is on `projects` table (not `sites`). Config sync hash doesn't include timezone — must restart config service after changing it.
+51. **In-memory alarm tracking sets must be seeded from SQLite on startup**: `_devices_with_register_alarms` loses state on restart. `get_unresolved_device_ids_for_alarm_type()` seeds from local DB on first health check so pre-restart alarms auto-resolve when device recovers.
 
 ## Key Architecture Decisions
 

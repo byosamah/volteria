@@ -945,5 +945,6 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 
 - **Never recommend changing per-register logging frequencies** — they are configured per-site for production use. Test registers with unusual frequencies (e.g., 5s on a static value) are intentional.
 - Focus diagnostics on service health, data flow, and errors — not config tuning.
+- **REGISTER_READ_FAILED alarms do NOT affect Live Registers page** — independent systems. Live page reads directly from controller via SSH. Stale alarms are cosmetic only.
 
-<!-- Updated: 2026-02-13 - Added REGISTER_READ_FAILED alarm, register_errors.json SharedState file, diagnostic step 9 for register errors -->
+<!-- Updated: 2026-02-17 - Added note: stale alarms don't affect Live Registers page -->

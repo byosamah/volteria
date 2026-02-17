@@ -280,6 +280,7 @@ Example: `"Temperature High - Ambient Temperature > 50 (Sensor Device)"`
 | Duplicate alarms while active | Check logs for "Skipping duplicate" | Deduplication working correctly |
 | Alarms not deduplicating | Check resolved status in SQLite | Ensure previous alarm is unresolved |
 | Duplicates after cooldown (5 min) | Resolution sync resolved NEW alarm | Fixed: sync only resolves alarms created BEFORE resolution timestamp |
+| Stale REGISTER_READ_FAILED in cloud after restart | `_devices_with_register_alarms` tracking set starts empty on restart | Fixed in `251007e`: seeds from SQLite on first health check via `get_unresolved_device_ids_for_alarm_type()` |
 
 ### Resolution Sync (Bidirectional)
 Cloud resolutions now sync back to controller:
