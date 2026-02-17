@@ -158,6 +158,7 @@ ssh volteria "docker logs sdc-frontend --tail=50"
 | Setup | `/check-setup` | Wizard flow, provisioning, registration, SSH tunnel setup, tests |
 | Logging | `/check-logging` | Data flow, SQLite, cloud sync, downsampling, drift, alarms |
 | Calculations | `/check-calculations` | Calculated fields pipeline, register_role, Total Load/DG/Solar, data flow |
+| Alarms | `/check-alarms` | All 9 alarm types, auto-resolve, dedup, cron jobs, threshold config, sync |
 
 ## Environment Variables
 
