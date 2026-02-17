@@ -406,4 +406,9 @@ RESOLVED (resolved = true, resolved_at = timestamp)
 - **Calculated field values, register_role pipeline**: Use `/check-calculations`
 - **Wizard flow, provisioning, SSH tunnel**: Use `/check-setup`
 
+### Known Behaviors
+
+- **High REGISTER_READ_FAILED count before seeding fix**: Sites with frequent service restarts accumulated many alarms (191 in 7 days for 2 devices) because `_devices_with_register_alarms` started empty on each restart, bypassing deduplication for pre-restart alarms. Fixed in `251007e` — count should stabilize going forward.
+- **`resolve_alarm_in_cloud()` logs success even when no alarm exists**: PATCH on 0 matching rows returns HTTP 200. Always cross-check cloud alarms table directly.
+
 <!-- Created: 2026-02-17 - Comprehensive alarm diagnostic covering 9 alarm types, 3-tier dedup, auto-resolve, cloud cron, threshold config -->
