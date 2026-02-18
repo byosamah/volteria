@@ -494,6 +494,16 @@ export function HistoricalChart({
               if (!timestamp) return "";
               const date = new Date(timestamp);
 
+              // Format options with timezone
+              const tzOptions = timezone ? { timeZone: timezone } : {};
+
+              // Daily aggregation: always show date-only (no time)
+              if (metadata?.aggregationType?.startsWith("daily")) {
+                const day = date.toLocaleDateString("en-US", { day: "numeric", ...tzOptions });
+                const month = date.toLocaleDateString("en-US", { month: "short", ...tzOptions });
+                return `${day} ${month}`;
+              }
+
               // Calculate the range of displayed data
               const firstTs = displayData[0]?.timestamp;
               const lastTs = displayData[displayData.length - 1]?.timestamp;
@@ -501,9 +511,6 @@ export function HistoricalChart({
 
               const rangeMs = new Date(lastTs).getTime() - new Date(firstTs).getTime();
               const rangeHours = rangeMs / (1000 * 60 * 60);
-
-              // Format options with timezone
-              const tzOptions = timezone ? { timeZone: timezone } : {};
 
               // Format based on data range - clean, unambiguous formats
               if (rangeHours <= 26) {
