@@ -264,9 +264,11 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 | Timezone change shows partial values | Window key changed mid-hour | Expected — first values after timezone change are from a partial window |
 | Cloud verification shows mismatch | Timestamp misalignment | Calculated fields may log at different frequency (e.g., 5s) than source registers (e.g., 60s). Verify from SharedState (real-time) or align to minute boundaries where both have data. |
 | Cloud shows wrong delta after restart | Logging service sampled before DeltaTracker transition wrote to readings.json | One-time artifact of restart — next full hour will be correct. Verify via readings.json (real-time) not cloud (hourly sample). The 3s lookahead mitigates but doesn't guarantee the race. |
+| Daily field shows too many data points | Initial deployment junk: first sync batch ran before config loaded logging_frequency | Query cloud to confirm recent days are correct (1/day). DELETE non-midnight entries for the deployment date only. Not a code bug — virtual controller device propagates logging_frequency correctly via `sync.py` lines 487-510. |
 
 ## Verification Best Practices
 
+- **Query cloud data pattern FIRST for data density issues**: Before investigating code, check if recent days are correct (1/day for daily, 1/hour for hourly). If recent data is fine but old data has bursts, it's initial deployment junk — cleanup, not a code fix.
 - **Prefer Pi SQLite (1s) over cloud for cross-checks**: SQLite has 1s resolution for ALL registers. Cloud is downsampled (5s/60s/600s/3600s). For definitive verification, query SQLite directly.
 - **Use temp Python scripts for complex queries**: `cat > /tmp/check.py << 'PYEOF' ... PYEOF && sudo -u volteria python3 /tmp/check.py` — avoids bash escaping issues with multi-table joins.
 - **Device ID → name mapping from config**: Always read from `config.json` device list. Never guess DG1/DG2/DG3/DG4 order from device ID strings — the mapping is arbitrary.
@@ -278,5 +280,6 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 - **Register names/types**: Check device templates in frontend
 - **"Calculations causing register failure?"**: No — calculations are read-only SharedState consumers. Data flows one direction: Modbus read → SharedState → calculations. Calculations CANNOT cause register read failures. Check `/check-controller` for Modbus/serial issues instead.
 
+<!-- Updated: 2026-02-18 - Initial deployment junk data troubleshooting, query cloud data first for density issues, virtual controller device frequency propagation confirmed -->
 <!-- Updated: 2026-02-18 - Added note: calculations are read-only consumers, cannot cause register failures -->
 <!-- Updated: 2026-02-17 - Added verification best practices (Pi SQLite 1s, temp scripts, device ID mapping), idle vs offline troubleshooting entry -->
