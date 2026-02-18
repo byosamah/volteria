@@ -6,6 +6,7 @@ serial communication.
 """
 
 import asyncio
+import math
 import struct
 from typing import Any
 from dataclasses import dataclass
@@ -348,7 +349,10 @@ class ModbusClient:
                     return None
                 # Pack as big-endian unsigned shorts, unpack as float
                 packed = struct.pack(">HH", registers[0], registers[1])
-                return struct.unpack(">f", packed)[0]
+                value = struct.unpack(">f", packed)[0]
+                if math.isnan(value) or math.isinf(value):
+                    return None
+                return value
 
             elif datatype == RegisterDataType.FLOAT64:
                 if len(registers) < 4:
@@ -360,7 +364,10 @@ class ModbusClient:
                     registers[2],
                     registers[3],
                 )
-                return struct.unpack(">d", packed)[0]
+                value = struct.unpack(">d", packed)[0]
+                if math.isnan(value) or math.isinf(value):
+                    return None
+                return value
 
             elif datatype == RegisterDataType.UTF8:
                 raw_bytes = b""
@@ -679,7 +686,10 @@ class ModbusSerialClient:
                 if len(registers) < 2:
                     return None
                 packed = struct.pack(">HH", registers[0], registers[1])
-                return struct.unpack(">f", packed)[0]
+                value = struct.unpack(">f", packed)[0]
+                if math.isnan(value) or math.isinf(value):
+                    return None
+                return value
 
             elif datatype == RegisterDataType.FLOAT64:
                 if len(registers) < 4:
@@ -691,7 +701,10 @@ class ModbusSerialClient:
                     registers[2],
                     registers[3],
                 )
-                return struct.unpack(">d", packed)[0]
+                value = struct.unpack(">d", packed)[0]
+                if math.isnan(value) or math.isinf(value):
+                    return None
+                return value
 
             elif datatype == RegisterDataType.UTF8:
                 raw_bytes = b""

@@ -6,6 +6,7 @@ using register_role. Used by both device service (for logging) and control
 service (for algorithm).
 """
 
+import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -272,8 +273,13 @@ def _get_register_value(device_readings: dict, register_name: str) -> float | No
     reading = device_readings[register_name]
 
     if isinstance(reading, dict):
-        return reading.get("value")
+        value = reading.get("value")
     elif isinstance(reading, (int, float)):
-        return float(reading)
+        value = float(reading)
+    else:
+        return None
 
-    return None
+    if value is not None and isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+
+    return value
