@@ -379,6 +379,7 @@ RESOLVED (resolved = true, resolved_at = timestamp)
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | Stale alarms after service restart | `_devices_with_register_alarms` tracking set starts empty | Fixed in `251007e`: seeds from SQLite on first health check via `get_unresolved_device_ids_for_alarm_type()`. Verify with journalctl: "Seeded register alarm tracking" |
+| REGISTER_READ_FAILED from stale serial lock | FTDI USB adapter hiccup → stale pyserial file descriptor | Fixed: 3-layer auto-reconnect (close old client, pool eviction, reader trigger). Alarms auto-resolve once connection recovers. Old code: manual `systemctl restart volteria-device` |
 | Alarm resolved locally, stuck in cloud | `resolve_alarm_in_cloud()` call failed or was skipped | Manually PATCH alarm in Supabase: `resolved=true, resolved_at=now()`. Verify every `resolve_alarms_by_type()` pairs with `resolve_alarm_in_cloud()` |
 | `not_reporting` false positives | Cloud sync lag — stale `device_readings` timestamps despite controller being healthy | Dynamic sync batch size (`max(5000, register_count * 200)`) ensures throughput > production. If persists, check network. |
 | `controller_offline` when site powered off | Expected — no heartbeat when power is off | No fix needed. Verify alarm auto-resolves when power returns and heartbeat resumes. |

@@ -421,6 +421,8 @@ Without `on_conflict`, entire batch fails if ANY record is duplicate.
 - Device marked offline in cloud (`is_online: false`)
 - **Register error isolation**: `_read_register_with_retry()` returns `(value, is_connection_error, error_msg)`. ExceptionResponse and address validation errors are register-specific — only that register fails, others continue. Connection errors (timeout, unreachable) cascade to skip remaining registers.
 - **Register failure alarm**: After 20 consecutive failures, device service writes `register_errors.json` to SharedState. Logging service checks during health cycle → creates `REGISTER_READ_FAILED` alarm per device with register names + errors. Auto-resolves when failures clear.
+- **Serial auto-reconnect (3-layer)**: FTDI USB adapter hiccups leave stale pyserial file descriptor locks. Fix: (1) `ModbusSerialClient.connect()` closes old client before creating new, (2) `ConnectionPool.reconnect_serial()` evicts stale cached connections, (3) `RegisterReader` triggers pool reconnect on serial connection error. Manual restart no longer needed.
+- **NaN/Inf guard**: `modbus_client.py` returns `None` for NaN/Inf float32/float64 values (both TCP and serial paths). `site_calculations._get_register_value()` also guards against NaN propagation into computed sums.
 
 ### Connection Alarm Settings
 - Per-device `connection_alarm_enabled` controls alarm generation

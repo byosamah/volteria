@@ -187,7 +187,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 11. **Device types must be synced**: When adding new device types to frontend/database, also add to `controller/common/config.py` DeviceType enum — controller skips devices with unrecognized types
 12. **ME437 register addresses are 0-based**: Datasheet values = direct Modbus addresses, no offset needed. Energy registers are UInt32 in kWh (V3.0 manual changed from float32/Wh)
 13. **RTU Direct serial requirements**: `pyserial` must be installed in controller venv. pymodbus 3.11+ uses `device_id=` not `slave=`
-14. **Pi 5 USB host crash recovery**: FTDI RS485 adapters can crash xhci-hcd.1; reset with `echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/unbind && sleep 2 && echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/bind`
+14. **Pi 5 USB host crash recovery**: FTDI RS485 adapters can crash xhci-hcd.1; reset with `echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/unbind && sleep 2 && echo xhci-hcd.1 > /sys/bus/platform/drivers/xhci-hcd/bind`. Serial connection pool now auto-reconnects on stale FTDI locks (3-layer: close old client before new, pool eviction, reader trigger) — manual restart no longer needed.
 15. **Config sync normalizes both field name conventions**: Template uses `data_type`/`register_type`/`scale_factor`, device config uses `datatype`/`type`/`scale` — `_normalize_register()` in `sync.py` accepts both. Frontend `template-form-dialog.tsx` also normalizes on load
 16. **RTU Direct DeviceConfig requires explicit serial fields**: `service.py` must populate `serial_port`, `baudrate`, `parity`, `stopbits` from `modbus` config — these don't have defaults that work
 17. **RTU Direct Live Registers read from SharedState**: Serial port is exclusively locked by device service — `register_cli.py` can't open its own connection. For `rtu_direct` protocol, reads latest values from SharedState instead of direct Modbus. TCP/RTU Gateway still uses direct connection.
@@ -226,6 +226,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 49. **Delta calculated fields have locked frequencies**: DeltaTracker emits completed window totals (not running totals). Frequency locked to 3600s (hourly) / 86400s (daily) — frontend dropdown disabled, DB definitions must match. Cloud downsampling picks FIRST reading per bucket; stable completed totals ensure any sample captures the correct value. First window after restart shows 0 (no previous window to complete). Window transitions carry old `latest` as new `first` — consecutive windows are contiguous, no energy lost between polls.
 50. **Projects must have timezone set**: `projects.timezone` (IANA format, e.g., `Asia/Dubai`) controls DeltaTracker hourly/daily window boundaries. Null timezone falls back to UTC — hourly windows misalign with local time. Timezone is on `projects` table (not `sites`). Config sync hash doesn't include timezone — must restart config service after changing it.
 51. **In-memory alarm tracking sets must be seeded from SQLite on startup**: `_devices_with_register_alarms` loses state on restart. `get_unresolved_device_ids_for_alarm_type()` seeds from local DB on first health check so pre-restart alarms auto-resolve when device recovers.
+52. **NaN/Inf guard on float32/float64 Modbus decode**: `modbus_client.py` checks `math.isnan(value) or math.isinf(value)` after `struct.unpack` for float32/float64 in both TCP and serial paths (4 locations). Returns `None` instead of NaN — prevents corrupt values from propagating through site calculations. `site_calculations.py` `_get_register_value()` also guards.
 
 ## Key Architecture Decisions
 
@@ -260,6 +261,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 - Other devices on the same site continue polling normally — one offline device doesn't block others
 - **Three register types polled**: `registers` (1s), `visualization_registers` (5s), `alarm_registers` (5s) — all appear in SharedState
 - Deduplicates by address across register types to avoid double-reads
+- **Serial auto-reconnect**: Stale FTDI locks self-heal via 3-layer mechanism: (1) `ModbusSerialClient.connect()` closes old client before creating new, (2) `ConnectionPool.reconnect_serial()` evicts cached connection, (3) `RegisterReader` triggers pool reconnect on serial connection failure
 
 ### Deletion Cascade
 ```

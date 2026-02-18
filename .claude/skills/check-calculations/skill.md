@@ -276,5 +276,7 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 - **Data pipeline issues**: Use `/check-logging` for buffer, sync, and cloud diagnostics
 - **Device connectivity**: Use `/check-controller` for Modbus, safe mode, service health
 - **Register names/types**: Check device templates in frontend
+- **"Calculations causing register failure?"**: No — calculations are read-only SharedState consumers. Data flows one direction: Modbus read → SharedState → calculations. Calculations CANNOT cause register read failures. Check `/check-controller` for Modbus/serial issues instead.
 
+<!-- Updated: 2026-02-18 - Added note: calculations are read-only consumers, cannot cause register failures -->
 <!-- Updated: 2026-02-17 - Added verification best practices (Pi SQLite 1s, temp scripts, device ID mapping), idle vs offline troubleshooting entry -->
