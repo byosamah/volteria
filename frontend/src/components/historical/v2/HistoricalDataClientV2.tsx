@@ -372,9 +372,10 @@ export function HistoricalDataClientV2({
       deviceReadings: Array<{
         device_id: string;
         register_name: string;
-        data: Array<{ timestamp: string; value: number }>;
+        data: Array<{ timestamp: string; value: number; min_value?: number; max_value?: number; sample_count?: number }>;
       }>,
-      params: AxisParameter[]
+      params: AxisParameter[],
+      method: "avg" | "min" | "max" | null
     ): ChartDataPoint[] => {
       if (!deviceReadings || deviceReadings.length === 0) {
         return [];
@@ -394,12 +395,16 @@ export function HistoricalDataClientV2({
       );
 
       // Create lookup maps for each device:register combination
+      // Use the correct value field based on aggregation method
       const dataLookup: Record<string, Record<string, number>> = {};
       deviceReadings.forEach((reading) => {
         const key = `${reading.device_id}:${reading.register_name}`;
         dataLookup[key] = {};
         reading.data.forEach((point) => {
-          dataLookup[key][point.timestamp] = point.value;
+          let val = point.value;
+          if (method === "min" && point.min_value !== undefined) val = point.min_value;
+          if (method === "max" && point.max_value !== undefined) val = point.max_value;
+          dataLookup[key][point.timestamp] = val;
         });
       });
 
@@ -528,7 +533,12 @@ export function HistoricalDataClientV2({
       const data = await response.json();
 
       // Transform API response to ChartDataPoint format (already aggregated server-side)
-      const chartPoints = transformApiToChartData(data.deviceReadings || [], allParams);
+      // Extract aggregation method (avg/min/max) to pick the correct value field
+      const method: "avg" | "min" | "max" | null = aggregationType === "raw" ? null
+        : aggregationType.endsWith("_min") ? "min"
+        : aggregationType.endsWith("_max") ? "max"
+        : "avg";
+      const chartPoints = transformApiToChartData(data.deviceReadings || [], allParams, method);
 
       setChartData(chartPoints);
       setMetadata({
