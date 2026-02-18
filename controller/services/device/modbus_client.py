@@ -436,6 +436,16 @@ class ModbusSerialClient:
             return True
 
         try:
+            # Close old client first to release stale serial port lock.
+            # Without this, FTDI USB adapter hiccups leave a dead file
+            # descriptor holding the exclusive lock, blocking reconnection.
+            if self._client:
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
+                self._client = None
+
             self._client = AsyncModbusSerialClient(
                 port=self.port,
                 baudrate=self.baudrate,

@@ -204,6 +204,22 @@ class ConnectionPool:
                 del self._serial_connections[key]
                 logger.debug(f"Closed serial connection: {key}")
 
+    async def reconnect_serial(self, port: str, baudrate: int) -> None:
+        """
+        Force-close stale serial connection and evict from pool.
+
+        Next call to get_serial_connection() creates a fresh connection.
+        Called by RegisterReader when a serial device hits a connection error
+        (e.g., FTDI USB adapter hiccup leaves stale file descriptor lock).
+        """
+        key = f"{port}:{baudrate}"
+
+        async with self._lock:
+            if key in self._serial_connections:
+                pooled = self._serial_connections.pop(key)
+                await pooled.client.disconnect()
+                logger.info(f"Force-reconnected stale serial: {key}")
+
     async def _cleanup_loop(self) -> None:
         """Periodic cleanup of idle connections"""
         while self._running:

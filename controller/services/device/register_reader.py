@@ -211,6 +211,10 @@ class RegisterReader:
                 success=False,
                 error="Device not reachable",
             )
+            # Evict stale serial connection so next poll gets a fresh one.
+            # Serial ports use exclusive locks — stale locks never self-heal.
+            if device.protocol == Protocol.RTU_DIRECT:
+                await self._pool.reconnect_serial(device.serial_port, device.baudrate)
         elif failed_count > 0 and not connection_failed:
             logger.info(
                 f"Device {device.name}: {failed_count} register(s) failed "
