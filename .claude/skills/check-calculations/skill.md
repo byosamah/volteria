@@ -305,8 +305,9 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 - **Device connectivity**: Use `/check-controller` for Modbus, safe mode, service health
 - **Register names/types**: Check device templates in frontend
 - **"Calculations causing register failure?"**: No — calculations are read-only SharedState consumers. Data flows one direction: Modbus read → SharedState → calculations. Calculations CANNOT cause register read failures. Check `/check-controller` for Modbus/serial issues instead.
+- **"Can backfill corrupt delta values?"**: No — backfill is safe. `on_conflict=ignore-duplicates` prevents overwriting existing cloud readings. Newest-first sync gets correct values first. Fill-gaps phase sends old readings but duplicate timestamps are silently ignored. Delta values are stable within a window (every reading = same value), so no "wrong" reading can be picked.
 
-<!-- Updated: 2026-02-19 - DeltaTracker persistence (tmpfs+disk) and offline device counting. Added Step 2c verification, updated troubleshooting -->
+<!-- Updated: 2026-02-19 - Robust DeltaTracker: 7-day staleness, meter reset handling, non-24/7 support, backfill safety note -->
 <!-- Updated: 2026-02-18 - Initial deployment junk data troubleshooting, query cloud data first for density issues, virtual controller device frequency propagation confirmed -->
 <!-- Updated: 2026-02-18 - Added note: calculations are read-only consumers, cannot cause register failures -->
 <!-- Updated: 2026-02-17 - Added verification best practices (Pi SQLite 1s, temp scripts, device ID mapping), idle vs offline troubleshooting entry -->

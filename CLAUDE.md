@@ -228,6 +228,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 50. **Projects must have timezone set**: `projects.timezone` (IANA format, e.g., `Asia/Dubai`) controls DeltaTracker hourly/daily window boundaries. Null timezone falls back to UTC — hourly windows misalign with local time. Timezone is on `projects` table (not `sites`). Config sync hash doesn't include timezone — must restart config service after changing it.
 51. **In-memory alarm tracking sets must be seeded from SQLite on startup**: `_devices_with_register_alarms` loses state on restart. `get_unresolved_device_ids_for_alarm_type()` seeds from local DB on first health check so pre-restart alarms auto-resolve when device recovers.
 52. **NaN/Inf guard on float32/float64 Modbus decode**: `modbus_client.py` checks `math.isnan(value) or math.isinf(value)` after `struct.unpack` for float32/float64 in both TCP and serial paths (4 locations). Returns `None` instead of NaN — prevents corrupt values from propagating through site calculations. `site_calculations.py` `_get_register_value()` also guards.
+53. **Controllers may not run 24/7**: Sites can shut down overnight as normal operations. All persistence, delta tracking, and alarm logic must handle multi-hour gaps gracefully. Delta fields must produce values for partial windows — two readings in a window = valid delta. Never assume continuous operation.
 
 ## Key Architecture Decisions
 
