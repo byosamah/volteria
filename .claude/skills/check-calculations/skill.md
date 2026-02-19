@@ -54,8 +54,9 @@ Delta fields track kWh counter deltas using a **completed window totals** patter
 - Cloud downsampling picks FIRST reading per bucket → always correct (all readings = same value)
 - **Frequencies locked**: 3600s (hourly), 86400s (daily) — frontend dropdown disabled
 - **First window after restart**: Shows 0 (no previous window to complete) — expected, not a bug
-- **Offline devices excluded gracefully**: No readings in SharedState = skipped in delta sum
-- Singleton `_delta_tracker` in `common/site_calculations.py` — state resets on service restart
+- **Offline devices still counted**: Completed window deltas included even when device temporarily offline
+- Singleton `_delta_tracker` in `common/site_calculations.py` — **persisted** to tmpfs every 60s + disk on shutdown, restored on startup
+- Offline devices' completed deltas always counted in sum (not just devices with fresh readings)
 
 ## Register Role Reference
 
@@ -184,6 +185,28 @@ print(\\\"PASS: Stable\\\" if v1 == v2 else \\\"FAIL: Running total detected!\\\
 Expected: Both samples identical (completed window totals are constant within a window).
 If FAIL: Old DeltaTracker code still deployed — verify `_completed` exists in `site_calculations.py`.
 
+### Step 2c: Verify DeltaTracker persistence
+
+Check that DeltaTracker state is being saved (tmpfs key + disk file):
+```bash
+ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
+  'python3 -c \"
+import json, os
+tmpfs = \\\"/run/volteria/state/delta_tracker.json\\\"
+disk = \\\"/opt/volteria/data/delta_tracker_state.json\\\"
+for label, path in [(\\\"tmpfs\\\", tmpfs), (\\\"disk\\\", disk)]:
+    if os.path.exists(path):
+        d = json.load(open(path))
+        trackers = sum(len(v) for v in d.get(\\\"state\\\", {}).values())
+        completed = sum(len(v) for v in d.get(\\\"completed\\\", {}).values())
+        print(f\\\"{label}: {trackers} trackers, {completed} completed, saved_at={d.get(\\\"saved_at\\\", \\\"?\\\")}\\\")
+    else:
+        print(f\\\"{label}: NOT FOUND\\\")
+\"'"
+```
+
+Expected: tmpfs file recent (<60s), disk file present after at least one graceful shutdown. If tmpfs missing, device service isn't saving periodically — check logs for errors.
+
 ## Step 3: Check SQLite
 
 **Note:** Must use `sudo -u volteria sqlite3` — bare `sqlite3` or `-readonly` flag fails with "attempt to write a readonly database" when run as voltadmin.
@@ -238,6 +261,7 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 | Config: virtual controller device | OK/Missing | site_controller in devices list |
 | readings.json: controller device | OK/Missing | device injected with readings |
 | readings.json: delta stability | OK/Running total | Sample twice, values should match |
+| DeltaTracker persistence | OK/Missing | tmpfs + disk state files present and recent |
 | SQLite: calculated fields logged | OK/No data | X recent rows |
 | Cloud: data synced | OK/No data | X recent rows |
 
@@ -253,10 +277,11 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 | Calcs not in cloud | Not synced yet or field not in config | Check `/check-logging` for sync health |
 | Wrong register_role mapping | calculation_config missing register_role | Update `calculated_field_definitions.calculation_config` in DB |
 | logging_frequency not applied | Config sync reads from wrong table | Verify `site_master_devices.calculated_fields` has correct `logging_frequency_seconds`, then check controller config `site_calculations[].logging_frequency` matches. Fix is in `sync.py` line 415: must read from `selection` (per-device) not `defn` (global). |
-| Delta fields show 0 after restart | First window has no completed total | Expected — wait for first window transition (next hour/midnight) |
+| Delta fields show 0 after restart | No persisted state or state too old (>2h) | Check tmpfs/disk state files (Step 2c). If present and recent, first window still completing — wait for next transition |
 | Delta values changing every second | Old running-total DeltaTracker deployed | Verify `_completed` dict exists in `site_calculations.py` on Pi |
 | Hourly delta frequency not 3600 | DB or config mismatch | Check `calculated_field_definitions.logging_frequency_seconds` and `site_master_devices.calculated_fields` JSONB |
-| One offline device breaks all calcs | Should not happen | Offline devices have 0 readings in SharedState → gracefully excluded from sums/deltas |
+| One offline device breaks all calcs | Should not happen | Offline devices: sum fields skip gracefully, delta fields still include completed window totals |
+| Hourly/daily delta undercount | Old code: offline devices or restart state loss | Verify commit `00311fb` deployed — adds persistence + offline device counting |
 | Device showing 0 kW assumed offline | 0 output ≠ offline | 0 kW/kVA means idle/unloaded, NOT offline. Only truly offline if zero readings in SharedState. Verify from Live Registers page before declaring offline |
 | Delta windows misaligned (UTC not local) | `projects.timezone` is null | Set timezone on projects table (not sites). Restart config service after — not in hash |
 | Delta values identical for different fields | Likely partial window after restart | Wait for first full completed window. Old running-total data proves mapping correct if values differ |
@@ -280,6 +305,7 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 - **Register names/types**: Check device templates in frontend
 - **"Calculations causing register failure?"**: No — calculations are read-only SharedState consumers. Data flows one direction: Modbus read → SharedState → calculations. Calculations CANNOT cause register read failures. Check `/check-controller` for Modbus/serial issues instead.
 
+<!-- Updated: 2026-02-19 - DeltaTracker persistence (tmpfs+disk) and offline device counting. Added Step 2c verification, updated troubleshooting -->
 <!-- Updated: 2026-02-18 - Initial deployment junk data troubleshooting, query cloud data first for density issues, virtual controller device frequency propagation confirmed -->
 <!-- Updated: 2026-02-18 - Added note: calculations are read-only consumers, cannot cause register failures -->
 <!-- Updated: 2026-02-17 - Added verification best practices (Pi SQLite 1s, temp scripts, device ID mapping), idle vs offline troubleshooting entry -->

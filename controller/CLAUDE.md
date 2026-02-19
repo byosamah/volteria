@@ -415,6 +415,12 @@ POST /rest/v1/device_readings?on_conflict=device_id,register_name,timestamp
 ```
 Without `on_conflict`, entire batch fails if ANY record is duplicate.
 
+### Poll Loop Timing
+<!-- Updated: 2026-02-19 -->
+- `_poll_loop()` has 100ms sleep between iterations, but actual iteration time is 3-10s (polling 860 registers across 6 devices)
+- Never use iteration counters for time-based logic — use `time.monotonic()` wall-clock checks
+- DeltaTracker periodic save uses wall-clock 60s interval (not counter-based)
+
 ### Device Read Failures
 - When device read fails, stale readings are deleted from SharedState
 - Prevents old data from being logged as current
