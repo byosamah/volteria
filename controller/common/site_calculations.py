@@ -23,6 +23,12 @@ logger = get_service_logger("common.site_calc")
 # DeltaTracker — module-level singleton for energy counter tracking
 # =============================================================================
 
+# Any decrease in counter value > this threshold = meter reset.
+# Energy counters only go up; any real decrease means the meter was
+# reset to zero. 1 kWh tolerance handles float32 rounding noise.
+_COUNTER_RESET_THRESHOLD = 1.0  # kWh
+
+
 class DeltaTracker:
     """
     Tracks kWh counter deltas per field per device over time windows.
@@ -33,7 +39,16 @@ class DeltaTracker:
     (which picks the first reading per bucket) always captures the
     correct total.
 
-    State: {field_id: {device_id: {"window_key": str, "first": float, "latest": float}}}
+    Handles non-24/7 sites: state persists across overnight shutdowns
+    (7-day staleness limit). As long as the controller ran at any point
+    during a window, the delta for that period is captured.
+
+    Handles meter resets: if the counter value drops (meter reset to 0),
+    energy is split into segments — (pre-reset delta) + (post-reset delta).
+    No energy is silently lost.
+
+    State: {field_id: {device_id: {"window_key": str, "first": float,
+            "latest": float, "accumulated": float}}}
     Completed: {field_id: {device_id: float}}  — last completed window's total
 
     Window keys:
@@ -57,6 +72,10 @@ class DeltaTracker:
 
         Returns 0 until the first window completes. After that, returns
         the total from the most recently completed window (stable value).
+
+        Handles meter resets: if counter value decreases, the energy
+        before the reset is accumulated as a completed segment, and
+        tracking continues from the post-reset value.
         """
         if field_id not in self._state:
             self._state[field_id] = {}
@@ -66,11 +85,16 @@ class DeltaTracker:
         if device_state is None or device_state["window_key"] != window_key:
             # Window transition — compute completed total from old window
             if device_state is not None:
-                completed = device_state["latest"] - device_state["first"]
-                self._completed.setdefault(field_id, {})[device_id] = max(0.0, completed)
+                final_segment = max(0.0, device_state["latest"] - device_state["first"])
+                completed = device_state.get("accumulated", 0.0) + final_segment
+                self._completed.setdefault(field_id, {})[device_id] = completed
                 # Carry old latest as new first — consecutive windows are
                 # perfectly contiguous, no energy falls between the cracks.
                 new_first = device_state["latest"]
+                # If meter reset happened during the gap (value << old latest),
+                # start fresh from post-reset value instead of stale carry-forward.
+                if value < new_first - _COUNTER_RESET_THRESHOLD:
+                    new_first = value
             else:
                 new_first = value  # first window ever, no carry-over
 
@@ -79,10 +103,23 @@ class DeltaTracker:
                 "window_key": window_key,
                 "first": new_first,
                 "latest": value,
+                "accumulated": 0.0,
             }
         else:
-            # Same window — update latest
-            device_state["latest"] = value
+            # Same window — check for meter reset, then update latest
+            if value < device_state["latest"] - _COUNTER_RESET_THRESHOLD:
+                # Meter reset detected — counter went backwards.
+                # Complete current segment and start a new one.
+                segment = max(0.0, device_state["latest"] - device_state["first"])
+                device_state["accumulated"] = device_state.get("accumulated", 0.0) + segment
+                device_state["first"] = value  # new segment from post-reset value
+                device_state["latest"] = value
+                logger.info(
+                    f"DeltaTracker: meter reset detected for {field_id}/{device_id[:8]}, "
+                    f"segment={segment:.1f} kWh accumulated"
+                )
+            else:
+                device_state["latest"] = value
 
         # Return COMPLETED window's total (not running total)
         return self._completed.get(field_id, {}).get(device_id, 0.0)
@@ -99,11 +136,13 @@ class DeltaTracker:
             "saved_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def restore(self, data: dict, max_age_seconds: int = 7200) -> bool:
+    def restore(self, data: dict, max_age_seconds: int = 604800) -> bool:
         """
         Restore state from persisted dict.
         Returns True if restored, False if skipped (missing/stale data).
-        max_age_seconds: 2h default — stale state worse than fresh start.
+        max_age_seconds: 7 days default — counter values are absolute (don't
+        go stale). Sites that don't run 24/7 need state preserved across
+        overnight shutdowns. Reset detection handles meter replacements.
         """
         if not data or "state" not in data or "completed" not in data:
             return False

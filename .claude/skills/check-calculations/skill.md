@@ -53,7 +53,8 @@ Delta fields track kWh counter deltas using a **completed window totals** patter
 - Output is a **stable constant** for the entire window (not a running total)
 - Cloud downsampling picks FIRST reading per bucket → always correct (all readings = same value)
 - **Frequencies locked**: 3600s (hourly), 86400s (daily) — frontend dropdown disabled
-- **First window after restart**: Shows 0 (no previous window to complete) — expected, not a bug
+- **Non-24/7 sites**: State persists across overnight shutdowns (7-day staleness limit). As long as 2+ readings exist in a window, the delta is captured correctly
+- **Meter reset handling**: If counter decreases (reset to 0), energy splits into segments: (pre-reset) + (post-reset). No energy silently lost. 1 kWh tolerance for float noise.
 - **Offline devices still counted**: Completed window deltas included even when device temporarily offline
 - Singleton `_delta_tracker` in `common/site_calculations.py` — **persisted** to tmpfs every 60s + disk on shutdown, restored on startup
 - Offline devices' completed deltas always counted in sum (not just devices with fresh readings)
@@ -277,7 +278,7 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 | Calcs not in cloud | Not synced yet or field not in config | Check `/check-logging` for sync health |
 | Wrong register_role mapping | calculation_config missing register_role | Update `calculated_field_definitions.calculation_config` in DB |
 | logging_frequency not applied | Config sync reads from wrong table | Verify `site_master_devices.calculated_fields` has correct `logging_frequency_seconds`, then check controller config `site_calculations[].logging_frequency` matches. Fix is in `sync.py` line 415: must read from `selection` (per-device) not `defn` (global). |
-| Delta fields show 0 after restart | No persisted state or state too old (>2h) | Check tmpfs/disk state files (Step 2c). If present and recent, first window still completing — wait for next transition |
+| Delta fields show 0 after restart | No persisted state or state too old (>7d) | Check tmpfs/disk state files (Step 2c). Staleness limit is 7 days (supports non-24/7 sites). If state file missing, check disk write errors in device service logs |
 | Delta values changing every second | Old running-total DeltaTracker deployed | Verify `_completed` dict exists in `site_calculations.py` on Pi |
 | Hourly delta frequency not 3600 | DB or config mismatch | Check `calculated_field_definitions.logging_frequency_seconds` and `site_master_devices.calculated_fields` JSONB |
 | One offline device breaks all calcs | Should not happen | Offline devices: sum fields skip gracefully, delta fields still include completed window totals |
