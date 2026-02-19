@@ -6,11 +6,15 @@ using register_role. Used by both device service (for logging) and control
 service (for algorithm).
 """
 
+import json
 import math
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from common.logging_setup import get_service_logger
+from common.state import SharedState
 
 logger = get_service_logger("common.site_calc")
 
@@ -83,6 +87,45 @@ class DeltaTracker:
         # Return COMPLETED window's total (not running total)
         return self._completed.get(field_id, {}).get(device_id, 0.0)
 
+    def get_completed(self, field_id: str, device_id: str) -> float:
+        """Return completed delta for a device without updating state."""
+        return self._completed.get(field_id, {}).get(device_id, 0.0)
+
+    def to_dict(self) -> dict:
+        """Serialize state for persistence."""
+        return {
+            "state": self._state,
+            "completed": self._completed,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def restore(self, data: dict, max_age_seconds: int = 7200) -> bool:
+        """
+        Restore state from persisted dict.
+        Returns True if restored, False if skipped (missing/stale data).
+        max_age_seconds: 2h default — stale state worse than fresh start.
+        """
+        if not data or "state" not in data or "completed" not in data:
+            return False
+
+        saved_at = data.get("saved_at")
+        if saved_at:
+            try:
+                save_time = datetime.fromisoformat(saved_at)
+                age = (datetime.now(timezone.utc) - save_time).total_seconds()
+                if age > max_age_seconds:
+                    logger.info(f"DeltaTracker state too old ({age:.0f}s), starting fresh")
+                    return False
+            except (ValueError, TypeError):
+                return False
+
+        self._state = data["state"]
+        self._completed = data["completed"]
+        trackers = sum(len(v) for v in self._state.values())
+        completed = sum(len(v) for v in self._completed.values())
+        logger.info(f"DeltaTracker restored: {trackers} trackers, {completed} completed deltas")
+        return True
+
     def reset(self):
         """Clear all tracked state."""
         self._state.clear()
@@ -91,6 +134,58 @@ class DeltaTracker:
 
 # Module-level singleton
 _delta_tracker = DeltaTracker()
+
+# Persistence paths
+_TMPFS_STATE_KEY = "delta_tracker"  # SharedState key (tmpfs, survives process restart)
+_DISK_STATE_PATH = Path("/opt/volteria/data/delta_tracker_state.json")  # Survives reboot
+
+
+def save_delta_state(to_disk: bool = False) -> None:
+    """Save DeltaTracker state. Called periodically (tmpfs) and on shutdown (disk)."""
+    data = _delta_tracker.to_dict()
+
+    # Always save to tmpfs (fast, <1ms)
+    SharedState.write(_TMPFS_STATE_KEY, data)
+
+    if to_disk:
+        try:
+            _DISK_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = _DISK_STATE_PATH.with_suffix(".tmp")
+            with open(tmp_path, "w") as f:
+                json.dump(data, f)
+                f.flush()
+                if os.name != "nt":
+                    os.fsync(f.fileno())
+            tmp_path.replace(_DISK_STATE_PATH)
+            logger.info("DeltaTracker state saved to disk")
+        except Exception as e:
+            logger.warning(f"Failed to save DeltaTracker state to disk: {e}")
+
+
+def restore_delta_state() -> bool:
+    """
+    Restore DeltaTracker state on startup.
+    Tries tmpfs first (process restart), then disk (reboot).
+    """
+    # Try tmpfs first (newer, survives process restart)
+    data = SharedState.read(_TMPFS_STATE_KEY, use_cache=False)
+    if data and _delta_tracker.restore(data):
+        logger.info("DeltaTracker restored from tmpfs")
+        return True
+
+    # Try disk (survives reboot)
+    if _DISK_STATE_PATH.exists():
+        try:
+            with open(_DISK_STATE_PATH, "r") as f:
+                data = json.load(f)
+            if _delta_tracker.restore(data):
+                logger.info("DeltaTracker restored from disk")
+                return True
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to read DeltaTracker disk state: {e}")
+
+    logger.info("DeltaTracker starting fresh (no valid saved state)")
+    return False
 
 
 def _get_window_key(time_window: str, project_timezone: str) -> str:
@@ -198,8 +293,13 @@ def compute_role_delta(
         device_readings = readings.get(device_id, {})
         value = _get_register_value(device_readings, register_name)
         if value is not None:
-            delta = _delta_tracker.get_delta(field_id, device_id, value, window_key)
-            total += delta
+            # Update tracker with fresh reading (triggers window transitions)
+            _delta_tracker.get_delta(field_id, device_id, value, window_key)
+        # Always include completed delta — even if device currently offline,
+        # its last completed window total is valid and should be counted.
+        completed = _delta_tracker.get_completed(field_id, device_id)
+        if completed > 0:
+            total += completed
             found_any = True
 
     return round(total, 2) if found_any else None

@@ -20,6 +20,7 @@ from aiohttp import web
 from common.state import SharedState, set_service_health, get_config
 from common.config import DeviceConfig, DeviceType, Protocol, load_site_config
 from common.logging_setup import get_service_logger
+from common.site_calculations import save_delta_state, restore_delta_state
 
 from .connection_pool import ConnectionPool
 from .device_manager import DeviceManager
@@ -102,6 +103,9 @@ class DeviceService:
         # Load configuration
         await self._load_config()
 
+        # Restore DeltaTracker state (survives restarts)
+        restore_delta_state()
+
         # Start connection pool
         await self.connection_pool.start()
 
@@ -174,6 +178,9 @@ class DeviceService:
 
         # Stop health server
         await self._stop_health_server()
+
+        # Save DeltaTracker state to disk (survives reboot)
+        save_delta_state(to_disk=True)
 
         # Update service health
         set_service_health("device", {
@@ -318,6 +325,7 @@ class DeviceService:
     async def _poll_loop(self) -> None:
         """Main polling loop"""
         poll_interval = 0.1  # 100ms base loop
+        delta_save_counter = 0  # Save DeltaTracker state every ~60s
 
         while self._running:
             try:
@@ -340,6 +348,12 @@ class DeviceService:
 
                 # Update shared state with readings
                 await self.device_manager.update_shared_state()
+
+                # Periodically save DeltaTracker state to tmpfs (~every 60s)
+                delta_save_counter += 1
+                if delta_save_counter >= 600:  # 600 × 100ms = 60s
+                    save_delta_state()
+                    delta_save_counter = 0
 
             except Exception as e:
                 logger.error(f"Error in poll loop: {e}")
