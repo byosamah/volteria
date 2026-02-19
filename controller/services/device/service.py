@@ -324,8 +324,9 @@ class DeviceService:
 
     async def _poll_loop(self) -> None:
         """Main polling loop"""
+        import time
         poll_interval = 0.1  # 100ms base loop
-        delta_save_counter = 0  # Save DeltaTracker state every ~60s
+        last_delta_save = time.monotonic()  # Save DeltaTracker state every ~60s
 
         while self._running:
             try:
@@ -349,11 +350,11 @@ class DeviceService:
                 # Update shared state with readings
                 await self.device_manager.update_shared_state()
 
-                # Periodically save DeltaTracker state to tmpfs (~every 60s)
-                delta_save_counter += 1
-                if delta_save_counter >= 600:  # 600 × 100ms = 60s
+                # Periodically save DeltaTracker state to tmpfs (~every 60s wall-clock)
+                now = time.monotonic()
+                if now - last_delta_save >= 60:
                     save_delta_state()
-                    delta_save_counter = 0
+                    last_delta_save = now
 
             except Exception as e:
                 logger.error(f"Error in poll loop: {e}")
