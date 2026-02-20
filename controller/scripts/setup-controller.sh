@@ -404,6 +404,9 @@ install_systemd_services() {
     # Copy service files
     cp "${CONTROLLER_DIR}/systemd/"*.service "${SYSTEMD_DIR}/"
 
+    # Stop any stale services before reload (prevents auto-start with empty env on re-flash)
+    systemctl stop volteria-* 2>/dev/null || true
+
     # Reload systemd
     systemctl daemon-reload
 

@@ -482,9 +482,10 @@ When alarm registers are removed from config:
 - Log indicator: `[CONFIG] Auto-resolved X orphan alarm(s): alarm_id`
 
 ### SSH Tunnel Recovery (CRITICAL)
-<!-- Updated: 2026-02-02 -->
+<!-- Updated: 2026-02-20 -->
 - Tunnel watchdog runs every minute via cron (`/usr/local/bin/tunnel-watchdog.sh`)
 - **Process running ≠ tunnel working** — must check journalctl for "remote port forwarding failed"
-- When WiFi drops and reconnects, DO server may hold stale port in CLOSE_WAIT state
+- When WiFi drops and reconnects (or switches WiFi↔4G), DO server may hold stale port in CLOSE_WAIT state
 - Watchdog SSHes to DO server and runs `sudo fuser -k PORT/tcp` to clear stale port
+- Auto-recovery takes 1-2 min after network switch. Manual: `fuser -k PORT/tcp` on DO server
 - Manual recovery: `ssh root@159.223.224.203 "fuser -k 10000/tcp"` then restart tunnel on Pi

@@ -411,5 +411,7 @@ RESOLVED (resolved = true, resolved_at = timestamp)
 
 - **High REGISTER_READ_FAILED count before seeding fix**: Sites with frequent service restarts accumulated many alarms (191 in 7 days for 2 devices) because `_devices_with_register_alarms` started empty on each restart, bypassing deduplication for pre-restart alarms. Fixed in `251007e` — count should stabilize going forward.
 - **`resolve_alarm_in_cloud()` logs success even when no alarm exists**: PATCH on 0 matching rows returns HTTP 200. Always cross-check cloud alarms table directly.
+- **Alarm duplication despite working dedup**: When alarms duplicate despite `has_unresolved_alarm()` working correctly, check `sync_resolved_alarms()` and cloud→local resolution paths — they may resolve local alarms behind the dedup's back. Controller-managed types (`REGISTER_READ_FAILED`, `LOGGING_HIGH_DRIFT`, etc.) must be in the `_CONTROLLER_MANAGED_TYPES` skip list in `cloud_sync.py`. Fixed in `8a59389`.
 
+<!-- Updated: 2026-02-20 - Added sync_resolved_alarms dedup bypass diagnostic -->
 <!-- Created: 2026-02-17 - Comprehensive alarm diagnostic covering 9 alarm types, 3-tier dedup, auto-resolve, cloud cron, threshold config -->
