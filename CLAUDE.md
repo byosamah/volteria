@@ -229,6 +229,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 51. **In-memory alarm tracking sets must be seeded from SQLite on startup**: `_devices_with_register_alarms` loses state on restart. `get_unresolved_device_ids_for_alarm_type()` seeds from local DB on first health check so pre-restart alarms auto-resolve when device recovers.
 52. **NaN/Inf guard on float32/float64 Modbus decode**: `modbus_client.py` checks `math.isnan(value) or math.isinf(value)` after `struct.unpack` for float32/float64 in both TCP and serial paths (4 locations). Returns `None` instead of NaN — prevents corrupt values from propagating through site calculations. `site_calculations.py` `_get_register_value()` also guards.
 53. **Controllers may not run 24/7**: Sites can shut down overnight as normal operations. All persistence, delta tracking, and alarm logic must handle multi-hour gaps gracefully. Delta fields must produce values for partial windows — two readings in a window = valid delta. Never assume continuous operation.
+54. **Controller-managed alarm types skip cloud resolution sync**: `REGISTER_READ_FAILED`, `LOGGING_HIGH_DRIFT`, `LOGGING_BUFFER_BUILDUP`, `LOGGING_CONSECUTIVE_ERRORS` are auto-resolved by the controller when conditions clear. `sync_resolved_alarms()` in `cloud_sync.py` skips these types — syncing cloud resolutions for them causes infinite duplicate alarm creation. When adding new controller-managed alarm types, add them to `_CONTROLLER_MANAGED_TYPES` in `sync_resolved_alarms()`.
 
 ## Key Architecture Decisions
 

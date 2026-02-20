@@ -708,15 +708,20 @@ class CloudSync:
                 if not alarm_type:
                     continue
 
-                # Skip resolution sync for reg_* (device threshold) alarms.
-                # Controller handles these via condition monitoring - when condition
-                # clears, controller auto-resolves. This prevents the bug where:
-                # 1. User resolves alarm in UI
+                # Skip resolution sync for controller-managed alarm types.
+                # Controller monitors conditions and auto-resolves when cleared.
+                # Syncing cloud resolutions for these causes duplicate alarm spam:
+                # 1. User/auto resolves alarm in cloud
                 # 2. Resolution syncs to local → local alarm marked resolved
-                # 3. Cooldown expires, condition still true
-                # 4. has_unresolved_alarm() returns False (local is resolved!)
-                # 5. Duplicate alarm created
-                if alarm_type.startswith("reg_"):
+                # 3. Condition still active → dedup check returns False
+                # 4. New alarm created → cycle repeats every health check
+                _CONTROLLER_MANAGED_TYPES = {
+                    "REGISTER_READ_FAILED",
+                    "LOGGING_HIGH_DRIFT",
+                    "LOGGING_BUFFER_BUILDUP",
+                    "LOGGING_CONSECUTIVE_ERRORS",
+                }
+                if alarm_type.startswith("reg_") or alarm_type in _CONTROLLER_MANAGED_TYPES:
                     continue
 
                 # Update local alarm to resolved

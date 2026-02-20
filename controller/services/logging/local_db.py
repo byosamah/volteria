@@ -401,21 +401,25 @@ class LocalDatabase:
             cursor = conn.cursor()
             resolved_time = resolved_at or datetime.now(timezone.utc).isoformat()
 
-            # Only resolve alarms created BEFORE the resolution timestamp
-            # This prevents incorrectly resolving NEW alarms when syncing old resolutions
+            # Only resolve alarms created BEFORE the resolution timestamp.
+            # This prevents incorrectly resolving NEW alarms when syncing old resolutions.
+            # REPLACE normalizes datetime formats: SQLite datetime('now') uses space
+            # separator ('2026-02-20 07:05:00') while cloud ISO uses T separator
+            # ('2026-02-20T07:05:00+00:00'). Without normalization, lexicographic
+            # comparison breaks (space < T → condition always true).
             if device_id:
                 cursor.execute("""
                     UPDATE alarms
                     SET resolved = 1, resolved_at = ?
                     WHERE site_id = ? AND alarm_type = ? AND device_id = ? AND resolved = 0
-                      AND created_at <= ?
+                      AND REPLACE(created_at, ' ', 'T') <= REPLACE(?, ' ', 'T')
                 """, (resolved_time, site_id, alarm_type, device_id, resolved_time))
             else:
                 cursor.execute("""
                     UPDATE alarms
                     SET resolved = 1, resolved_at = ?
                     WHERE site_id = ? AND alarm_type = ? AND resolved = 0
-                      AND created_at <= ?
+                      AND REPLACE(created_at, ' ', 'T') <= REPLACE(?, ' ', 'T')
                 """, (resolved_time, site_id, alarm_type, resolved_time))
 
             conn.commit()
