@@ -97,6 +97,7 @@ interface FieldSelection {
   storage_mode: StorageMode;
   logging_frequency_seconds: number;
   enabled: boolean;
+  calculation_type?: string;
 }
 
 // Form data interface
@@ -329,6 +330,7 @@ export function MasterDeviceTemplateForm({
           storage_mode: "log" as StorageMode,
           logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 600,
           enabled: false,
+          calculation_type: field.calculation_type,
         }))
       );
     }
@@ -386,6 +388,7 @@ export function MasterDeviceTemplateForm({
                   storage_mode: (existing as { storage_mode?: StorageMode }).storage_mode || "log",
                   logging_frequency_seconds: getDeltaFrequency(field) || (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || field.logging_frequency_seconds || 600,
                   enabled: true,
+                  calculation_type: field.calculation_type,
                 };
               } else if (typeof existing === "string") {
                 return {
@@ -394,6 +397,7 @@ export function MasterDeviceTemplateForm({
                   storage_mode: "log" as StorageMode,
                   logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 600,
                   enabled: true,
+                  calculation_type: field.calculation_type,
                 };
               }
               return {
@@ -402,6 +406,7 @@ export function MasterDeviceTemplateForm({
                 storage_mode: "log" as StorageMode,
                 logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 600,
                 enabled: false,
+                calculation_type: field.calculation_type,
               };
             })
           );
@@ -509,6 +514,7 @@ export function MasterDeviceTemplateForm({
               storage_mode: "log" as StorageMode,
               logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 600,
               enabled: false,
+              calculation_type: field.calculation_type,
             }))
           );
         }
@@ -1055,13 +1061,13 @@ export function MasterDeviceTemplateForm({
                           onValueChange={(value) =>
                             updateCalculatedFieldFrequency(field.field_id, parseInt(value))
                           }
-                          disabled={!field.enabled || dbField?.calculation_type === "delta"}
+                          disabled={!field.enabled || field.calculation_type === "delta"}
                         >
                           <SelectTrigger className="w-[120px] h-8">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {(dbField?.calculation_type === "delta"
+                            {(field.calculation_type === "delta"
                               ? CALC_FIELD_FREQUENCY_OPTIONS.filter(
                                   (opt) => opt.value === 3600 || opt.value === 86400
                                 )
