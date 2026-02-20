@@ -327,7 +327,7 @@ export function MasterDeviceTemplateForm({
           field_id: field.field_id,
           name: field.name,
           storage_mode: "log" as StorageMode,
-          logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 60,
+          logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 600,
           enabled: false,
         }))
       );
@@ -384,7 +384,7 @@ export function MasterDeviceTemplateForm({
                   field_id: field.field_id,
                   name: field.name,
                   storage_mode: (existing as { storage_mode?: StorageMode }).storage_mode || "log",
-                  logging_frequency_seconds: getDeltaFrequency(field) || (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || field.logging_frequency_seconds || 60,
+                  logging_frequency_seconds: getDeltaFrequency(field) || (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || field.logging_frequency_seconds || 600,
                   enabled: true,
                 };
               } else if (typeof existing === "string") {
@@ -392,7 +392,7 @@ export function MasterDeviceTemplateForm({
                   field_id: field.field_id,
                   name: field.name,
                   storage_mode: "log" as StorageMode,
-                  logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 60,
+                  logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 600,
                   enabled: true,
                 };
               }
@@ -400,7 +400,7 @@ export function MasterDeviceTemplateForm({
                 field_id: field.field_id,
                 name: field.name,
                 storage_mode: "log" as StorageMode,
-                logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 60,
+                logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 600,
                 enabled: false,
               };
             })
@@ -439,7 +439,7 @@ export function MasterDeviceTemplateForm({
                 name: field.name,
                 unit: field.unit,
                 storage_mode: "log" as StorageMode,
-                logging_frequency_seconds: (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || 60,
+                logging_frequency_seconds: (existing as { logging_frequency_seconds?: number }).logging_frequency_seconds || 600,
                 enabled: true,
                 alarm_config: alarmConfig,
               };
@@ -449,7 +449,7 @@ export function MasterDeviceTemplateForm({
               name: field.name,
               unit: field.unit,
               storage_mode: "log" as StorageMode,
-              logging_frequency_seconds: 60,
+              logging_frequency_seconds: 600,
               enabled: false,
               alarm_config: alarmConfig,
             };
@@ -507,7 +507,7 @@ export function MasterDeviceTemplateForm({
               field_id: field.field_id,
               name: field.name,
               storage_mode: "log" as StorageMode,
-              logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 60,
+              logging_frequency_seconds: getDeltaFrequency(field) || field.logging_frequency_seconds || 600,
               enabled: false,
             }))
           );
