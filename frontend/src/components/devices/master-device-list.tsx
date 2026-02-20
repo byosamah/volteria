@@ -150,6 +150,7 @@ interface CalcFieldSelection {
   enabled: boolean;
   storage_mode: "log" | "viz_only";
   logging_frequency_seconds: number;
+  calculation_type?: string;
 }
 
 // Logging frequency options for calculated fields (matches register-form.tsx)
@@ -535,6 +536,7 @@ export function MasterDeviceList({
                     enabled: !!tmpl,
                     storage_mode: (tmpl?.storage_mode as "log" | "viz_only") || "log",
                     logging_frequency_seconds: tmpl?.logging_frequency_seconds || 60,
+                    calculation_type: field.calculation_type,
                   };
                 })
               );
@@ -611,6 +613,7 @@ export function MasterDeviceList({
                 enabled: hasDeviceCalcFields ? !!existing : true,
                 storage_mode: (existing?.storage_mode as "log" | "viz_only") || "log",
                 logging_frequency_seconds: existing?.logging_frequency_seconds || 60,
+                calculation_type: f.calculation_type,
               };
             })
           );
@@ -727,6 +730,7 @@ export function MasterDeviceList({
           enabled: true,
           storage_mode: "log" as const,
           logging_frequency_seconds: 60,
+          calculation_type: f.calculation_type,
         }))
       );
       // Reset site-level alarms to defaults
@@ -760,6 +764,7 @@ export function MasterDeviceList({
               enabled: !!tmpl,
               storage_mode: (tmpl?.storage_mode as "log" | "viz_only") || "log",
               logging_frequency_seconds: tmpl?.logging_frequency_seconds || 60,
+              calculation_type: field.calculation_type,
             };
           })
         );
@@ -1537,13 +1542,18 @@ export function MasterDeviceList({
                                 )
                               );
                             }}
-                            disabled={!field.enabled}
+                            disabled={!field.enabled || field.calculation_type === "delta"}
                           >
                             <SelectTrigger className="w-[100px] h-8">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {CALC_FIELD_FREQUENCY_OPTIONS.map((opt) => (
+                              {(field.calculation_type === "delta"
+                                ? CALC_FIELD_FREQUENCY_OPTIONS.filter(
+                                    (opt) => opt.value === 3600 || opt.value === 86400
+                                  )
+                                : CALC_FIELD_FREQUENCY_OPTIONS
+                              ).map((opt) => (
                                 <SelectItem key={opt.value} value={opt.value.toString()}>
                                   {opt.label}
                                 </SelectItem>
