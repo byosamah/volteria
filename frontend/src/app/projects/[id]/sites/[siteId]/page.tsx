@@ -369,10 +369,26 @@ export default async function SiteDetailPage({
 
   // Controller offline = no heartbeat in 2+ minutes
   // When controller is offline, devices can't report — show them as offline too
-  const controllerOffline = hasController && (
-    !site.controller_last_seen ||
-    (Date.now() - new Date(site.controller_last_seen).getTime()) > 2 * 60 * 1000
-  );
+  // NOTE: Use controller_heartbeats table (live), NOT site.controller_last_seen (stale)
+  let controllerOffline = false;
+  if (hasController) {
+    const controllerMaster = masterDevices.find((d) => d.device_type === "controller");
+    if (controllerMaster?.controller_id) {
+      const { data: latestHeartbeat } = await supabase
+        .from("controller_heartbeats")
+        .select("timestamp")
+        .eq("controller_id", controllerMaster.controller_id)
+        .order("timestamp", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      controllerOffline = !latestHeartbeat?.timestamp ||
+        (Date.now() - new Date(latestHeartbeat.timestamp).getTime()) > 2 * 60 * 1000;
+    } else {
+      // Controller master device exists but no controller_id linked
+      controllerOffline = true;
+    }
+  }
 
   const onlineDevices = controllerOffline ? 0 : devices.filter((d) => d.is_online).length;
   const offlineDevices = totalDevices - onlineDevices;
