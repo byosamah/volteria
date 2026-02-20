@@ -163,10 +163,17 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
     const periods: { startMs: number; endMs: number }[] = [];
     for (let i = 0; i < connectionData.length; i++) {
       if (connectionData[i].status === 0) {
-        // Found offline point - period ends at next point (or now if last)
-        const startMs = connectionData[i].timestampMs;
-        const endMs = connectionData[i + 1]?.timestampMs || Date.now();
-        periods.push({ startMs, endMs });
+        // Skip consecutive offline points (only first starts a period)
+        if (i > 0 && connectionData[i - 1].status === 0) continue;
+        // Found offline start - scan forward to find end (next online point or now)
+        let endMs = Date.now();
+        for (let j = i + 1; j < connectionData.length; j++) {
+          if (connectionData[j].status === 1) {
+            endMs = connectionData[j].timestampMs;
+            break;
+          }
+        }
+        periods.push({ startMs: connectionData[i].timestampMs, endMs });
       }
     }
     return periods;
@@ -522,6 +529,16 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
                     timestamp: new Date(offlineStartTime).toISOString(),
                     timestampMs: offlineStartTime,
                     time: formatTime(new Date(offlineStartTime).toISOString()),
+                    status: 0,
+                    isOnline: false,
+                    gapSeconds: Math.floor(timeSinceLastHeartbeat / 1000),
+                  });
+                  // Add "still offline now" point so chart X-axis extends to current time
+                  // Without this, dataMax = offlineStartTime and the red area gets clipped
+                  statusData.push({
+                    timestamp: new Date(now).toISOString(),
+                    timestampMs: now,
+                    time: formatTime(new Date(now).toISOString()),
                     status: 0,
                     isOnline: false,
                     gapSeconds: Math.floor(timeSinceLastHeartbeat / 1000),
