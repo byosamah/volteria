@@ -361,12 +361,21 @@ export default async function SiteDetailPage({
   const dgKw = latestLog?.dg_power_kw || 0;
 
   // Calculate device health stats
+  // Note: controllerOffline override applied after computing hasController below
   const totalDevices = devices.length;
-  const onlineDevices = devices.filter((d) => d.is_online).length;
-  const offlineDevices = totalDevices - onlineDevices;
 
   // Check if site has a controller (for showing controller health card)
   const hasController = masterDevices.some((d) => d.device_type === "controller");
+
+  // Controller offline = no heartbeat in 2+ minutes
+  // When controller is offline, devices can't report — show them as offline too
+  const controllerOffline = hasController && (
+    !site.controller_last_seen ||
+    (Date.now() - new Date(site.controller_last_seen).getTime()) > 2 * 60 * 1000
+  );
+
+  const onlineDevices = controllerOffline ? 0 : devices.filter((d) => d.is_online).length;
+  const offlineDevices = totalDevices - onlineDevices;
 
   return (
     <DashboardLayout user={{
@@ -614,6 +623,7 @@ export default async function SiteDetailPage({
                 timestamp: latestLog.timestamp,
               } : null}
               userRole={userProfile?.role || undefined}
+              controllerOffline={controllerOffline}
             />
           </TabsContent>
 

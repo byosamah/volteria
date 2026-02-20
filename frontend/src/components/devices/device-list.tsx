@@ -275,9 +275,10 @@ interface DeviceListProps {
   devices: Device[];
   latestReadings?: LatestReadings | null; // Optional: latest power readings
   userRole?: string; // User role for permission checks
+  controllerOffline?: boolean; // When true, all devices shown as offline
 }
 
-export function DeviceList({ projectId, siteId, devices: initialDevices, latestReadings, userRole }: DeviceListProps) {
+export function DeviceList({ projectId, siteId, devices: initialDevices, latestReadings, userRole, controllerOffline }: DeviceListProps) {
   // Only admins can delete - configurators and viewers cannot
   const canDelete = userRole && !["configurator", "viewer"].includes(userRole);
   const router = useRouter();
@@ -856,8 +857,9 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
         {/* Device info */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Status indicator - green pulse when online, gray when offline */}
-          <div className="flex-shrink-0" title={device.is_online ? "Online" : mounted ? `Last seen: ${formatLastSeen(device.last_seen)}` : "Offline"}>
-            {device.is_online ? (
+          {/* When controller is offline, all devices are effectively offline */}
+          <div className="flex-shrink-0" title={device.is_online && !controllerOffline ? "Online" : mounted ? `Last seen: ${formatLastSeen(device.last_seen)}` : "Offline"}>
+            {device.is_online && !controllerOffline ? (
               <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
@@ -872,7 +874,7 @@ export function DeviceList({ projectId, siteId, devices: initialDevices, latestR
             <div className="flex items-center gap-2 flex-wrap">
               <p className="font-medium truncate">{device.name}</p>
               {/* Online status badge - only show for online devices (offline indicated by gray circle) */}
-              {device.is_online && (
+              {device.is_online && !controllerOffline && (
                 <Badge variant="outline" className="flex-shrink-0 text-xs bg-green-50 text-green-700 border-green-200">
                   Online
                 </Badge>
