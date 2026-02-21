@@ -656,6 +656,11 @@ class LoggingService:
 
         # Get device online status to skip offline devices
         device_status = readings_state.get("status", {})
+        now_utc = datetime.now(timezone.utc)
+
+        # Maximum age for a reading to be considered fresh (2 minutes).
+        # Catches ANY stale data in SharedState regardless of source.
+        MAX_READING_AGE_S = 120
 
         # Iterate SharedState readings, filtered by current config
         async with self._readings_buffer_lock:
@@ -668,6 +673,19 @@ class LoggingService:
                     # Only log registers in current config (skip renamed/removed)
                     if config_registers and (device_id, register_name) not in config_registers:
                         continue
+
+                    # Staleness guard: never log readings older than threshold.
+                    # Each reading has its own timestamp from when it was polled.
+                    # If it's too old, it's stale cached data — skip it.
+                    reading_ts = reading.get("timestamp")
+                    if reading_ts:
+                        try:
+                            reading_time = datetime.fromisoformat(reading_ts)
+                            age_s = (now_utc - reading_time).total_seconds()
+                            if age_s > MAX_READING_AGE_S:
+                                continue
+                        except (ValueError, TypeError):
+                            pass
 
                     # Get unit from config if available
                     unit = register_units.get((device_id, register_name), "")

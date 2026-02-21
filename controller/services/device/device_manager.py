@@ -357,9 +357,13 @@ class DeviceManager:
             device_configs = config.get("devices", [])
 
             if site_calcs_config and controller_device_id:
+                # Only include readings from ONLINE devices in site calculations.
+                # Prevents stale cached readings from offline devices
+                # polluting computed totals (Total Load, Total DG, Total Solar).
                 calc_readings = {
                     dev_id: dev_data.get("readings", {})
                     for dev_id, dev_data in readings_data["devices"].items()
+                    if readings_data["status"].get(dev_id, {}).get("is_online", False)
                 }
                 site_calc_results = compute_site_calculations(
                     readings=calc_readings,
