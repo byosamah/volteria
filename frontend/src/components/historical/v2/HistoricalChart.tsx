@@ -282,7 +282,6 @@ export function HistoricalChart({
                 yAxisId={yAxisId}
                 dot={showDots ? { r: 3, fill: param.color, strokeWidth: 0 } : false}
                 activeDot={activeDotProps}
-                connectNulls
                 {...animationProps}
               />
             );
@@ -312,7 +311,6 @@ export function HistoricalChart({
                 dot={showDots ? { r: 3, fill: param.color, strokeWidth: 0 } : false}
                 activeDot={activeDotProps}
                 strokeWidth={isLargeDataset ? 1.5 : 2}
-                connectNulls
                 {...animationProps}
               />
             );

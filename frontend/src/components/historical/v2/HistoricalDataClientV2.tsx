@@ -418,11 +418,13 @@ export function HistoricalDataClientV2({
           }),
         };
 
-        // Add values for each parameter
+        // Add values for each parameter (only when data exists — absent key ≠ null)
         params.forEach((param) => {
           const key = `${param.deviceId}:${param.registerName}`;
           const value = dataLookup[key]?.[timestamp];
-          point[key] = value !== undefined ? value : null;
+          if (value !== undefined) {
+            point[key] = value;
+          }
         });
 
         return point;
@@ -539,6 +541,31 @@ export function HistoricalDataClientV2({
         : aggregationType.endsWith("_max") ? "max"
         : "avg";
       const chartPoints = transformApiToChartData(data.deviceReadings || [], allParams, method);
+
+      // Gap detection: forward-fill small gaps (normal sparse data), break at large gaps (device offline).
+      // Standard SCADA pattern — last observation carried forward with gap threshold.
+      const gapThresholdMs = apiAggregation === "hourly" ? 3 * 3600_000
+                           : apiAggregation === "daily"  ? 3 * 86400_000
+                           : 5 * 60_000; // Raw: 5 min
+
+      allParams.forEach((param) => {
+        const key = `${param.deviceId}:${param.registerName}`;
+        let lastVal: number | null = null;
+        let lastTs = 0;
+
+        chartPoints.forEach((point) => {
+          const ts = new Date(point.timestamp).getTime();
+          const val = point[key];
+
+          if (val !== null && val !== undefined) {
+            lastVal = val as number;
+            lastTs = ts;
+          } else if (lastVal !== null && (ts - lastTs) <= gapThresholdMs) {
+            point[key] = lastVal; // Forward-fill: bridge normal sparse data
+          }
+          // else: gap exceeds threshold — leave undefined, line breaks here
+        });
+      });
 
       setChartData(chartPoints);
       setMetadata({
