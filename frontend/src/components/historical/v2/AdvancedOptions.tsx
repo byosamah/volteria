@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ChevronDown, Plus, Trash2, Calculator, Ruler, Minus, AlertTriangle } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Calculator, Ruler, Minus, AlertTriangle, Hash, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,6 +33,9 @@ const OPERATOR_CONFIG: Record<string, { symbol: string; label: string; textClass
 
 // Variable labels for operands (max 5)
 const VARIABLE_LABELS = ["A", "B", "C", "D", "E"];
+
+// Sentinel value for "Fixed Value" option in the source dropdown
+const CONSTANT_SENTINEL = "__constant__";
 
 interface AdvancedOptionsProps {
   referenceLines: ReferenceLine[];
@@ -128,8 +131,13 @@ export function AdvancedOptions({
     const field = calculatedFields.find((f) => f.id === fieldId);
     if (!field) return;
 
-    // Auto-detect type when parameterId changes
-    if (updates.parameterId) {
+    // Handle "Fixed Value" sentinel from dropdown
+    if (updates.parameterId === CONSTANT_SENTINEL) {
+      updates.type = "constant";
+      updates.parameterId = "";
+      updates.constantValue = 0;
+    } else if (updates.parameterId && updates.type !== "constant") {
+      // Auto-detect type when parameterId changes (skip for constants)
       const isCalcField = calculatedFields.some((f) => f.id === updates.parameterId);
       updates.type = isCalcField ? "field" : "parameter";
     }
@@ -137,9 +145,9 @@ export function AdvancedOptions({
     const newOperands = field.operands.map((op, i) =>
       i === index ? { ...op, ...updates } : op
     );
-    // Auto-set unit from first operand
+    // Auto-set unit from first operand (skip for constants)
     let unit = field.unit;
-    if (index === 0 && updates.parameterId) {
+    if (index === 0 && updates.parameterId && updates.type !== "constant") {
       if (updates.type === "field") {
         const calcField = calculatedFields.find((f) => f.id === updates.parameterId);
         if (calcField) unit = calcField.unit;
@@ -175,6 +183,7 @@ export function AdvancedOptions({
   // Check if a calculated field has orphaned operands (referencing removed params or deleted calc fields)
   const hasOrphanedOperands = (field: CalculatedField): boolean => {
     return field.operands.some((op) => {
+      if (op.type === "constant") return false; // constants have no external reference
       if (!op.parameterId) return false;
       if (op.type === "field") {
         return !calculatedFields.some((f) => f.id === op.parameterId);
@@ -345,11 +354,17 @@ export function AdvancedOptions({
 
                       {/* Operand rows */}
                       <div className="space-y-1.5">
-                        {field.operands.map((operand, idx) => (
+                        {(() => {
+                          // Compute labels: source operands get A, B, C...; constants get #
+                          let li = 0;
+                          const rowLabels = field.operands.map((op) =>
+                            op.type === "constant" ? "#" : (VARIABLE_LABELS[li++] || "?")
+                          );
+                          return field.operands.map((operand, idx) => (
                           <div key={idx} className="flex items-center gap-1.5">
-                            {/* Variable label (A, B, C...) */}
+                            {/* Variable label (A, B, C... or # for constants) */}
                             <span className="w-5 h-8 flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
-                              {VARIABLE_LABELS[idx] || "?"}
+                              {rowLabels[idx]}
                             </span>
 
                             {/* Operation selector — first operand locked to + */}
@@ -381,52 +396,89 @@ export function AdvancedOptions({
                               </Select>
                             )}
 
-                            {/* Parameter / Calculated Field dropdown */}
-                            <Select
-                              value={operand.parameterId || undefined}
-                              onValueChange={(value) => updateOperand(field.id, idx, { parameterId: value })}
-                            >
-                              <SelectTrigger className="flex-1 h-8 text-xs">
-                                <SelectValue placeholder="Select source..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {/* Raw chart parameters */}
-                                {parameters.length > 0 && (
-                                  <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Parameters
+                            {/* Source dropdown or constant input */}
+                            {operand.type === "constant" ? (
+                              <div className="flex-1 flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  value={operand.constantValue ?? ""}
+                                  onChange={(e) => updateOperand(field.id, idx, {
+                                    constantValue: e.target.value === "" ? undefined : parseFloat(e.target.value),
+                                  })}
+                                  placeholder="Enter value..."
+                                  className="flex-1 h-8 text-xs"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 flex-shrink-0"
+                                  title="Switch back to source"
+                                  onClick={() => updateOperand(field.id, idx, {
+                                    type: "parameter",
+                                    parameterId: "",
+                                    constantValue: undefined,
+                                  })}
+                                >
+                                  <X className="h-3 w-3 text-muted-foreground" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <Select
+                                value={operand.parameterId || undefined}
+                                onValueChange={(value) => updateOperand(field.id, idx, { parameterId: value })}
+                              >
+                                <SelectTrigger className="flex-1 h-8 text-xs">
+                                  <SelectValue placeholder="Select source..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {/* Raw chart parameters */}
+                                  {parameters.length > 0 && (
+                                    <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                      Parameters
+                                    </div>
+                                  )}
+                                  {parameters.map((p) => (
+                                    <SelectItem key={p.id} value={p.id} className="text-xs">
+                                      <span className="flex items-center gap-1.5">
+                                        <span
+                                          className="w-2 h-2 rounded-full flex-shrink-0"
+                                          style={{ backgroundColor: p.color }}
+                                        />
+                                        {p.deviceName} - {p.registerName}
+                                        {p.unit && <span className="text-muted-foreground">({p.unit})</span>}
+                                      </span>
+                                    </SelectItem>
+                                  ))}
+                                  {/* Other calculated fields */}
+                                  {getAvailableCalcFields(field.id).length > 0 && (
+                                    <>
+                                      <div className="px-2 py-1 mt-1 border-t text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                        Calculated Fields
+                                      </div>
+                                      {getAvailableCalcFields(field.id).map((cf) => (
+                                        <SelectItem key={cf.id} value={cf.id} className="text-xs">
+                                          <span className="flex items-center gap-1.5">
+                                            <Calculator className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                            {cf.name}
+                                            {cf.unit && <span className="text-muted-foreground">({cf.unit})</span>}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </>
+                                  )}
+                                  {/* Fixed value option */}
+                                  <div className="px-2 py-1 mt-1 border-t text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                    Fixed Value
                                   </div>
-                                )}
-                                {parameters.map((p) => (
-                                  <SelectItem key={p.id} value={p.id} className="text-xs">
+                                  <SelectItem value={CONSTANT_SENTINEL} className="text-xs">
                                     <span className="flex items-center gap-1.5">
-                                      <span
-                                        className="w-2 h-2 rounded-full flex-shrink-0"
-                                        style={{ backgroundColor: p.color }}
-                                      />
-                                      {p.deviceName} - {p.registerName}
-                                      {p.unit && <span className="text-muted-foreground">({p.unit})</span>}
+                                      <Hash className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                      Enter a number...
                                     </span>
                                   </SelectItem>
-                                ))}
-                                {/* Other calculated fields */}
-                                {getAvailableCalcFields(field.id).length > 0 && (
-                                  <>
-                                    <div className="px-2 py-1 mt-1 border-t text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                      Calculated Fields
-                                    </div>
-                                    {getAvailableCalcFields(field.id).map((cf) => (
-                                      <SelectItem key={cf.id} value={cf.id} className="text-xs">
-                                        <span className="flex items-center gap-1.5">
-                                          <Calculator className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                                          {cf.name}
-                                          {cf.unit && <span className="text-muted-foreground">({cf.unit})</span>}
-                                        </span>
-                                      </SelectItem>
-                                    ))}
-                                  </>
-                                )}
-                              </SelectContent>
-                            </Select>
+                                </SelectContent>
+                              </Select>
+                            )}
 
                             {/* Remove operand (only if > 2) */}
                             {field.operands.length > 2 && (
@@ -440,36 +492,49 @@ export function AdvancedOptions({
                               </Button>
                             )}
                           </div>
-                        ))}
+                          ));
+                        })()}
                       </div>
 
                       {/* Equation preview */}
-                      {field.operands.length >= 2 && (
-                        <div className="text-xs text-muted-foreground bg-muted/30 px-2 py-1.5 rounded font-mono">
-                          <span className="text-muted-foreground/60">=</span>{" "}
-                          {field.operands.map((op, idx) => {
-                            const label = VARIABLE_LABELS[idx] || "?";
-                            const hasSource = !!op.parameterId;
-                            if (idx === 0) {
+                      {field.operands.length >= 2 && (() => {
+                        // Assign variable labels only to source operands (skip constants)
+                        let labelIdx = 0;
+                        const labels = field.operands.map((op) => {
+                          if (op.type === "constant") return null;
+                          return VARIABLE_LABELS[labelIdx++] || "?";
+                        });
+                        return (
+                          <div className="text-xs text-muted-foreground bg-muted/30 px-2 py-1.5 rounded font-mono">
+                            <span className="text-muted-foreground/60">=</span>{" "}
+                            {field.operands.map((op, idx) => {
+                              const isConst = op.type === "constant";
+                              const displayLabel = isConst
+                                ? (op.constantValue !== undefined ? String(op.constantValue) : "?")
+                                : (op.parameterId ? labels[idx] : "?");
+                              const hasValue = isConst ? op.constantValue !== undefined : !!op.parameterId;
+
+                              if (idx === 0) {
+                                return (
+                                  <span key={idx} className={hasValue ? "font-semibold" : "text-muted-foreground/40"}>
+                                    {displayLabel}
+                                  </span>
+                                );
+                              }
+                              const cfg = OPERATOR_CONFIG[op.operation];
                               return (
-                                <span key={idx} className={hasSource ? "font-semibold" : "text-muted-foreground/40"}>
-                                  {hasSource ? label : "?"}
+                                <span key={idx}>
+                                  {" "}
+                                  <span className={cfg?.textClass}>{cfg?.symbol}</span>{" "}
+                                  <span className={hasValue ? "font-semibold" : "text-muted-foreground/40"}>
+                                    {displayLabel}
+                                  </span>
                                 </span>
                               );
-                            }
-                            const cfg = OPERATOR_CONFIG[op.operation];
-                            return (
-                              <span key={idx}>
-                                {" "}
-                                <span className={cfg?.textClass}>{cfg?.symbol}</span>{" "}
-                                <span className={hasSource ? "font-semibold" : "text-muted-foreground/40"}>
-                                  {hasSource ? label : "?"}
-                                </span>
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
+                            })}
+                          </div>
+                        );
+                      })()}
 
                       {/* Add operand button */}
                       {field.operands.length < 5 && (

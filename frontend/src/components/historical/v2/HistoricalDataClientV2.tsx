@@ -37,6 +37,7 @@ import type {
   AvailableRegister,
   ReferenceLine,
   CalculatedField,
+  CalculatedFieldOperand,
   ChartDataPoint,
   DateRange,
   DataSource,
@@ -603,8 +604,9 @@ export function HistoricalDataClientV2({
     const allParams = [...leftAxisParams, ...rightAxisParams];
     const calcFieldMap = new Map(calculatedFields.map((f) => [f.id, f]));
 
-    // Validate: each operand must reference a valid param or another calc field
-    const isOperandValid = (op: { parameterId: string; type?: string }) => {
+    // Validate: each operand must reference a valid param, calc field, or have a constant value
+    const isOperandValid = (op: CalculatedFieldOperand) => {
+      if (op.type === "constant") return op.constantValue !== undefined && !isNaN(op.constantValue);
       if (!op.parameterId) return false;
       if (op.type === "field") return calcFieldMap.has(op.parameterId);
       return allParams.some((p) => p.id === op.parameterId);
@@ -659,7 +661,7 @@ export function HistoricalDataClientV2({
     const allDataKeys = new Set<string>();
     for (const field of sorted) {
       for (const op of field.operands) {
-        if (op.type !== "field") {
+        if (op.type === "parameter") {
           const param = allParams.find((p) => p.id === op.parameterId);
           if (param) allDataKeys.add(`${param.deviceId}:${param.registerName}`);
         }
@@ -686,7 +688,10 @@ export function HistoricalDataClientV2({
         for (const operand of field.operands) {
           let value: number | null = null;
 
-          if (operand.type === "field") {
+          if (operand.type === "constant") {
+            // Fixed value — same at every timestamp
+            value = operand.constantValue ?? null;
+          } else if (operand.type === "field") {
             // Read from a previously-computed calculated field
             const depField = calcFieldMap.get(operand.parameterId);
             if (!depField) { result = null; break; }
