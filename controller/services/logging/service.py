@@ -1728,6 +1728,10 @@ class LoggingService:
         register_errors = get_register_errors()
         devices_with_failures = set()
 
+        # Threshold: >5 failing registers = device-level issue (Not Reporting handles it)
+        # ≤5 failing registers = genuine register-specific problem
+        REGISTER_ALARM_MAX = 5
+
         for device_id, error_info in register_errors.items():
             if device_id.startswith("_"):
                 continue  # Skip metadata keys like _updated_at
@@ -1735,6 +1739,28 @@ class LoggingService:
             device_name = error_info.get("device_name", "Unknown")
             if not failed:
                 continue
+
+            # If >5 registers failing, this is a device-level issue — let cloud
+            # "Not Reporting" cron handle it. Suppress REGISTER_READ_FAILED.
+            if len(failed) > REGISTER_ALARM_MAX:
+                # Auto-resolve any existing REGISTER_READ_FAILED for this device
+                # (may have been created when fewer registers were failing)
+                if device_id in self._devices_with_register_alarms:
+                    count = await self._run_db(
+                        self.local_db.resolve_alarms_by_type_and_device,
+                        "REGISTER_READ_FAILED", device_id,
+                    )
+                    if count > 0:
+                        if self.cloud_sync:
+                            await self.cloud_sync.resolve_alarm_in_cloud(
+                                "REGISTER_READ_FAILED", device_id=device_id
+                            )
+                        logger.info(
+                            f"Device {device_name}: {len(failed)} registers failing "
+                            f"(>{REGISTER_ALARM_MAX}) — resolved REGISTER_READ_FAILED, "
+                            f"deferring to Not Reporting"
+                        )
+                continue  # Skip — don't track as register-level failure
 
             devices_with_failures.add(device_id)
 
