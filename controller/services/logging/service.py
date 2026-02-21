@@ -654,9 +654,16 @@ class LoggingService:
                         register_units[(device_id, reg_name)] = reg.get("unit", "")
                         config_registers.add((device_id, reg_name))
 
+        # Get device online status to skip offline devices
+        device_status = readings_state.get("status", {})
+
         # Iterate SharedState readings, filtered by current config
         async with self._readings_buffer_lock:
             for device_id, device_data in readings_state.get("devices", {}).items():
+                # Skip offline devices — prevents stale readings from being logged
+                if not device_status.get(device_id, {}).get("is_online", True):
+                    continue
+
                 for register_name, reading in device_data.get("readings", {}).items():
                     # Only log registers in current config (skip renamed/removed)
                     if config_registers and (device_id, register_name) not in config_registers:

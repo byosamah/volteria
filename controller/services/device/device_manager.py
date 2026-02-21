@@ -218,6 +218,18 @@ class DeviceManager:
                         )
                     status.next_retry_at = now + timedelta(seconds=status.backoff_seconds)
 
+    async def clear_all_readings(self, device_id: str) -> None:
+        """Clear all readings for a device (used when connection fails).
+
+        Prevents stale readings from persisting in SharedState after a device
+        goes offline. Without this, the logging service re-stamps old values
+        with current timestamps, making the cloud think the device is still reporting.
+        """
+        async with self._lock:
+            status = self._devices.get(device_id)
+            if status:
+                status.readings.clear()
+
     def get_status(self, device_id: str) -> DeviceStatus | None:
         """Get device status"""
         return self._devices.get(device_id)

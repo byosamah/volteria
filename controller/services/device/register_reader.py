@@ -211,6 +211,9 @@ class RegisterReader:
                 success=False,
                 error="Device not reachable",
             )
+            # Clear ALL stale readings — prevents logging service from
+            # re-stamping old values as current data (ghost readings)
+            await self._manager.clear_all_readings(device.id)
             # Evict stale serial connection so next poll gets a fresh one.
             # Serial ports use exclusive locks — stale locks never self-heal.
             if device.protocol == Protocol.RTU_DIRECT:
@@ -220,6 +223,13 @@ class RegisterReader:
                 f"Device {device.name}: {failed_count} register(s) failed "
                 f"(register-specific errors, device still reachable)"
             )
+            # Device is reachable — register-specific errors shouldn't mark it offline.
+            # Override any intermediate offline marking from per-register update_reading calls.
+            if len(results) > 0:
+                await self._manager.update_status(
+                    device_id=device.id,
+                    success=True,
+                )
 
         # Report persistent register failures to SharedState for alarm creation
         persistent_failures = []
