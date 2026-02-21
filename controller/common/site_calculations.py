@@ -128,6 +128,14 @@ class DeltaTracker:
         """Return completed delta for a device without updating state."""
         return self._completed.get(field_id, {}).get(device_id, 0.0)
 
+    def get_device_window_key(self, field_id: str, device_id: str) -> str | None:
+        """Return the current window_key for a tracked device, or None if untracked."""
+        field_state = self._state.get(field_id)
+        if not field_state:
+            return None
+        device_state = field_state.get(device_id)
+        return device_state.get("window_key") if device_state else None
+
     def to_dict(self) -> dict:
         """Serialize state for persistence."""
         return {
@@ -334,12 +342,15 @@ def compute_role_delta(
         if value is not None:
             # Update tracker with fresh reading (triggers window transitions)
             _delta_tracker.get_delta(field_id, device_id, value, window_key)
-        # Always include completed delta — even if device currently offline,
-        # its last completed window total is valid and should be counted.
-        completed = _delta_tracker.get_completed(field_id, device_id)
-        if completed > 0:
-            total += completed
-            found_any = True
+        # Only include completed delta if device was active in the CURRENT window.
+        # Stale completed values from devices offline for multiple windows would
+        # inflate totals — each old window's delta re-counted every period.
+        device_window = _delta_tracker.get_device_window_key(field_id, device_id)
+        if device_window == window_key:
+            completed = _delta_tracker.get_completed(field_id, device_id)
+            if completed > 0:
+                total += completed
+                found_any = True
 
     return round(total, 2) if found_any else None
 
