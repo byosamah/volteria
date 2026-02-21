@@ -711,7 +711,13 @@ export function HistoricalDataClientV2({
           if (result === null) {
             result = operand.operation === "-" ? -value : value;
           } else {
-            result = operand.operation === "-" ? result - value : result + value;
+            switch (operand.operation) {
+              case "+": result = result + value; break;
+              case "-": result = result - value; break;
+              case "*": result = result * value; break;
+              case "/": result = value !== 0 ? result / value : null; break;
+            }
+            if (result === null) break; // division by zero
           }
         }
 

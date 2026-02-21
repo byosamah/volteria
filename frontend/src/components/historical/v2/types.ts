@@ -92,7 +92,7 @@ export interface ReferenceLine {
 // Calculated field operand (a register or another calc field + operation)
 export interface CalculatedFieldOperand {
   parameterId: string;          // AxisParameter.id OR CalculatedField.id
-  operation: "+" | "-";
+  operation: "+" | "-" | "*" | "/";
   type: "parameter" | "field";  // raw chart param vs another calculated field
 }
 

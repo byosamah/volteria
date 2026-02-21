@@ -23,6 +23,17 @@ import type { ReferenceLine, CalculatedField, CalculatedFieldOperand, AxisParame
 const MAX_REFERENCE_LINES = 3;
 const MAX_CALCULATED_FIELDS = 3;
 
+// Operator display config (symbol, label, color classes)
+const OPERATOR_CONFIG: Record<string, { symbol: string; label: string; textClass: string; bgClass: string; borderClass: string }> = {
+  "+": { symbol: "+", label: "Add",      textClass: "text-green-600", bgClass: "bg-green-50",  borderClass: "border-green-200" },
+  "-": { symbol: "\u2212", label: "Subtract", textClass: "text-red-600",   bgClass: "bg-red-50",    borderClass: "border-red-200"   },
+  "*": { symbol: "\u00D7", label: "Multiply", textClass: "text-blue-600",  bgClass: "bg-blue-50",   borderClass: "border-blue-200"  },
+  "/": { symbol: "\u00F7", label: "Divide",   textClass: "text-amber-600", bgClass: "bg-amber-50",  borderClass: "border-amber-200" },
+};
+
+// Variable labels for operands (max 5)
+const VARIABLE_LABELS = ["A", "B", "C", "D", "E"];
+
 interface AdvancedOptionsProps {
   referenceLines: ReferenceLine[];
   onReferenceLinesChange: (lines: ReferenceLine[]) => void;
@@ -299,7 +310,7 @@ export function AdvancedOptions({
           <CollapsibleContent>
             <div className="px-4 pb-4 space-y-3">
               <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                Combine chart parameters with + / - to create derived values (e.g., Total Load = Meter 1 + Meter 2).
+                Combine chart parameters with +, &minus;, &times;, &divide; to create derived values (e.g., Total Load = Meter 1 + Meter 2).
               </p>
 
               {parameters.length < 2 && (
@@ -336,7 +347,12 @@ export function AdvancedOptions({
                       <div className="space-y-1.5">
                         {field.operands.map((operand, idx) => (
                           <div key={idx} className="flex items-center gap-1.5">
-                            {/* Operation selector (+/-) — first operand locked to + */}
+                            {/* Variable label (A, B, C...) */}
+                            <span className="w-5 h-8 flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
+                              {VARIABLE_LABELS[idx] || "?"}
+                            </span>
+
+                            {/* Operation selector — first operand locked to + */}
                             {idx === 0 ? (
                               <div className="w-14 h-8 flex items-center justify-center text-xs font-bold text-green-600 bg-green-50 rounded border border-green-200">
                                 +
@@ -344,20 +360,23 @@ export function AdvancedOptions({
                             ) : (
                               <Select
                                 value={operand.operation}
-                                onValueChange={(value: "+" | "-") =>
+                                onValueChange={(value: "+" | "-" | "*" | "/") =>
                                   updateOperand(field.id, idx, { operation: value })
                                 }
                               >
                                 <SelectTrigger className={`w-14 h-8 text-xs font-bold ${
-                                  operand.operation === "+"
-                                    ? "text-green-600 bg-green-50 border-green-200"
-                                    : "text-red-600 bg-red-50 border-red-200"
+                                  OPERATOR_CONFIG[operand.operation]?.textClass || ""
+                                } ${OPERATOR_CONFIG[operand.operation]?.bgClass || ""} ${
+                                  OPERATOR_CONFIG[operand.operation]?.borderClass || ""
                                 }`}>
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="+" className="text-xs font-bold text-green-600">+ Add</SelectItem>
-                                  <SelectItem value="-" className="text-xs font-bold text-red-600">&minus; Subtract</SelectItem>
+                                  {Object.entries(OPERATOR_CONFIG).map(([op, cfg]) => (
+                                    <SelectItem key={op} value={op} className={`text-xs font-bold ${cfg.textClass}`}>
+                                      {cfg.symbol} {cfg.label}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                             )}
@@ -423,6 +442,34 @@ export function AdvancedOptions({
                           </div>
                         ))}
                       </div>
+
+                      {/* Equation preview */}
+                      {field.operands.length >= 2 && (
+                        <div className="text-xs text-muted-foreground bg-muted/30 px-2 py-1.5 rounded font-mono">
+                          <span className="text-muted-foreground/60">=</span>{" "}
+                          {field.operands.map((op, idx) => {
+                            const label = VARIABLE_LABELS[idx] || "?";
+                            const hasSource = !!op.parameterId;
+                            if (idx === 0) {
+                              return (
+                                <span key={idx} className={hasSource ? "font-semibold" : "text-muted-foreground/40"}>
+                                  {hasSource ? label : "?"}
+                                </span>
+                              );
+                            }
+                            const cfg = OPERATOR_CONFIG[op.operation];
+                            return (
+                              <span key={idx}>
+                                {" "}
+                                <span className={cfg?.textClass}>{cfg?.symbol}</span>{" "}
+                                <span className={hasSource ? "font-semibold" : "text-muted-foreground/40"}>
+                                  {hasSource ? label : "?"}
+                                </span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
 
                       {/* Add operand button */}
                       {field.operands.length < 5 && (
