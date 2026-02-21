@@ -544,13 +544,37 @@ export function HistoricalDataClientV2({
       const chartPoints = transformApiToChartData(data.deviceReadings || [], allParams, method);
 
       // Gap detection: forward-fill small gaps (normal sparse data), break at large gaps (device offline).
-      // Standard SCADA pattern — last observation carried forward with gap threshold.
-      const gapThresholdMs = apiAggregation === "hourly" ? 3 * 3600_000
-                           : apiAggregation === "daily"  ? 3 * 86400_000
-                           : 5 * 60_000; // Raw: 5 min
+      // Standard SCADA pattern — last observation carried forward with adaptive gap threshold.
+      // For hourly/daily: fixed multiplier. For raw: per-parameter based on actual median interval.
+      const fixedThresholdMs = apiAggregation === "hourly" ? 3 * 3600_000
+                             : apiAggregation === "daily"  ? 3 * 86400_000
+                             : 0; // Raw uses adaptive per-parameter threshold
 
       allParams.forEach((param) => {
         const key = `${param.deviceId}:${param.registerName}`;
+
+        // For raw data: compute median interval between consecutive data points for this parameter
+        let gapThresholdMs = fixedThresholdMs;
+        if (apiAggregation === "raw") {
+          const intervals: number[] = [];
+          let prevTs = 0;
+          for (const point of chartPoints) {
+            const val = point[key];
+            if (val !== null && val !== undefined) {
+              const ts = new Date(point.timestamp).getTime();
+              if (prevTs > 0) intervals.push(ts - prevTs);
+              prevTs = ts;
+            }
+          }
+          if (intervals.length > 0) {
+            intervals.sort((a, b) => a - b);
+            const median = intervals[Math.floor(intervals.length / 2)];
+            gapThresholdMs = Math.max(median * 3, 5 * 60_000); // 3× median, floor 5 min
+          } else {
+            gapThresholdMs = 5 * 60_000; // Fallback: 5 min
+          }
+        }
+
         let lastVal: number | null = null;
         let lastTs = 0;
 
