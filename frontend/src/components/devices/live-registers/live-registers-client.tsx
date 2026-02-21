@@ -483,7 +483,7 @@ export function LiveRegistersClient({
             <div className="flex items-center gap-2 mt-1">
               {device.device_templates && (
                 <span className="text-sm text-muted-foreground">
-                  {device.device_templates.brand} {device.device_templates.model}
+                  {device.device_templates.name}
                 </span>
               )}
               <Badge
