@@ -34,30 +34,32 @@ Pure functions in `common/site_calculations.py` (shared by device + control serv
 | `average` | Average across matching devices | Average temperature |
 | `max`/`min` | Peak/minimum across devices | Peak load |
 
-## Delta Fields (DeltaTracker)
+## Delta Fields (RPC-Computed from Raw Counters)
 
-Delta fields track kWh counter deltas using a **completed window totals** pattern:
+Delta fields (Hourly/Daily Energy Production) are **NOT logged to SQLite/cloud**. The cloud RPC `get_historical_readings` (migration 106) computes them on-the-fly from raw kWh counter readings.
 
+**RPC computation pipeline:**
 ```
-14:00:01  DeltaTracker detects hour 13→14 transition
-          Computes hour-13 total = latest - first = 28.5 kWh
-          Stores completed[hour-13] = 28.5
-          Output = 28.5 (stable for ALL of hour 14)
-14:00:02  Output = 28.5
-...
-14:59:59  Output = 28.5
-15:00:01  Detects hour 14→15 transition → Output = hour-14 total
+1. Detect delta fields: calculated_field_definitions WHERE calculation_type = 'delta'
+2. Find source devices: site_devices registers JSONB WHERE register_role matches
+3. Query raw counter readings from device_readings (source devices, not master)
+4. Compute MAX(value) - MIN(value) per device per timezone-aligned bucket
+5. SUM across devices → return with master device_id and delta field name
 ```
+
+**Bucket size per field** (from `calculated_field_definitions.logging_frequency_seconds`):
+- 3600s → hourly buckets (unless daily aggregation explicitly requested)
+- 86400s → daily buckets (always)
+- Only aggregates UP (hourly→daily), never down
 
 **Key properties:**
-- Output is a **stable constant** for the entire window (not a running total)
-- Cloud downsampling picks FIRST reading per bucket → always correct (all readings = same value)
-- **Frequencies locked**: 3600s (hourly), 86400s (daily) — frontend dropdown disabled
-- **Non-24/7 sites**: State persists across overnight shutdowns (7-day staleness limit). As long as 2+ readings exist in a window, the delta is captured correctly
-- **Meter reset handling**: If counter decreases (reset to 0), energy splits into segments: (pre-reset) + (post-reset). No energy silently lost. 1 kWh tolerance for float noise.
-- **Offline devices still counted**: Completed window deltas included even when device temporarily offline
-- Singleton `_delta_tracker` in `common/site_calculations.py` — **persisted** to tmpfs every 60s + disk on shutdown, restored on startup
-- Offline devices' completed deltas always counted in sum (not just devices with fresh readings)
+- **Controller skips logging**: `_delta_field_names` set in logging service `_sample_readings_to_buffer` — delta values never written to SQLite/cloud
+- **DeltaTracker still runs**: For real-time dashboard only (SharedState values). Singleton in `common/site_calculations.py`, persisted to tmpfs every 60s + disk on shutdown
+- **No data repair needed**: Fix source kWh counter data or field definitions → RPC output corrects automatically
+- **Timezone-aligned**: RPC uses `date_trunc('hour'/'day', timestamp AT TIME ZONE p_timezone)` for correct local-time bucketing
+- **Non-24/7 sites**: DeltaTracker state persists across overnight shutdowns (7-day staleness limit). Raw counters in cloud = RPC computes correctly regardless
+- **Meter reset handling**: MAX-MIN per bucket handles resets naturally (each bucket has monotonic counter within it)
+- **Offline devices**: Only devices with 2+ readings in a bucket contribute to that bucket's delta
 
 ## Register Role Reference
 
@@ -212,12 +214,14 @@ Expected: tmpfs file recent (<60s), disk file present after at least one gracefu
 
 **Note:** Must use `sudo -u volteria sqlite3` — bare `sqlite3` or `-readonly` flag fails with "attempt to write a readonly database" when run as voltadmin.
 
+**Delta fields are NOT in SQLite** — they're computed by the cloud RPC. Only check sum/difference/average fields here.
+
 ```bash
 ssh root@159.223.224.203 "sshpass -p 'SECRET' ssh -o StrictHostKeyChecking=no -p SSH_PORT SSH_USER@localhost \
   'sudo -u volteria sqlite3 /opt/volteria/data/controller.db \"SELECT register_name, value, timestamp FROM device_readings WHERE device_id = \\\"CONTROLLER_DEVICE_ID\\\" ORDER BY id DESC LIMIT 10\"'"
 ```
 
-Expected: Recent rows with calculated field names (Total Load, Total Generator Power, etc.).
+Expected: Recent rows with non-delta calculated field names (Total Load, Total Generator Power, etc.). Delta fields (Hourly/Daily Energy) should NOT appear.
 
 ## Step 4: Check Cloud
 
@@ -227,6 +231,35 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device
 ```
 
 Expected: Cloud has recent calculated field readings matching SQLite data.
+
+### Step 4b: Verify delta fields via RPC (primary verification)
+
+Delta fields are computed by the RPC from raw kWh counters — this is the **primary** way to verify them:
+
+```bash
+curl -s -X POST "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/rpc/get_historical_readings" \
+  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "p_site_ids": ["SITE_ID"],
+    "p_device_ids": ["CONTROLLER_DEVICE_ID"],
+    "p_registers": ["Daily DG Energy Production"],
+    "p_start": "START_UTC",
+    "p_end": "END_UTC",
+    "p_aggregation": "daily",
+    "p_timezone": "Asia/Dubai"
+  }'
+```
+
+Expected: Daily buckets align with Dubai calendar days. The `bucket` column returns UTC timestamps at the Dubai day boundary (e.g., `2026-02-20T20:00:00Z` = midnight Dubai Feb 21). Add 4h to get Dubai date.
+
+Also verify hourly fields work in raw mode (bucket per field's `logging_frequency_seconds`):
+```bash
+# Same call but with "Hourly DG Energy Production" and p_aggregation: "raw"
+# Should return hourly buckets, NOT daily
+```
+
+**Frontend passes `p_timezone` automatically** from `projects.timezone` via the historical API route. Default is `'UTC'` if project timezone is null.
 
 ## Step 5: Check DB Definitions
 
@@ -238,17 +271,20 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/calculated_field_defin
 
 Check that sum-type fields have `register_role` in their `calculation_config`.
 
-## Step 6: Cross-Check Individual Devices vs Calculated Totals
+## Step 6: Cross-Check RPC Output vs Raw Counter Math
 
-For delta fields, verify the site-level total matches the sum of individual device kWh counter deltas. Query cloud `device_readings` for each device's kWh counter at hour boundaries, compute `end - start` per device, and compare against the calculated field value.
+Verify the RPC delta output matches manual computation from raw kWh counter readings:
 
 ```bash
-# Get individual device kWh counters at hour boundaries (adjust device_ids and timestamps)
-curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device_id=in.(DEV1,DEV2)&register_name=eq.COUNTER_REGISTER&timestamp=in.(START_UTC,END_UTC)&order=device_id,timestamp.asc&select=device_id,value,timestamp" \
+# For each DG device, get MIN and MAX kWhours in a daily bucket (Dubai day boundary)
+# Dubai day Feb 21 = 2026-02-20T20:00:00Z to 2026-02-21T20:00:00Z
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device_id=eq.DG_DEVICE_ID&register_name=eq.kWhours&timestamp=gte.2026-02-20T20:00:00Z&timestamp=lt.2026-02-21T20:00:00Z&select=value&order=value&limit=5000" \
   -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
 ```
 
-Expected: Sum of per-device deltas matches calculated field value within ~1 kWh (residual from 3s lookahead shifting the window edge by ~3s vs cloud's clock-aligned timestamps). Larger gaps (scaling with device count) indicate DeltaTracker window gap bug — verify `new_first = device_state["latest"]` in `site_calculations.py`.
+Manual formula: `SUM(MAX(value) - MIN(value))` across all source devices for that bucket.
+
+Expected: RPC value matches manual computation exactly (both use same MAX-MIN logic).
 
 ## Output Format
 
@@ -281,16 +317,21 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 | Delta fields show 0 after restart | No persisted state or state too old (>7d) | Check tmpfs/disk state files (Step 2c). Staleness limit is 7 days (supports non-24/7 sites). If state file missing, check disk write errors in device service logs |
 | Delta values changing every second | Old running-total DeltaTracker deployed | Verify `_completed` dict exists in `site_calculations.py` on Pi |
 | Hourly delta frequency not 3600 | DB or config mismatch | Check `calculated_field_definitions.logging_frequency_seconds` and `site_master_devices.calculated_fields` JSONB |
-| One offline device breaks all calcs | Should not happen | Offline devices: sum fields skip gracefully, delta fields still include completed window totals |
-| Hourly/daily delta undercount | Old code: offline devices or restart state loss | Verify commit `00311fb` deployed — adds persistence + offline device counting |
+| One offline device breaks all calcs | Should not happen | Offline devices: sum fields skip gracefully, delta fields only include devices active in current window |
+| Stale completed deltas inflating values | Old bug: offline devices' completed deltas re-added every window | Fixed: `compute_role_delta()` checks `get_device_window_key()` matches current window. Verify fix deployed. Repair bad data using delta field data repair pattern (CLAUDE.md rule 63) |
+| Hourly/daily delta undercount | Old code: restart state loss | Verify DeltaTracker persistence deployed — adds tmpfs + disk state |
 | Device showing 0 kW assumed offline | 0 output ≠ offline | 0 kW/kVA means idle/unloaded, NOT offline. Only truly offline if zero readings in SharedState. Verify from Live Registers page before declaring offline |
 | Delta windows misaligned (UTC not local) | `projects.timezone` is null | Set timezone on projects table (not sites). Restart config service after — not in hash |
+| Daily delta shows +1 day in chart | `projects.timezone` null or frontend not passing `p_timezone` | Verify timezone set on `projects` table. Frontend API passes it via `sites → projects(timezone)` join to RPC |
+| Hourly field shows daily bars in raw mode | `logging_frequency_seconds` wrong in `calculated_field_definitions` | Verify: 3600 for hourly, 86400 for daily. RPC uses this to pick bucket size per field |
+| Delta readings appearing in SQLite/cloud | Old controller code still logging deltas | Deploy latest code — `_delta_field_names` set in logging service skips them |
+| Historical page shows UTC hours, not local | Frontend not passing `p_timezone` to RPC | Verify `projects.timezone` is set. Frontend API fetches via `sites → projects(timezone)` join |
 | Delta values identical for different fields | Likely partial window after restart | Wait for first full completed window. Old running-total data proves mapping correct if values differ |
 | Delta undercount scaling with device count | Old DeltaTracker gap: `first = value` instead of `first = old_latest` | Verify `new_first = device_state["latest"]` in `site_calculations.py`. Gap = ~1 kWh/device/hour with integer counters |
 | Timezone change shows partial values | Window key changed mid-hour | Expected — first values after timezone change are from a partial window |
 | Cloud verification shows mismatch | Timestamp misalignment | Calculated fields may log at different frequency (e.g., 5s) than source registers (e.g., 60s). Verify from SharedState (real-time) or align to minute boundaries where both have data. |
 | Cloud shows wrong delta after restart | Logging service sampled before DeltaTracker transition wrote to readings.json | One-time artifact of restart — next full hour will be correct. Verify via readings.json (real-time) not cloud (hourly sample). The 3s lookahead mitigates but doesn't guarantee the race. |
-| Daily field shows too many data points | Initial deployment junk: first sync batch ran before config loaded logging_frequency | Query cloud to confirm recent days are correct (1/day). DELETE non-midnight entries for the deployment date only. Not a code bug — virtual controller device propagates logging_frequency correctly via `sync.py` lines 487-510. |
+| No delta readings in cloud (expected) | Delta fields computed by RPC, not stored | This is correct behavior since migration 106. Verify via RPC call (Step 4b), not by querying device_readings |
 
 ## Verification Best Practices
 
@@ -307,6 +348,8 @@ Expected: Sum of per-device deltas matches calculated field value within ~1 kWh 
 - **"Calculations causing register failure?"**: No — calculations are read-only SharedState consumers. Data flows one direction: Modbus read → SharedState → calculations. Calculations CANNOT cause register read failures. Check `/check-controller` for Modbus/serial issues instead.
 - **"Can backfill corrupt delta values?"**: No — backfill is safe. `on_conflict=ignore-duplicates` prevents overwriting existing cloud readings. Newest-first sync gets correct values first. Fill-gaps phase sends old readings but duplicate timestamps are silently ignored. Delta values are stable within a window (every reading = same value), so no "wrong" reading can be picked.
 
+<!-- Updated: 2026-02-22 - Delta fields now RPC-computed from raw kWh counters (migration 106), not stored in SQLite/cloud. Bucket size per field from logging_frequency_seconds. Controller skips logging delta field names. DeltaTracker still runs for real-time dashboard only -->
+<!-- Updated: 2026-02-21 - Fix offline device behavior: stale completed deltas no longer inflate totals, added data repair troubleshooting -->
 <!-- Updated: 2026-02-19 - Robust DeltaTracker: 7-day staleness, meter reset handling, non-24/7 support, backfill safety note -->
 <!-- Updated: 2026-02-18 - Initial deployment junk data troubleshooting, query cloud data first for density issues, virtual controller device frequency propagation confirmed -->
 <!-- Updated: 2026-02-18 - Added note: calculations are read-only consumers, cannot cause register failures -->

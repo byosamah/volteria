@@ -50,7 +50,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 |-------|---------|
 | `control_logs` | Time-series power readings |
 | `device_readings` | Per-device register readings |
-| `alarms` | System and threshold alarms |
+| `alarms` | System and threshold alarms. **`resolved` (boolean) is source of truth for status, NOT `resolved_at` (timestamp)**. Controller-managed alarm types set `resolved=true` without populating `resolved_at`. Always filter by `resolved=eq.false` for active alarms. |
 | `audit_logs` | User action history |
 | `controller_heartbeats` | Controller online status |
 | `controller_service_status` | 5-layer health tracking |
@@ -98,6 +98,12 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 094 | Belt scale support | belt_scale device type for conveyor integrators |
 | 095 | Controller offline alarm | pg_cron job for controller_offline alarm detection |
 | 099 | Alarm device_id | Match alarms by device_id UUID instead of device_name TEXT |
+| 101 | Device offline fix | Set is_online=false when controller offline (superseded by 102) |
+| 102 | Device online recovery | Revert 101's ELSE branch — is_online is Modbus-only |
+| 103 | Calc field defaults | Default logging_frequency_seconds to 600s for non-delta fields |
+| 104 | Heartbeat retention | Cron job to auto-delete heartbeats older than 8 days |
+| 105 | Historical timezone | `p_timezone` param for timezone-aware hourly/daily bucketing |
+| 106 | Delta RPC computation | Delta fields computed on-the-fly from raw kWh counters (not pre-computed). Bucket size per field from `logging_frequency_seconds` |
 
 ## RPC Functions
 
@@ -149,8 +155,13 @@ SELECT * FROM get_online_controllers(120);
 - `controller_alarm_enabled` (boolean, default true)
 - `controller_alarm_severity` (text: warning/minor/major/critical, default 'critical')
 
-### get_historical_readings (Migration 078)
-Server-side aggregation for historical data visualization. Bypasses max_rows limit by aggregating in database.
+### Heartbeat Retention (Migration 104)
+Auto-deletes `controller_heartbeats` older than 8 days.
+
+**Cron Job**: `cleanup-old-heartbeats` runs daily at 3 AM UTC (`0 3 * * *`)
+
+### get_historical_readings (Migration 078, updated 105)
+Server-side aggregation for historical data visualization. Bypasses max_rows limit by aggregating in database. Timezone-aware bucketing for hourly/daily modes.
 
 ```sql
 SELECT * FROM get_historical_readings(
@@ -159,7 +170,8 @@ SELECT * FROM get_historical_readings(
   p_registers := ARRAY['Total Active Power']::TEXT[],
   p_start := '2026-01-10T00:00:00Z'::TIMESTAMPTZ,
   p_end := '2026-01-17T00:00:00Z'::TIMESTAMPTZ,
-  p_aggregation := 'auto'  -- 'raw', 'hourly', 'daily', 'auto'
+  p_aggregation := 'auto',  -- 'raw', 'hourly', 'daily', 'auto'
+  p_timezone := 'Asia/Dubai' -- IANA timezone for bucketing (default 'UTC')
 );
 ```
 
@@ -169,6 +181,8 @@ SELECT * FROM get_historical_readings(
 - < 24h → raw
 - 24h - 7d → hourly
 - > 7d → daily
+
+**Timezone bucketing**: `date_trunc('day', ts AT TIME ZONE tz)` aligns daily/hourly buckets with project timezone. Frontend passes `projects.timezone` automatically.
 
 ## Key Patterns
 
@@ -285,9 +299,11 @@ CREATE POLICY "Users can view own project data" ON public.new_table
 
 ## Migration Execution Notes
 
-<!-- Updated: 2026-02-13 -->
+<!-- Updated: 2026-02-20 -->
 - When running migrations with `$$` (PL/pgSQL function bodies) via `exec_sql` RPC, use a Python script — curl on Windows mangles `$$` delimiters.
 - Backfill migrations matching by `device_name` only work for current names. Already-renamed devices won't match — run backfills before renames when possible.
+- Large DELETE via `exec_sql` must batch with `WHERE ctid IN (SELECT ctid ... LIMIT 50000)`. `exec_sql` returns `{"success": true}` even for 0 rows affected — verify completion via REST API query on the table.
+- PostgreSQL DELETE doesn't reclaim disk immediately — autovacuum reclaims over hours. For immediate reclamation, use `VACUUM FULL` (locks table).
 
 ## Creating New Migrations
 
