@@ -102,6 +102,9 @@ class LoggingService:
         # Calculated fields to log: {field_id: {config, last_cloud_synced}}
         self._calculated_fields_to_log: dict[str, dict] = {}
 
+        # Delta field names — skip logging these (computed by cloud RPC from raw counters)
+        self._delta_field_names: set[str] = set()
+
         self._start_time = datetime.now(timezone.utc)
 
         # Observability: timing metrics
@@ -424,6 +427,14 @@ class LoggingService:
                         "last_cloud_synced": None,
                     }
 
+        # Detect delta calculated field names — skip logging these to SQLite/cloud.
+        # Delta values are computed by the cloud RPC from raw counter readings
+        # (correct timezone-aligned bucketing). DeltaTracker still runs for real-time dashboard.
+        self._delta_field_names.clear()
+        for calc in config.get("site_calculations", []):
+            if calc.get("type") == "delta" and calc.get("name"):
+                self._delta_field_names.add(calc["name"])
+
         # Count registers from config (read fresh, no caching)
         register_count = sum(
             len(device.get("registers", []))
@@ -438,6 +449,7 @@ class LoggingService:
         logger.info(
             f"Loaded logging config: {register_count} registers, "
             f"{len(self._calculated_fields_to_log)} calc fields, "
+            f"{len(self._delta_field_names)} delta fields skipped, "
             f"local={self._local_enabled}, cloud={self._cloud_enabled}, "
             f"buffer_alert={self._alert_buffer_size}, buffer_max={self._max_buffer_size}"
         )
@@ -671,6 +683,10 @@ class LoggingService:
                 for register_name, reading in device_data.get("readings", {}).items():
                     # Only log registers in current config (skip renamed/removed)
                     if config_registers and (device_id, register_name) not in config_registers:
+                        continue
+
+                    # Skip delta field values — computed by cloud RPC from raw counters
+                    if register_name in self._delta_field_names:
                         continue
 
                     # Get unit from config if available
