@@ -676,13 +676,19 @@ class LoggingService:
                     # Get unit from config if available
                     unit = register_units.get((device_id, register_name), "")
 
+                    # Delta fields embed a window-derived timestamp to pin the
+                    # reading to the correct local-time bucket. Use it instead
+                    # of sampling time so daily deltas don't leak into the next
+                    # UTC day after midnight.
+                    ts = reading.get("timestamp") or current_timestamp
+
                     self._device_readings_buffer.append({
                         "site_id": self._site_id,
                         "device_id": device_id,
                         "register_name": register_name,  # From SharedState
                         "value": reading.get("value"),
                         "unit": unit,
-                        "timestamp": current_timestamp,  # Always use aligned timestamp
+                        "timestamp": ts,
                     })
 
         # Prevent unbounded memory growth (dynamic max based on register count)
