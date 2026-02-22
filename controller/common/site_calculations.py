@@ -314,42 +314,6 @@ def compute_role_sum(
     return round(total, 2) if found_any else None
 
 
-def _window_key_to_utc_timestamp(window_key: str, time_window: str, project_timezone: str) -> str:
-    """
-    Convert a window key to a UTC timestamp placed safely inside the window.
-
-    For daily "2026-02-21" in Asia/Dubai: returns "2026-02-21T08:00:00+00:00"
-    (= noon Dubai, safely within the Dubai day).
-
-    For hourly "2026-02-21T14" in Asia/Dubai: returns "2026-02-21T10:30:00+00:00"
-    (= 14:30 Dubai, mid-hour).
-
-    This timestamp is embedded in SharedState so the logging service can pin
-    delta readings to the correct window bucket instead of using sampling time.
-    """
-    try:
-        from zoneinfo import ZoneInfo
-        tz = ZoneInfo(project_timezone)
-    except Exception:
-        tz = timezone.utc
-
-    if time_window == "hour" and "T" in window_key:
-        # "2026-02-21T14" → 14:30 local
-        day_str, hour_str = window_key.split("T")
-        local_dt = datetime(
-            int(day_str[:4]), int(day_str[5:7]), int(day_str[8:10]),
-            int(hour_str), 30, 0, tzinfo=tz,
-        )
-    else:
-        # "2026-02-21" → 12:00 local (noon, safely within the day)
-        local_dt = datetime(
-            int(window_key[:4]), int(window_key[5:7]), int(window_key[8:10]),
-            12, 0, 0, tzinfo=tz,
-        )
-
-    return local_dt.astimezone(timezone.utc).isoformat()
-
-
 def compute_role_delta(
     readings: dict[str, dict],
     role_index: dict[str, list[tuple[str, str]]],
@@ -357,14 +321,13 @@ def compute_role_delta(
     field_id: str,
     time_window: str,
     project_timezone: str,
-) -> tuple[float, str] | None:
+) -> float | None:
     """
     Compute delta (latest - first) for each device's kWh counter in the
     current time window, then sum across all devices.
 
-    Returns (value, window_utc_timestamp) tuple, or None if no data.
-    The timestamp places the value inside the correct local-time window
-    so the logging service can pin it to the right bucket.
+    Returns the total delta value, or None if no data.
+    Timezone-aware bucketing is handled by the cloud RPC (p_timezone parameter).
     """
     matches = role_index.get(register_role, [])
     if not matches:
@@ -390,12 +353,7 @@ def compute_role_delta(
                 total += completed
                 found_any = True
 
-    if not found_any:
-        return None
-
-    # Return value + window-derived timestamp so logging pins to correct bucket
-    window_ts = _window_key_to_utc_timestamp(window_key, time_window, project_timezone)
-    return (round(total, 2), window_ts)
+    return round(total, 2) if found_any else None
 
 
 def compute_site_calculations(
@@ -416,7 +374,7 @@ def compute_site_calculations(
         project_timezone: IANA timezone string (e.g. "Asia/Dubai")
 
     Returns:
-        {field_id: {"value": float, "name": str, "unit": str, "timestamp"?: str}}
+        {field_id: {"value": float, "name": str, "unit": str}}
     """
     if not site_calculations:
         return {}
@@ -440,7 +398,7 @@ def compute_site_calculations(
                         "unit": calc_def.get("unit", ""),
                     }
             elif calc_type == "delta":
-                delta_result = compute_role_delta(
+                value = compute_role_delta(
                     readings,
                     role_index,
                     calc_def.get("register_role", ""),
@@ -448,13 +406,11 @@ def compute_site_calculations(
                     calc_def.get("time_window", "hour"),
                     project_timezone,
                 )
-                if delta_result is not None:
-                    delta_value, window_ts = delta_result
+                if value is not None:
                     results[field_id] = {
-                        "value": delta_value,
+                        "value": value,
                         "name": calc_def.get("name", field_id),
                         "unit": calc_def.get("unit", ""),
-                        "timestamp": window_ts,
                     }
             else:
                 logger.debug(f"Calc type '{calc_type}' not yet implemented for {field_id}")

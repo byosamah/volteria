@@ -372,14 +372,10 @@ class DeviceManager:
                     project_timezone=config.get("project", {}).get("timezone") or "UTC",
                 )
                 if site_calc_results:
-                    controller_readings = {}
-                    for fd in site_calc_results.values():
-                        entry = {"value": fd["value"], "unit": fd.get("unit", "")}
-                        # Delta fields include a window-derived timestamp to pin
-                        # the reading to the correct local-time bucket
-                        if "timestamp" in fd:
-                            entry["timestamp"] = fd["timestamp"]
-                        controller_readings[fd["name"]] = entry
+                    controller_readings = {
+                        fd["name"]: {"value": fd["value"], "unit": fd.get("unit", "")}
+                        for fd in site_calc_results.values()
+                    }
                     readings_data["devices"][controller_device_id] = {
                         "readings": controller_readings,
                     }
