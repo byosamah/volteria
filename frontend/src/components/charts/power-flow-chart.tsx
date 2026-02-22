@@ -166,7 +166,7 @@ export const PowerFlowChart = memo(function PowerFlowChart({ projectId, siteId }
         // Skip consecutive offline points (only first starts a period)
         if (i > 0 && connectionData[i - 1].status === 0) continue;
         // Found offline start - scan forward to find end (next online point or now)
-        let endMs = Date.now();
+        let endMs = connectionData[connectionData.length - 1]?.timestampMs ?? Date.now();
         for (let j = i + 1; j < connectionData.length; j++) {
           if (connectionData[j].status === 1) {
             endMs = connectionData[j].timestampMs;
