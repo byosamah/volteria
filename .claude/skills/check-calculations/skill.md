@@ -62,9 +62,8 @@ Delta fields (Hourly/Daily Energy Production) are **NOT logged to SQLite/cloud**
 - **Timezone-aligned**: RPC uses `date_trunc('hour'/'day', timestamp AT TIME ZONE p_timezone)` for correct local-time bucketing
 - **Non-24/7 sites**: DeltaTracker state persists across overnight shutdowns (7-day staleness limit). Raw counters in cloud = RPC computes correctly regardless
 - **Meter reset handling**: Consecutive-pair approach. If `next < current` in any pair, that pair = 0. Only the unmeasurable reset gap is lost; pre-reset and post-reset energy is captured. With 5min logging, at most ~5 min of energy lost at a reset point (not the whole period)
-- **Offline devices**: Devices with no readings in a bucket are simply absent — prior bucket's LEAD skips to next available
-- **Single reading per bucket is enough**: Delta is between buckets (not within), so 1 reading per bucket suffices
-- **Extended range**: RPC fetches up to 1 day past `p_end` to get boundary reading for last bucket's delta
+- **Offline devices**: Devices with no readings in the range produce no pairs → absent from results
+- **Extended range**: RPC fetches up to 1 day past `p_end` so the last pair in each bucket crosses into the next period
 
 ## Register Role Reference
 
@@ -281,19 +280,16 @@ Check that sum-type fields have `register_role` in their `calculation_config`.
 Verify the RPC delta output matches manual computation from raw kWh counter readings:
 
 ```bash
-# For each DG device, get FIRST reading at each day boundary (Dubai timezone)
-# Dubai day Feb 21 starts at 2026-02-20T20:00:00Z, Feb 22 starts at 2026-02-21T20:00:00Z
-# Get first reading of Feb 21 (current bucket start)
-curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device_id=eq.DG_DEVICE_ID&register_name=eq.kWhours&timestamp=gte.2026-02-20T20:00:00Z&order=timestamp.asc&limit=1&select=value,timestamp" \
-  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
-# Get first reading of Feb 22 (next bucket start)
-curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device_id=eq.DG_DEVICE_ID&register_name=eq.kWhours&timestamp=gte.2026-02-21T20:00:00Z&order=timestamp.asc&limit=1&select=value,timestamp" \
+# For each DG device, get ALL kWh readings in a daily bucket (Dubai day boundary)
+# Dubai day Feb 21 = 2026-02-20T20:00:00Z to 2026-02-21T20:00:00Z
+# Include first reading of next day for the boundary pair
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/device_readings?device_id=eq.DG_DEVICE_ID&register_name=eq.kWhours&timestamp=gte.2026-02-20T20:00:00Z&timestamp=lt.2026-02-21T20:10:00Z&order=timestamp.asc&select=value,timestamp" \
   -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
 ```
 
-Manual formula: `SUM(first_of_next_day - first_of_current_day)` across all source devices.
+Manual formula: For each consecutive pair of readings, compute `GREATEST(0, next - current)`. Sum all pairs where the first reading falls within the bucket. Sum across all source devices.
 
-Expected: RPC value matches manual computation exactly (boundary-to-boundary method).
+Expected: RPC value matches manual computation exactly. Meter resets (counter drops) contribute 0 for that pair only — pre/post reset energy is captured.
 
 ## Output Format
 
@@ -357,7 +353,7 @@ Expected: RPC value matches manual computation exactly (boundary-to-boundary met
 - **"Calculations causing register failure?"**: No — calculations are read-only SharedState consumers. Data flows one direction: Modbus read → SharedState → calculations. Calculations CANNOT cause register read failures. Check `/check-controller` for Modbus/serial issues instead.
 - **"Can backfill corrupt delta values?"**: No — backfill is safe. `on_conflict=ignore-duplicates` prevents overwriting existing cloud readings. Newest-first sync gets correct values first. Fill-gaps phase sends old readings but duplicate timestamps are silently ignored. Delta values are stable within a window (every reading = same value), so no "wrong" reading can be picked.
 
-<!-- Updated: 2026-02-22 - Delta boundary fix (migration 107): first_of_next_bucket - first_of_current_bucket instead of MAX-MIN. Captures full period including last logging interval. Updated pipeline, key properties, and cross-check section -->
+<!-- Updated: 2026-02-22 - Delta consecutive-pair approach (migration 107): SUM(GREATEST(0, next-current)) across all reading pairs at logging freq. Boundary-to-boundary + meter reset handling. Updated pipeline, key properties, cross-check, and troubleshooting -->
 <!-- Updated: 2026-02-22 - Delta fields now RPC-computed from raw kWh counters (migration 106), not stored in SQLite/cloud. Bucket size per field from logging_frequency_seconds. Controller skips logging delta field names. DeltaTracker still runs for real-time dashboard only -->
 <!-- Updated: 2026-02-21 - Fix offline device behavior: stale completed deltas no longer inflate totals, added data repair troubleshooting -->
 <!-- Updated: 2026-02-19 - Robust DeltaTracker: 7-day staleness, meter reset handling, non-24/7 support, backfill safety note -->
