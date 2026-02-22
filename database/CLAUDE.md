@@ -104,6 +104,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 104 | Heartbeat retention | Cron job to auto-delete heartbeats older than 8 days |
 | 105 | Historical timezone | `p_timezone` param for timezone-aware hourly/daily bucketing |
 | 106 | Delta RPC computation | Delta fields computed on-the-fly from raw kWh counters (not pre-computed). Bucket size per field from `logging_frequency_seconds` |
+| 107 | Delta boundary fix | Fix delta boundary: `first(next_bucket) - first(current_bucket)` instead of `MAX-MIN` within bucket. Captures full period including last logging interval |
 
 ## RPC Functions
 
