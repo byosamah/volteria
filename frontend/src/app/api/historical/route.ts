@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
     // Verify user has access to all sites via projects
     const { data: sitesData, error: sitesError } = await supabase
       .from("sites")
-      .select("id, name, project_id")
+      .select("id, name, project_id, projects(timezone)")
       .in("id", siteIds);
 
     if (sitesError || !sitesData || sitesData.length === 0) {
@@ -181,6 +181,11 @@ export async function GET(request: NextRequest) {
       siteNameMap[s.id] = s.name;
     });
 
+    // Get project timezone (use first site's project — multi-project queries rare)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const firstSite = sitesData[0] as any;
+    const projectTimezone: string = firstSite?.projects?.timezone || "UTC";
+
     // Parse device IDs and registers
     const deviceIds = deviceIdsParam
       ? deviceIdsParam.split(",").filter((id) => id.trim())
@@ -226,10 +231,11 @@ export async function GET(request: NextRequest) {
           p_start: startTime.toISOString(),
           p_end: endTime.toISOString(),
           p_aggregation: actualAggregation === "auto" ? "auto" : actualAggregation,
+          p_timezone: projectTimezone,
         }
       );
 
-      console.log("[historical API] RPC result:", readingsData?.length || 0, "readings, aggregation:", actualAggregation, "error:", readingsError?.message);
+      console.log("[historical API] RPC result:", readingsData?.length || 0, "readings, aggregation:", actualAggregation, "timezone:", projectTimezone, "error:", readingsError?.message);
 
       if (!readingsError && readingsData && readingsData.length > 0) {
         // Fetch device names for mapping
