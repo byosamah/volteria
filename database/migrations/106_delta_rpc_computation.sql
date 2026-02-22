@@ -193,147 +193,80 @@ BEGIN
   END IF;
 
   -- 2. Compute delta fields from raw counter readings
-  -- For each delta register: find source devices via register_role, compute deltas
-  IF v_aggregation = 'raw' OR v_aggregation = 'daily' THEN
-    -- Daily granularity (also used for raw mode on delta fields — delta only makes sense per-bucket)
-    RETURN QUERY
-    WITH delta_config AS (
-      -- Map delta field names to their source register_role
-      SELECT
-        cfd.name AS field_name,
-        cfd.unit AS field_unit,
-        cfd.calculation_config->>'register_role' AS register_role
-      FROM public.calculated_field_definitions cfd
-      WHERE cfd.calculation_type = 'delta'
-        AND cfd.name = ANY(v_delta_registers)
-    ),
-    source_registers AS (
-      -- Find actual device registers with matching register_role
-      -- Join through site_devices → device_templates to find registers with role
-      SELECT
-        dc.field_name,
-        dc.field_unit,
-        sd.id AS src_device_id,
-        sd.site_id AS src_site_id,
-        reg->>'name' AS src_register_name
-      FROM delta_config dc
-      CROSS JOIN public.site_devices sd
-      CROSS JOIN LATERAL jsonb_array_elements(
-        COALESCE(sd.registers, '[]'::jsonb)
-      ) AS reg
-      WHERE sd.site_id = ANY(p_site_ids)
-        AND sd.enabled = true
-        AND reg->>'register_role' = dc.register_role
-    ),
-    -- Get the master device ID for the output (from p_device_ids that match site_master_devices)
-    master_device AS (
-      SELECT smd.id AS master_id, smd.site_id
-      FROM public.site_master_devices smd
-      WHERE smd.id = ANY(p_device_ids)
-        AND smd.site_id = ANY(p_site_ids)
-      LIMIT 1
-    ),
-    -- Compute per-device per-day deltas from raw counter readings
-    device_daily_deltas AS (
-      SELECT
-        sr.field_name,
-        sr.field_unit,
-        sr.src_site_id,
-        sr.src_device_id,
-        date_trunc('day', dr.timestamp AT TIME ZONE p_timezone) AS day_key,
-        MAX(dr.value) - MIN(dr.value) AS delta_value
-      FROM source_registers sr
-      JOIN public.device_readings dr
-        ON dr.device_id = sr.src_device_id
-        AND dr.register_name = sr.src_register_name
-        AND dr.timestamp BETWEEN p_start AND p_end
-      GROUP BY sr.field_name, sr.field_unit, sr.src_site_id, sr.src_device_id, day_key
-      HAVING COUNT(*) >= 2  -- Need at least 2 readings to compute a delta
-    )
-    -- Sum across devices per day, return as the delta field
+  -- Bucket size per field: logging_frequency_seconds determines natural granularity
+  -- (3600=hourly, 86400=daily). Only aggregate UP (hourly→daily), never down.
+  RETURN QUERY
+  WITH delta_config AS (
     SELECT
-      md.site_id,
-      md.master_id AS device_id,
-      dd.field_name AS register_name,
-      (dd.day_key AT TIME ZONE p_timezone) AS bucket,
-      SUM(dd.delta_value)::NUMERIC AS value,
-      SUM(dd.delta_value)::NUMERIC AS min_value,
-      SUM(dd.delta_value)::NUMERIC AS max_value,
-      1 AS sample_count,
-      MAX(dd.field_unit) AS unit
-    FROM device_daily_deltas dd
-    CROSS JOIN master_device md
-    GROUP BY md.site_id, md.master_id, dd.field_name, dd.day_key
-    ORDER BY bucket
-    LIMIT 500000;
-
-  ELSE
-    -- Hourly granularity
-    RETURN QUERY
-    WITH delta_config AS (
-      SELECT
-        cfd.name AS field_name,
-        cfd.unit AS field_unit,
-        cfd.calculation_config->>'register_role' AS register_role
-      FROM public.calculated_field_definitions cfd
-      WHERE cfd.calculation_type = 'delta'
-        AND cfd.name = ANY(v_delta_registers)
-    ),
-    source_registers AS (
-      SELECT
-        dc.field_name,
-        dc.field_unit,
-        sd.id AS src_device_id,
-        sd.site_id AS src_site_id,
-        reg->>'name' AS src_register_name
-      FROM delta_config dc
-      CROSS JOIN public.site_devices sd
-      CROSS JOIN LATERAL jsonb_array_elements(
-        COALESCE(sd.registers, '[]'::jsonb)
-      ) AS reg
-      WHERE sd.site_id = ANY(p_site_ids)
-        AND sd.enabled = true
-        AND reg->>'register_role' = dc.register_role
-    ),
-    master_device AS (
-      SELECT smd.id AS master_id, smd.site_id
-      FROM public.site_master_devices smd
-      WHERE smd.id = ANY(p_device_ids)
-        AND smd.site_id = ANY(p_site_ids)
-      LIMIT 1
-    ),
-    device_hourly_deltas AS (
-      SELECT
-        sr.field_name,
-        sr.field_unit,
-        sr.src_site_id,
-        sr.src_device_id,
-        date_trunc('hour', dr.timestamp AT TIME ZONE p_timezone) AS hour_key,
-        MAX(dr.value) - MIN(dr.value) AS delta_value
-      FROM source_registers sr
-      JOIN public.device_readings dr
-        ON dr.device_id = sr.src_device_id
-        AND dr.register_name = sr.src_register_name
-        AND dr.timestamp BETWEEN p_start AND p_end
-      GROUP BY sr.field_name, sr.field_unit, sr.src_site_id, sr.src_device_id, hour_key
-      HAVING COUNT(*) >= 2
-    )
+      cfd.name AS field_name,
+      cfd.unit AS field_unit,
+      cfd.calculation_config->>'register_role' AS register_role,
+      COALESCE(cfd.logging_frequency_seconds, 86400) AS field_frequency
+    FROM public.calculated_field_definitions cfd
+    WHERE cfd.calculation_type = 'delta'
+      AND cfd.name = ANY(v_delta_registers)
+  ),
+  source_registers AS (
     SELECT
-      md.site_id,
-      md.master_id AS device_id,
-      dd.field_name AS register_name,
-      (dd.hour_key AT TIME ZONE p_timezone) AS bucket,
-      SUM(dd.delta_value)::NUMERIC AS value,
-      SUM(dd.delta_value)::NUMERIC AS min_value,
-      SUM(dd.delta_value)::NUMERIC AS max_value,
-      1 AS sample_count,
-      MAX(dd.field_unit) AS unit
-    FROM device_hourly_deltas dd
-    CROSS JOIN master_device md
-    GROUP BY md.site_id, md.master_id, dd.field_name, dd.hour_key
-    ORDER BY bucket
-    LIMIT 500000;
-  END IF;
+      dc.field_name,
+      dc.field_unit,
+      dc.field_frequency,
+      sd.id AS src_device_id,
+      sd.site_id AS src_site_id,
+      reg->>'name' AS src_register_name
+    FROM delta_config dc
+    CROSS JOIN public.site_devices sd
+    CROSS JOIN LATERAL jsonb_array_elements(
+      COALESCE(sd.registers, '[]'::jsonb)
+    ) AS reg
+    WHERE sd.site_id = ANY(p_site_ids)
+      AND sd.enabled = true
+      AND reg->>'register_role' = dc.register_role
+  ),
+  master_device AS (
+    SELECT smd.id AS master_id, smd.site_id
+    FROM public.site_master_devices smd
+    WHERE smd.id = ANY(p_device_ids)
+      AND smd.site_id = ANY(p_site_ids)
+    LIMIT 1
+  ),
+  device_deltas AS (
+    SELECT
+      sr.field_name,
+      sr.field_unit,
+      sr.src_site_id,
+      sr.src_device_id,
+      -- Hourly fields (<=3600s) use hourly buckets unless daily aggregation requested
+      -- Daily fields (>3600s) always use daily buckets
+      CASE
+        WHEN sr.field_frequency <= 3600 AND v_aggregation <> 'daily'
+          THEN date_trunc('hour', dr.timestamp AT TIME ZONE p_timezone)
+        ELSE date_trunc('day', dr.timestamp AT TIME ZONE p_timezone)
+      END AS bucket_key,
+      MAX(dr.value) - MIN(dr.value) AS delta_value
+    FROM source_registers sr
+    JOIN public.device_readings dr
+      ON dr.device_id = sr.src_device_id
+      AND dr.register_name = sr.src_register_name
+      AND dr.timestamp BETWEEN p_start AND p_end
+    GROUP BY sr.field_name, sr.field_unit, sr.src_site_id, sr.src_device_id, bucket_key
+    HAVING COUNT(*) >= 2
+  )
+  SELECT
+    md.site_id,
+    md.master_id AS device_id,
+    dd.field_name AS register_name,
+    (dd.bucket_key AT TIME ZONE p_timezone) AS bucket,
+    SUM(dd.delta_value)::NUMERIC AS value,
+    SUM(dd.delta_value)::NUMERIC AS min_value,
+    SUM(dd.delta_value)::NUMERIC AS max_value,
+    1 AS sample_count,
+    MAX(dd.field_unit) AS unit
+  FROM device_deltas dd
+  CROSS JOIN master_device md
+  GROUP BY md.site_id, md.master_id, dd.field_name, dd.bucket_key
+  ORDER BY bucket
+  LIMIT 500000;
 END;
 $$;
 
