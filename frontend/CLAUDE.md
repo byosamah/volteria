@@ -732,8 +732,10 @@ Multi-site historical data viewer with server-side aggregation:
 **Calculated Fields Architecture**:
 - **Virtual AxisParameter pattern**: Computed fields create fake `AxisParameter` objects (`deviceId='calc'`, `registerId=fieldId`, key=`calc:{name}`) that flow through existing chart/tooltip/CSV pipeline unchanged — zero modifications to `HistoricalChart`, `ChartOverlay`, or `OverlayTooltip`
 - **Forward-fill**: SCADA-standard single-pass O(n) algorithm carries last known value per register at each timestamp, handling mixed logging frequencies
-- **Cross-field math**: Fields can reference other fields as operands (`type: "parameter" | "field"` discriminator). Topological sort (DFS) ensures dependencies compute first. Circular refs prevented in dropdown
-- **Operand UI**: Min 2, max 5 operands per field. First operand locked to `+`. Select dropdown for `+/-` (not click-toggle — Rule 41)
+- **Cross-field math**: Fields can reference other fields as operands (`type: "parameter" | "field" | "constant"` discriminator). Topological sort (DFS) ensures dependencies compute first. Circular refs prevented in dropdown
+- **Operators**: `+`, `−`, `×`, `÷` with left-to-right evaluation (no precedence). Division by zero → null (chart gap). Equation preview shows formula with variable labels (A, B, C for sources, actual numbers for constants)
+- **Constant operands**: "Fixed Value" option in source dropdown switches to number input. `constantValue` field on `CalculatedFieldOperand`. Same value at every timestamp — no chart data lookup needed
+- **Operand UI**: Min 2, max 5 operands per field. First operand locked to `+`. Select dropdown for operators (not click-toggle — Rule 41)
 - **Aggregation caveat**: `avg(A) + avg(B)` works for hourly_avg. For min/max, sum-of-extremes ≠ extreme-of-sums — acceptable for industrial monitoring
 
 **Components** (`frontend/src/components/historical/v2/`):
@@ -850,3 +852,7 @@ npx shadcn@latest add dialog
 18. **Virtual AxisParameter Pattern**: To add computed/derived data to charts without modifying chart/tooltip/CSV components, create fake `AxisParameter` objects with synthetic IDs (e.g., `deviceId='calc'`). They flow through existing rendering pipeline unchanged. Used by Calculated Fields — extend this pattern for any future derived data.
 
 19. **ChartOverlay pixelToIndex uses band-based mapping**: `pixelToIndex()` divides data area into N equal bands (`dataWidth / data.length`) with `Math.floor` to match Recharts categorical axis positioning. Never use point-based mapping (`Math.round(ratio * (N-1))`) — it misaligns tooltip snapping with bar chart clusters, causing hover on one bar to show adjacent data point's values.
+
+20. **Chart gap detection uses per-parameter adaptive thresholds**: For raw data, computes median interval between consecutive data points per parameter, then uses `max(median × 3, 5 minutes)` as gap threshold. Each parameter adapts independently — mixing 1s and 10min registers on the same chart works correctly. Never use a fixed gap threshold for raw data — registers have different logging frequencies (1s, 10min, 60min). Hourly: 3h fixed. Daily: 3d fixed.
+
+21. **Recharts ReferenceArea domain alignment**: `ReferenceArea` x1/x2 must stay within the X-axis `domain` bounds. Using `Date.now()` in useMemo for dynamic boundaries causes clipping because it evaluates slightly after data creation — use the actual data point's timestamp instead.
