@@ -104,7 +104,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 104 | Heartbeat retention | Cron job to auto-delete heartbeats older than 8 days |
 | 105 | Historical timezone | `p_timezone` param for timezone-aware hourly/daily bucketing |
 | 106 | Delta RPC computation | Delta fields computed on-the-fly from raw kWh counters (not pre-computed). Bucket size per field from `logging_frequency_seconds` |
-| 107 | Delta boundary fix | Fix delta boundary: `first(next_bucket) - first(current_bucket)` instead of `MAX-MIN` within bucket. Captures full period including last logging interval |
+| 107 | Delta boundary + reset | Sum consecutive reading pairs `GREATEST(0, next-current)` instead of `MAX-MIN`. Boundary-to-boundary + meter reset handling (only reset gap lost, not whole period) |
 
 ## RPC Functions
 
@@ -305,6 +305,7 @@ CREATE POLICY "Users can view own project data" ON public.new_table
 - Backfill migrations matching by `device_name` only work for current names. Already-renamed devices won't match — run backfills before renames when possible.
 - Large DELETE via `exec_sql` must batch with `WHERE ctid IN (SELECT ctid ... LIMIT 50000)`. `exec_sql` returns `{"success": true}` even for 0 rows affected — verify completion via REST API query on the table.
 - PostgreSQL DELETE doesn't reclaim disk immediately — autovacuum reclaims over hours. For immediate reclamation, use `VACUUM FULL` (locks table).
+- **PL/pgSQL column name ambiguity**: Functions returning a `value` column conflict with CTE columns named `value`. Alias CTE columns to `reading_value` to avoid `"column reference is ambiguous"` errors.
 
 ## Creating New Migrations
 

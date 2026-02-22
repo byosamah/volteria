@@ -1,9 +1,11 @@
--- Migration: Fix delta field boundary computation
--- Problem: MAX(value)-MIN(value) within a bucket misses the last logging interval.
+-- Migration: Fix delta field boundary computation + meter reset handling
+-- Problem 1: MAX(value)-MIN(value) within a bucket misses the last logging interval.
 --   e.g., daily bucket reads 00:00→23:50 (10min freq), missing 23:50→00:00 energy.
---   User verified: correct = 9521 kWh, old logic = 9456 kWh (65 kWh lost).
--- Fix: Use FIRST(next_bucket) - FIRST(current_bucket) via LEAD window function.
---   This captures the full period boundary-to-boundary.
+-- Problem 2: Meter resets (counter drops) caused entire period to show 0 energy.
+-- Fix: Sum all consecutive reading pairs at logging frequency resolution.
+--   Each pair: GREATEST(0, next - current). Negative = reset → skip only that gap.
+--   Bucket of each pair = bucket of first reading → boundary-to-boundary naturally.
+--   Captures pre-reset + post-reset energy; only the unmeasurable reset gap is lost.
 
 -- Drop existing function
 DROP FUNCTION IF EXISTS public.get_historical_readings(UUID[], UUID[], TEXT[], TIMESTAMPTZ, TIMESTAMPTZ, TEXT, TEXT);
@@ -187,10 +189,11 @@ BEGIN
   END IF;
 
   -- 2. Compute delta fields from raw counter readings
-  -- Strategy: For each device+register, get the FIRST reading per timezone-aligned bucket,
-  -- then delta = first_of_next_bucket - first_of_current_bucket.
-  -- This captures the full period boundary-to-boundary (no missing last interval).
-  -- Extended range: fetch up to 1 day past p_end to get the boundary reading for the last bucket.
+  -- Strategy: Sum all consecutive reading pairs at logging frequency resolution.
+  -- Reset detection: if next < current, that pair = 0 (reset gap). All other pairs contribute.
+  -- Bucket assignment: each pair's energy goes to the bucket of its FIRST reading.
+  -- The last pair in a bucket naturally crosses into next bucket's first reading (boundary-to-boundary).
+  -- Extended range: fetch up to 1 day past p_end to capture cross-boundary pairs.
   RETURN QUERY
   WITH delta_config AS (
     SELECT
@@ -226,29 +229,25 @@ BEGIN
       AND smd.site_id = ANY(p_site_ids)
     LIMIT 1
   ),
-  -- Rank readings per (field, device, bucket) by timestamp ASC
-  -- Extended range: p_end + 1 day to capture next period's boundary reading
-  ranked_readings AS (
+  -- All consecutive reading pairs at logging frequency resolution.
+  -- LEAD gives next reading's value. Bucket = date_trunc of THIS reading's timestamp.
+  -- Extended range: +1 day past p_end so last pair in the query range crosses into next period.
+  ordered_readings AS (
     SELECT
       sr.field_name,
       sr.field_unit,
       sr.src_site_id,
       sr.src_device_id,
+      dr.value AS reading_value,
+      LEAD(dr.value) OVER (
+        PARTITION BY sr.field_name, sr.src_device_id
+        ORDER BY dr.timestamp
+      ) AS next_value,
       CASE
         WHEN sr.field_frequency <= 3600 AND v_aggregation <> 'daily'
           THEN date_trunc('hour', dr.timestamp AT TIME ZONE p_timezone)
         ELSE date_trunc('day', dr.timestamp AT TIME ZONE p_timezone)
-      END AS bucket_key,
-      dr.value AS reading_value,
-      ROW_NUMBER() OVER (
-        PARTITION BY sr.field_name, sr.src_device_id,
-          CASE
-            WHEN sr.field_frequency <= 3600 AND v_aggregation <> 'daily'
-              THEN date_trunc('hour', dr.timestamp AT TIME ZONE p_timezone)
-            ELSE date_trunc('day', dr.timestamp AT TIME ZONE p_timezone)
-          END
-        ORDER BY dr.timestamp ASC
-      ) AS rn
+      END AS bucket_key
     FROM source_registers sr
     JOIN public.device_readings dr
       ON dr.device_id = sr.src_device_id
@@ -256,29 +255,20 @@ BEGIN
       AND dr.timestamp >= p_start
       AND dr.timestamp < (p_end + INTERVAL '1 day')
   ),
-  -- First reading per device per bucket
-  first_per_bucket AS (
-    SELECT field_name, field_unit, src_site_id, src_device_id,
-           bucket_key, reading_value
-    FROM ranked_readings
-    WHERE rn = 1
-  ),
-  -- Delta = first_of_next_bucket - first_of_current_bucket
-  -- GREATEST(0, ...) guards against meter resets (counter wraps to 0)
+  -- Sum positive pair deltas per bucket per device.
+  -- Negative pair (next < current) = meter reset → contributes 0, not the whole period.
+  -- Only the unmeasurable reset gap is lost; pre-reset and post-reset energy is captured.
   device_deltas AS (
     SELECT
-      fpb.field_name,
-      fpb.field_unit,
-      fpb.src_site_id,
-      fpb.src_device_id,
-      fpb.bucket_key,
-      GREATEST(0,
-        LEAD(fpb.reading_value) OVER (
-          PARTITION BY fpb.field_name, fpb.src_device_id
-          ORDER BY fpb.bucket_key
-        ) - fpb.reading_value
-      ) AS delta_value
-    FROM first_per_bucket fpb
+      field_name,
+      field_unit,
+      src_site_id,
+      src_device_id,
+      bucket_key,
+      SUM(GREATEST(0, next_value - reading_value)) AS delta_value
+    FROM ordered_readings
+    WHERE next_value IS NOT NULL
+    GROUP BY field_name, field_unit, src_site_id, src_device_id, bucket_key
   )
   SELECT
     md.site_id,
@@ -301,4 +291,4 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.get_historical_readings IS 'Server-side aggregation for historical data. Timezone-aware bucketing for hourly/daily. Delta calculated fields computed on-the-fly from source counter readings using boundary-to-boundary method (first_of_next_bucket - first_of_current_bucket). Auto-selects aggregation: raw (<24h), hourly (24h-7d), daily (>7d). Limit: 500k rows.';
+COMMENT ON FUNCTION public.get_historical_readings IS 'Server-side aggregation for historical data. Timezone-aware bucketing for hourly/daily. Delta fields computed on-the-fly by summing consecutive reading pairs (GREATEST(0, next-current)) — handles meter resets by skipping only the reset gap. Auto-selects aggregation: raw (<24h), hourly (24h-7d), daily (>7d). Limit: 500k rows.';
