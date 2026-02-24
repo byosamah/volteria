@@ -153,6 +153,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
   });
   const [userProjects, setUserProjects] = useState<ProjectAssignment[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
 
   // Notification settings state
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -330,6 +331,7 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
     // Reset notification state
     setExpandedProjects(new Set());
     setProjectNotificationSettings({});
+    setProjectSearch("");
 
     // Check if Enterprise Admin is editing themselves
     const isSelfEditingEnterpriseAdmin =
@@ -496,6 +498,36 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
     } catch (err) {
       console.error("Remove from project error:", err);
       toast.error("Failed to remove user from project");
+    }
+  };
+
+  // Handle assign/unassign project via checkbox
+  const handleAssignProject = async (projectId: string, assign: boolean) => {
+    if (!editUser) return;
+    try {
+      if (assign) {
+        const response = await fetch(`/api/admin/users/${editUser.id}/projects`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_id: projectId, can_edit: false, can_control: false }),
+        });
+        if (response.ok) {
+          const project = projects.find(p => p.id === projectId);
+          setUserProjects(prev => [...prev, {
+            project_id: projectId,
+            project_name: project?.name || null,
+            can_edit: false,
+            can_control: false,
+          }]);
+          toast.success(`Assigned to ${project?.name || "project"}`);
+        } else {
+          toast.error("Failed to assign project");
+        }
+      } else {
+        await handleRemoveFromProject(projectId);
+      }
+    } catch {
+      toast.error("Failed to update project assignment");
     }
   };
 
@@ -1236,171 +1268,124 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                       </div>
                     )}
 
-                    {/* Assign Project dropdown — show for non-self-edit when there are unassigned projects */}
-                    {!isSelfEditingEnterpriseAdmin && !projectsLoading && (() => {
-                      const assignedIds = new Set(userProjects.map(p => p.project_id));
-                      const available = projects.filter(p => !assignedIds.has(p.id));
-                      if (available.length === 0) return null;
-                      return (
-                        <Select
-                          value=""
-                          onValueChange={async (projectId) => {
-                            if (!editUser) return;
-                            try {
-                              const response = await fetch(`/api/admin/users/${editUser.id}/projects`, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ project_id: projectId, can_edit: false, can_control: false }),
-                              });
-                              if (response.ok) {
-                                const project = projects.find(p => p.id === projectId);
-                                setUserProjects(prev => [...prev, {
-                                  project_id: projectId,
-                                  project_name: project?.name || null,
-                                  can_edit: false,
-                                  can_control: false,
-                                }]);
-                                toast.success(`Assigned to ${project?.name || "project"}`);
-                              } else {
-                                toast.error("Failed to assign project");
-                              }
-                            } catch {
-                              toast.error("Failed to assign project");
-                            }
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Assign a project..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {available.map(p => (
-                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      );
-                    })()}
-
                     {projectsLoading ? (
                       <div className="text-sm text-muted-foreground">
                         Loading projects...
                       </div>
-                    ) : userProjects.length === 0 && !isSelfEditingEnterpriseAdmin ? (
-                      <div className="text-sm text-muted-foreground">
-                        No projects assigned yet
-                      </div>
-                    ) : userProjects.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">
-                        No projects available
-                      </div>
-                    ) : (
-                      <div className="border rounded-lg divide-y max-h-[350px] overflow-y-auto">
-                        {userProjects.map((assignment) => {
-                          const project = projects.find(
-                            (p) => p.id === assignment.project_id
-                          );
-                          const isExpanded = expandedProjects.has(assignment.project_id);
-                          const notificationSettings =
-                            projectNotificationSettings[assignment.project_id];
+                    ) : (() => {
+                      // Filter projects by search
+                      const filtered = projects.filter(p =>
+                        p.name.toLowerCase().includes(projectSearch.toLowerCase())
+                      );
 
-                          return (
-                            <div key={assignment.project_id} className="p-3">
-                              {/* Project header row */}
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 flex-1">
-                                  {/* Expand/collapse button for notification settings */}
+                      // Group by enterprise for super_admin/backend_admin
+                      const showGroups = ["super_admin", "backend_admin"].includes(currentUser.role);
+
+                      // Build groups: enterprise_id → projects[]
+                      const groups: Array<{ enterpriseId: string | null; enterpriseName: string; projects: Project[] }> = [];
+                      if (showGroups) {
+                        const byEnterprise = new Map<string | null, Project[]>();
+                        for (const p of filtered) {
+                          const key = p.enterprise_id;
+                          if (!byEnterprise.has(key)) byEnterprise.set(key, []);
+                          byEnterprise.get(key)!.push(p);
+                        }
+                        // Named enterprises first, then "No Enterprise"
+                        for (const [eid, projs] of byEnterprise) {
+                          const ent = enterprises.find(e => e.id === eid);
+                          groups.push({
+                            enterpriseId: eid,
+                            enterpriseName: ent?.name || "No Enterprise",
+                            projects: projs,
+                          });
+                        }
+                        groups.sort((a, b) => {
+                          if (!a.enterpriseId) return 1;
+                          if (!b.enterpriseId) return -1;
+                          return a.enterpriseName.localeCompare(b.enterpriseName);
+                        });
+                      } else {
+                        groups.push({ enterpriseId: null, enterpriseName: "", projects: filtered });
+                      }
+
+                      const assignedIds = new Set(userProjects.map(p => p.project_id));
+
+                      const renderProjectRow = (p: Project) => {
+                        const isAssigned = assignedIds.has(p.id);
+                        const assignment = userProjects.find(a => a.project_id === p.id);
+                        const isExpanded = expandedProjects.has(p.id);
+                        const notificationSettings = projectNotificationSettings[p.id];
+
+                        return (
+                          <div key={p.id} className="p-2.5 hover:bg-muted/50">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 flex-1">
+                                {!isSelfEditingEnterpriseAdmin ? (
+                                  <Checkbox
+                                    checked={isAssigned}
+                                    onCheckedChange={(checked) =>
+                                      handleAssignProject(p.id, checked as boolean)
+                                    }
+                                  />
+                                ) : null}
+                                {isAssigned && (
                                   <Button
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    className="h-6 w-6 p-0"
-                                    onClick={() =>
-                                      toggleProjectExpansion(assignment.project_id)
-                                    }
+                                    className="h-5 w-5 p-0"
+                                    onClick={() => toggleProjectExpansion(p.id)}
                                   >
                                     {isExpanded ? (
-                                      <ChevronUp className="h-4 w-4" />
+                                      <ChevronUp className="h-3.5 w-3.5" />
                                     ) : (
-                                      <ChevronDown className="h-4 w-4" />
+                                      <ChevronDown className="h-3.5 w-3.5" />
                                     )}
                                   </Button>
-                                  <div className="font-medium text-sm">
-                                    {assignment.project_name || project?.name || "Unknown Project"}
-                                  </div>
-                                </div>
-
-                                {/* Show read-only badges for Enterprise Admin self-edit, or checkboxes for others */}
-                                {isSelfEditingEnterpriseAdmin ? (
-                                  <div className="flex items-center gap-2">
-                                    <Badge variant="secondary" className="text-xs">
-                                      Full Access
-                                    </Badge>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-2">
-                                      <Checkbox
-                                        id={`edit-${assignment.project_id}`}
-                                        checked={assignment.can_edit || false}
-                                        onCheckedChange={(checked) =>
-                                          handleProjectToggle(
-                                            assignment.project_id,
-                                            "can_edit",
-                                            checked as boolean
-                                          )
-                                        }
-                                      />
-                                      <Label
-                                        htmlFor={`edit-${assignment.project_id}`}
-                                        className="text-xs"
-                                      >
-                                        Edit
-                                      </Label>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <Checkbox
-                                        id={`control-${assignment.project_id}`}
-                                        checked={assignment.can_control || false}
-                                        onCheckedChange={(checked) =>
-                                          handleProjectToggle(
-                                            assignment.project_id,
-                                            "can_control",
-                                            checked as boolean
-                                          )
-                                        }
-                                      />
-                                      <Label
-                                        htmlFor={`control-${assignment.project_id}`}
-                                        className="text-xs"
-                                      >
-                                        Control
-                                      </Label>
-                                    </div>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() =>
-                                        handleRemoveFromProject(assignment.project_id)
-                                      }
-                                    >
-                                      <Trash2 className="h-3 w-3 text-destructive" />
-                                    </Button>
-                                  </div>
                                 )}
+                                <span className={`text-sm ${isAssigned ? "font-medium" : "text-muted-foreground"}`}>
+                                  {p.name}
+                                </span>
                               </div>
 
+                              {isAssigned && !isSelfEditingEnterpriseAdmin && (
+                                <div className="flex items-center gap-3">
+                                  <div className="flex items-center gap-1.5">
+                                    <Checkbox
+                                      id={`edit-${p.id}`}
+                                      checked={assignment?.can_edit || false}
+                                      onCheckedChange={(checked) =>
+                                        handleProjectToggle(p.id, "can_edit", checked as boolean)
+                                      }
+                                    />
+                                    <Label htmlFor={`edit-${p.id}`} className="text-xs">Edit</Label>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <Checkbox
+                                      id={`control-${p.id}`}
+                                      checked={assignment?.can_control || false}
+                                      onCheckedChange={(checked) =>
+                                        handleProjectToggle(p.id, "can_control", checked as boolean)
+                                      }
+                                    />
+                                    <Label htmlFor={`control-${p.id}`} className="text-xs">Control</Label>
+                                  </div>
+                                </div>
+                              )}
+
+                              {isAssigned && isSelfEditingEnterpriseAdmin && (
+                                <Badge variant="secondary" className="text-xs">Full Access</Badge>
+                              )}
+                            </div>
+
                             {/* Notification settings - collapsible */}
-                            {isExpanded && (
-                              <div className="mt-3 ml-8">
+                            {isAssigned && isExpanded && (
+                              <div className="mt-2 ml-8">
                                 {notificationSettings ? (
                                   <ProjectNotificationSettings
                                     settings={notificationSettings}
                                     onChange={(newSettings) =>
-                                      updateNotificationSettings(
-                                        assignment.project_id,
-                                        newSettings
-                                      )
+                                      updateNotificationSettings(p.id, newSettings)
                                     }
                                   />
                                 ) : (
@@ -1412,9 +1397,50 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                             )}
                           </div>
                         );
-                      })}
-                    </div>
-                  )}
+                      };
+
+                      return (
+                        <>
+                          {/* Search */}
+                          {projects.length > 3 && (
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                placeholder="Search projects..."
+                                value={projectSearch}
+                                onChange={(e) => setProjectSearch(e.target.value)}
+                                className="pl-8 h-9"
+                              />
+                            </div>
+                          )}
+
+                          {filtered.length === 0 ? (
+                            <div className="text-sm text-muted-foreground">
+                              {projectSearch ? "No projects match your search" : "No projects available"}
+                            </div>
+                          ) : (
+                            <div className="border rounded-lg max-h-[350px] overflow-y-auto">
+                              {showGroups ? (
+                                groups.map((group) => (
+                                  <div key={group.enterpriseId || "none"}>
+                                    <div className="px-3 py-1.5 bg-muted/50 text-xs font-medium text-muted-foreground border-b">
+                                      {group.enterpriseName} ({group.projects.length})
+                                    </div>
+                                    <div className="divide-y">
+                                      {group.projects.map(renderProjectRow)}
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="divide-y">
+                                  {filtered.map(renderProjectRow)}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                 </div>
               );
               })()}
