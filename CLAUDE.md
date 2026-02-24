@@ -245,6 +245,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 66. **Alarm email notifications use backend polling**: `alarm_notifier.py` background task polls `alarms` table every 30s for `email_notification_sent = false` (new alarms) and `email_resolution_sent = false` (resolved alarms). Sends via Resend API, logs to `notification_log` table. Catches ALL alarm creation paths (cron, controller sync, backend API) without modifying any. Phase 1: hardcoded recipient. Phase 2: per-user preferences via `user_project_notifications`. Never add email logic to individual alarm creation paths — the poller handles it.
 67. **Multi-worker background tasks need claim-before-send**: Backend runs 2 uvicorn workers — background tasks (alarm notifier) run in BOTH. Use conditional UPDATE (`eq(flag, False)`) as optimistic lock to prevent duplicate processing. Never mark-after-send; always claim-before-send.
 68. **Supabase hosted instance lacks pg_net**: `CREATE EXTENSION pg_net` returns permission denied. DB triggers cannot make HTTP calls. Use backend polling instead of trigger-based webhooks.
+69. **Cron alarm creation needs cooldown**: `create_controller_offline_alarm()` and `create_not_reporting_alarm()` have 30-min cooldown after resolution (migration 110). Without it, user resolving an alarm while condition persists causes cron to recreate every 2 min → email notification churn. Cooldown checks `resolved_at > now() - 30 min` after the unresolved-alarm dedup check.
 
 ## Key Architecture Decisions
 
