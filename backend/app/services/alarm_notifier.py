@@ -82,46 +82,87 @@ async def _process_pending_notifications():
     await _send_resolution_emails(supabase)
 
 
+async def _claim_pending_alarms(supabase, is_resolved: bool) -> list[dict]:
+    """Atomically claim alarms for email processing.
+
+    Uses UPDATE-then-SELECT pattern: marks alarms as sent FIRST, then fetches
+    the ones we just claimed. Prevents duplicate emails across multiple workers.
+    """
+    if is_resolved:
+        # Find IDs of alarms needing resolution email
+        id_result = supabase.table("alarms").select("id").eq(
+            "email_resolution_sent", False
+        ).eq(
+            "resolved", True
+        ).order("resolved_at", desc=False).limit(BATCH_SIZE).execute()
+    else:
+        # Find IDs of alarms needing activation email
+        id_result = supabase.table("alarms").select("id").eq(
+            "email_notification_sent", False
+        ).eq(
+            "resolved", False
+        ).order("created_at", desc=False).limit(BATCH_SIZE).execute()
+
+    if not id_result.data:
+        return []
+
+    alarm_ids = [a["id"] for a in id_result.data]
+    claimed = []
+
+    for alarm_id in alarm_ids:
+        try:
+            # Claim by marking as sent — use conditional UPDATE so only one
+            # worker succeeds (the flag is already true for the loser).
+            flag = "email_resolution_sent" if is_resolved else "email_notification_sent"
+            claim_result = supabase.table("alarms").update({
+                flag: True
+            }).eq("id", alarm_id).eq(flag, False).execute()
+
+            # Supabase REST returns the updated rows. If empty, another worker
+            # already claimed it (the eq(flag, False) filtered it out).
+            if claim_result.data:
+                claimed.append(alarm_id)
+        except Exception as e:
+            print(f"[Alarm Notifier] Failed to claim alarm {alarm_id}: {e}")
+
+    if not claimed:
+        return []
+
+    # Fetch full alarm data for claimed IDs
+    select_fields = "id, site_id, alarm_type, device_name, message, condition, severity, created_at"
+    if is_resolved:
+        select_fields += ", resolved_at"
+
+    alarms = []
+    for alarm_id in claimed:
+        try:
+            result = supabase.table("alarms").select(select_fields).eq(
+                "id", alarm_id
+            ).execute()
+            if result.data:
+                alarms.append(result.data[0])
+        except Exception as e:
+            print(f"[Alarm Notifier] Failed to fetch alarm {alarm_id}: {e}")
+
+    return alarms
+
+
 async def _send_activation_emails(supabase):
-    """Find unresolved alarms where email_notification_sent = false and send activation emails."""
-    result = supabase.table("alarms").select(
-        "id, site_id, alarm_type, device_name, message, condition, severity, created_at"
-    ).eq(
-        "email_notification_sent", False
-    ).eq(
-        "resolved", False
-    ).order(
-        "created_at", desc=False  # Oldest first
-    ).limit(BATCH_SIZE).execute()
-
-    if not result.data:
-        return
-
-    for alarm in result.data:
+    """Claim and send activation emails for new alarms."""
+    alarms = await _claim_pending_alarms(supabase, is_resolved=False)
+    for alarm in alarms:
         await _send_alarm_email(supabase, alarm, is_resolved=False)
 
 
 async def _send_resolution_emails(supabase):
-    """Find resolved alarms where email_resolution_sent = false and send resolution emails."""
-    result = supabase.table("alarms").select(
-        "id, site_id, alarm_type, device_name, message, condition, severity, created_at, resolved_at"
-    ).eq(
-        "email_resolution_sent", False
-    ).eq(
-        "resolved", True
-    ).order(
-        "resolved_at", desc=False  # Oldest first
-    ).limit(BATCH_SIZE).execute()
-
-    if not result.data:
-        return
-
-    for alarm in result.data:
+    """Claim and send resolution emails for resolved alarms."""
+    alarms = await _claim_pending_alarms(supabase, is_resolved=True)
+    for alarm in alarms:
         await _send_alarm_email(supabase, alarm, is_resolved=True)
 
 
 async def _send_alarm_email(supabase, alarm: dict, is_resolved: bool):
-    """Send email for a single alarm and mark as sent."""
+    """Send email for a single alarm (already claimed/marked as sent)."""
     alarm_id = alarm["id"]
     site_id = alarm.get("site_id")
 
@@ -157,20 +198,6 @@ async def _send_alarm_email(supabase, alarm: dict, is_resolved: bool):
         }).execute()
     except Exception as e:
         print(f"[Alarm Notifier] Failed to log notification: {e}")
-
-    # Mark alarm as email-sent (even on failure — prevents infinite retry loops)
-    # Failed notifications are visible in notification_log for debugging
-    try:
-        if is_resolved:
-            supabase.table("alarms").update({
-                "email_resolution_sent": True
-            }).eq("id", alarm_id).execute()
-        else:
-            supabase.table("alarms").update({
-                "email_notification_sent": True
-            }).eq("id", alarm_id).execute()
-    except Exception as e:
-        print(f"[Alarm Notifier] Failed to mark alarm {alarm_id} as sent: {e}")
 
 
 async def _get_alarm_context(supabase, site_id: str | None) -> tuple[str, str, str]:
