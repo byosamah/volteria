@@ -1236,9 +1236,58 @@ export function UsersList({ users: initialUsers, enterprises, projects, currentU
                       </div>
                     )}
 
+                    {/* Assign Project dropdown — show for non-self-edit when there are unassigned projects */}
+                    {!isSelfEditingEnterpriseAdmin && !projectsLoading && (() => {
+                      const assignedIds = new Set(userProjects.map(p => p.project_id));
+                      const available = projects.filter(p => !assignedIds.has(p.id));
+                      if (available.length === 0) return null;
+                      return (
+                        <Select
+                          value=""
+                          onValueChange={async (projectId) => {
+                            if (!editUser) return;
+                            try {
+                              const response = await fetch(`/api/admin/users/${editUser.id}/projects`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ project_id: projectId, can_edit: false, can_control: false }),
+                              });
+                              if (response.ok) {
+                                const project = projects.find(p => p.id === projectId);
+                                setUserProjects(prev => [...prev, {
+                                  project_id: projectId,
+                                  project_name: project?.name || null,
+                                  can_edit: false,
+                                  can_control: false,
+                                }]);
+                                toast.success(`Assigned to ${project?.name || "project"}`);
+                              } else {
+                                toast.error("Failed to assign project");
+                              }
+                            } catch {
+                              toast.error("Failed to assign project");
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Assign a project..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {available.map(p => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      );
+                    })()}
+
                     {projectsLoading ? (
                       <div className="text-sm text-muted-foreground">
                         Loading projects...
+                      </div>
+                    ) : userProjects.length === 0 && !isSelfEditingEnterpriseAdmin ? (
+                      <div className="text-sm text-muted-foreground">
+                        No projects assigned yet
                       </div>
                     ) : userProjects.length === 0 ? (
                       <div className="text-sm text-muted-foreground">
