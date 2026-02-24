@@ -49,9 +49,9 @@ def format_alarm_email(
     # Format readable alarm type
     alarm_type_display = alarm_type.replace("_", " ").title()
 
-    # Status
+    # Status — green header for resolved, severity color for activated
     status = "RESOLVED" if is_resolved else "ACTIVATED"
-    status_color = "#16a34a" if is_resolved else SEVERITY_COLORS.get(severity, SEVERITY_COLORS["warning"])["bg"]
+    header_bg = "#16a34a" if is_resolved else SEVERITY_COLORS.get(severity, SEVERITY_COLORS["warning"])["bg"]
     severity_colors = SEVERITY_COLORS.get(severity, SEVERITY_COLORS["warning"])
 
     # Subject line
@@ -79,7 +79,7 @@ def format_alarm_email(
 
           <!-- Header -->
           <tr>
-            <td style="background-color:{status_color};padding:20px 24px;">
+            <td style="background-color:{header_bg};padding:20px 24px;">
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td>
@@ -89,7 +89,7 @@ def format_alarm_email(
                   </td>
                   <td align="right" valign="top">
                     <span style="display:inline-block;background-color:rgba(255,255,255,0.2);color:#ffffff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;text-transform:uppercase;">
-                      {severity}
+                      {"resolved" if is_resolved else severity}
                     </span>
                   </td>
                 </tr>
@@ -100,6 +100,7 @@ def format_alarm_email(
           <!-- Message -->
           <tr>
             <td style="padding:20px 24px 12px;">
+              {f'<p style="margin:0 0 8px;color:#16a34a;font-size:14px;font-weight:600;">This alarm has been resolved.</p>' if is_resolved else ''}
               <p style="margin:0;color:#374151;font-size:15px;line-height:1.5;">{message}</p>
               {f'<p style="margin:8px 0 0;color:#6b7280;font-size:13px;">Condition: {condition}</p>' if condition else ''}
             </td>
