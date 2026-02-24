@@ -59,11 +59,13 @@ class ConfigService:
             # Try environment variable (check both naming conventions)
             self.site_id = os.environ.get("SITE_ID") or os.environ.get("VOLTERIA_SITE_ID")
 
+        # Store controller_id for potential site_id recovery later
+        self._controller_id = self.local_config.get("controller", {}).get("id")
+
         # If still no site_id, try to fetch from cloud using controller_id
         if not self.site_id:
-            controller_id = self.local_config.get("controller", {}).get("id")
-            if controller_id:
-                self.site_id = self._fetch_site_id_from_cloud(controller_id)
+            if self._controller_id:
+                self.site_id = self._fetch_site_id_from_cloud(self._controller_id)
 
         # Cloud configuration
         cloud_config = self.local_config.get("cloud", {})
@@ -333,6 +335,25 @@ class ConfigService:
             except Exception as e:
                 logger.error(f"Error in sync loop: {e}")
 
+    def _recover_site_id(self) -> bool:
+        """Retry fetching site_id from cloud (e.g., after DNS failure at boot)."""
+        if self.site_id:
+            return True
+        if not self._controller_id:
+            return False
+
+        self.site_id = self._fetch_site_id_from_cloud(self._controller_id)
+        if self.site_id:
+            # Re-initialize sync with the recovered site_id
+            self.sync = ConfigSync(
+                site_id=self.site_id,
+                supabase_url=self.supabase_url,
+                supabase_key=self.supabase_key,
+            )
+            logger.info(f"Recovered site_id from cloud: {self.site_id}")
+            return True
+        return False
+
     async def _sync_config(self) -> bool:
         """
         Sync configuration from cloud.
@@ -341,8 +362,10 @@ class ConfigService:
             True if config was updated
         """
         if not self.site_id:
-            logger.warning("No site ID configured, cannot sync")
-            return False
+            # Retry — may have failed at startup due to DNS not ready
+            if not self._recover_site_id():
+                logger.warning("No site ID configured, cannot sync")
+                return False
 
         try:
             # Fetch from cloud
@@ -432,7 +455,10 @@ class ConfigService:
     async def _check_sync_commands(self) -> None:
         """Check for pending sync_config commands"""
         if not self.site_id:
-            return
+            # Retry site_id recovery before giving up
+            self._recover_site_id()
+            if not self.site_id:
+                return
 
         try:
             async with httpx.AsyncClient() as client:
