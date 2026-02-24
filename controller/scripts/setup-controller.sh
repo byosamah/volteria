@@ -788,6 +788,34 @@ EOF
     log_info "Serial port udev rules installed"
     log_info "  RS232: /dev/ttyACM0 (/dev/volteria-rs232)"
     log_info "  RS485: /dev/ttyACM1-3 (/dev/volteria-rs485-1..3)"
+
+    # RS485 transceiver power enable (gpiochip14 line 11 = RS485_POWER_EN)
+    # Must be held HIGH for RS485 transceivers to function
+    cat > "${SYSTEMD_DIR}/volteria-rs485-power.service" << 'EOF'
+[Unit]
+Description=Enable RS485 transceiver power (reComputer R2000)
+Before=volteria-supervisor.service
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gpioset -c gpiochip14 11=1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable volteria-rs485-power.service
+    systemctl start volteria-rs485-power.service
+
+    if systemctl is-active --quiet volteria-rs485-power.service; then
+        log_info "RS485 power enable service started (gpiochip14 line 11 = HIGH)"
+    else
+        log_warn "RS485 power enable service failed - check journalctl -u volteria-rs485-power"
+    fi
 }
 
 # Setup UPS monitor service for SOL532-E16 (SuperCAP power loss detection)
