@@ -102,6 +102,7 @@ export function HistoricalDataClientV2({
 
   // Chart data
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [originalTimestamps, setOriginalTimestamps] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [metadata, setMetadata] = useState<{
     totalPoints: number;
@@ -543,6 +544,19 @@ export function HistoricalDataClientV2({
         : "avg";
       const chartPoints = transformApiToChartData(data.deviceReadings || [], allParams, method);
 
+      // Track timestamps where at least one parameter has an original (non-forward-filled) value.
+      // Used by CSV export to skip forward-filled-only rows.
+      const origTimestamps = new Set<string>();
+      for (const point of chartPoints) {
+        for (const param of allParams) {
+          const key = `${param.deviceId}:${param.registerName}`;
+          if (point[key] !== null && point[key] !== undefined) {
+            origTimestamps.add(point.timestamp);
+            break; // one real value is enough to keep this timestamp
+          }
+        }
+      }
+
       // Gap detection: forward-fill small gaps (normal sparse data), break at large gaps (device offline).
       // Standard SCADA pattern — last observation carried forward with adaptive gap threshold.
       // For hourly/daily: fixed multiplier. For raw: per-parameter based on actual median interval.
@@ -593,10 +607,12 @@ export function HistoricalDataClientV2({
       });
 
       setChartData(chartPoints);
+      setOriginalTimestamps(origTimestamps);
       setMetadata({
         totalPoints: chartPoints.length,
         downsampled: data.metadata?.downsampled || false,
         aggregationType: data.metadata?.aggregationType || aggregationType,
+        originalPoints: origTimestamps.size,
       });
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -841,7 +857,12 @@ export function HistoricalDataClientV2({
       ...validCalcFields.map((f) => escapeCSV(`${f.name} (Calculated) (${f.unit})`)),
     ];
 
-    const rows = chartDataWithCalcFields.map((point) => {
+    // Only export rows where at least one parameter has an original (non-forward-filled) value.
+    // Forward-fill is used for chart rendering (smooth lines) but inflates CSV with repeated values.
+    const rows: string[] = [];
+    for (const point of chartDataWithCalcFields) {
+      if (!originalTimestamps.has(point.timestamp)) continue;
+
       const localTime = formatTimestampForCSV(point.timestamp, displayTimezone);
 
       const row = [
@@ -856,8 +877,8 @@ export function HistoricalDataClientV2({
         const calcKey = `calc:${field.name}`;
         row.push(String(point[calcKey] ?? ""));
       }
-      return row.join(",");
-    });
+      rows.push(row.join(","));
+    }
 
     const csvContent = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -867,7 +888,7 @@ export function HistoricalDataClientV2({
     link.download = `historical-data-${selectedSiteId}-${dateRange.start.toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [chartDataWithCalcFields, leftAxisParams, rightAxisParams, calculatedFields, showCalcOnly, selectedSiteId, dateRange, displayTimezone, formatTimestampForCSV, escapeCSV]);
+  }, [chartDataWithCalcFields, leftAxisParams, rightAxisParams, calculatedFields, showCalcOnly, selectedSiteId, dateRange, displayTimezone, formatTimestampForCSV, escapeCSV, originalTimestamps]);
 
   // Export PNG (placeholder - would need html2canvas or similar)
   const exportPNG = useCallback(() => {
