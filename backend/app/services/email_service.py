@@ -13,8 +13,8 @@ import httpx
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 
-# Start with Resend test domain. Switch to alerts@volteria.org after DNS verification.
-FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Volteria Alerts <onboarding@resend.dev>")
+# Custom domain verified on Resend (alerts.volteria.org)
+FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Volteria <no-reply@alerts.volteria.org>")
 
 
 async def send_email(to: str, subject: str, html: str) -> dict | None:
