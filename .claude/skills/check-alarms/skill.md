@@ -342,7 +342,9 @@ curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/notification_log?selec
 ssh volteria "docker logs sdc-backend --tail=20 2>&1 | grep -i 'Alarm Notifier'"
 ```
 
-**Expected**: `[Alarm Notifier] Started — polling every 30s` in recent logs. If missing, the backend container may have restarted without the notifier starting.
+**Expected**: `[Alarm Notifier] Started — polling every 30s` in recent logs (appears TWICE — one per uvicorn worker, both run the notifier but claim-before-send prevents duplicates). If missing, the backend container may have restarted without the notifier starting.
+
+**Note**: From address is currently `Volteria Alerts <onboarding@resend.dev>` (Resend test domain). Custom domain `alerts@volteria.org` requires DNS verification in Resend dashboard.
 
 ---
 
@@ -452,7 +454,9 @@ RESOLVED (resolved = true, resolved_at = timestamp or NULL for controller-manage
 | Email not sent for alarm | `email_notification_sent` still false after 60s | Check backend logs for `[Alarm Notifier]` errors. Verify `RESEND_API_KEY` env var is set. Check Step 8b. |
 | Email sent but not received | `notification_log` shows `status = 'sent'` | Check spam folder. Verify Resend dashboard for delivery status. `onboarding@resend.dev` test domain may land in spam. |
 | Notifier not running | No `[Alarm Notifier] Started` in backend logs | Backend container restarted without lifespan running. Check `docker logs sdc-backend`. |
-| Duplicate emails for same alarm | Multiple `notification_log` entries | Should not happen — notifier marks `email_notification_sent = true` after first send. Check for race condition with multiple backend instances. |
+| Duplicate emails for same alarm | Multiple `notification_log` entries | Fixed: claim-before-send pattern uses conditional UPDATE `eq(flag, False)` so only one worker claims. If still happening, check `_claim_pending_alarms()` logic. |
+| Resolution email looks same as activation | Template not deployed | Resolution emails must have: green header (#16a34a), "ALARM RESOLVED" label, "resolved" badge (not severity), resolved timestamp row, "This alarm has been resolved" message. Check `email_templates.py`. |
+| Cron re-creates alarm after manual resolve | Controller still offline / device still not reporting | Expected for cron-managed alarms (controller_offline, not_reporting). Condition must actually clear for permanent resolution. For testing resolution emails, use a non-cron alarm or accept re-creation. |
 | `CLOUD_SYNC_OFFLINE` alarm | Pi lost internet for > 1 hour | Alarm auto-resolves on reconnect. If persistent: check Pi network, DNS, Supabase status. |
 | Resolution sync skips threshold alarms | By design — `sync_resolved_alarms()` skips `reg_*` alarms | Controller monitors conditions independently. User resolve in UI doesn't affect controller behavior. |
 | Cron jobs not running | pg_cron extension disabled or jobs inactive | Check Step 5c. Re-enable with: `UPDATE cron.job SET active = true WHERE jobname = 'check-device-alarms'` |
@@ -472,6 +476,7 @@ RESOLVED (resolved = true, resolved_at = timestamp or NULL for controller-manage
 - **`resolve_alarm_in_cloud()` logs success even when no alarm exists**: PATCH on 0 matching rows returns HTTP 200. Always cross-check cloud alarms table directly.
 - **Alarm duplication despite working dedup**: When alarms duplicate despite `has_unresolved_alarm()` working correctly, check `sync_resolved_alarms()` and cloud→local resolution paths — they may resolve local alarms behind the dedup's back. Controller-managed types (`REGISTER_READ_FAILED`, `LOGGING_HIGH_DRIFT`, etc.) must be in the `_CONTROLLER_MANAGED_TYPES` skip list in `cloud_sync.py`. Fixed in `8a59389`.
 
+<!-- Updated: 2026-02-24 - Email notifications: claim-before-send dedup, resolution email visual spec, cron re-trigger troubleshooting, Resend test domain note -->
 <!-- Updated: 2026-02-21 - CRITICAL: Query active alarms with resolved=eq.false (boolean), NOT resolved_at=is.null (timestamp). Controller-managed alarms may have resolved=true with resolved_at=NULL -->
 <!-- Updated: 2026-02-20 - Added sync_resolved_alarms dedup bypass diagnostic -->
 <!-- Created: 2026-02-17 - Comprehensive alarm diagnostic covering 9 alarm types, 3-tier dedup, auto-resolve, cloud cron, threshold config -->
