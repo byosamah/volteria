@@ -86,7 +86,7 @@ export function NewProjectForm({
           name: formData.name.trim(),
           location: formData.location.trim() || null,
           description: formData.description.trim() || null,
-          timezone: formData.timezone || null, // null = use browser timezone
+          timezone: formData.timezone || "UTC",
           is_active: true,
         })
         .select()
@@ -242,6 +242,13 @@ export function NewProjectForm({
           <p className="text-xs text-muted-foreground">
             Timezone for charts and data analysis. &quot;Browser Timezone&quot; uses your device&apos;s local timezone automatically.
           </p>
+          {!formData.timezone && (
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3 mt-2">
+              <p className="text-sm text-amber-800">
+                <strong>Recommended:</strong> Set an explicit timezone for accurate hourly and daily energy calculations. Without it, time windows default to UTC which may not match your site&apos;s local time.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">

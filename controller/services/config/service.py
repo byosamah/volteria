@@ -180,6 +180,7 @@ class ConfigService:
         def compute_hash(config: dict) -> str:
             """Compute hash of meaningful config content"""
             # Include fields that affect controller behavior
+            project = config.get("project", {})
             content = {
                 "devices": config.get("devices", []),
                 "calculated_fields": config.get("calculated_fields", []),
@@ -190,6 +191,7 @@ class ConfigService:
                 "dg_reserve_kw": config.get("dg_reserve_kw"),
                 "operation_mode": config.get("operation_mode"),
                 "control_interval_ms": config.get("control_interval_ms"),
+                "timezone": project.get("timezone", "UTC"),
             }
             # Use json with sort_keys for consistent ordering
             content_str = json.dumps(content, sort_keys=True, default=str)
