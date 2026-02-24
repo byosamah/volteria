@@ -19,6 +19,8 @@ services:
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - ENVIRONMENT=production
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-Volteria Alerts <onboarding@resend.dev>}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth, projects, devices, logs, alarms, enterprises, controllers, hardware, sites, usage, dashboards, ssh_tests
 from app.middleware.audit import AuditLoggingMiddleware
+from app.services.alarm_notifier import start_notifier, stop_notifier
 
 
 # ============================================
@@ -76,11 +77,14 @@ async def lifespan(app: FastAPI):
     print(f"Environment: {ENVIRONMENT}")
     print(f"Allowed Origins: {ALLOWED_ORIGINS}")
     print("=" * 50)
-    # TODO: Initialize Supabase client here
+
+    # Start alarm email notifier (polls every 30s)
+    await start_notifier()
 
     yield
 
     # Shutdown
+    await stop_notifier()
     print("Shutting down API...")
 
 

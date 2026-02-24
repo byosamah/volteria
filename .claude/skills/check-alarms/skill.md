@@ -73,8 +73,10 @@ ssh root@159.223.224.203 "sshpass -p 'SSH_PASSWORD' ssh -o StrictHostKeyChecking
 
 ### 1a. All unresolved alarms for this site
 
+**CRITICAL**: Query using `resolved=eq.false`, NOT `resolved_at=is.null`. The `resolved` boolean is the source of truth. Controller-managed alarms may set `resolved=true` without populating `resolved_at` timestamp — querying by `resolved_at` produces false positives (stale alarms that are actually resolved).
+
 ```bash
-curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?select=id,alarm_type,device_id,device_name,message,condition,severity,acknowledged,created_at&site_id=eq.SITE_ID&resolved=eq.false&order=created_at.desc" \
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?select=id,alarm_type,device_id,device_name,message,condition,severity,acknowledged,resolved,created_at&site_id=eq.SITE_ID&resolved=eq.false&order=created_at.desc" \
   -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
 ```
 
@@ -295,6 +297,55 @@ Expected: `[CLOUD] Synced N alarm resolutions from cloud to local` periodically.
 
 ---
 
+## Step 8: Email Notification Delivery
+
+### 8a. Recent notification log (last 24h)
+
+```bash
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/notification_log?select=id,alarm_id,event_type,channel,recipient,status,error_message,created_at&order=created_at.desc&limit=20&created_at=gte.$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
+```
+
+**Expected**: Recent entries with `status = 'sent'`. Any `status = 'failed'` entries indicate email delivery issues.
+
+### 8b. Unsent activation emails
+
+```bash
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?select=id,alarm_type,severity,created_at&email_notification_sent=eq.false&resolved=eq.false&order=created_at.desc&limit=10" \
+  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
+```
+
+**Expected**: Empty `[]` = all activation emails sent. If entries exist, the backend notifier may not be running.
+
+### 8c. Unsent resolution emails
+
+```bash
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/alarms?select=id,alarm_type,severity,resolved_at&email_resolution_sent=eq.false&resolved=eq.true&order=resolved_at.desc&limit=10" \
+  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY"
+```
+
+**Expected**: Empty `[]` = all resolution emails sent. If entries accumulate, check backend logs for notifier errors.
+
+### 8d. Failed notifications count (last 7 days)
+
+```bash
+curl -s "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/notification_log?select=id&status=eq.failed&created_at=gte.$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY" \
+  -H "Prefer: count=exact" -I 2>/dev/null | grep -i content-range
+```
+
+**Expected**: `Content-Range: 0-0/0` (no failed notifications). Non-zero = check RESEND_API_KEY env var and Resend account status.
+
+### 8e. Backend notifier health
+
+```bash
+ssh volteria "docker logs sdc-backend --tail=20 2>&1 | grep -i 'Alarm Notifier'"
+```
+
+**Expected**: `[Alarm Notifier] Started — polling every 30s` in recent logs. If missing, the backend container may have restarted without the notifier starting.
+
+---
+
 ## Output Format
 
 **Alarm Health: [HEALTHY / ISSUES FOUND]**
@@ -312,6 +363,10 @@ Expected: `[CLOUD] Synced N alarm resolutions from cloud to local` periodically.
 | Threshold alarms (reg_*) | OK / N active | conditions |
 | Register errors (SharedState) | OK / N devices | device list |
 | Local unsynced alarms | OK (0) / N pending | count |
+| Email notifications (activation) | OK / N unsent | alarm IDs |
+| Email notifications (resolution) | OK / N unsent | alarm IDs |
+| Failed notifications (7d) | OK (0) / N failed | error messages |
+| Backend notifier running | OK / not running | log check |
 | Local vs cloud sync | OK / mismatch | details |
 | Alarm definitions loaded | N definitions | from config |
 | Cron jobs active | OK / missing | job names |
@@ -343,7 +398,7 @@ AUTO-RESOLVE
     ├─ Cloud: resolve_alarm_in_cloud() via PATCH
     │
     ▼
-RESOLVED (resolved = true, resolved_at = timestamp)
+RESOLVED (resolved = true, resolved_at = timestamp or NULL for controller-managed types)
 ```
 
 ## Auto-Resolve Reference
@@ -394,6 +449,10 @@ RESOLVED (resolved = true, resolved_at = timestamp)
 | REGISTER_READ_FAILED alarms don't affect Live page | Independent systems | Live page reads from controller via SSH (`register_cli.py`), never checks alarms table. Stale alarms are cosmetic only. |
 | Cloud resolve returns success but alarm still unresolved | PATCH matched 0 rows (already resolved or alarm_type mismatch) | `resolve_alarm_in_cloud()` logs success even when no rows matched (HTTP 200 OK). Cross-check cloud alarms table directly. |
 | Alarm churn (rapid create/resolve cycles) | Threshold set near value, oscillating readings | Increase cooldown_seconds or adjust threshold to add hysteresis. Check Step 1b for high alarm count in 7 days. |
+| Email not sent for alarm | `email_notification_sent` still false after 60s | Check backend logs for `[Alarm Notifier]` errors. Verify `RESEND_API_KEY` env var is set. Check Step 8b. |
+| Email sent but not received | `notification_log` shows `status = 'sent'` | Check spam folder. Verify Resend dashboard for delivery status. `onboarding@resend.dev` test domain may land in spam. |
+| Notifier not running | No `[Alarm Notifier] Started` in backend logs | Backend container restarted without lifespan running. Check `docker logs sdc-backend`. |
+| Duplicate emails for same alarm | Multiple `notification_log` entries | Should not happen — notifier marks `email_notification_sent = true` after first send. Check for race condition with multiple backend instances. |
 | `CLOUD_SYNC_OFFLINE` alarm | Pi lost internet for > 1 hour | Alarm auto-resolves on reconnect. If persistent: check Pi network, DNS, Supabase status. |
 | Resolution sync skips threshold alarms | By design — `sync_resolved_alarms()` skips `reg_*` alarms | Controller monitors conditions independently. User resolve in UI doesn't affect controller behavior. |
 | Cron jobs not running | pg_cron extension disabled or jobs inactive | Check Step 5c. Re-enable with: `UPDATE cron.job SET active = true WHERE jobname = 'check-device-alarms'` |
@@ -413,5 +472,6 @@ RESOLVED (resolved = true, resolved_at = timestamp)
 - **`resolve_alarm_in_cloud()` logs success even when no alarm exists**: PATCH on 0 matching rows returns HTTP 200. Always cross-check cloud alarms table directly.
 - **Alarm duplication despite working dedup**: When alarms duplicate despite `has_unresolved_alarm()` working correctly, check `sync_resolved_alarms()` and cloud→local resolution paths — they may resolve local alarms behind the dedup's back. Controller-managed types (`REGISTER_READ_FAILED`, `LOGGING_HIGH_DRIFT`, etc.) must be in the `_CONTROLLER_MANAGED_TYPES` skip list in `cloud_sync.py`. Fixed in `8a59389`.
 
+<!-- Updated: 2026-02-21 - CRITICAL: Query active alarms with resolved=eq.false (boolean), NOT resolved_at=is.null (timestamp). Controller-managed alarms may have resolved=true with resolved_at=NULL -->
 <!-- Updated: 2026-02-20 - Added sync_resolved_alarms dedup bypass diagnostic -->
 <!-- Created: 2026-02-17 - Comprehensive alarm diagnostic covering 9 alarm types, 3-tier dedup, auto-resolve, cloud cron, threshold config -->
