@@ -45,6 +45,124 @@ def should_notify_for_severity(alarm_severity: str, min_severity: str) -> bool:
     return alarm_level >= min_level
 
 
+# Default email preferences when user has no user_project_notifications row.
+# Must match frontend defaults in project-notification-settings.tsx.
+DEFAULT_EMAIL_PREFS = {
+    "email_enabled": True,
+    "email_min_severity": "major",
+    "email_on_active": True,
+    "email_on_resolved": False,
+}
+
+
+def get_eligible_email_recipients(
+    supabase: Client,
+    project_id: str,
+    alarm_severity: str,
+    is_resolved: bool,
+) -> list[dict]:
+    """
+    Find all users who should receive an email for this alarm.
+
+    Returns list of dicts: [{"user_id": str, "email": str}, ...]
+
+    Logic:
+    1. Get candidate users (assigned + admins + enterprise admins)
+    2. Batch-fetch user_project_notifications preferences
+    3. Apply defaults for users without explicit settings
+    4. Filter by: email_enabled, severity threshold, event type
+    5. Fetch email addresses for qualifying users
+    """
+    try:
+        # 1. Get project's enterprise_id (for enterprise admin lookup)
+        project_result = supabase.table("projects").select(
+            "enterprise_id"
+        ).eq("id", project_id).limit(1).execute()
+
+        enterprise_id = None
+        if project_result.data:
+            enterprise_id = project_result.data[0].get("enterprise_id")
+
+        # 2. Gather candidate user IDs from 3 sources
+        candidate_ids = set()
+
+        # 2a. Users explicitly assigned to this project
+        assigned_result = supabase.table("user_projects").select(
+            "user_id"
+        ).eq("project_id", project_id).execute()
+        for row in (assigned_result.data or []):
+            candidate_ids.add(row["user_id"])
+
+        # 2b. Global admins (access all projects)
+        admin_result = supabase.table("users").select(
+            "id"
+        ).in_("role", ["super_admin", "backend_admin", "admin"]).eq(
+            "is_active", True
+        ).execute()
+        for row in (admin_result.data or []):
+            candidate_ids.add(row["id"])
+
+        # 2c. Enterprise admins for this project's enterprise
+        if enterprise_id:
+            ea_result = supabase.table("users").select(
+                "id"
+            ).eq("role", "enterprise_admin").eq(
+                "enterprise_id", enterprise_id
+            ).eq("is_active", True).execute()
+            for row in (ea_result.data or []):
+                candidate_ids.add(row["id"])
+
+        if not candidate_ids:
+            return []
+
+        all_user_ids = list(candidate_ids)
+
+        # 3. Batch-fetch per-project notification preferences
+        prefs_result = supabase.table("user_project_notifications").select(
+            "user_id, email_enabled, email_min_severity, email_on_active, email_on_resolved"
+        ).eq("project_id", project_id).in_("user_id", all_user_ids).execute()
+
+        prefs_map = {}
+        for pref in (prefs_result.data or []):
+            prefs_map[pref["user_id"]] = pref
+
+        # 4. Filter by preferences
+        qualifying_ids = []
+        for user_id in all_user_ids:
+            prefs = prefs_map.get(user_id, DEFAULT_EMAIL_PREFS)
+
+            if not prefs.get("email_enabled", True):
+                continue
+            if is_resolved and not prefs.get("email_on_resolved", False):
+                continue
+            if not is_resolved and not prefs.get("email_on_active", True):
+                continue
+            if not should_notify_for_severity(
+                alarm_severity, prefs.get("email_min_severity", "major")
+            ):
+                continue
+
+            qualifying_ids.append(user_id)
+
+        if not qualifying_ids:
+            return []
+
+        # 5. Fetch email addresses for qualifying users
+        users_result = supabase.table("users").select(
+            "id, email"
+        ).in_("id", qualifying_ids).eq("is_active", True).execute()
+
+        return [
+            {"user_id": row["id"], "email": row["email"]}
+            for row in (users_result.data or [])
+            if row.get("email")
+        ]
+
+    except Exception as e:
+        print(f"[Notification Service] Error getting email recipients: {e}")
+        return []
+
+
 def create_alarm_notifications(
     supabase: Client,
     alarm_data: dict,

@@ -10,8 +10,8 @@ For each, sends an email via Resend and logs to notification_log.
 Architecture:
 - Runs as an asyncio background task started in FastAPI lifespan
 - Uses the same Supabase service_role client as the rest of the backend
-- Phase 1: hardcoded recipient (testing)
-- Phase 2: per-user preferences via user_project_notifications table
+- Routes to eligible users via user_project_notifications preferences
+- Claim-before-send pattern prevents duplicates across multiple workers
 """
 
 import asyncio
@@ -21,10 +21,7 @@ from uuid import uuid4
 from ..services.supabase import get_supabase
 from ..services.email_service import send_email
 from ..services.email_templates import format_alarm_email
-
-# Phase 1: Hardcoded test recipient
-# Phase 2: Replace with user preference lookup
-TEST_RECIPIENT = "mohkof1106@gmail.com"
+from ..services.notifications import get_eligible_email_recipients
 
 # How often to poll for unsent notifications (seconds)
 POLL_INTERVAL = 30
@@ -162,14 +159,26 @@ async def _send_resolution_emails(supabase):
 
 
 async def _send_alarm_email(supabase, alarm: dict, is_resolved: bool):
-    """Send email for a single alarm (already claimed/marked as sent)."""
+    """Send email for a single alarm to all eligible recipients."""
     alarm_id = alarm["id"]
     site_id = alarm.get("site_id")
+    alarm_severity = alarm.get("severity", "warning")
 
-    # Get project/site context for the email
-    project_name, site_name, timezone_str = await _get_alarm_context(supabase, site_id)
+    # Get project/site context (includes project_id for recipient lookup)
+    project_name, site_name, timezone_str, project_id = await _get_alarm_context(supabase, site_id)
 
-    # Generate email content
+    if not project_id:
+        return  # orphan alarm — no project to route to
+
+    # Find eligible recipients based on user preferences
+    recipients = get_eligible_email_recipients(
+        supabase, project_id, alarm_severity, is_resolved
+    )
+
+    if not recipients:
+        return  # no users want this email
+
+    # Generate email HTML once (same for all recipients)
     subject, html = format_alarm_email(
         alarm=alarm,
         project_name=project_name,
@@ -178,37 +187,38 @@ async def _send_alarm_email(supabase, alarm: dict, is_resolved: bool):
         timezone=timezone_str,
     )
 
-    # Send email
-    recipient = TEST_RECIPIENT
-    result = await send_email(to=recipient, subject=subject, html=html)
+    # Send to each recipient + log individually
+    event_type = "resolved" if is_resolved else "activated"
+    for recipient in recipients:
+        email = recipient["email"]
+        result = await send_email(to=email, subject=subject, html=html)
 
-    # Log the notification
-    status = "sent" if result else "failed"
-    error_msg = None if result else "Resend API call failed"
+        status = "sent" if result else "failed"
+        error_msg = None if result else "Resend API call failed"
 
-    try:
-        supabase.table("notification_log").insert({
-            "id": str(uuid4()),
-            "alarm_id": alarm_id,
-            "event_type": "resolved" if is_resolved else "activated",
-            "channel": "email",
-            "recipient": recipient,
-            "status": status,
-            "error_message": error_msg,
-        }).execute()
-    except Exception as e:
-        print(f"[Alarm Notifier] Failed to log notification: {e}")
+        try:
+            supabase.table("notification_log").insert({
+                "id": str(uuid4()),
+                "alarm_id": alarm_id,
+                "event_type": event_type,
+                "channel": "email",
+                "recipient": email,
+                "status": status,
+                "error_message": error_msg,
+            }).execute()
+        except Exception as e:
+            print(f"[Alarm Notifier] Failed to log notification for {email}: {e}")
 
 
-async def _get_alarm_context(supabase, site_id: str | None) -> tuple[str, str, str]:
+async def _get_alarm_context(supabase, site_id: str | None) -> tuple[str, str, str, str | None]:
     """
-    Get project name, site name, and timezone for email context.
+    Get project name, site name, timezone, and project_id for email context.
 
     Returns:
-        Tuple of (project_name, site_name, timezone)
+        Tuple of (project_name, site_name, timezone, project_id)
     """
     if not site_id:
-        return "Unknown Project", "Unknown Site", "UTC"
+        return "Unknown Project", "Unknown Site", "UTC", None
 
     try:
         # Get site with project info
@@ -219,11 +229,12 @@ async def _get_alarm_context(supabase, site_id: str | None) -> tuple[str, str, s
         if site_result.data:
             site = site_result.data[0]
             site_name = site.get("name", "Unknown Site")
+            project_id = site.get("project_id")
             project_data = site.get("projects", {})
             project_name = project_data.get("name", "Unknown Project") if project_data else "Unknown Project"
             timezone_str = project_data.get("timezone", "UTC") if project_data else "UTC"
-            return project_name, site_name, timezone_str
+            return project_name, site_name, timezone_str, project_id
     except Exception as e:
         print(f"[Alarm Notifier] Error fetching alarm context for site {site_id}: {e}")
 
-    return "Unknown Project", "Unknown Site", "UTC"
+    return "Unknown Project", "Unknown Site", "UTC", None
