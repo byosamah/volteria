@@ -42,6 +42,8 @@ Activate this skill when:
 
 ## Step 0: Identify Controller
 
+**CRITICAL**: When investigating a specific alarm, always trace the lookup chain: `alarm.site_id` → `controllers WHERE site_id` → `controller_heartbeats WHERE controller_id`. Never query heartbeats without filtering by `controller_id` — multiple controllers exist and you'll get the wrong one.
+
 If no controller specified, query deployed controllers:
 
 ```bash
@@ -53,6 +55,7 @@ Use Supabase credentials from project CLAUDE.md (Database Access section).
 
 - If one controller: use it automatically
 - If multiple: ask user which one
+- If investigating a specific alarm: extract `site_id` from the alarm, then query `controllers WHERE site_id=X` to find the correct controller
 
 Store result as `CONTROLLER_ID` and `SITE_ID`.
 
@@ -344,7 +347,7 @@ ssh volteria "docker logs sdc-backend --tail=20 2>&1 | grep -i 'Alarm Notifier'"
 
 **Expected**: `[Alarm Notifier] Started — polling every 30s` in recent logs (appears TWICE — one per uvicorn worker, both run the notifier but claim-before-send prevents duplicates). If missing, the backend container may have restarted without the notifier starting.
 
-**Note**: From address is currently `Volteria Alerts <onboarding@resend.dev>` (Resend test domain). Custom domain `alerts@volteria.org` requires DNS verification in Resend dashboard.
+**Note**: From address is `Volteria <no-reply@alerts.volteria.org>` (custom domain, DNS verified: SPF, DKIM, DMARC).
 
 ---
 
@@ -453,7 +456,9 @@ RESOLVED (resolved = true, resolved_at = timestamp or NULL for controller-manage
 | Alarm churn (rapid create/resolve cycles) | Threshold set near value, oscillating readings | Increase cooldown_seconds or adjust threshold to add hysteresis. Check Step 1b for high alarm count in 7 days. |
 | Email churn (frequent activate/resolve emails) | Manual resolve while condition persists → cron recreates every 2 min | Fixed (migration 110): 30-min cooldown prevents rapid re-creation after resolve. Verify cooldown is deployed: test by resolving alarm, wait 2 min, confirm no new alarm created. |
 | Email not sent for alarm | `email_notification_sent` still false after 60s | Check backend logs for `[Alarm Notifier]` errors. Verify `RESEND_API_KEY` env var is set. Check Step 8b. |
-| Email sent but not received | `notification_log` shows `status = 'sent'` | Check spam folder. Verify Resend dashboard for delivery status. `onboarding@resend.dev` test domain may land in spam. |
+| Email sent but not received | `notification_log` shows `status = 'sent'` | Check spam folder (especially Yahoo). Verify via Resend API: `curl -s https://api.resend.com/emails/EMAIL_ID -H "Authorization: Bearer RESEND_KEY"` — check `last_event` field. New domains (`alerts.volteria.org`) need reputation buildup. DMARC record (`_dmarc.alerts.volteria.org`) helps. |
+| Unassigned user receiving emails | Super admin / enterprise admin got email without project assignment | Fixed: `get_eligible_email_recipients()` now uses ONLY `user_projects` table. Role alone doesn't grant email notifications. User must have project checkbox checked in Edit User. |
+| Wrong from address in emails | `.env` on server overrides code default | `RESEND_FROM_EMAIL` in server `.env` takes precedence over `os.getenv()` default. Must update `.env` directly, not just code. Current: `Volteria <no-reply@alerts.volteria.org>`. |
 | Notifier not running | No `[Alarm Notifier] Started` in backend logs | Backend container restarted without lifespan running. Check `docker logs sdc-backend`. |
 | Duplicate emails for same alarm | Multiple `notification_log` entries | Fixed: claim-before-send pattern uses conditional UPDATE `eq(flag, False)` so only one worker claims. If still happening, check `_claim_pending_alarms()` logic. |
 | Resolution email looks same as activation | Template not deployed | Resolution emails must have: green header (#16a34a), "ALARM RESOLVED" label, "resolved" badge (not severity), resolved timestamp row, "This alarm has been resolved" message. Check `email_templates.py`. |
@@ -461,6 +466,8 @@ RESOLVED (resolved = true, resolved_at = timestamp or NULL for controller-manage
 | `CLOUD_SYNC_OFFLINE` alarm | Pi lost internet for > 1 hour | Alarm auto-resolves on reconnect. If persistent: check Pi network, DNS, Supabase status. |
 | Resolution sync skips threshold alarms | By design — `sync_resolved_alarms()` skips `reg_*` alarms | Controller monitors conditions independently. User resolve in UI doesn't affect controller behavior. |
 | Cron jobs not running | pg_cron extension disabled or jobs inactive | Check Step 5c. Re-enable with: `UPDATE cron.job SET active = true WHERE jobname = 'check-device-alarms'` |
+| Resend rejects non-owner recipients | Using `onboarding@resend.dev` test domain — only sends to account owner's email | Switch to verified custom domain (`alerts.volteria.org`). Test domain restricts recipients. Check `RESEND_FROM_EMAIL` env var. |
+| Email failed but error_message is generic | Old code logged "Resend API call failed" for all failures | Fixed: `send_email()` now returns actual Resend API error (HTTP status + body). Check `notification_log.error_message` for details. Also check `docker logs sdc-backend` for `[Email Service]` lines. |
 
 ---
 
@@ -476,6 +483,7 @@ RESOLVED (resolved = true, resolved_at = timestamp or NULL for controller-manage
 - **High REGISTER_READ_FAILED count before seeding fix**: Sites with frequent service restarts accumulated many alarms (191 in 7 days for 2 devices) because `_devices_with_register_alarms` started empty on each restart, bypassing deduplication for pre-restart alarms. Fixed in `251007e` — count should stabilize going forward.
 - **`resolve_alarm_in_cloud()` logs success even when no alarm exists**: PATCH on 0 matching rows returns HTTP 200. Always cross-check cloud alarms table directly.
 - **Alarm duplication despite working dedup**: When alarms duplicate despite `has_unresolved_alarm()` working correctly, check `sync_resolved_alarms()` and cloud→local resolution paths — they may resolve local alarms behind the dedup's back. Controller-managed types (`REGISTER_READ_FAILED`, `LOGGING_HIGH_DRIFT`, etc.) must be in the `_CONTROLLER_MANAGED_TYPES` skip list in `cloud_sync.py`. Fixed in `8a59389`.
+- **Never manually resolve cron-managed alarms for email testing**: Resolving `controller_offline` or `not_reporting` alarms while the condition persists causes the cron to recreate them on the next 2-min cycle → email churn. For testing resolution emails, use a non-cron alarm type or wait for the condition to actually clear.
 
 <!-- Updated: 2026-02-24 - Migration 110: 30-min cooldown on cron alarm creation prevents email churn from manual resolves. Email notifications: claim-before-send dedup, resolution email visual spec, preference-based routing -->
 <!-- Updated: 2026-02-21 - CRITICAL: Query active alarms with resolved=eq.false (boolean), NOT resolved_at=is.null (timestamp). Controller-managed alarms may have resolved=true with resolved_at=NULL -->
