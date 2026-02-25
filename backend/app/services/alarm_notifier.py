@@ -193,8 +193,12 @@ async def _send_alarm_email(supabase, alarm: dict, is_resolved: bool):
         email = recipient["email"]
         result = await send_email(to=email, subject=subject, html=html)
 
-        status = "sent" if result else "failed"
-        error_msg = None if result else "Resend API call failed"
+        if result.get("id"):
+            status = "sent"
+            error_msg = None
+        else:
+            status = "failed"
+            error_msg = result.get("error", "Unknown error")
 
         try:
             supabase.table("notification_log").insert({

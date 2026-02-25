@@ -17,7 +17,7 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Volteria <no-reply@alerts.volteria.org>")
 
 
-async def send_email(to: str, subject: str, html: str) -> dict | None:
+async def send_email(to: str, subject: str, html: str) -> dict:
     """
     Send an email via Resend API.
 
@@ -27,11 +27,13 @@ async def send_email(to: str, subject: str, html: str) -> dict | None:
         html: HTML email body
 
     Returns:
-        Resend response dict {"id": "..."} on success, None on failure
+        dict with "id" on success, or "error" on failure
+        Success: {"id": "resend-id-here"}
+        Failure: {"error": "422: detailed error message"}
     """
     if not RESEND_API_KEY:
         print("[Email Service] RESEND_API_KEY not set — skipping email")
-        return None
+        return {"error": "RESEND_API_KEY not configured"}
 
     try:
         async with httpx.AsyncClient() as client:
@@ -54,8 +56,10 @@ async def send_email(to: str, subject: str, html: str) -> dict | None:
             print(f"[Email Service] Sent to {to}: {subject} (id: {result.get('id')})")
             return result
     except httpx.HTTPStatusError as e:
-        print(f"[Email Service] HTTP error sending to {to}: {e.response.status_code} {e.response.text}")
-        return None
+        error_detail = f"{e.response.status_code}: {e.response.text}"
+        print(f"[Email Service] HTTP error sending to {to}: {error_detail}")
+        return {"error": error_detail}
     except Exception as e:
-        print(f"[Email Service] Error sending to {to}: {e}")
-        return None
+        error_detail = f"Connection error: {e}"
+        print(f"[Email Service] Error sending to {to}: {error_detail}")
+        return {"error": error_detail}
