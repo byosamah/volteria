@@ -74,43 +74,16 @@ def get_eligible_email_recipients(
     5. Fetch email addresses for qualifying users
     """
     try:
-        # 1. Get project's enterprise_id (for enterprise admin lookup)
-        project_result = supabase.table("projects").select(
-            "enterprise_id"
-        ).eq("id", project_id).limit(1).execute()
-
-        enterprise_id = None
-        if project_result.data:
-            enterprise_id = project_result.data[0].get("enterprise_id")
-
-        # 2. Gather candidate user IDs from 3 sources
+        # Gather candidate user IDs from project assignments only.
+        # Only users explicitly assigned to the project (via Edit User →
+        # Project Assignments checkbox) are eligible for email notifications.
         candidate_ids = set()
 
-        # 2a. Users explicitly assigned to this project
         assigned_result = supabase.table("user_projects").select(
             "user_id"
         ).eq("project_id", project_id).execute()
         for row in (assigned_result.data or []):
             candidate_ids.add(row["user_id"])
-
-        # 2b. Global admins (access all projects)
-        admin_result = supabase.table("users").select(
-            "id"
-        ).in_("role", ["super_admin", "backend_admin", "admin"]).eq(
-            "is_active", True
-        ).execute()
-        for row in (admin_result.data or []):
-            candidate_ids.add(row["id"])
-
-        # 2c. Enterprise admins for this project's enterprise
-        if enterprise_id:
-            ea_result = supabase.table("users").select(
-                "id"
-            ).eq("role", "enterprise_admin").eq(
-                "enterprise_id", enterprise_id
-            ).eq("is_active", True).execute()
-            for row in (ea_result.data or []):
-                candidate_ids.add(row["id"])
 
         if not candidate_ids:
             return []
@@ -193,27 +166,14 @@ def create_alarm_notifications(
         alarm_message = alarm_data.get("message", "")
         alarm_type = alarm_data.get("alarm_type", "")
 
-        # Step 1: Get users assigned to this project
+        # Get users explicitly assigned to this project (via Edit User → Project Assignments)
         user_projects_result = supabase.table("user_projects").select(
             "user_id"
         ).eq("project_id", project_id).execute()
 
-        assigned_user_ids = [
+        all_user_ids = list(set(
             row["user_id"] for row in (user_projects_result.data or [])
-        ]
-
-        # Step 2: Get admin users (super_admin, backend_admin, admin have access to all projects)
-        admin_roles = ["super_admin", "backend_admin", "admin"]
-        admin_result = supabase.table("users").select(
-            "id"
-        ).in_("role", admin_roles).execute()
-
-        admin_user_ids = [
-            row["id"] for row in (admin_result.data or [])
-        ]
-
-        # Combine and deduplicate user IDs
-        all_user_ids = list(set(assigned_user_ids + admin_user_ids))
+        ))
 
         if not all_user_ids:
             # No users to notify
