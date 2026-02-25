@@ -126,10 +126,13 @@ class CalculatedFieldsProcessor:
         for device_id, device_readings in readings.items():
             device_type = device_types.get(device_id)
 
-            # Look for power reading
+            # Look for active power reading (register names vary by template)
             power = None
-            for key in ["active_power_kw", "total_power_kw", "power_kw"]:
-                if key in device_readings:
+            for key in device_readings:
+                key_lower = key.lower()
+                # Match: "active_power_kw", "Total Active Power", "Act power", etc.
+                if ("active" in key_lower and "power" in key_lower) or \
+                   ("act" in key_lower and "power" in key_lower and "react" not in key_lower and "factor" not in key_lower):
                     reading = device_readings[key]
                     if isinstance(reading, dict):
                         power = reading.get("value")
