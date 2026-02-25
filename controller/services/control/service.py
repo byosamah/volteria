@@ -9,6 +9,7 @@ Responsible for:
 """
 
 import asyncio
+import math
 import os
 import signal
 import time
@@ -24,8 +25,17 @@ from common.logging_setup import get_service_logger, log_control_loop
 
 from .algorithm import get_mode, validate_config_for_mode
 from .safe_mode import SafeModeHandler
-from .calculated_fields import CalculatedFieldsProcessor
+from .calculated_fields import CalculatedFieldsProcessor, SOLAR_TYPES, LOAD_TYPES, GENERATOR_TYPES
 from .state import ControlState
+
+# Ramp rate limits (% of capacity per second)
+# Up = slow (protect generators from sudden unloading)
+# Down = instant (protect generators from reverse feed)
+MAX_RAMP_UP_PCT_PER_SEC = 10.0
+MAX_RAMP_DOWN_PCT_PER_SEC = 100.0  # Effectively instant
+
+# Cached load staleness limit
+CACHED_LOAD_MAX_AGE_S = 60
 
 logger = get_service_logger("control")
 
@@ -70,6 +80,10 @@ class ControlService:
         self._site_calculations: list[dict] = []
         self._controller_device_id: str | None = None
         self._device_configs: list[dict] = []
+
+        # Ramp rate state
+        self._previous_limit_pct: float = 100.0
+        self._last_control_time: float = time.monotonic()
 
         # Health server
         self._health_app: web.Application | None = None
@@ -294,19 +308,32 @@ class ControlService:
             await asyncio.sleep(sleep_time)
 
     async def _execute_control(self) -> None:
-        """Execute single control loop iteration"""
+        """
+        Execute single control loop iteration.
+
+        7-layer architecture:
+        L1: Data acquisition (SharedState)
+        L2: Load estimation (fallback chain: meters → generators → cached → safe mode)
+        L3: Setpoint calculation (headroom = load - reserve)
+        L4: Ramp rate limiter (10%/s up, instant down)
+        L5: Sanity checks (NaN, range, impossible values)
+        L6: Emergency ramp-down (bypass ramp on critical anomaly)
+        L7: Safe mode (full solar shutdown)
+        """
         config = get_config()
         if not config:
             return
 
-        # 1. Get latest readings
+        now = time.monotonic()
+        dt_s = now - self._last_control_time
+        self._last_control_time = now
+
+        # ── L1: DATA ACQUISITION ──────────────────────────────────────
         readings_data = get_readings()
         raw_devices = readings_data.get("devices", {})
         device_status = readings_data.get("status", {})
 
         # Unwrap 'readings' subkey → flat {device_id: {register_name: {value, ...}}}
-        # SharedState format: {device_id: {"readings": {...}}}
-        # Calculator expects: {device_id: {register_name: {...}}}
         device_readings = {}
         for dev_id, dev_data in raw_devices.items():
             if isinstance(dev_data, dict) and "readings" in dev_data:
@@ -314,44 +341,78 @@ class ControlService:
             else:
                 device_readings[dev_id] = dev_data
 
-        # 2. Compute totals
+        # Compute totals using fixed type sets
         totals = self.calculated_fields.compute_standard_totals(
             readings=device_readings,
             device_types=self._device_types,
         )
 
-        # Note: Site calculations (register_role-based) are computed inline in
-        # device_manager.update_shared_state() for zero-lag logging.
-        # Control service only needs compute_standard_totals() for its algorithm.
-
-        # 3. Update state with readings
+        # Update state with readings
         self._current_state.timestamp = datetime.now(timezone.utc)
-        self._current_state.total_load_kw = totals.get("total_load_kw", 0.0)
-        self._current_state.solar_output_kw = totals.get("total_solar_kw", 0.0)
-        self._current_state.dg_power_kw = totals.get("total_dg_kw", 0.0)
+        total_load_kw = totals.get("total_load_kw", 0.0)
+        total_solar_kw = totals.get("total_solar_kw", 0.0)
+        total_generator_kw = totals.get("total_dg_kw", 0.0)
+
+        self._current_state.solar_output_kw = total_solar_kw
+        self._current_state.dg_power_kw = total_generator_kw
         self._current_state.solar_capacity_kw = self._solar_capacity_kw
         self._current_state.operation_mode = self._operation_mode
         self._current_state.config_mode = config.get("config_mode", "full_system")
 
-        # Get DG reserve from config
+        # Get generator reserve from config (top-level is always correct)
         mode_settings = config.get("mode_settings", {})
-        self._current_state.dg_reserve_kw = mode_settings.get("dg_reserve_kw", 10.0)
+        generator_reserve = config.get(
+            "dg_reserve_kw", mode_settings.get("dg_reserve_kw", 0)
+        )
+        self._current_state.dg_reserve_kw = generator_reserve
 
-        # Count online devices
+        # Count online devices (match all equivalent device type strings)
         self._current_state.inverters_online = sum(
             1 for d_id, s in device_status.items()
-            if self._device_types.get(d_id) == "inverter" and s.get("is_online")
+            if self._device_types.get(d_id) in SOLAR_TYPES and s.get("is_online")
         )
         self._current_state.load_meters_online = sum(
             1 for d_id, s in device_status.items()
-            if self._device_types.get(d_id) == "load_meter" and s.get("is_online")
+            if self._device_types.get(d_id) in LOAD_TYPES and s.get("is_online")
         )
         self._current_state.generators_online = sum(
             1 for d_id, s in device_status.items()
-            if self._device_types.get(d_id) == "dg" and s.get("is_online")
+            if self._device_types.get(d_id) in GENERATOR_TYPES and s.get("is_online")
         )
 
-        # 4. Check safe mode
+        # ── L2: LOAD ESTIMATION (fallback chain) ─────────────────────
+        estimated_load = 0.0
+        load_source = "none"
+
+        if self._current_state.load_meters_online > 0 and total_load_kw > 0:
+            # Priority 1: Load meters (direct measurement, most accurate)
+            estimated_load = total_load_kw
+            load_source = "load_meter"
+        elif self._current_state.generators_online > 0 and total_generator_kw > 0:
+            # Priority 2: Generator power (off-grid: gen output ≈ load)
+            estimated_load = total_generator_kw
+            load_source = "generator_fallback"
+        elif (
+            self._current_state.last_known_load_kw > 0
+            and self._current_state.last_known_load_timestamp
+            and (datetime.now(timezone.utc) - self._current_state.last_known_load_timestamp).total_seconds() < CACHED_LOAD_MAX_AGE_S
+        ):
+            # Priority 3: Cached value (< 60s stale)
+            estimated_load = self._current_state.last_known_load_kw
+            load_source = "cached"
+        else:
+            # Priority 4: No reliable data → safe mode
+            load_source = "safe_mode"
+
+        # Update cached value when we have a good reading
+        if load_source in ("load_meter", "generator_fallback"):
+            self._current_state.last_known_load_kw = estimated_load
+            self._current_state.last_known_load_timestamp = datetime.now(timezone.utc)
+
+        self._current_state.total_load_kw = estimated_load
+        self._current_state.load_source = load_source
+
+        # ── L7: SAFE MODE CHECK ───────────────────────────────────────
         device_online_status = {
             d_id: s.get("is_online", False)
             for d_id, s in device_status.items()
@@ -362,44 +423,100 @@ class ControlService:
             device_status=device_online_status,
         )
 
+        # Trigger safe mode if load fallback chain exhausted
+        if load_source == "safe_mode" and not safe_mode_active:
+            self.safe_mode_handler._trigger(
+                "No reliable load data (all sources exhausted)"
+            )
+            safe_mode_active = True
+
         self._current_state.safe_mode_active = safe_mode_active
         if safe_mode_active:
             self._current_state.safe_mode_reason = (
                 self.safe_mode_handler.get_state().trigger_reason
             )
+        else:
+            self._current_state.safe_mode_reason = None
 
-        # 5. Calculate control output
+        # ── L3 + L6: SETPOINT CALCULATION ─────────────────────────────
         if safe_mode_active:
-            # Use safe mode limit
+            # L7: Safe mode — use configured safe limit
             solar_limit_pct = self.safe_mode_handler.get_safe_limit_pct(
                 self._solar_capacity_kw
             )
             solar_limit_kw = self.safe_mode_handler.get_safe_limit()
+            self._current_state.ramp_limited = False
         else:
             # Use operation mode algorithm
             mode = get_mode(self._operation_mode)
 
-            # Build readings dict for algorithm
             algo_readings = {
-                "total_load_kw": self._current_state.total_load_kw,
-                "total_solar_kw": self._current_state.solar_output_kw,
-                "total_dg_kw": self._current_state.dg_power_kw,
+                "total_load_kw": estimated_load,
+                "total_solar_kw": total_solar_kw,
+                "total_dg_kw": total_generator_kw,
                 "solar_capacity_kw": self._solar_capacity_kw,
+                "load_meters_online": self._current_state.load_meters_online,
+                "generators_online": self._current_state.generators_online,
             }
 
             output = mode.calculate(algo_readings, config)
-
-            solar_limit_pct = output.solar_limit_pct
+            target_pct = output.solar_limit_pct
             solar_limit_kw = output.solar_limit_kw
+
+            # Update load_source from algorithm if it provided one
+            if output.load_source != "none":
+                self._current_state.load_source = output.load_source
+
+            # ── L5: SANITY CHECKS ─────────────────────────────────────
+            if math.isnan(target_pct) or math.isinf(target_pct):
+                logger.warning("NaN/Inf detected in solar limit, forcing 0%")
+                target_pct = 0.0
+                solar_limit_kw = 0.0
+
+            target_pct = max(0.0, min(100.0, target_pct))
+
+            # L6: Emergency — negative load in off-grid is impossible
+            if estimated_load < 0 and config.get("grid_connection") == "off_grid":
+                logger.warning(f"Impossible negative load ({estimated_load:.1f}kW) in off-grid, emergency curtailment")
+                target_pct = 0.0
+                solar_limit_kw = 0.0
+
+            # ── L4: RAMP RATE LIMITER ─────────────────────────────────
+            delta = target_pct - self._previous_limit_pct
+
+            if delta > 0:
+                # Ramping UP solar (conservative — protect generators)
+                max_up = MAX_RAMP_UP_PCT_PER_SEC * dt_s
+                if delta > max_up:
+                    solar_limit_pct = self._previous_limit_pct + max_up
+                    self._current_state.ramp_limited = True
+                else:
+                    solar_limit_pct = target_pct
+                    self._current_state.ramp_limited = False
+            else:
+                # Ramping DOWN solar (instant — protect from reverse feed)
+                solar_limit_pct = target_pct
+                self._current_state.ramp_limited = False
+
+            solar_limit_pct = round(solar_limit_pct, 1)
+
+            # Recalculate kW from final percentage
+            if self._solar_capacity_kw > 0:
+                solar_limit_kw = round(solar_limit_pct / 100 * self._solar_capacity_kw, 2)
+            else:
+                solar_limit_kw = 0.0
+
+        # Track for next cycle's ramp calculation
+        self._previous_limit_pct = solar_limit_pct
 
         # Update state
         self._current_state.solar_limit_pct = solar_limit_pct
         self._current_state.solar_limit_kw = solar_limit_kw
-        self._current_state.available_headroom_kw = (
-            self._current_state.total_load_kw - self._current_state.dg_reserve_kw
+        self._current_state.available_headroom_kw = round(
+            estimated_load - generator_reserve, 2
         )
 
-        # 6. Write to inverters
+        # ── WRITE TO INVERTERS ────────────────────────────────────────
         if self._inverter_ids:
             write_success = await self._write_solar_limit(solar_limit_pct)
             self._current_state.write_success = write_success

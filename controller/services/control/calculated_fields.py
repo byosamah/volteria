@@ -20,6 +20,14 @@ from common.site_calculations import (
 
 logger = get_service_logger("control.calc_fields")
 
+# Device type sets for control totals — must match all DB/frontend device types
+SOLAR_TYPES = {"inverter", "wind_turbine", "bess"}
+LOAD_TYPES = {"load_meter", "load", "energy_meter", "subload"}
+GENERATOR_TYPES = {
+    "dg", "diesel_generator", "diesel_generator_controller",
+    "gas_generator_controller", "gas_generator",
+}
+
 
 class CalculatedFieldsProcessor:
     """
@@ -132,11 +140,11 @@ class CalculatedFieldsProcessor:
             if power is None:
                 continue
 
-            if device_type == "inverter":
+            if device_type in SOLAR_TYPES:
                 results["total_solar_kw"] += power
-            elif device_type == "load_meter":
+            elif device_type in LOAD_TYPES:
                 results["total_load_kw"] += power
-            elif device_type == "dg":
+            elif device_type in GENERATOR_TYPES:
                 results["total_dg_kw"] += power
 
         # Round values

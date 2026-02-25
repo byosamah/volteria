@@ -456,8 +456,9 @@ class ConfigSync:
         mode_settings = {}
         operation_mode = site.get("operation_mode", "zero_dg_reverse")
 
-        if operation_mode in ["zero_dg_reverse", "zero_dg_pf"]:
-            mode_settings["dg_reserve_kw"] = site.get("dg_reserve_kw", 10.0)
+        # Generator reserve is always included (needed by all generator-related modes)
+        mode_settings["dg_reserve_kw"] = site.get("dg_reserve_kw", 0)
+
         if operation_mode == "zero_dg_pf":
             mode_settings["target_power_factor"] = site.get("target_power_factor", 0.95)
         if operation_mode == "zero_dg_reactive":

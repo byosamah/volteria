@@ -236,8 +236,13 @@ class SiteConfig:
         return [d for d in self.devices if d.device_type in load_types]
 
     def get_generators(self) -> list[DeviceConfig]:
-        """Get all DG devices"""
-        return self.get_devices_by_type(DeviceType.DG)
+        """Get all generator devices (diesel + gas)"""
+        generator_types = {
+            DeviceType.DG, DeviceType.DIESEL_GENERATOR,
+            DeviceType.DIESEL_GENERATOR_CONTROLLER,
+            DeviceType.GAS_GENERATOR_CONTROLLER, DeviceType.GAS_GENERATOR,
+        }
+        return [d for d in self.devices if d.device_type in generator_types]
 
     def get_total_solar_capacity(self) -> float:
         """Get total rated solar capacity in kW"""

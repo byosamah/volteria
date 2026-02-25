@@ -45,38 +45,55 @@ class OperationMode(ABC):
         pass
 
 
-class ZeroDGReverse(OperationMode):
+class ZeroGeneratorFeed(OperationMode):
     """
-    Prevent reverse power flow to diesel generators.
+    Zero Generator Feed — prevent reverse power flow to generators (DG + GG).
+
+    Off-grid mode: generators are the grid. Solar must never push power back.
+
+    Load estimation fallback chain:
+    1. Load meters (direct measurement, most accurate)
+    2. Generator power (in off-grid, gen output ≈ load)
+    3. Handled by control service (cached / safe mode)
 
     Algorithm:
-    - Load = sum(load_meter_readings) or DG output
-    - Available headroom = Load - DG_RESERVE
-    - Solar limit = max(0, min(headroom, solar_capacity))
+    - estimated_load = best available source from fallback chain
+    - headroom = estimated_load - generator_reserve
+    - solar_limit = clamp(headroom, 0, solar_capacity)
     """
 
-    mode_id = "zero_dg_reverse"
+    mode_id = "zero_dg_reverse"  # DB value stays for backward compat
     required_settings = ["dg_reserve_kw"]
-    required_device_types = ["inverter"]  # + load_meter OR dg
+    required_device_types = ["inverter"]  # + load_meter OR generator
 
     def calculate(self, readings: dict, config: dict) -> ControlOutput:
-        # Get settings
+        # Get settings (top-level dg_reserve_kw is always correct)
         mode_settings = config.get("mode_settings", {})
-        dg_reserve = mode_settings.get("dg_reserve_kw", 10.0)
-        config_mode = config.get("config_mode", "full_system")
+        generator_reserve = config.get("dg_reserve_kw", mode_settings.get("dg_reserve_kw", 0))
 
         # Get readings
         total_load = readings.get("total_load_kw", 0.0)
-        total_dg = readings.get("total_dg_kw", 0.0)
+        total_generator = readings.get("total_dg_kw", 0.0)
         solar_capacity = readings.get("solar_capacity_kw", 100.0)
+        load_meters_online = readings.get("load_meters_online", 0)
+        generators_online = readings.get("generators_online", 0)
 
-        # Calculate available headroom based on config mode
-        if config_mode == "dg_inverter":
-            # Use DG output directly as available power
-            available_headroom = total_dg - dg_reserve
-        else:
-            # Use load meter reading
-            available_headroom = total_load - dg_reserve
+        # Load estimation fallback chain
+        estimated_load = 0.0
+        load_source = "none"
+
+        if load_meters_online > 0 and total_load > 0:
+            # Priority 1: Load meters (direct measurement)
+            estimated_load = total_load
+            load_source = "load_meter"
+        elif generators_online > 0 and total_generator > 0:
+            # Priority 2: Generator power (off-grid: gen output ≈ load)
+            estimated_load = total_generator
+            load_source = "generator_fallback"
+        # Priority 3 & 4 (cached / safe mode) handled by control service
+
+        # Calculate available headroom
+        available_headroom = estimated_load - generator_reserve
 
         # Calculate solar limit
         solar_limit_kw = max(0.0, min(available_headroom, solar_capacity))
@@ -86,13 +103,15 @@ class ZeroDGReverse(OperationMode):
         solar_limit_pct = max(0.0, min(100.0, solar_limit_pct))
 
         logger.debug(
-            f"ZeroDGReverse: load={total_load:.1f}kW, reserve={dg_reserve:.1f}kW, "
-            f"headroom={available_headroom:.1f}kW, limit={solar_limit_pct:.1f}%"
+            f"ZeroGenFeed: load={estimated_load:.1f}kW ({load_source}), "
+            f"reserve={generator_reserve:.1f}kW, headroom={available_headroom:.1f}kW, "
+            f"limit={solar_limit_pct:.1f}%"
         )
 
         return ControlOutput(
             solar_limit_pct=round(solar_limit_pct, 1),
             solar_limit_kw=round(solar_limit_kw, 2),
+            load_source=load_source,
             actions={"write_inverter_limit": True},
         )
 
@@ -214,7 +233,8 @@ class PeakShaving(OperationMode):
 
 # Mode registry - add new modes here
 OPERATION_MODES: dict[str, OperationMode] = {
-    "zero_dg_reverse": ZeroDGReverse(),
+    "zero_dg_reverse": ZeroGeneratorFeed(),  # DB value stays for backward compat
+    "zero_generator_feed": ZeroGeneratorFeed(),  # Alias for future use
     "zero_dg_pf": ZeroDGPowerFactor(),
     "zero_dg_reactive": ZeroDGReactive(),
     "peak_shaving": PeakShaving(),

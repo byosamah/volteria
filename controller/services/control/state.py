@@ -16,6 +16,7 @@ class ControlOutput:
     solar_limit_kw: float = 0.0
     battery_discharge_kw: float = 0.0
     reactive_power_kvar: float = 0.0
+    load_source: str = "none"  # Which source provided load estimate
     actions: dict[str, bool] = field(default_factory=dict)
     # actions: {"write_inverter_limit": True, "charge_battery": False, ...}
 
@@ -31,6 +32,11 @@ class ControlState:
     dg_power_kw: float = 0.0
     dg_reserve_kw: float = 0.0
 
+    # Load estimation
+    load_source: str = "none"  # "load_meter", "generator_fallback", "cached", "safe_mode"
+    last_known_load_kw: float = 0.0
+    last_known_load_timestamp: datetime | None = None
+
     # Calculated
     available_headroom_kw: float = 0.0
     solar_capacity_kw: float = 0.0
@@ -38,6 +44,7 @@ class ControlState:
     # Output
     solar_limit_pct: float = 100.0
     solar_limit_kw: float = 0.0
+    ramp_limited: bool = False
 
     # Safe mode
     safe_mode_active: bool = False
@@ -59,16 +66,18 @@ class ControlState:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging"""
-        result = {
+        return {
             "timestamp": self.timestamp.isoformat(),
             "total_load_kw": self.total_load_kw,
             "solar_output_kw": self.solar_output_kw,
             "dg_power_kw": self.dg_power_kw,
             "dg_reserve_kw": self.dg_reserve_kw,
+            "load_source": self.load_source,
             "available_headroom_kw": self.available_headroom_kw,
             "solar_capacity_kw": self.solar_capacity_kw,
             "solar_limit_pct": self.solar_limit_pct,
             "solar_limit_kw": self.solar_limit_kw,
+            "ramp_limited": self.ramp_limited,
             "safe_mode_active": self.safe_mode_active,
             "safe_mode_reason": self.safe_mode_reason,
             "config_mode": self.config_mode,
@@ -80,7 +89,6 @@ class ControlState:
             "write_success": self.write_success,
             "write_error": self.write_error,
         }
-        return result
 
 
 @dataclass
