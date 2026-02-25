@@ -13,17 +13,20 @@ from supabase import Client
 SEVERITY_TO_TYPE = {
     "critical": "critical",
     "major": "warning",  # Display major as warning color
+    "minor": "warning",
     "warning": "warning",
     "info": "info"
 }
 
 # Severity hierarchy (higher number = more severe)
 # Used for "X and above" threshold logic
+# Must match database: info < warning < minor < major < critical
 SEVERITY_HIERARCHY = {
     "info": 1,
     "warning": 2,
-    "major": 3,
-    "critical": 4
+    "minor": 3,
+    "major": 4,
+    "critical": 5
 }
 
 

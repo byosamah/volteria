@@ -28,6 +28,7 @@ interface ProjectNotificationSettingsProps {
 const SEVERITY_OPTIONS: { value: AlarmSeverity; label: string }[] = [
   { value: "critical", label: "Critical only" },
   { value: "major", label: "Major and above" },
+  { value: "minor", label: "Minor and above" },
   { value: "warning", label: "Warning and above" },
   { value: "info", label: "All severities" },
 ];
