@@ -75,6 +75,11 @@ interface Site {
   safe_mode_rolling_window_min: number;
   safe_mode_threshold_pct: number;
   safe_mode_power_limit_kw: number | null;
+  // Reactive power settings
+  reactive_power_enabled: boolean;
+  reactive_power_mode: string;
+  target_power_factor: number;
+  target_reactive_kvar: number;
 }
 
 interface SiteSettingsFormProps {
@@ -117,6 +122,11 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
     safe_mode_rolling_window_min: site.safe_mode_rolling_window_min || 5,
     safe_mode_threshold_pct: site.safe_mode_threshold_pct || 80,
     safe_mode_power_limit_kw: site.safe_mode_power_limit_kw || 0,
+    // Reactive power settings
+    reactive_power_enabled: site.reactive_power_enabled ?? false,
+    reactive_power_mode: site.reactive_power_mode || "dynamic_pf",
+    target_power_factor: site.target_power_factor ?? 0.95,
+    target_reactive_kvar: site.target_reactive_kvar ?? 0,
   });
 
   // Handle input changes
@@ -180,6 +190,11 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
           safe_mode_rolling_window_min: formData.safe_mode_rolling_window_min,
           safe_mode_threshold_pct: formData.safe_mode_threshold_pct,
           safe_mode_power_limit_kw: formData.safe_mode_power_limit_kw || null,
+          // Reactive power settings
+          reactive_power_enabled: formData.reactive_power_enabled,
+          reactive_power_mode: formData.reactive_power_mode,
+          target_power_factor: formData.target_power_factor,
+          target_reactive_kvar: formData.target_reactive_kvar,
           updated_at: new Date().toISOString(),
         })
         .eq("id", site.id);
@@ -449,6 +464,115 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
             </select>
           </div>
         </div>
+      </div>
+
+      <Separator />
+
+      {/* Reactive Power Compensation */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-medium flex items-center gap-1.5">
+            Reactive Power Compensation
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span><InfoIcon /></span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                <p>Use solar inverters to inject reactive power (kVAR) and improve site power factor. Works alongside active power control — never reduces active power output.</p>
+              </TooltipContent>
+            </Tooltip>
+          </h3>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              name="reactive_power_enabled"
+              checked={formData.reactive_power_enabled}
+              onChange={handleChange}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <span className="text-sm">Enabled</span>
+          </label>
+        </div>
+
+        {formData.reactive_power_enabled && (
+          <div className="space-y-4 pl-4 border-l-2 border-muted">
+            <div className="space-y-2">
+              <Label htmlFor="reactive_power_mode" className="flex items-center gap-1.5">
+                Mode
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span><InfoIcon /></span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>Dynamic PF reads site power factor and auto-adjusts reactive power to reach target. Fixed PF calculates Q from inverter active power. Fixed kVAR injects a constant amount.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </Label>
+              <select
+                id="reactive_power_mode"
+                name="reactive_power_mode"
+                value={formData.reactive_power_mode}
+                onChange={handleChange}
+                className="w-full h-10 px-3 rounded-md border border-input bg-background"
+              >
+                <option value="dynamic_pf">Dynamic Power Factor (Recommended)</option>
+                <option value="fixed_pf">Fixed Power Factor</option>
+                <option value="fixed_kvar">Fixed kVAR</option>
+              </select>
+            </div>
+
+            {formData.reactive_power_mode !== "fixed_kvar" && (
+              <div className="space-y-2">
+                <Label htmlFor="target_power_factor" className="flex items-center gap-1.5">
+                  Target Power Factor
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span><InfoIcon /></span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Desired site power factor (0.80 to 1.00). Most utility requirements are 0.90-0.95. Higher = less reactive power needed.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </Label>
+                <Input
+                  id="target_power_factor"
+                  name="target_power_factor"
+                  type="number"
+                  min={0.80}
+                  max={1.00}
+                  step={0.01}
+                  value={formData.target_power_factor}
+                  onChange={handleChange}
+                />
+              </div>
+            )}
+
+            {formData.reactive_power_mode === "fixed_kvar" && (
+              <div className="space-y-2">
+                <Label htmlFor="target_reactive_kvar" className="flex items-center gap-1.5">
+                  Target Reactive Power (kVAR)
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span><InfoIcon /></span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Fixed amount of reactive power to inject via inverters. Clamped to inverter apparent power and nominal reactive limits.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </Label>
+                <Input
+                  id="target_reactive_kvar"
+                  name="target_reactive_kvar"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={formData.target_reactive_kvar}
+                  onChange={handleChange}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <Separator />
