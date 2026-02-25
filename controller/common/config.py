@@ -12,7 +12,8 @@ from enum import Enum
 
 class OperationMode(str, Enum):
     """Supported operation modes"""
-    ZERO_DG_REVERSE = "zero_dg_reverse"
+    ZERO_GENERATOR_FEED = "zero_generator_feed"
+    ZERO_DG_REVERSE = "zero_dg_reverse"  # Legacy alias
     ZERO_DG_PF = "zero_dg_pf"
     ZERO_DG_REACTIVE = "zero_dg_reactive"
     PEAK_SHAVING = "peak_shaving"
@@ -353,7 +354,7 @@ def load_site_config(data: dict) -> SiteConfig:
     return SiteConfig(
         id=data.get("id", ""),
         name=data.get("name", ""),
-        operation_mode=OperationMode(data.get("operation_mode", "zero_dg_reverse")),
+        operation_mode=OperationMode(data.get("operation_mode", "zero_generator_feed")),
         config_mode=ConfigMode(data.get("config_mode", "full_system")),
         control_interval_ms=data.get("control_interval_ms", 1000),
         mode_settings=mode_settings,

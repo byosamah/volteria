@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       control: {
         interval_ms: formData.controlIntervalMs || 1000,
         dg_reserve_kw: formData.dgReserveKw || 50.0,
-        operation_mode: formData.operationMode || "zero_dg_reverse",
+        operation_mode: formData.operationMode || "zero_generator_feed",
       },
       logging: {
         local_interval_ms: formData.loggingLocalIntervalMs || 1000,

@@ -62,7 +62,7 @@ class ZeroGeneratorFeed(OperationMode):
     - solar_limit = clamp(headroom, 0, solar_capacity)
     """
 
-    mode_id = "zero_dg_reverse"  # DB value stays for backward compat
+    mode_id = "zero_generator_feed"
     required_settings = ["dg_reserve_kw"]
     required_device_types = ["inverter"]  # + load_meter OR generator
 
@@ -233,8 +233,8 @@ class PeakShaving(OperationMode):
 
 # Mode registry - add new modes here
 OPERATION_MODES: dict[str, OperationMode] = {
-    "zero_dg_reverse": ZeroGeneratorFeed(),  # DB value stays for backward compat
-    "zero_generator_feed": ZeroGeneratorFeed(),  # Alias for future use
+    "zero_generator_feed": ZeroGeneratorFeed(),
+    "zero_dg_reverse": ZeroGeneratorFeed(),  # Legacy alias
     "zero_dg_pf": ZeroDGPowerFactor(),
     "zero_dg_reactive": ZeroDGReactive(),
     "peak_shaving": PeakShaving(),
@@ -244,8 +244,8 @@ OPERATION_MODES: dict[str, OperationMode] = {
 def get_mode(mode_id: str) -> OperationMode:
     """Get operation mode by ID"""
     if mode_id not in OPERATION_MODES:
-        logger.warning(f"Unknown operation mode: {mode_id}, using zero_dg_reverse")
-        return OPERATION_MODES["zero_dg_reverse"]
+        logger.warning(f"Unknown operation mode: {mode_id}, using zero_generator_feed")
+        return OPERATION_MODES["zero_generator_feed"]
     return OPERATION_MODES[mode_id]
 
 

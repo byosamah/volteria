@@ -267,7 +267,7 @@ def merge_configs(local_config: dict, cloud_config: dict) -> dict:
     merged["control"] = {
         "interval_ms": cloud_control.get("interval_ms", 1000),
         "dg_reserve_kw": cloud_control.get("dg_reserve_kw", 50),
-        "operation_mode": cloud_control.get("operation_mode", "zero_dg_reverse"),
+        "operation_mode": cloud_control.get("operation_mode", "zero_generator_feed"),
     }
 
     # Add logging settings from cloud
@@ -318,8 +318,8 @@ def print_config_summary(config: dict):
     control = config.get("control", {})
     print(f"\n  Control Settings:")
     print(f"    - Interval: {control.get('interval_ms', 1000)}ms")
-    print(f"    - DG Reserve: {control.get('dg_reserve_kw', 50)} kW")
-    print(f"    - Mode: {control.get('operation_mode', 'zero_dg_reverse')}")
+    print(f"    - Generator Reserve: {control.get('dg_reserve_kw', 50)} kW")
+    print(f"    - Mode: {control.get('operation_mode', 'zero_generator_feed')}")
 
     devices = config.get("devices", {})
     print(f"\n  Devices:")

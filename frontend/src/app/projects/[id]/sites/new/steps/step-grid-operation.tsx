@@ -112,10 +112,10 @@ export function StepGridOperation({ formData, updateField }: StepProps) {
             {/* Generator Reserve / Zero Generator Feed (Enabled) */}
             <button
               type="button"
-              onClick={() => updateField("operationMode", "zero_dg_reverse")}
+              onClick={() => updateField("operationMode", "zero_generator_feed")}
               className={`
                 w-full p-4 rounded-lg border-2 text-left transition-all
-                ${formData.operationMode === "zero_dg_reverse"
+                ${formData.operationMode === "zero_generator_feed"
                   ? "border-primary bg-primary/5"
                   : "border-muted hover:border-muted-foreground/50"
                 }
@@ -124,12 +124,12 @@ export function StepGridOperation({ formData, updateField }: StepProps) {
               <div className="flex items-start gap-3">
                 <div className={`
                   w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5
-                  ${formData.operationMode === "zero_dg_reverse"
+                  ${formData.operationMode === "zero_generator_feed"
                     ? "border-primary"
                     : "border-muted-foreground/50"
                   }
                 `}>
-                  {formData.operationMode === "zero_dg_reverse" && (
+                  {formData.operationMode === "zero_generator_feed" && (
                     <div className="w-2.5 h-2.5 rounded-full bg-primary" />
                   )}
                 </div>

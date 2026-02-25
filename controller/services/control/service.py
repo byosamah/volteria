@@ -71,7 +71,7 @@ class ControlService:
 
         # Configuration
         self._control_interval_ms = 1000
-        self._operation_mode = "zero_dg_reverse"
+        self._operation_mode = "zero_generator_feed"
         self._solar_capacity_kw = 100.0
         self._inverter_ids: list[str] = []
         self._device_types: dict[str, str] = {}
@@ -221,7 +221,7 @@ class ControlService:
 
         # Extract settings
         self._control_interval_ms = config.get("control_interval_ms", 1000)
-        self._operation_mode = config.get("operation_mode", "zero_dg_reverse")
+        self._operation_mode = config.get("operation_mode", "zero_generator_feed")
 
         # Safe mode settings
         safe_mode_config = config.get("safe_mode", {})

@@ -53,7 +53,7 @@ export interface UserProjectAssignment {
 // Projects are just containers for grouping sites.
 
 export type ControllerStatus = "online" | "offline" | "error";
-export type OperationMode = "zero_dg_reverse" | "zero_dg_pf" | "zero_dg_reactive";
+export type OperationMode = "zero_generator_feed" | "zero_dg_reverse" | "zero_dg_pf" | "zero_dg_reactive";
 export type SafeModeType = "time_based" | "rolling_average";
 
 export interface Project {

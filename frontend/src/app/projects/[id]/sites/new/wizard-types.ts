@@ -33,11 +33,11 @@ export type GridConnection = "on_grid" | "off_grid";
 
 /**
  * Operation mode options (for off-grid)
- * - zero_dg_reverse: Prevent reverse feeding to generator (currently only option)
+ * - zero_generator_feed: Prevent reverse feeding to generator
  * - peak_shaving: Reduce peak demand (coming soon)
  * - manual: Manual control (coming soon)
  */
-export type OperationMode = "zero_dg_reverse" | "peak_shaving" | "manual";
+export type OperationMode = "zero_generator_feed" | "peak_shaving" | "manual";
 
 /**
  * Safe mode type options
@@ -135,7 +135,7 @@ export const defaultFormData: WizardFormData = {
 
   // Step 3: Grid & Operation
   gridConnection: "off_grid",
-  operationMode: "zero_dg_reverse",
+  operationMode: "zero_generator_feed",
 
   // Step 4: Control Settings
   dgReserveKw: 50,

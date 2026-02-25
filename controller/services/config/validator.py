@@ -14,7 +14,8 @@ logger = get_service_logger("config.validator")
 
 # Required settings per operation mode
 MODE_REQUIREMENTS: dict[str, list[str]] = {
-    "zero_dg_reverse": ["dg_reserve_kw"],
+    "zero_generator_feed": ["dg_reserve_kw"],
+    "zero_dg_reverse": ["dg_reserve_kw"],  # Legacy alias
     "zero_dg_pf": ["dg_reserve_kw", "target_power_factor"],
     "zero_dg_reactive": ["max_reactive_kvar"],
     "peak_shaving": ["peak_threshold_kw", "battery_reserve_pct"],
@@ -22,7 +23,8 @@ MODE_REQUIREMENTS: dict[str, list[str]] = {
 
 # Required device types per operation mode
 MODE_DEVICE_REQUIREMENTS: dict[str, list[str]] = {
-    "zero_dg_reverse": ["inverter"],  # + load_meter OR dg
+    "zero_generator_feed": ["inverter"],  # + load_meter OR generator
+    "zero_dg_reverse": ["inverter"],  # Legacy alias
     "zero_dg_pf": ["inverter", "dg"],
     "zero_dg_reactive": ["inverter", "dg"],
     "peak_shaving": ["load_meter", "battery"],
@@ -54,7 +56,7 @@ class ConfigValidator:
             critical_errors.append("Missing operation mode")
 
         # Validate mode-specific settings - CRITICAL
-        operation_mode = config.get("operation_mode", "zero_dg_reverse")
+        operation_mode = config.get("operation_mode", "zero_generator_feed")
         mode_errors = self._validate_mode_settings(config, operation_mode)
         critical_errors.extend(mode_errors)
 
@@ -132,8 +134,8 @@ class ConfigValidator:
         required_types = MODE_DEVICE_REQUIREMENTS.get(operation_mode, [])
         device_types = set(d.get("device_type") for d in devices)
 
-        # Special case: zero_dg_reverse needs inverter + (load_meter OR dg)
-        if operation_mode == "zero_dg_reverse":
+        # Special case: zero_generator_feed needs inverter + (load_meter OR generator)
+        if operation_mode in ("zero_generator_feed", "zero_dg_reverse"):
             if "inverter" not in device_types:
                 errors.append("At least one inverter is required")
             if "load_meter" not in device_types and "dg" not in device_types:

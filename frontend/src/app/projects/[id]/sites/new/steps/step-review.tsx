@@ -56,8 +56,9 @@ export function StepReview({ formData, onEditStep }: StepReviewProps) {
   // Helper to format operation mode
   const formatOperationMode = (mode: string) => {
     switch (mode) {
-      case "zero_dg_reverse":
-        return "Generator Reserve / Zero Generator Feed";
+      case "zero_generator_feed":
+      case "zero_dg_reverse":  // legacy
+        return "Zero Generator Feed";
       case "peak_shaving":
         return "Peak Shaving";
       case "manual":

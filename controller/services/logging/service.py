@@ -1362,7 +1362,7 @@ class LoggingService:
             state.get("solar_limit_kw", 0),       # solar_limit_kw
             current_safe_mode,        # safe_mode_active
             state.get("config_mode", "full_system"),      # config_mode
-            state.get("operation_mode", "zero_dg_reverse"),  # operation_mode
+            state.get("operation_mode", "zero_generator_feed"),  # operation_mode
             state.get("load_meters_online", 0),   # load_meters_online
             state.get("inverters_online", 0),     # inverters_online
             state.get("generators_online", 0),    # generators_online

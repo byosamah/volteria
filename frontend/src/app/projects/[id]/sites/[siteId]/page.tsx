@@ -76,10 +76,11 @@ function isVersionOutdated(current: string | null, minimum: string): boolean {
 }
 
 // Helper to format operation mode for display
-// Converts database values like "zero_dg_reverse" to readable text
+// Converts database values like "zero_generator_feed" to readable text
 function formatOperationMode(mode: string | null): string {
   switch (mode) {
-    case "zero_dg_reverse":
+    case "zero_generator_feed":
+    case "zero_dg_reverse":  // legacy
       return "Zero Generator Feed";
     case "peak_shaving":
       return "Peak Shaving";

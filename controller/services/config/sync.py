@@ -454,7 +454,7 @@ class ConfigSync:
 
         # Build mode settings based on operation mode
         mode_settings = {}
-        operation_mode = site.get("operation_mode", "zero_dg_reverse")
+        operation_mode = site.get("operation_mode", "zero_generator_feed")
 
         # Generator reserve is always included (needed by all generator-related modes)
         mode_settings["dg_reserve_kw"] = site.get("dg_reserve_kw", 0)

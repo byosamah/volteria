@@ -102,7 +102,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
     // Control settings
     dg_reserve_kw: site.dg_reserve_kw || 0,
     control_interval_ms: site.control_interval_ms || 1000,
-    operation_mode: site.operation_mode || "zero_dg_reverse",
+    operation_mode: site.operation_mode || "zero_generator_feed",
     // Logging settings
     logging_local_interval_ms: site.logging_local_interval_ms || 1000,
     logging_cloud_interval_ms: site.logging_cloud_interval_ms || 180000,  // 3 min default
@@ -443,7 +443,7 @@ export function SiteSettingsForm({ site, projectId }: SiteSettingsFormProps) {
               onChange={handleChange}
               className="w-full h-10 px-3 rounded-md border border-input bg-background"
             >
-              <option value="zero_dg_reverse">Zero Generator Feed</option>
+              <option value="zero_generator_feed">Zero Generator Feed</option>
               <option value="peak_shaving">Peak Shaving</option>
               <option value="manual">Manual</option>
             </select>

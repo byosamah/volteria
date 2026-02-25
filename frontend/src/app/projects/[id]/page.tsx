@@ -36,10 +36,11 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // Helper to format operation mode for display
-// Converts database values like "zero_dg_reverse" to readable text
+// Converts database values like "zero_generator_feed" to readable text
 function formatOperationMode(mode: string | null): string {
   switch (mode) {
-    case "zero_dg_reverse":
+    case "zero_generator_feed":
+    case "zero_dg_reverse":  // legacy
       return "Zero Generator Feed";
     case "peak_shaving":
       return "Peak Shaving";
@@ -108,7 +109,7 @@ export default async function ProjectDetailPage({
     controller_last_seen: string | null;
     dg_reserve_kw: number;
     is_active: boolean;
-    operation_mode: string | null;      // e.g., "zero_dg_reverse", "peak_shaving", "manual"
+    operation_mode: string | null;      // e.g., "zero_generator_feed", "peak_shaving", "manual"
     grid_connection: string | null;     // e.g., "off_grid", "on_grid"
   }> = [];
 

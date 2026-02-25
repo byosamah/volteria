@@ -52,7 +52,7 @@ class ControlState:
 
     # Status
     config_mode: str = "full_system"
-    operation_mode: str = "zero_dg_reverse"
+    operation_mode: str = "zero_generator_feed"
 
     # Device counts
     load_meters_online: int = 0
