@@ -73,7 +73,7 @@ class ZeroGeneratorFeed(OperationMode):
 
         # Get readings
         total_load = readings.get("total_load_kw", 0.0)
-        total_generator = readings.get("total_dg_kw", 0.0)
+        total_generator = readings.get("total_generator_kw", 0.0)
         solar_capacity = readings.get("solar_capacity_kw", 100.0)
         load_meters_online = readings.get("load_meters_online", 0)
         generators_online = readings.get("generators_online", 0)
@@ -134,10 +134,10 @@ class ZeroDGPowerFactor(OperationMode):
         target_pf = mode_settings.get("target_power_factor", 0.95)
 
         # Get readings
-        total_dg = readings.get("total_dg_kw", 0.0)
+        total_dg = readings.get("total_generator_kw", 0.0)
         solar_capacity = readings.get("solar_capacity_kw", 100.0)
 
-        # Calculate active power limit (same as zero_dg_reverse)
+        # Calculate active power limit (same as zero_generator_feed)
         available_headroom = total_dg - dg_reserve
         solar_limit_kw = max(0.0, min(available_headroom, solar_capacity))
         solar_limit_pct = (solar_limit_kw / solar_capacity * 100) if solar_capacity > 0 else 0.0

@@ -23,10 +23,9 @@ logger = get_service_logger("control.calc_fields")
 # Device type sets for control totals — must match all DB/frontend device types
 SOLAR_TYPES = {"inverter", "wind_turbine", "bess"}
 LOAD_TYPES = {"load_meter", "load", "energy_meter", "subload"}
-GENERATOR_TYPES = {
-    "dg", "diesel_generator", "diesel_generator_controller",
-    "gas_generator_controller", "gas_generator",
-}
+DG_TYPES = {"dg", "diesel_generator", "diesel_generator_controller"}
+GG_TYPES = {"gas_generator_controller", "gas_generator"}
+GENERATOR_TYPES = DG_TYPES | GG_TYPES  # Union of both
 
 
 class CalculatedFieldsProcessor:
@@ -113,14 +112,17 @@ class CalculatedFieldsProcessor:
         device_types: dict[str, str],
     ) -> dict[str, float]:
         """
-        Compute standard totals (solar, load, DG) without field definitions.
+        Compute standard totals (solar, load, generators) without field definitions.
 
+        Returns separate DG, GG, and combined generator totals.
         This is a convenience method for the control loop.
         """
         results = {
             "total_solar_kw": 0.0,
             "total_load_kw": 0.0,
             "total_dg_kw": 0.0,
+            "total_gg_kw": 0.0,
+            "total_generator_kw": 0.0,
         }
 
         for device_id, device_readings in readings.items():
@@ -147,8 +149,12 @@ class CalculatedFieldsProcessor:
                 results["total_solar_kw"] += power
             elif device_type in LOAD_TYPES:
                 results["total_load_kw"] += power
-            elif device_type in GENERATOR_TYPES:
+            elif device_type in DG_TYPES:
                 results["total_dg_kw"] += power
+                results["total_generator_kw"] += power
+            elif device_type in GG_TYPES:
+                results["total_gg_kw"] += power
+                results["total_generator_kw"] += power
 
         # Round values
         for key in results:

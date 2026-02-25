@@ -29,7 +29,9 @@ class ControlState:
     # Inputs
     total_load_kw: float = 0.0
     solar_output_kw: float = 0.0
-    dg_power_kw: float = 0.0
+    dg_power_kw: float = 0.0         # DG (diesel) power only
+    gg_power_kw: float = 0.0         # GG (gas) power only
+    generator_power_kw: float = 0.0  # Total generator power (DG + GG)
     dg_reserve_kw: float = 0.0
 
     # Load estimation
@@ -71,6 +73,8 @@ class ControlState:
             "total_load_kw": self.total_load_kw,
             "solar_output_kw": self.solar_output_kw,
             "dg_power_kw": self.dg_power_kw,
+            "gg_power_kw": self.gg_power_kw,
+            "generator_power_kw": self.generator_power_kw,
             "dg_reserve_kw": self.dg_reserve_kw,
             "load_source": self.load_source,
             "available_headroom_kw": self.available_headroom_kw,

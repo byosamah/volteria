@@ -351,10 +351,14 @@ class ControlService:
         self._current_state.timestamp = datetime.now(timezone.utc)
         total_load_kw = totals.get("total_load_kw", 0.0)
         total_solar_kw = totals.get("total_solar_kw", 0.0)
-        total_generator_kw = totals.get("total_dg_kw", 0.0)
+        total_dg_kw = totals.get("total_dg_kw", 0.0)
+        total_gg_kw = totals.get("total_gg_kw", 0.0)
+        total_generator_kw = totals.get("total_generator_kw", 0.0)
 
         self._current_state.solar_output_kw = total_solar_kw
-        self._current_state.dg_power_kw = total_generator_kw
+        self._current_state.dg_power_kw = total_dg_kw
+        self._current_state.gg_power_kw = total_gg_kw
+        self._current_state.generator_power_kw = total_generator_kw
         self._current_state.solar_capacity_kw = self._solar_capacity_kw
         self._current_state.operation_mode = self._operation_mode
         self._current_state.config_mode = config.get("config_mode", "full_system")
@@ -453,7 +457,7 @@ class ControlService:
             algo_readings = {
                 "total_load_kw": estimated_load,
                 "total_solar_kw": total_solar_kw,
-                "total_dg_kw": total_generator_kw,
+                "total_generator_kw": total_generator_kw,
                 "solar_capacity_kw": self._solar_capacity_kw,
                 "load_meters_online": self._current_state.load_meters_online,
                 "generators_online": self._current_state.generators_online,
