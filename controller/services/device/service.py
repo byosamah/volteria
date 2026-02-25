@@ -423,6 +423,27 @@ class DeviceService:
                                         f"Failed to write register {register_address} to {device_id}"
                                     )
 
+                            elif command_type == "write_reactive_power":
+                                registers = cmd.get("registers", [])
+                                all_ok = True
+                                for reg in registers:
+                                    ok = await self.write_register(
+                                        device_id=device_id,
+                                        register_address=reg["address"],
+                                        value=int(reg["value"]),
+                                        verify=False,
+                                    )
+                                    if not ok:
+                                        all_ok = False
+                                if all_ok:
+                                    logger.debug(
+                                        f"Executed reactive power write: {value}kVAR to {device_id}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Failed to write reactive power to {device_id}"
+                                    )
+
                             processed_ids.append(timestamp)
 
                         except Exception as e:

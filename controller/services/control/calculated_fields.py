@@ -106,6 +106,65 @@ class CalculatedFieldsProcessor:
 
         return results
 
+    def compute_reactive_totals(
+        self,
+        readings: dict[str, dict],
+        device_types: dict[str, str],
+    ) -> dict[str, float]:
+        """
+        Compute site-level reactive power totals from load meters.
+
+        Returns total_reactive_var, total_reactive_kvar, and site_power_factor.
+        """
+        import math
+
+        total_reactive_var = 0.0
+        total_active_w = 0.0
+        found_reactive = False
+
+        for device_id, device_readings in readings.items():
+            device_type = device_types.get(device_id)
+            if device_type not in LOAD_TYPES:
+                continue
+
+            for key in device_readings:
+                key_lower = key.lower()
+                # Match reactive power registers: "reactive power", "react power"
+                if "reactive" in key_lower and "power" in key_lower and "factor" not in key_lower:
+                    reading = device_readings[key]
+                    value = reading.get("value") if isinstance(reading, dict) else reading
+                    if value is not None:
+                        total_reactive_var += float(value)
+                        found_reactive = True
+                    break
+
+        # Get active power from load meters for PF calculation
+        for device_id, device_readings in readings.items():
+            device_type = device_types.get(device_id)
+            if device_type not in LOAD_TYPES:
+                continue
+
+            for key in device_readings:
+                key_lower = key.lower()
+                if ("active" in key_lower and "power" in key_lower) or \
+                   ("act" in key_lower and "power" in key_lower and "react" not in key_lower and "factor" not in key_lower):
+                    reading = device_readings[key]
+                    value = reading.get("value") if isinstance(reading, dict) else reading
+                    if value is not None:
+                        total_active_w += float(value)
+                    break
+
+        total_reactive_kvar = total_reactive_var / 1000.0
+        # Site PF = P / sqrt(P² + Q²)
+        s = math.sqrt(total_active_w ** 2 + total_reactive_var ** 2)
+        site_pf = (total_active_w / s) if s > 0 else 1.0
+
+        return {
+            "total_reactive_var": round(total_reactive_var, 2),
+            "total_reactive_kvar": round(total_reactive_kvar, 2),
+            "site_power_factor": round(site_pf, 4),
+        }
+
     def compute_standard_totals(
         self,
         readings: dict[str, dict],

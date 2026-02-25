@@ -81,6 +81,13 @@ class ControlService:
         self._controller_device_id: str | None = None
         self._device_configs: list[dict] = []
 
+        # Reactive power config
+        self._reactive_power_enabled = False
+        self._reactive_power_mode = "dynamic_pf"
+        self._reactive_power_target_pf = 0.95
+        self._reactive_power_target_kvar = 0.0
+        self._inverter_kva: dict[str, float] = {}  # device_id → rated kVA
+
         # Ramp rate state
         self._previous_limit_pct: float = 100.0
         self._last_control_time: float = time.monotonic()
@@ -253,11 +260,22 @@ class ControlService:
                 rated_power = device.get("rated_power_kw", 0)
                 if rated_power:
                     self._solar_capacity_kw += rated_power
+                # Store kVA rating for reactive power limits
+                rated_kva = device.get("rated_power_kva") or rated_power or 0
+                if device_id:
+                    self._inverter_kva[device_id] = rated_kva
 
         # Site calculations config
         self._site_calculations = config.get("site_calculations", [])
         self._controller_device_id = config.get("controller_device_id")
         self._device_configs = devices
+
+        # Reactive power config
+        rp_config = config.get("reactive_power", {})
+        self._reactive_power_enabled = rp_config.get("enabled", False)
+        self._reactive_power_mode = rp_config.get("mode", "dynamic_pf")
+        self._reactive_power_target_pf = rp_config.get("target_pf", 0.95)
+        self._reactive_power_target_kvar = rp_config.get("target_kvar", 0.0)
 
         # Validate config for operation mode
         errors = validate_config_for_mode(self._operation_mode, config)
@@ -529,6 +547,53 @@ class ControlService:
         else:
             self._current_state.write_success = True
 
+        # ── L3b: REACTIVE POWER COMPENSATION ─────────────────────────
+        self._current_state.reactive_power_enabled = self._reactive_power_enabled
+        self._current_state.reactive_power_mode = self._reactive_power_mode
+
+        if self._reactive_power_enabled and self._inverter_ids and not safe_mode_active:
+            # Read site reactive power from load meters
+            reactive_totals = self.calculated_fields.compute_reactive_totals(
+                readings=device_readings,
+                device_types=self._device_types,
+            )
+            site_reactive_kvar = reactive_totals["total_reactive_kvar"]
+            site_pf = reactive_totals["site_power_factor"]
+
+            self._current_state.site_reactive_kvar = site_reactive_kvar
+            self._current_state.site_power_factor = site_pf
+
+            # Calculate Q per inverter and total Q headroom
+            total_q_kvar = 0.0
+            total_q_max = 0.0
+            for inv_id in self._inverter_ids:
+                inv_kva = self._inverter_kva.get(inv_id, 0)
+                # Estimate current P for this inverter (share proportionally)
+                inv_p = solar_limit_kw / max(1, len(self._inverter_ids))
+
+                q = self._calculate_reactive_power(
+                    mode=self._reactive_power_mode,
+                    target_pf=self._reactive_power_target_pf,
+                    target_kvar=self._reactive_power_target_kvar,
+                    active_power_kw=inv_p,
+                    inverter_kva=inv_kva,
+                    site_reactive_kvar=site_reactive_kvar,
+                    site_active_kw=estimated_load,
+                )
+                total_q_kvar += q
+                q_max_apparent = math.sqrt(max(0, inv_kva ** 2 - inv_p ** 2))
+                total_q_max += q_max_apparent
+
+            self._current_state.reactive_power_kvar = round(total_q_kvar, 2)
+            self._current_state.inverter_q_max_kvar = round(total_q_max, 2)
+
+            # Write reactive power commands
+            if total_q_kvar > 0:
+                await self._write_reactive_power(total_q_kvar)
+        elif self._reactive_power_enabled and safe_mode_active:
+            # Safe mode — disable reactive power
+            self._current_state.reactive_power_kvar = 0.0
+
     async def _write_solar_limit(self, limit_pct: float) -> bool:
         """
         Write solar limit to all inverters via device service.
@@ -564,6 +629,89 @@ class ControlService:
 
         return all_success
 
+    def _calculate_reactive_power(
+        self,
+        mode: str,
+        target_pf: float,
+        target_kvar: float,
+        active_power_kw: float,
+        inverter_kva: float,
+        site_reactive_kvar: float,
+        site_active_kw: float,
+    ) -> float:
+        """
+        Calculate reactive power (kVAR) for a single inverter.
+
+        Triple-clamped: Q_target, Q_max_apparent (kVA limit), Q_max_nominal.
+        Active power always takes priority — Q uses remaining apparent power.
+        """
+        target_pf = max(0.8, min(1.0, target_pf))
+
+        if mode == "dynamic_pf":
+            # Q needed to bring site PF to target
+            q_needed_total = site_active_kw * math.tan(math.acos(target_pf))
+            q_deficit = q_needed_total - abs(site_reactive_kvar)
+            # Share deficit across inverters
+            q_target = max(0, q_deficit) / max(1, len(self._inverter_ids))
+        elif mode == "fixed_pf":
+            q_target = active_power_kw * math.tan(math.acos(target_pf))
+        else:  # fixed_kvar
+            q_target = target_kvar / max(1, len(self._inverter_ids))
+
+        # Clamp 1: apparent power limit (don't exceed inverter kVA)
+        q_max_apparent = math.sqrt(max(0, inverter_kva ** 2 - active_power_kw ** 2))
+
+        # Clamp 2: nominal reactive limit (~48% of rated kVA as default)
+        q_max_nominal = inverter_kva * 0.48 if inverter_kva > 0 else q_max_apparent
+
+        return round(min(q_target, q_max_apparent, q_max_nominal), 2)
+
+    async def _write_reactive_power(self, total_kvar: float) -> bool:
+        """
+        Write reactive power commands to inverters via SharedState write_commands.
+
+        Uses Sungrow register 5036 (mode) + 5037 (Q setpoint as % of nominal).
+        """
+        all_success = True
+
+        for inverter_id in self._inverter_ids:
+            try:
+                inv_kva = self._inverter_kva.get(inverter_id, 0)
+                # Nominal Q capacity (~48% of kVA)
+                nominal_q = inv_kva * 0.48 if inv_kva > 0 else 100
+                # Per-inverter share
+                inv_q = total_kvar / max(1, len(self._inverter_ids))
+                # Q as percentage of nominal (register 5037, scale 0.1%)
+                q_pct = min(100.0, (inv_q / nominal_q) * 100) if nominal_q > 0 else 0
+
+                commands = SharedState.read("write_commands")
+                if "commands" not in commands:
+                    commands["commands"] = []
+
+                # Write mode register (5036): 0xA1 = Fixed Q mode
+                commands["commands"].append({
+                    "device_id": inverter_id,
+                    "command": "write_reactive_power",
+                    "registers": [
+                        {"address": 5036, "value": 0xA1},  # Fixed Q mode
+                        {"address": 5037, "value": int(q_pct * 10)},  # Q% × 10
+                    ],
+                    "value": round(inv_q, 2),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+
+                SharedState.write("write_commands", commands)
+
+                logger.debug(
+                    f"Queued reactive power command: {inv_q:.1f}kVAR ({q_pct:.1f}%) for {inverter_id}"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to queue reactive power for {inverter_id}: {e}")
+                all_success = False
+
+        return all_success
+
     async def _config_watch_loop(self) -> None:
         """
         Watch for config changes and reload when detected.
@@ -592,6 +740,7 @@ class ControlService:
                 "mode_settings": config.get("mode_settings", {}),
                 "site_calculations": config.get("site_calculations", []),
                 "devices": device_fingerprints,
+                "reactive_power": config.get("reactive_power", {}),
             }
             content_str = json.dumps(content, sort_keys=True, default=str)
             return hashlib.md5(content_str.encode()).hexdigest()

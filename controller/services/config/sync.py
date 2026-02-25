@@ -550,6 +550,12 @@ class ConfigSync:
                 "threshold_pct": site.get("safe_mode_threshold_pct", 80.0),
                 "power_limit_kw": site.get("safe_mode_power_limit_kw", 0.0),
             },
+            "reactive_power": {
+                "enabled": site.get("reactive_power_enabled", False),
+                "mode": site.get("reactive_power_mode", "dynamic_pf"),
+                "target_pf": site.get("target_power_factor", 0.95),
+                "target_kvar": site.get("target_reactive_kvar", 0),
+            },
             "config_sync_interval_s": site.get("config_sync_interval_s", 3600),
             "devices": devices,
             # Site-level calculated fields (from controller device selection)

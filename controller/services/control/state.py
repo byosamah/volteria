@@ -61,6 +61,14 @@ class ControlState:
     inverters_online: int = 0
     generators_online: int = 0
 
+    # Reactive power
+    reactive_power_enabled: bool = False
+    reactive_power_mode: str = "dynamic_pf"
+    reactive_power_kvar: float = 0.0
+    site_power_factor: float = 1.0
+    site_reactive_kvar: float = 0.0
+    inverter_q_max_kvar: float = 0.0
+
     # Execution
     execution_time_ms: float = 0.0
     write_success: bool = True
@@ -89,6 +97,12 @@ class ControlState:
             "load_meters_online": self.load_meters_online,
             "inverters_online": self.inverters_online,
             "generators_online": self.generators_online,
+            "reactive_power_enabled": self.reactive_power_enabled,
+            "reactive_power_mode": self.reactive_power_mode,
+            "reactive_power_kvar": self.reactive_power_kvar,
+            "site_power_factor": self.site_power_factor,
+            "site_reactive_kvar": self.site_reactive_kvar,
+            "inverter_q_max_kvar": self.inverter_q_max_kvar,
             "execution_time_ms": self.execution_time_ms,
             "write_success": self.write_success,
             "write_error": self.write_error,
