@@ -123,6 +123,13 @@ export async function GET(
           timestamp: latestLog.timestamp
         };
       }
+      if (latestLog.safe_mode_active !== null) {
+        siteAggregates.safe_mode_active = {
+          value: latestLog.safe_mode_active ? 1 : 0,
+          unit: "",
+          timestamp: latestLog.timestamp
+        };
+      }
     }
 
     // Get device readings for specific register values

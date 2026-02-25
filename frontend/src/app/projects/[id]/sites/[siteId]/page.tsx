@@ -14,7 +14,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ControlLogsViewer } from "@/components/logs/control-logs-viewer";
@@ -29,6 +28,7 @@ import { DeviceHealthCard } from "@/components/sites/device-health-card";
 import { ControllerHealthCard } from "@/components/sites/controller-health-card";
 import { SiteTestButton } from "@/components/sites/site-test-button";
 import { TemplateSyncStatus } from "@/components/sites/template-sync-status";
+import { PowerStatsLive } from "./power-stats-live";
 import type { ModbusRegister } from "@/components/devices/register-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -75,55 +75,6 @@ function isVersionOutdated(current: string | null, minimum: string): boolean {
   return false; // Equal versions
 }
 
-// Helper to format operation mode for display
-// Converts database values like "zero_generator_feed" to readable text
-function formatOperationMode(mode: string | null): string {
-  switch (mode) {
-    case "zero_generator_feed":
-    case "zero_dg_reverse":  // legacy
-      return "Zero Generator Feed";
-    case "peak_shaving":
-      return "Peak Shaving";
-    case "manual":
-      return "Manual Control";
-    default:
-      return mode || "Not set";
-  }
-}
-
-// Power gauge component
-function PowerGauge({
-  label,
-  value,
-  max,
-  unit = "kW",
-  color = "bg-primary",
-}: {
-  label: string;
-  value: number;
-  max: number;
-  unit?: string;
-  color?: string;
-}) {
-  const percentage = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium">
-          {value.toFixed(1)} {unit}
-        </span>
-      </div>
-      <div className="h-2 bg-muted rounded-full overflow-hidden">
-        <div
-          className={`h-full ${color} transition-all duration-500`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  );
-}
 
 export default async function SiteDetailPage({
   params,
@@ -507,79 +458,18 @@ export default async function SiteDetailPage({
           </div>
         )}
 
-        {/* Live Data Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Total Load</CardDescription>
-              <CardTitle className="text-3xl">
-                {loadKw.toFixed(1)} <span className="text-lg font-normal">kW</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <PowerGauge label="" value={loadKw} max={totalCapacity} color="bg-blue-500" />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Solar Output</CardDescription>
-              <CardTitle className="text-3xl">
-                {solarKw.toFixed(1)} <span className="text-lg font-normal">kW</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-muted-foreground">Limit</span>
-                <span className="font-medium">{latestLog?.solar_limit_pct || 0}%</span>
-              </div>
-              <PowerGauge label="" value={solarKw} max={150} color="bg-[#6baf4f]" />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Generator Power</CardDescription>
-              {/* Generator Power color coding */}
-              <CardTitle className={`text-3xl ${
-                dgKw < 0
-                  ? "text-red-600"
-                  : dgKw < site.dg_reserve_kw
-                    ? "text-orange-500"
-                    : ""
-              }`}>
-                {dgKw.toFixed(1)} <span className="text-lg font-normal">kW</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <PowerGauge
-                label=""
-                value={Math.abs(dgKw)}
-                max={totalCapacity}
-                color={dgKw < 0 ? "bg-red-500" : dgKw < site.dg_reserve_kw ? "bg-orange-500" : "bg-slate-500"}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Generator Reserve</CardDescription>
-              <CardTitle className="text-3xl">
-                {site.dg_reserve_kw} <span className="text-lg font-normal">kW</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                {latestLog?.safe_mode_active ? (
-                  <Badge variant="destructive">Safe Mode Active</Badge>
-                ) : (
-                  // Show the actual operation mode instead of "Normal Operation"
-                  <Badge variant="outline">{formatOperationMode(site.operation_mode)}</Badge>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Live Data Cards - auto-refresh every 30s */}
+        <PowerStatsLive
+          siteId={siteId}
+          initialLoadKw={loadKw}
+          initialSolarKw={solarKw}
+          initialDgKw={dgKw}
+          initialSolarLimitPct={latestLog?.solar_limit_pct || 0}
+          initialSafeModeActive={latestLog?.safe_mode_active || false}
+          dgReserveKw={site.dg_reserve_kw}
+          operationMode={site.operation_mode}
+          totalCapacity={totalCapacity}
+        />
 
         {/* Connection Status & System Charts - Historical Data Visualization */}
         <PowerFlowChart projectId={projectId} siteId={siteId} />
