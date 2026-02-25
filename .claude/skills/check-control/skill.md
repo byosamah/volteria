@@ -41,7 +41,14 @@ L1: DATA ACQUISITION   → read SharedState (local, no internet)
 Control uses type sets (not single strings):
 - **SOLAR_TYPES**: `inverter`, `wind_turbine`, `bess`
 - **LOAD_TYPES**: `load_meter`, `load`, `energy_meter`, `subload`
-- **GENERATOR_TYPES**: `dg`, `diesel_generator`, `diesel_generator_controller`, `gas_generator_controller`, `gas_generator`
+- **DG_TYPES**: `dg`, `diesel_generator`, `diesel_generator_controller`
+- **GG_TYPES**: `gas_generator_controller`, `gas_generator`
+- **GENERATOR_TYPES**: DG_TYPES | GG_TYPES (union of both)
+
+Control state tracks three power fields:
+- `dg_power_kw`: Diesel generators only
+- `gg_power_kw`: Gas generators only
+- `generator_power_kw`: Total (DG + GG) — used by control algorithm for headroom calculation
 
 ---
 
