@@ -53,7 +53,7 @@ DigitalOcean (159.223.224.203)
 ┌─────────────────────────────────────────────┐
 │  Layer 5: LOGGING - Data logging, cloud sync│
 ├─────────────────────────────────────────────┤
-│  Layer 4: CONTROL - Zero-feeding algorithm  │
+│  Layer 4: CONTROL - Zero Generator Feed algo │
 ├─────────────────────────────────────────────┤
 │  Layer 3: DEVICE - Modbus I/O, polling      │
 ├─────────────────────────────────────────────┤
@@ -253,6 +253,7 @@ SUPABASE_SERVICE_KEY=your-service-key
 73. **Config watch hash includes devices**: `_config_watch_loop()` in control service hashes device fingerprints (id, type, rated_power_kw) alongside settings. Adding/removing/modifying devices triggers automatic config reload without service restart.
 74. **Reactive power = feature layer, not mode**: Independent toggleable feature on top of Zero Generator Feed (industry standard: Elum, SMA, GreenPowerMonitor). Three modes: Dynamic PF (recommended), Fixed PF, Fixed kVAR. Triple-clamped: `Q_final = min(Q_target, Q_max_apparent, Q_max_nominal)`. Active power always takes priority — Q uses remaining apparent power after P. Site settings: `reactive_power_enabled`, `reactive_power_mode`, `target_power_factor`, `target_reactive_kvar`. Sungrow registers: 5036 (mode enum), 5037 (Q% setpoint).
 75. **New write command types need device service handler**: Control service queues commands to SharedState `write_commands`. Device service `_command_queue_loop()` silently drops unknown command types. When adding new command types (e.g., `write_reactive_power`), must add handler in both control service (queue) AND device service (consume).
+76. **Site dashboard power stats auto-refresh**: `power-stats-live.tsx` client component polls `/api/dashboards/[siteId]/live-data` every 30s (control logs sync every ~180s). Server-renders initial values (no flash), pauses via Page Visibility API when tab hidden. Same pattern as custom dashboard polling but at lower frequency — site dashboard is "nice to have", not primary monitoring.
 
 ## Key Architecture Decisions
 
