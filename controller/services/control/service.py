@@ -578,6 +578,12 @@ class ControlService:
 
         def compute_config_hash(config: dict) -> str:
             """Compute hash of control-relevant config content"""
+            # Extract device fingerprints (id, type, rated_power) for change detection
+            devices = config.get("devices", [])
+            device_fingerprints = [
+                {"id": d.get("id"), "device_type": d.get("device_type"), "rated_power_kw": d.get("rated_power_kw")}
+                for d in devices
+            ]
             content = {
                 "operation_mode": config.get("operation_mode"),
                 "dg_reserve_kw": config.get("dg_reserve_kw"),
@@ -585,6 +591,7 @@ class ControlService:
                 "safe_mode": config.get("safe_mode", {}),
                 "mode_settings": config.get("mode_settings", {}),
                 "site_calculations": config.get("site_calculations", []),
+                "devices": device_fingerprints,
             }
             content_str = json.dumps(content, sort_keys=True, default=str)
             return hashlib.md5(content_str.encode()).hexdigest()
