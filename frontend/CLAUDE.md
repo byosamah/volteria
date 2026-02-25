@@ -217,6 +217,7 @@ Full list of editable fields in `/projects/[id]/sites/[siteId]/settings/`:
 - **Control**: dg_reserve_kw, control_interval_ms
 - **Logging**: logging_local_interval_ms, logging_cloud_interval_ms, logging_local_retention_days, logging_cloud_enabled, logging_gateway_enabled
 - **Safe Mode**: safe_mode_enabled, safe_mode_type, safe_mode_timeout_s, safe_mode_rolling_window_min, safe_mode_threshold_pct, safe_mode_power_limit_kw
+- **Reactive Power**: reactive_power_enabled, reactive_power_mode (dynamic_pf/fixed_pf/fixed_kvar), target_power_factor, target_reactive_kvar
 
 ## Dashboard Widgets
 - **Controller Status**: Combined widget showing "X online - Y offline"
@@ -484,7 +485,7 @@ interface User {
 ### Project & Site Types
 ```typescript
 type ControllerStatus = "online" | "offline" | "error"
-type OperationMode = "zero_dg_reverse" | "zero_dg_pf" | "zero_dg_reactive"
+type OperationMode = "zero_generator_feed" | "zero_dg_reverse" | "zero_dg_pf" | "zero_dg_reactive"
 type SafeModeType = "time_based" | "rolling_average"
 type ConfigMode = "meter_inverter" | "dg_inverter" | "full_system"
 

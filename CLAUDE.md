@@ -69,7 +69,7 @@ DigitalOcean (159.223.224.203)
 
 | Concept | Description |
 |---------|-------------|
-| **Zero-feeding** | Limits solar output to prevent reverse power to DG (reserve min: 0 kW) |
+| **Zero Generator Feed** | Limits solar output to prevent reverse power to generators (DG + GG). Operation mode: `zero_generator_feed` |
 | **Device Types** | Load Meters, Solar Inverters, DG Controllers, Temperature Sensors |
 | **Config Modes** | `meter_inverter`, `dg_inverter`, `full_system` |
 | **Heartbeat** | Controller → cloud every 30s; offline after 1 min silence |
@@ -155,6 +155,7 @@ ssh volteria "docker logs sdc-frontend --tail=50"
 | Skill | Command | Use When |
 |-------|---------|----------|
 | Controller | `/check-controller` | Service health, SSH access, safe mode, architecture, SharedState |
+| Control | `/check-control` | Control algorithm, load estimation, generator reserve, ramp rate, safe mode, solar limit |
 | Setup | `/check-setup` | Wizard flow, provisioning, registration, SSH tunnel setup, tests |
 | Logging | `/check-logging` | Data flow, SQLite, cloud sync, downsampling, drift, alarms |
 | Calculations | `/check-calculations` | Calculated fields pipeline, register_role, Total Load/DG/Solar, data flow |
@@ -249,6 +250,9 @@ SUPABASE_SERVICE_KEY=your-service-key
 70. **Email notification candidates come from user_projects only**: Role alone (super_admin, enterprise_admin) doesn't grant email notifications. Users must be explicitly assigned to a project via Edit User → Project Assignments checkbox. `get_eligible_email_recipients()` in `notifications.py` queries only `user_projects` — no automatic admin/enterprise_admin candidacy.
 71. **Docker env vars from `.env` override code defaults**: Changing a default value in Python code (e.g., `os.getenv("VAR", "new_default")`) has no effect if the server's `.env` file has an explicit value for that variable. Always update both code default AND server `.env` when changing env-driven config.
 72. **Alarm severity hierarchy has 5 levels**: `SEVERITY_HIERARCHY` in `notifications.py`: info(1) < warning(2) < minor(3) < major(4) < critical(5). Must match database and frontend dropdown. Frontend `SEVERITY_OPTIONS` in `project-notification-settings.tsx` must include all 5 levels as threshold choices.
+73. **Config watch hash includes devices**: `_config_watch_loop()` in control service hashes device fingerprints (id, type, rated_power_kw) alongside settings. Adding/removing/modifying devices triggers automatic config reload without service restart.
+74. **Reactive power = feature layer, not mode**: Independent toggleable feature on top of Zero Generator Feed (industry standard: Elum, SMA, GreenPowerMonitor). Three modes: Dynamic PF (recommended), Fixed PF, Fixed kVAR. Triple-clamped: `Q_final = min(Q_target, Q_max_apparent, Q_max_nominal)`. Active power always takes priority — Q uses remaining apparent power after P. Site settings: `reactive_power_enabled`, `reactive_power_mode`, `target_power_factor`, `target_reactive_kvar`. Sungrow registers: 5036 (mode enum), 5037 (Q% setpoint).
+75. **New write command types need device service handler**: Control service queues commands to SharedState `write_commands`. Device service `_command_queue_loop()` silently drops unknown command types. When adding new command types (e.g., `write_reactive_power`), must add handler in both control service (queue) AND device service (consume).
 
 ## Key Architecture Decisions
 

@@ -18,13 +18,14 @@ Activate this skill when:
 ## Control Architecture (7 Layers)
 
 ```
-L7: SAFE MODE          → full solar shutdown (0%)
+L7: SAFE MODE           → full solar shutdown (0%)
 L6: EMERGENCY RAMP-DOWN → immediate curtailment
-L5: SANITY CHECKS      → NaN, range, impossible values
-L4: RAMP RATE LIMITER  → 10%/s up, instant down
-L3: SETPOINT CALC      → headroom = load - generator_reserve
-L2: LOAD ESTIMATION    → fallback: meters → generators → cached → safe_mode
-L1: DATA ACQUISITION   → read SharedState (local, no internet)
+L5: SANITY CHECKS       → NaN, range, impossible values
+L4: RAMP RATE LIMITER   → 10%/s up, instant down
+L3b: REACTIVE POWER     → PF correction (if enabled, after active power)
+L3: SETPOINT CALC       → headroom = load - generator_reserve
+L2: LOAD ESTIMATION     → fallback: meters → generators → cached → safe_mode
+L1: DATA ACQUISITION    → read SharedState (local, no internet)
 ```
 
 ## Load Estimation Fallback Chain
@@ -292,6 +293,31 @@ Look for:
 | load_source = "none" | No devices online, no cache | All sources failed — check device service |
 | Ramp always limited | Setpoint oscillating fast | Check load stability, increase reserve |
 | Write commands piling up | Device service not consuming | Check volteria-device service health |
+| New config block empty `{}` | Config service hasn't re-synced | Restart `volteria-config` to force re-sync |
+| Reactive power kvar = 0 | Feature disabled or no load meters | Check `reactive_power_enabled` in config + load meter reactive power registers |
+
+---
+
+## Simulation (Testing Algorithm with Fake Devices)
+
+To test the algorithm with different inverter capacities without real hardware:
+
+1. **Add fake inverter** to `site_devices`:
+```bash
+curl -s -X POST "https://usgxhzdctzthcqxyxfxl.supabase.co/rest/v1/site_devices" \
+  -H "apikey: SERVICE_ROLE_KEY" -H "Authorization: Bearer SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" -H "Prefer: return=representation" \
+  -d '{"site_id": "SITE_ID", "name": "Test Inverter", "device_type": "inverter", "rated_power_kw": 100, "enabled": true, "protocol": "tcp", "ip_address": "192.168.1.99", "port": 502, "slave_id": 1}'
+```
+
+2. **Trigger config sync** → wait ~20s → check `control_state.json`
+3. **Modify** `rated_power_kw` (PATCH) → sync → verify `solar_limit_pct` changes
+4. **Clean up**: DELETE the test device → sync → verify `solar_capacity_kw` back to 0
+
+**Expected results** (with load ~650 kW, reserve 100 kW, headroom ~550 kW):
+- 100 kW capacity → limit 100% (headroom > capacity)
+- 1000 kW capacity → limit ~55% (headroom < capacity)
+- 2000 kW capacity → limit ~27% (headroom << capacity)
 
 ---
 
@@ -302,4 +328,4 @@ Look for:
 - `/check-alarms` — Safe mode alarms, threshold alarms
 - `/check-calculations` — Site-level totals (register_role)
 
-<!-- Updated: 2026-02-25 -->
+<!-- Updated: 2026-02-25 (added L3b reactive power layer, troubleshooting entries) -->

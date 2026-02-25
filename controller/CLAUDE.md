@@ -474,6 +474,14 @@ logger._logger.info("message")  # AttributeError!
 - Typically <0.01% of reads — no fix needed unless frequency increases significantly
 - Caused by gateway counter resets or TCP connection reuse
 
+### Write Command Queue (Control → Device)
+<!-- Updated: 2026-02-25 -->
+- Control service queues commands to SharedState `write_commands`
+- Device service `_command_queue_loop()` polls every 100ms and executes them
+- **Supported commands**: `write_solar_limit`, `write_register`, `write_reactive_power`
+- Unknown command types are **silently dropped** — when adding new command types, must add handler in BOTH control service (queue) AND device service (consume)
+- `write_reactive_power` writes multiple registers per command (5036 mode + 5037 Q setpoint)
+
 ### Orphan Alarm Auto-Resolution
 When alarm registers are removed from config:
 - Config sync compares old vs new alarm definition IDs

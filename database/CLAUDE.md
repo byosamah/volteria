@@ -105,6 +105,7 @@ supabase db dump --linked -p [PASSWORD] > schema_dump.sql
 | 105 | Historical timezone | `p_timezone` param for timezone-aware hourly/daily bucketing |
 | 106 | Delta RPC computation | Delta fields computed on-the-fly from raw kWh counters (not pre-computed). Bucket size per field from `logging_frequency_seconds` |
 | 107 | Delta boundary + reset | Sum consecutive reading pairs `GREATEST(0, next-current)` instead of `MAX-MIN`. Boundary-to-boundary + meter reset handling (only reset gap lost, not whole period) |
+| 111 | Reactive power settings | `reactive_power_enabled`, `reactive_power_mode`, `target_power_factor`, `target_reactive_kvar` columns on `sites` table with check constraints |
 
 ## RPC Functions
 
@@ -233,6 +234,7 @@ CHECK (severity IN ('info', 'warning', 'minor', 'major', 'critical'))
 ### Functions
 ```sql
 -- ALWAYS include SET search_path = '' to prevent search path injection
+-- ALWAYS use public. schema prefix on function name (exec_sql fails without it)
 CREATE OR REPLACE FUNCTION public.my_function()
 RETURNS void LANGUAGE plpgsql
 SET search_path = ''  -- REQUIRED
