@@ -183,6 +183,11 @@ class LoggingService:
         self._sample_scheduler: ScheduledLoop | None = None
         self._flush_scheduler: ScheduledLoop | None = None
 
+        # Vacuum coordination: pause DB writers during incremental_vacuum
+        # asyncio.Event is "set" = normal operation, "clear" = writers wait
+        self._vacuum_pause = asyncio.Event()
+        self._vacuum_pause.set()  # Not paused by default
+
     async def _run_db(self, func, *args):
         """Run a blocking local_db method in a thread to avoid blocking the event loop."""
         loop = asyncio.get_running_loop()
@@ -749,6 +754,7 @@ class LoggingService:
                 continue
 
             try:
+                await self._vacuum_pause.wait()  # Pause during vacuum
                 await self._flush_readings_to_sqlite()
                 self._last_flush_time = datetime.now(timezone.utc)
             except Exception as e:
@@ -827,6 +833,8 @@ class LoggingService:
             if not self.cloud_sync:
                 logger.debug("FLOW[cloud]: No cloud_sync instance")
                 continue
+
+            await self._vacuum_pause.wait()  # Pause during vacuum
 
             sync_success = False
             try:
@@ -1167,6 +1175,19 @@ class LoggingService:
                     deleted = await self._run_db(self.local_db.cleanup_old_data, self._retention_days)
                     if deleted > 0:
                         logger.info(f"Retention cleanup: deleted {deleted} old records")
+                        # Pause DB writers so WAL checkpoint + vacuum can reclaim space
+                        self._vacuum_pause.clear()
+                        await asyncio.sleep(2)  # Let in-flight DB ops finish
+                        try:
+                            freed = await self._run_db(self.local_db.vacuum_incremental)
+                            if freed > 0:
+                                logger.info(f"Retention vacuum: freed {freed} pages (~{freed * 4 // 1024} MB)")
+                            else:
+                                logger.debug("Retention vacuum: no pages to free")
+                        except Exception as ve:
+                            logger.warning(f"Retention vacuum error (non-fatal): {ve}")
+                        finally:
+                            self._vacuum_pause.set()  # Always resume writers
                     # Update marker after successful run (even if 0 deleted)
                     cleanup_marker.write_text(str(now.timestamp()))
                 except Exception as e:

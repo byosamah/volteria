@@ -530,10 +530,9 @@ class LocalDatabase:
 
             total_deleted = logs_deleted + alarms_deleted + readings_deleted
 
-            # Reclaim disk space from deleted rows.
-            # Use a marker file because PRAGMA auto_vacuum is unreliable —
-            # previous _init_db() calls wrote INCREMENTAL to the header
-            # without actually converting the DB via VACUUM.
+            # One-time full VACUUM to convert DB to INCREMENTAL auto_vacuum.
+            # Subsequent vacuums are handled by vacuum_incremental() which is
+            # called separately with DB writers paused.
             from pathlib import Path
             vacuum_marker = Path(self.db_path).parent / ".vacuum_done"
             if not vacuum_marker.exists():
@@ -542,10 +541,6 @@ class LocalDatabase:
                 cursor.execute("VACUUM")
                 vacuum_marker.touch()
                 logger.info("One-time VACUUM complete — incremental_vacuum now works")
-            else:
-                # Subsequent cleanups: incremental vacuum (~200 MB per cycle)
-                # 50,000 pages × 4KB = ~200 MB — safe for SD card at off-peak
-                cursor.execute("PRAGMA incremental_vacuum(50000)")
 
             if total_deleted > 0:
                 logger.info(
@@ -554,6 +549,21 @@ class LocalDatabase:
                 )
 
             return total_deleted
+
+    def vacuum_incremental(self) -> int:
+        """Reclaim disk space via WAL checkpoint + incremental vacuum.
+
+        Must be called with no other DB writers active (flush/sync paused).
+        Returns number of freelist pages reclaimed.
+        """
+        with self._get_connection() as conn:
+            before = conn.execute("PRAGMA freelist_count").fetchone()[0]
+            # Force WAL into main DB so incremental_vacuum can work
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            # Reclaim up to 50,000 pages (~200 MB) per cycle
+            conn.execute("PRAGMA incremental_vacuum(50000)")
+            after = conn.execute("PRAGMA freelist_count").fetchone()[0]
+            return before - after
 
     def get_stats(self) -> dict:
         """Get database statistics"""
